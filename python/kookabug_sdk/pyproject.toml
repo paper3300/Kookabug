@@ -9,6 +9,9 @@ license-files = ["LICENSE"]
 # 런타임 의존성 없음: 플러그인 venv와 충돌할 여지를 없앤다
 dependencies = []
 
+[project.scripts]
+kookabug-sdk = "kookabug_sdk.cli:main"
+
 [build-system]
 requires = ["uv_build>=0.13.6,<0.14"]
 build-backend = "uv_build"
