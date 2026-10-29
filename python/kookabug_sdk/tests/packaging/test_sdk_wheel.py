@@ -6,12 +6,14 @@ from pathlib import Path
 import pytest
 
 from kb_testing import packaging as pk
+from kb_testing.console import run_legacy_console
 
 SDK = pk.REPO_ROOT / "python" / "kookabug_sdk"
 MODULES = [
     "__init__",
     "build",
     "cli",
+    "console",
     "context",
     "decorators",
     "pure",
@@ -92,7 +94,10 @@ def test_sdk_wheel_and_sdist_build_and_license_file_included(tmp_path: Path) -> 
     pk.install(py, sdk.wheel)
     project = write_plugin(tmp_path)
     cli = py.parent / ("kookabug-sdk.exe" if py.suffix == ".exe" else "kookabug-sdk")
-    pk.run([cli, "build", project], cwd=tmp_path)
+    # 영문 Windows 콘솔(cp1252)에서도 설치된 명령이 한국어 결과를 출력한다
+    proc = run_legacy_console([cli, "build", project], cwd=tmp_path, env=pk.clean_env())
+    assert proc.returncode == 0, proc.stderr
+    assert "(1개 노드)" in proc.stdout
     schema_file = project / "src" / "kb_sample_plugin" / "kookabug.schema.json"
     built = json.loads(schema_file.read_text(encoding="utf-8"))
     assert [n["type"] for n in built["nodes"]] == ["sample.flow.noop"]

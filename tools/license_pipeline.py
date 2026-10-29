@@ -22,6 +22,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import license_audit
+from kookabug_sdk.console import utf8_stdio
 
 TOOLS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TOOLS_DIR.parent
@@ -46,6 +47,9 @@ def _env() -> dict[str, str]:
     env = dict(os.environ)
     for key in ("VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT", "PYTHONPATH", "PYTHONHOME"):
         env.pop(key, None)
+    # 하위 Python 도구(pip-licenses)의 출력도 우리와 같은 UTF-8로. 경로에 한국어가 있으면
+    # cp1252 콘솔에서 죽는다. `-I`로 띄우는 marker_env.py에는 적용되지 않는다 (ASCII JSON만 쓴다)
+    env["PYTHONIOENCODING"] = "utf-8"
     return env
 
 
@@ -196,6 +200,7 @@ def run_pipeline(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    utf8_stdio()
     parser = argparse.ArgumentParser(description="Kookabug 라이선스 감사 파이프라인")
     parser.add_argument("--project", type=Path, default=REPO_ROOT, help="uv 프로젝트 루트")
     parser.add_argument("--build-dir", type=Path, default=REPO_ROOT / "build" / "audit")

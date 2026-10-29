@@ -28,6 +28,8 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import NormalizedName, canonicalize_name
 from packaging.version import InvalidVersion, Version
 
+from kookabug_sdk.console import utf8_stdio
+
 # 대상 venv에서 수집해야 하는 PEP 508 마커 변수 (tools/marker_env.py가 만든다)
 MARKER_ENV_KEYS = frozenset(
     {
@@ -543,6 +545,7 @@ def _read_json(path: Path) -> Any:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    utf8_stdio()
     parser = argparse.ArgumentParser(description="Kookabug 라이선스 감사 판정")
     parser.add_argument("--runtime", type=Path, required=True, help="uv export 결과")
     parser.add_argument("--marker-env", type=Path, required=True, help="대상 venv의 마커 환경")

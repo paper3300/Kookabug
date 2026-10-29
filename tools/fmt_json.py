@@ -17,6 +17,7 @@ from pathlib import Path
 
 from kb_testing.doc_examples import DOCS
 from kookabug_core.canonical import canonical_dumps
+from kookabug_sdk.console import utf8_stdio
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = REPO_ROOT / "packages" / "schema"
@@ -35,6 +36,7 @@ def targets() -> list[Path]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    utf8_stdio()
     parser = argparse.ArgumentParser(description="JSON을 canonical 형식으로")
     parser.add_argument("--check", action="store_true", help="쓰지 않고 차이만 확인")
     args = parser.parse_args(argv)

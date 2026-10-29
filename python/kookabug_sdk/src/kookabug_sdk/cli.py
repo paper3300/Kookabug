@@ -7,9 +7,11 @@ import sys
 from collections.abc import Sequence
 
 from kookabug_sdk.build import BuildError, build
+from kookabug_sdk.console import utf8_stdio
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    utf8_stdio()
     parser = argparse.ArgumentParser(prog="kookabug-sdk", description="Kookabug 노드 SDK")
     commands = parser.add_subparsers(dest="command", required=True)
     build_cmd = commands.add_parser("build", help="노드 스키마 JSON을 만든다")

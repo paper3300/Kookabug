@@ -21,6 +21,7 @@ import tempfile
 from pathlib import Path
 
 from kookabug_core.canonical import canonical_dumps
+from kookabug_sdk.console import utf8_stdio
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = REPO_ROOT / "packages" / "schema"
@@ -136,6 +137,7 @@ def stale_outputs(expected: dict[Path, bytes]) -> list[Path]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    utf8_stdio()
     parser = argparse.ArgumentParser(description="메타스키마 → Python 생성물")
     parser.add_argument("--check", action="store_true", help="쓰지 않고 차이만 확인")
     args = parser.parse_args(argv)
