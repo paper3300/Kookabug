@@ -1,0 +1,130 @@
+{
+  "$defs": {
+    "Click": {
+      "additionalProperties": false,
+      "properties": {
+        "anchor": {
+          "description": "9분할 클릭 지점",
+          "enum": [
+            "bottom",
+            "bottom_left",
+            "bottom_right",
+            "center",
+            "left",
+            "right",
+            "top",
+            "top_left",
+            "top_right"
+          ]
+        },
+        "offset": {
+          "description": "anchor에서 더하는 [x, y] (픽셀)",
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "title": "Click",
+      "type": "object"
+    },
+    "Match": {
+      "additionalProperties": false,
+      "properties": {
+        "methods": {
+          "description": "앞에서부터 시도한다. 각 방법은 threshold를 넘어야 성공",
+          "items": {
+            "enum": ["template", "template_multiscale"]
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "rgb": {
+          "type": "boolean"
+        },
+        "threshold": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "title": "Match",
+      "type": "object"
+    },
+    "Recorded": {
+      "additionalProperties": false,
+      "description": "녹화 당시 클라이언트 영역 크기와 DPI",
+      "properties": {
+        "client_size": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "dpi": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "title": "Recorded",
+      "type": "object"
+    },
+    "Search": {
+      "additionalProperties": false,
+      "properties": {
+        "region": {
+          "description": "클라이언트 영역 기준 정규화 좌표 [x, y, w, h]",
+          "items": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        }
+      },
+      "title": "Search",
+      "type": "object"
+    }
+  },
+  "$id": "urn:kookabug:target:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "찾기 대상 파일 (*.target.json): 이미지, 임계값, 검색 범위, 클릭 지점",
+  "properties": {
+    "click": {
+      "$ref": "#/$defs/Click"
+    },
+    "format": {
+      "const": "kookabug.target/0"
+    },
+    "image": {
+      "description": "이 target 파일 기준 상대 경로 ('/' 구분)",
+      "pattern": "^[^\\\\]+$",
+      "type": "string"
+    },
+    "match": {
+      "$ref": "#/$defs/Match"
+    },
+    "recorded": {
+      "$ref": "#/$defs/Recorded"
+    },
+    "search": {
+      "$ref": "#/$defs/Search"
+    },
+    "sensitive": {
+      "description": "true면 이 대상으로 읽은 OCR 결과와 그 파생값이 secret이 된다",
+      "type": "boolean"
+    }
+  },
+  "required": ["format", "image"],
+  "title": "Target",
+  "type": "object"
+}

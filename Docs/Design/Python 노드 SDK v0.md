@@ -89,6 +89,7 @@ def wait_any(ctx: Context, targets: dict[str, Target], timeout_ms: int = 10000) 
 | `window`, `process` | `WindowRef`, `ProcessRef` | 유효성 확인 가능 |
 | `list[T]`, `dict[str, T]` | 같음 | |
 | `any` | `Any` | 연결 검사를 하지 않음. 가급적 쓰지 않는다 |
+| `A\|B` (유니온) | `A \| B` | 예: `str \| Secret` → `string\|secret`. 평문과 비밀을 다 받는 입력. `secret` 값은 `secret`을 포함한 핀에만 연결된다 |
 
 플러그인 고유 타입은 `플러그인ID.타입명`으로 등록한다. 예: `unreal.ActorRef`
 

@@ -12,6 +12,13 @@
 - 한 파일에 **로직**과 **레이아웃** 블록을 분리한다
 - 노드 ID는 **만들 때 정하고 다시 바꾸지 않는다**. 편집기는 `n_` + 짧은 무작위 문자열로 만들고, Agent는 만들 때 읽기 쉬운 ID를 줄 수 있다. 표시 이름은 `title`로만 바꾼다 (실행 기록·브레이크포인트가 ID를 참조하므로)
 - 모든 객체의 **키를 정렬**해서 저장한다 (diff 잡음 제거). 아래 예시도 키를 정렬했다. 순서가 의미 있는 값은 배열로 쓴다
+- **저장 형식**(canonical, `kookabug_core.canonical`): Kookabug가 파일을 새로 쓰거나 편집한 뒤 저장할 때의 출력 규칙이다. 같은 값이면 같은 바이트가 나온다. 아래 예시도 이 형식이다
+  - 키 정렬(UTF-16 코드 단위 순, JavaScript 기본 정렬과 같음), 2칸 들여쓰기, 파일 끝 줄바꿈(LF)
+  - 객체는 항상 펼친다(빈 객체만 `{}`). 배열은 원소가 모두 스칼라이고 그 줄이 100자 안이면 `[1, 2]`처럼 한 줄, 아니면 펼친다. 값 하나를 고쳐도 다른 줄이 바뀌지 않게 하려는 것이다
+  - 숫자는 JavaScript `JSON.stringify`와 같은 표기(`1.0`은 `1`, `1e-7`). 단, 2^53보다 큰 정수 값의 실수는 지수 표기(`1e+20`)로 쓴다 (아래 정수 범위)
+- **원문 보존**: 의미(값)가 바뀌지 않은 저장은 **원문 바이트를 그대로 둔다**(다시 쓰지 않는다). 다른 도구로 만든 비canonical 파일은 처음 편집해 저장할 때 파일 전체를 canonical로 바꾼다
+- **정수 범위**: 그래프·target·워크스페이스 파일의 정수는 ±(2^53-1) 안이어야 한다. 넘으면 형식 검사 오류(`number_out_of_range`). JavaScript(에디터)에서 값이 조용히 바뀌는 것을 막는다. 더 큰 수(ID 등)는 문자열로 쓴다. 유한한 실수는 제한하지 않는다
+- **비유한 값**: NaN·Infinity는 JSON 값이 아니다. 파일을 읽을 때 `NaN`·`Infinity` 토큰과 float 범위를 넘는 수(`1e400`)는 읽기 오류다. 프로그램(에디터·에이전트)이 직접 넘긴 값에 NaN·±Infinity가 있으면 형식 검사 오류(`number_not_finite`)이고, 저장(canonical)도 거부한다
 - 그래프에 `plugins`(플러그인 버전)와 노드마다 `version`(노드 타입 버전)을 기록한다
 - 테스트와 서브그래프는 **같은 형식**이고 `kind`만 다르다
 
@@ -40,17 +47,36 @@ workspace/
   "format": "kookabug.graph/0",
   "interface": {
     "exits": {
-      "login_failed": { "kind": "fail", "screen": "login" },
-      "maintenance": { "kind": "fail", "screen": "title" },
-      "success": { "kind": "ok", "screen": "world_field" }
+      "login_failed": {
+        "kind": "fail",
+        "screen": "login"
+      },
+      "maintenance": {
+        "kind": "fail",
+        "screen": "title"
+      },
+      "success": {
+        "kind": "ok",
+        "screen": "world_field"
+      }
     },
     "inputs": {
-      "account": { "type": "string" },
-      "password": { "type": "secret" },
-      "server": { "default": "Server 1", "type": "string" }
+      "account": {
+        "type": "string"
+      },
+      "password": {
+        "type": "secret"
+      },
+      "server": {
+        "default": "Server 1",
+        "type": "string"
+      }
     },
     "outputs": {
-      "message": { "nullable": true, "type": "string" }
+      "message": {
+        "nullable": true,
+        "type": "string"
+      }
     }
   },
   "kind": "subgraph",
@@ -70,22 +96,70 @@ workspace/
       }
     },
     "nodes": {
-      "n_click_enter": { "x": 1680, "y": 0 },
-      "n_click_login": { "x": 840, "y": 0 },
-      "n_click_start": { "x": 280, "y": 0 },
-      "n_entry": { "x": -560, "y": 0 },
-      "n_exit_login_failed": { "x": 1400, "y": 200 },
-      "n_exit_maintenance": { "x": 840, "y": 240 },
-      "n_exit_success": { "x": 2240, "y": 0 },
-      "n_launch": { "x": -280, "y": 0 },
-      "n_read_error": { "x": 1120, "y": 200 },
-      "n_select_server": { "x": 1400, "y": 0 },
-      "n_type_account": { "x": 560, "y": -120 },
-      "n_type_password": { "x": 700, "y": -120 },
-      "n_wait_lobby": { "x": 1120, "y": 0 },
-      "n_wait_login": { "x": 560, "y": 120 },
-      "n_wait_title": { "x": 0, "y": 0 },
-      "n_wait_world": { "x": 1960, "y": 0 }
+      "n_click_enter": {
+        "x": 1680,
+        "y": 0
+      },
+      "n_click_login": {
+        "x": 840,
+        "y": 0
+      },
+      "n_click_start": {
+        "x": 280,
+        "y": 0
+      },
+      "n_entry": {
+        "x": -560,
+        "y": 0
+      },
+      "n_exit_login_failed": {
+        "x": 1400,
+        "y": 200
+      },
+      "n_exit_maintenance": {
+        "x": 840,
+        "y": 240
+      },
+      "n_exit_success": {
+        "x": 2240,
+        "y": 0
+      },
+      "n_launch": {
+        "x": -280,
+        "y": 0
+      },
+      "n_read_error": {
+        "x": 1120,
+        "y": 200
+      },
+      "n_select_server": {
+        "x": 1400,
+        "y": 0
+      },
+      "n_type_account": {
+        "x": 560,
+        "y": -120
+      },
+      "n_type_password": {
+        "x": 700,
+        "y": -120
+      },
+      "n_wait_lobby": {
+        "x": 1120,
+        "y": 0
+      },
+      "n_wait_login": {
+        "x": 560,
+        "y": 120
+      },
+      "n_wait_title": {
+        "x": 0,
+        "y": 0
+      },
+      "n_wait_world": {
+        "x": 1960,
+        "y": 0
+      }
     }
   },
   "meta": {
@@ -95,75 +169,121 @@ workspace/
   },
   "nodes": {
     "n_click_enter": {
-      "in": { "target": { "$target": "targets/lobby/enter_world_button.target.json" } },
-      "next": { "done": "n_wait_world" },
+      "in": {
+        "target": {
+          "$target": "targets/lobby/enter_world_button.target.json"
+        }
+      },
+      "next": {
+        "done": "n_wait_world"
+      },
       "title": "월드 입장 클릭",
       "type": "core.image.click",
       "version": 1
     },
     "n_click_login": {
-      "in": { "target": { "$target": "targets/login/login_button.target.json" } },
-      "next": { "done": "n_wait_lobby" },
+      "in": {
+        "target": {
+          "$target": "targets/login/login_button.target.json"
+        }
+      },
+      "next": {
+        "done": "n_wait_lobby"
+      },
       "title": "로그인 버튼 클릭",
       "type": "core.image.click",
       "version": 1
     },
     "n_click_start": {
-      "in": { "match": { "$link": "n_wait_title.match" } },
-      "next": { "done": "n_wait_login" },
+      "in": {
+        "match": {
+          "$link": "n_wait_title.match"
+        }
+      },
+      "next": {
+        "done": "n_wait_login"
+      },
       "title": "시작 버튼 클릭",
       "type": "core.input.click",
       "version": 1
     },
     "n_entry": {
-      "next": { "start": "n_launch" },
+      "next": {
+        "start": "n_launch"
+      },
       "title": "입력",
       "type": "core.graph.entry",
       "version": 1
     },
     "n_exit_login_failed": {
-      "config": { "exit": "login_failed" },
-      "in": { "message": { "$link": "n_read_error.text" } },
+      "config": {
+        "exit": "login_failed"
+      },
+      "in": {
+        "message": {
+          "$link": "n_read_error.text"
+        }
+      },
       "title": "로그인 실패",
       "type": "core.graph.exit",
       "version": 1
     },
     "n_exit_maintenance": {
-      "config": { "exit": "maintenance" },
+      "config": {
+        "exit": "maintenance"
+      },
       "title": "점검 중",
       "type": "core.graph.exit",
       "version": 1
     },
     "n_exit_success": {
-      "config": { "exit": "success" },
+      "config": {
+        "exit": "success"
+      },
       "title": "성공",
       "type": "core.graph.exit",
       "version": 1
     },
     "n_launch": {
       "in": {
-        "path": { "$setting": "game.executable" },
+        "path": {
+          "$setting": "game.executable"
+        },
         "timeout_ms": 30000,
         "window_title": "SampleRPG"
       },
-      "next": { "attached": "n_wait_title" },
+      "next": {
+        "attached": "n_wait_title"
+      },
       "title": "게임 실행",
       "type": "core.app.launch",
       "version": 1
     },
     "n_read_error": {
-      "in": { "target": { "$target": "targets/login/error_text.target.json" } },
-      "next": { "done": "n_exit_login_failed" },
+      "in": {
+        "target": {
+          "$target": "targets/login/error_text.target.json"
+        }
+      },
+      "next": {
+        "done": "n_exit_login_failed"
+      },
       "title": "오류 문구 읽기",
       "type": "core.ocr.read",
       "version": 1
     },
     "n_select_server": {
       "in": {
-        "region": { "$target": "targets/lobby/server_list.target.json" },
-        "text": { "$link": "n_entry.server" }
+        "region": {
+          "$target": "targets/lobby/server_list.target.json"
+        },
+        "text": {
+          "$link": "n_entry.server"
+        }
       },
-      "next": { "done": "n_click_enter" },
+      "next": {
+        "done": "n_click_enter"
+      },
       "title": "서버 선택",
       "type": "core.ocr.click_text",
       "version": 1
@@ -171,10 +291,16 @@ workspace/
     "n_type_account": {
       "in": {
         "clear": true,
-        "target": { "$target": "targets/login/account_field.target.json" },
-        "text": { "$link": "n_entry.account" }
+        "target": {
+          "$target": "targets/login/account_field.target.json"
+        },
+        "text": {
+          "$link": "n_entry.account"
+        }
       },
-      "next": { "done": "n_type_password" },
+      "next": {
+        "done": "n_type_password"
+      },
       "title": "계정 입력",
       "type": "core.input.type_text",
       "version": 1
@@ -182,20 +308,32 @@ workspace/
     "n_type_password": {
       "in": {
         "clear": true,
-        "target": { "$target": "targets/login/password_field.target.json" },
-        "text": { "$link": "n_entry.password" }
+        "target": {
+          "$target": "targets/login/password_field.target.json"
+        },
+        "text": {
+          "$link": "n_entry.password"
+        }
       },
-      "next": { "done": "n_click_login" },
+      "next": {
+        "done": "n_click_login"
+      },
       "title": "비밀번호 입력",
       "type": "core.input.type_text",
       "version": 1
     },
     "n_wait_lobby": {
-      "config": { "exits": ["error", "lobby"] },
+      "config": {
+        "exits": ["error", "lobby"]
+      },
       "in": {
         "targets": {
-          "error": { "$target": "targets/login/error_popup.target.json" },
-          "lobby": { "$target": "targets/lobby/server_list.target.json" }
+          "error": {
+            "$target": "targets/login/error_popup.target.json"
+          },
+          "lobby": {
+            "$target": "targets/lobby/server_list.target.json"
+          }
         },
         "timeout_ms": 20000
       },
@@ -208,11 +346,17 @@ workspace/
       "version": 1
     },
     "n_wait_login": {
-      "config": { "exits": ["maintenance", "login"] },
+      "config": {
+        "exits": ["maintenance", "login"]
+      },
       "in": {
         "targets": {
-          "login": { "$target": "targets/login/account_field.target.json" },
-          "maintenance": { "$target": "targets/title/maintenance_popup.target.json" }
+          "login": {
+            "$target": "targets/login/account_field.target.json"
+          },
+          "maintenance": {
+            "$target": "targets/title/maintenance_popup.target.json"
+          }
         },
         "timeout_ms": 15000
       },
@@ -226,20 +370,28 @@ workspace/
     },
     "n_wait_title": {
       "in": {
-        "target": { "$target": "targets/title/start_button.target.json" },
+        "target": {
+          "$target": "targets/title/start_button.target.json"
+        },
         "timeout_ms": 60000
       },
-      "next": { "found": "n_click_start" },
+      "next": {
+        "found": "n_click_start"
+      },
       "title": "타이틀 대기",
       "type": "core.image.wait",
       "version": 1
     },
     "n_wait_world": {
       "in": {
-        "target": { "$target": "targets/world/minimap.target.json" },
+        "target": {
+          "$target": "targets/world/minimap.target.json"
+        },
         "timeout_ms": 120000
       },
-      "next": { "found": "n_exit_success" },
+      "next": {
+        "found": "n_exit_success"
+      },
       "title": "월드 진입 대기",
       "type": "core.image.wait",
       "version": 1
@@ -276,8 +428,13 @@ workspace/
 | `{ "$secret": "키" }` | 비밀 저장소의 값 |
 | `{ "$literal": 값 }` | 이스케이프. 안의 값을 해석하지 않고 그대로 쓴다 (`$`로 시작하는 키를 가진 일반 객체를 넣을 때) |
 
+- 특수 값은 핀 값의 **안쪽 어디에나** 올 수 있다. 배열 원소나 일반 객체의 값도 된다 (예: `n_wait_lobby`의 `in.targets.error`가 `$target`). `$literal` 안은 해석하지 않는다
+- `$`로 시작하는 키와 다른 키가 섞인 객체(`{ "$link": "a.b", "x": 1 }`)는 일반 객체가 아니라 오류다. `$`로 시작하는 키를 가진 일반 객체는 `$literal`로 감싸서만 쓴다
+
 **비밀값**
 - `secret` 타입 값은 연결을 따라가도 비밀 속성을 유지한다. `n_entry.password → n_type_password.text`로 넘어가도 실행 기록·로그·노드 결과에는 가려서 남긴다
+- `secret` 값은 `secret`을 포함한 핀에만 연결할 수 있다. 그래서 `type_text.text`처럼 평문과 비밀을 다 받는 핀은 유니온 `string|secret`으로 선언한다. `string`만 받는 핀에 연결하면 실행 전 검증 오류다
+- 비밀 입력에서 만든 순수 노드 출력도 비밀이다. 예: `core.text.format`의 값 중 하나라도 비밀이면 결과 `text`도 비밀
 - 스크린샷·영상·OCR 결과에 화면으로 찍힌 비밀은 이 규칙으로 막을 수 없다. 기록 정책에서 따로 다룬다
 
 **현재 대상 창**
@@ -340,11 +497,26 @@ workspace/
   "kind": "test",
   "layout": {
     "nodes": {
-      "n_check_inventory": { "x": 560, "y": 0 },
-      "n_enter_world": { "x": 0, "y": 0 },
-      "n_entry": { "x": -280, "y": 0 },
-      "n_press_i": { "x": 280, "y": 0 },
-      "n_skip_maintenance": { "x": 280, "y": 160 }
+      "n_check_inventory": {
+        "x": 560,
+        "y": 0
+      },
+      "n_enter_world": {
+        "x": 0,
+        "y": 0
+      },
+      "n_entry": {
+        "x": -280,
+        "y": 0
+      },
+      "n_press_i": {
+        "x": 280,
+        "y": 0
+      },
+      "n_skip_maintenance": {
+        "x": 280,
+        "y": 160
+      }
     }
   },
   "meta": {
@@ -355,7 +527,9 @@ workspace/
   "nodes": {
     "n_check_inventory": {
       "in": {
-        "target": { "$target": "targets/inventory/window_title.target.json" },
+        "target": {
+          "$target": "targets/inventory/window_title.target.json"
+        },
         "timeout_ms": 5000
       },
       "title": "인벤토리 창 확인",
@@ -363,10 +537,14 @@ workspace/
       "version": 1
     },
     "n_enter_world": {
-      "config": { "graph": "subgraphs/enter_world.graph.json" },
+      "config": {
+        "graph": "subgraphs/enter_world.graph.json"
+      },
       "in": {
         "account": "qa_tester_01",
-        "password": { "$secret": "accounts.qa_tester_01" },
+        "password": {
+          "$secret": "accounts.qa_tester_01"
+        },
         "server": "Server 1"
       },
       "next": {
@@ -378,20 +556,28 @@ workspace/
       "version": 1
     },
     "n_entry": {
-      "next": { "start": "n_enter_world" },
+      "next": {
+        "start": "n_enter_world"
+      },
       "title": "시작",
       "type": "core.graph.entry",
       "version": 1
     },
     "n_press_i": {
-      "in": { "keys": "I" },
-      "next": { "done": "n_check_inventory" },
+      "in": {
+        "keys": "I"
+      },
+      "next": {
+        "done": "n_check_inventory"
+      },
       "title": "I 키",
       "type": "core.input.key",
       "version": 1
     },
     "n_skip_maintenance": {
-      "in": { "reason": "서버 점검 중" },
+      "in": {
+        "reason": "서버 점검 중"
+      },
       "title": "점검이면 건너뜀",
       "type": "core.test.skip",
       "version": 1
@@ -416,7 +602,10 @@ workspace/
 
 ```json
 {
-  "click": { "anchor": "center", "offset": [0, 0] },
+  "click": {
+    "anchor": "center",
+    "offset": [0, 0]
+  },
   "format": "kookabug.target/0",
   "image": "start_button.png",
   "match": {
@@ -424,8 +613,13 @@ workspace/
     "rgb": true,
     "threshold": 0.85
   },
-  "recorded": { "client_size": [1920, 1080], "dpi": 96 },
-  "search": { "region": [0.35, 0.6, 0.3, 0.25] }
+  "recorded": {
+    "client_size": [1920, 1080],
+    "dpi": 96
+  },
+  "search": {
+    "region": [0.35, 0.6, 0.3, 0.25]
+  }
 }
 ```
 
@@ -493,7 +687,10 @@ runs/2026-10-29T15-02-11_inventory_open_r8k2/
 {
   "config": {
     "exits": ["error", "lobby"],
-    "retry": { "max_attempts": 2, "on": ["timeout"] }
+    "retry": {
+      "max_attempts": 2,
+      "on": ["timeout"]
+    }
   }
 }
 ```
@@ -502,7 +699,10 @@ runs/2026-10-29T15-02-11_inventory_open_r8k2/
 
 ```json
 {
-  "retry": { "mode": "observation", "on": ["timeout"] },
+  "retry": {
+    "mode": "observation",
+    "on": ["timeout"]
+  },
   "type": "core.image.wait_any"
 }
 ```
@@ -543,7 +743,10 @@ runs/2026-10-29T15-02-11_inventory_open_r8k2/
 
 ```json
 {
-  "record": { "screenshots": "off", "video": "off" }
+  "record": {
+    "screenshots": "off",
+    "video": "off"
+  }
 }
 ```
 
@@ -667,3 +870,15 @@ Codex 제안을 기본으로 하고, 세 군데는 Claude가 다르게 정했다
 | 재검증 실패 | 입력 노드마다 `stale_observation` fail 출구 추가 | 출구 없이 처리되지 않은 fail | 모든 클릭 노드에 출구가 늘어나면 그래프가 지저분해진다 |
 | 테스트 전체 기한 | 멈춘 동안에도 흐름 | 멈춘 시간 제외 | 전체 기한은 무한 루프 방지용이다. 브레이크포인트에서 오래 보면 실행이 죽어 디버깅을 못 한다 |
 | 기록 기본값 | 스크린샷·영상 기본 끄기, OCR 전체를 비밀로 | 기본 켬 + 민감 구간 지정 | 노드별 스크린샷과 기록 뷰어가 이 툴의 핵심 가치다 |
+
+### M0a 구현 반영
+
+메타스키마(`packages/schema/*.schema.json`)를 만들며 정한 것.
+
+| 바뀐 것 | 이유 |
+|---|---|
+| 저장 형식(원칙): 키 정렬·2칸 들여쓰기·객체는 항상 펼침·스칼라 배열만 100자 안이면 한 줄·숫자는 JS 표기. 예시 JSON을 이 형식으로 맞춤 | 손으로 맞춘 줄바꿈은 같은 값이 사람마다 다른 바이트가 된다. 너비에 따라 객체를 접으면 값 하나를 고쳐도 형제 필드 줄이 전부 바뀌어 diff가 커진다 |
+| 원문 보존(원칙): 값이 그대로면 원문 바이트 유지, 비canonical 파일은 처음 편집해 저장할 때 전체 정규화 | canonical로 다시 쓰는 것만으로는 다른 도구가 만든 파일(4칸 들여쓰기, CRLF, `1.0` 등)의 "열고 그대로 저장하면 바이트가 같음"을 지킬 수 없다 |
+| 정수는 ±(2^53-1) 안 (원칙, `number_out_of_range`) | JavaScript 숫자는 그 밖의 정수를 정확히 담지 못해, 에디터에서 열고 저장하면 값이 바뀐다(`2^53+1` → `2^53`) |
+| 특수 값은 핀 값 안쪽 어디에나, `$` 키가 섞인 객체는 오류 (1장 "특수 값") | `in.targets.error` 같은 예시가 이미 안쪽에 쓴다. 섞인 객체를 일반 객체로 보면 오타(`$lnik`)가 조용히 상수가 된다 |
+| `secret`은 `secret`을 포함한 핀에만, 비밀에서 만든 순수 노드 출력도 비밀 (1장 "비밀값") | 비밀값이 평문 핀으로 흘러 기록에 남는 경로를 연결 검사에서 막는다 |

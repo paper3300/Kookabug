@@ -1,0 +1,387 @@
+{
+  "$defs": {
+    "ConfigDecl": {
+      "additionalProperties": false,
+      "description": "config 항목 하나. default가 없으면 필수",
+      "properties": {
+        "default": {
+          "tsType": "unknown"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enum": {
+          "minItems": 1,
+          "type": "array"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "min_items": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "type": {
+          "$ref": "#/$defs/PinType"
+        }
+      },
+      "required": ["type"],
+      "title": "ConfigDecl",
+      "type": "object"
+    },
+    "DynamicExits": {
+      "additionalProperties": false,
+      "description": "config 값(문자열 배열)으로 출구를 만든다. 배열 순서가 우선순위. extra는 고정 출구",
+      "properties": {
+        "extra": {
+          "items": {
+            "$ref": "#/$defs/Exit"
+          },
+          "type": "array"
+        },
+        "from_config": {
+          "$ref": "#/$defs/PinName"
+        },
+        "kind": {
+          "enum": ["fail", "ok"]
+        },
+        "outputs": {
+          "$ref": "#/$defs/ExitOutputs"
+        }
+      },
+      "required": ["from_config", "kind", "outputs"],
+      "title": "DynamicExits",
+      "type": "object"
+    },
+    "Exit": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["fail", "ok"]
+        },
+        "name": {
+          "$ref": "#/$defs/ExitName"
+        },
+        "outputs": {
+          "$ref": "#/$defs/ExitOutputs"
+        }
+      },
+      "required": ["kind", "name", "outputs"],
+      "title": "Exit",
+      "type": "object"
+    },
+    "ExitName": {
+      "pattern": "^[a-z_][a-z0-9_]*$",
+      "title": "ExitName",
+      "type": "string"
+    },
+    "ExitOutputs": {
+      "description": "이 출구로 나갈 때 주는 출력 이름",
+      "items": {
+        "$ref": "#/$defs/PinName"
+      },
+      "title": "ExitOutputs",
+      "type": "array",
+      "uniqueItems": true
+    },
+    "FromInterface": {
+      "additionalProperties": false,
+      "description": "핀을 그래프 interface에서 만든다 (graph.entry·exit·call)",
+      "properties": {
+        "from_interface": {
+          "enum": ["exits", "inputs", "outputs"]
+        }
+      },
+      "required": ["from_interface"],
+      "title": "FromInterface",
+      "type": "object"
+    },
+    "InputPin": {
+      "additionalProperties": false,
+      "description": "입력 핀. default가 없으면 필수",
+      "properties": {
+        "default": {
+          "tsType": "unknown"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enum": {
+          "minItems": 1,
+          "type": "array"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "min_items": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "type": {
+          "$ref": "#/$defs/PinType"
+        }
+      },
+      "required": ["type"],
+      "title": "InputPin",
+      "type": "object"
+    },
+    "NodeDecl": {
+      "additionalProperties": false,
+      "else": {
+        "required": ["exits"]
+      },
+      "if": {
+        "properties": {
+          "pure": {
+            "const": true
+          }
+        },
+        "required": ["pure"]
+      },
+      "properties": {
+        "assertion": {
+          "description": "검증 노드 (판정 5행)",
+          "type": "boolean"
+        },
+        "category": {
+          "type": "string"
+        },
+        "config": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ConfigDecl"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/PinName"
+          },
+          "type": "object"
+        },
+        "description": {
+          "type": "string"
+        },
+        "effects": {
+          "description": "게임에 영향을 주는 동작. input·process가 있으면 관측 재시도를 선언할 수 없다",
+          "items": {
+            "enum": ["capture", "input", "process"]
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "engine": {
+          "description": "실행기가 직접 처리하는 노드 (core 전용)",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "exits": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Exit"
+              },
+              "type": "array"
+            },
+            {
+              "$ref": "#/$defs/DynamicExits"
+            },
+            {
+              "$ref": "#/$defs/FromInterface"
+            }
+          ],
+          "description": "exec 노드의 출구. 종료 노드는 빈 배열"
+        },
+        "inputs": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/InputPin"
+              },
+              "propertyNames": {
+                "$ref": "#/$defs/PinName"
+              },
+              "type": "object"
+            },
+            {
+              "$ref": "#/$defs/FromInterface"
+            }
+          ]
+        },
+        "outputs": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/OutputPin"
+              },
+              "propertyNames": {
+                "$ref": "#/$defs/PinName"
+              },
+              "type": "object"
+            },
+            {
+              "$ref": "#/$defs/FromInterface"
+            }
+          ]
+        },
+        "pure": {
+          "description": "exec 핀이 없는 순수 노드",
+          "type": "boolean"
+        },
+        "retry": {
+          "$ref": "#/$defs/RetryDecl"
+        },
+        "title": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/NodeType"
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": ["title", "type", "version"],
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": ["exits"]
+            },
+            {
+              "required": ["effects"]
+            },
+            {
+              "required": ["retry"]
+            }
+          ]
+        }
+      },
+      "title": "NodeDecl",
+      "type": "object"
+    },
+    "NodeType": {
+      "description": "<플러그인>.<분류>.<동작>",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+      "title": "NodeType",
+      "type": "string"
+    },
+    "OutputPin": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "type": {
+          "$ref": "#/$defs/PinType"
+        }
+      },
+      "required": ["type"],
+      "title": "OutputPin",
+      "type": "object"
+    },
+    "PinName": {
+      "pattern": "^[a-z_][a-z0-9_]*$",
+      "title": "PinName",
+      "type": "string"
+    },
+    "PinType": {
+      "description": "핀 타입: bool|int|float|string|secret|target|match|rect|point|image|window|process|any, list[T], dict[str,T], <플러그인>.<Type>, 유니온 A|B",
+      "format": "kookabug-pin-type",
+      "pattern": "^(list\\[|dict\\[str,)*(bool|int|float|string|secret|target|match|rect|point|image|window|process|any|[a-z][a-z0-9_]*\\.[A-Z][A-Za-z0-9_]*)\\]*(\\|(list\\[|dict\\[str,)*(bool|int|float|string|secret|target|match|rect|point|image|window|process|any|[a-z][a-z0-9_]*\\.[A-Z][A-Za-z0-9_]*)\\]*)*$",
+      "title": "PinType",
+      "type": "string"
+    },
+    "PluginId": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "title": "PluginId",
+      "type": "string"
+    },
+    "PluginInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/PluginId"
+        },
+        "title": {
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["id", "version"],
+      "title": "PluginInfo",
+      "type": "object"
+    },
+    "RetryDecl": {
+      "additionalProperties": false,
+      "description": "노드 타입의 재시도 선언. 생략하면 never",
+      "else": {
+        "not": {
+          "required": ["on"]
+        }
+      },
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "observation"
+          }
+        },
+        "required": ["mode"]
+      },
+      "properties": {
+        "mode": {
+          "enum": ["never", "observation"]
+        },
+        "on": {
+          "description": "재시도할 수 있는 fail 출구",
+          "items": {
+            "$ref": "#/$defs/ExitName"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": ["mode"],
+      "then": {
+        "required": ["on"]
+      },
+      "title": "RetryDecl",
+      "type": "object"
+    }
+  },
+  "$id": "urn:kookabug:node-schema:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "플러그인의 노드 스키마 (kookabug-sdk build 산출물, src/<패키지>/kookabug.schema.json). 팔레트와 실행 전 검증이 읽는다",
+  "properties": {
+    "format": {
+      "const": "kookabug.nodes/0"
+    },
+    "nodes": {
+      "description": "type 순으로 정렬",
+      "items": {
+        "$ref": "#/$defs/NodeDecl"
+      },
+      "type": "array"
+    },
+    "plugin": {
+      "$ref": "#/$defs/PluginInfo"
+    }
+  },
+  "required": ["format", "nodes", "plugin"],
+  "title": "NodeSchemaFile",
+  "type": "object"
+}

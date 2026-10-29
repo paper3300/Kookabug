@@ -1,0 +1,32 @@
+{
+  "$defs": {
+    "SettingKey": {
+      "pattern": "^[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)*$",
+      "title": "SettingKey",
+      "type": "string"
+    },
+    "Settings": {
+      "description": "설정 키 → 값. 여기 있는 키는 프로필·기본값보다 먼저 쓴다 (null도 선택된 값)",
+      "propertyNames": {
+        "$ref": "#/$defs/SettingKey"
+      },
+      "title": "Settings",
+      "type": "object"
+    }
+  },
+  "$id": "urn:kookabug:local:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "개인 설정 (.kookabug/local.json, Git 제외)",
+  "properties": {
+    "format": {
+      "const": "kookabug.local/0"
+    },
+    "settings": {
+      "$ref": "#/$defs/Settings"
+    }
+  },
+  "required": ["format"],
+  "title": "Local",
+  "type": "object"
+}

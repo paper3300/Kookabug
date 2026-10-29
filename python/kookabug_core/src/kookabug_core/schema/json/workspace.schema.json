@@ -1,0 +1,91 @@
+{
+  "$defs": {
+    "Profile": {
+      "additionalProperties": false,
+      "properties": {
+        "settings": {
+          "$ref": "#/$defs/Settings"
+        }
+      },
+      "title": "Profile",
+      "type": "object"
+    },
+    "RecordPolicy": {
+      "additionalProperties": false,
+      "description": "기록 정책. 상위(워크스페이스 → 테스트 → 서브그래프 → 노드)에서 끈 것은 하위에서 켤 수 없다",
+      "properties": {
+        "screenshots": {
+          "enum": ["off", "on"]
+        },
+        "video": {
+          "enum": ["failed_only", "off", "on"]
+        }
+      },
+      "title": "RecordPolicy",
+      "type": "object"
+    },
+    "Retention": {
+      "additionalProperties": false,
+      "description": "실행 기록 보관",
+      "properties": {
+        "failed_days": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "keep_last": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "passed_days": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "title": "Retention",
+      "type": "object"
+    },
+    "SettingKey": {
+      "pattern": "^[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)*$",
+      "title": "SettingKey",
+      "type": "string"
+    },
+    "Settings": {
+      "description": "설정 키 → 값. null은 사람마다 .kookabug/local.json에 넣어야 하는 값",
+      "propertyNames": {
+        "$ref": "#/$defs/SettingKey"
+      },
+      "title": "Settings",
+      "type": "object"
+    }
+  },
+  "$id": "urn:kookabug:workspace:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "팀 공용 워크스페이스 설정 (kookabug.json)",
+  "properties": {
+    "format": {
+      "const": "kookabug.workspace/0"
+    },
+    "profiles": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Profile"
+      },
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_-]+$"
+      },
+      "type": "object"
+    },
+    "record": {
+      "$ref": "#/$defs/RecordPolicy"
+    },
+    "retention": {
+      "$ref": "#/$defs/Retention"
+    },
+    "settings": {
+      "$ref": "#/$defs/Settings"
+    }
+  },
+  "required": ["format"],
+  "title": "Workspace",
+  "type": "object"
+}

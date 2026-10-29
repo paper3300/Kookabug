@@ -5,10 +5,11 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "gen": "node -e \"console.log('생성 단계 없음 (T2에서 추가)')\"",
+    "gen": "node scripts/gen.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
+    "json-schema-to-typescript": "16.0.0",
     "typescript": "7.0.2"
   }
 }
