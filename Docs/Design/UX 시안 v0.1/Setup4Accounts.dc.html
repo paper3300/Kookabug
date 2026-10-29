@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>테스트 계정</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#1F1F1F}
+a{color:#4DAAFC}a:hover{color:#7CC0FF}
+button,input,select,textarea{font-family:inherit}
+</style>
+</helmet>
+<div style="width: 1120px; height: 720px; box-sizing: border-box; overflow: hidden; border-radius: 10px; background: #1F1F1F; color: #CCCCCC; font-family: 'Segoe UI', 'Noto Sans KR', system-ui, sans-serif; font-size: 14px; display: flex">
+
+  <div style="flex: 0 0 560px; box-sizing: border-box; padding: 52px 44px 28px 52px; display: flex; flex-direction: column">
+    <div style="font-size: 12px; color: #9D9D9D; letter-spacing: .04em">4 / 7 · 테스트 계정 · 선택</div>
+    <h1 style="margin: 10px 0 0; font-size: 30px; line-height: 1.3; font-weight: 700; color: #F3F3F3">테스트 계정을 등록해요</h1>
+    <p style="margin: 12px 0 0; font-size: 15px; line-height: 1.65; color: #A9A9A9">로그인이 필요한 테스트에 쓸 계정이에요. 비밀번호는 Windows 자격 증명 관리자에 저장되고 파일에는 남지 않아요.</p>
+
+    <div style="margin-top: 22px; border: 1px solid #3C3C3C; border-radius: 8px; overflow: hidden; background: #232323">
+      <div style="display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px; padding: 9px 14px; border-bottom: 1px solid #333333; font-size: 12px; color: #9D9D9D">
+        <span>키</span><span>아이디</span><span>비밀번호</span>
+      </div>
+      <sc-for list="{{accounts}}" as="a" hint-placeholder-count="2">
+        <div style="display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid #2E2E2E">
+          <span style="font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px; color: #E7E7E7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{a.key}}</span>
+          <span style="color: #CCCCCC">{{a.id}}</span>
+          <span style="color: #A9A9A9; letter-spacing: .12em">●●●●●●●●</span>
+        </div>
+      </sc-for>
+      <button type="button" style="width: 100%; height: 40px; background: none; border: 0; color: #4DAAFC; font-size: 13px; text-align: left; padding: 0 14px">+ 계정 추가</button>
+    </div>
+
+    <div style="margin-top: 14px; padding: 12px 14px; background: #1A2633; border: 1px solid #23415E; border-radius: 6px; font-size: 13px; line-height: 1.6; color: #BBD3EA; display: flex; flex-direction: column; gap: 6px">
+      <span>그래프에는 키 이름만 들어가요.</span>
+      <code style="font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px; color: #E7E7E7">{ "$secret": "accounts.qa_tester_01" }</code>
+      <span style="color: #9DB7D1">무인 실행(CI)에서는 환경 변수 <code style="font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px">KOOKABUG_SECRET_ACCOUNTS_QA_TESTER_01</code>로 넣어요.</span>
+    </div>
+
+    <div style="flex: 1 1 auto"></div>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+      <a href="Setup3Check.dc.html" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 16px; background: #2A2A2A; color: #CCCCCC; border-radius: 6px; font-size: 15px; text-decoration: none"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 3L5 8l5 5"></path></svg>이전</a>
+      <div aria-hidden="true" style="display: flex; align-items: center; gap: 6px">
+        <sc-for list="{{dots}}" as="d" hint-placeholder-count="7"><span style="width: {{d.w}}; height: 6px; border-radius: 3px; background: {{d.c}}"></span></sc-for>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px">
+        <a href="Setup5Agent.dc.html" style="display: inline-flex; align-items: center; height: 44px; padding: 0 10px; color: #A9A9A9; font-size: 14px; text-decoration: none">건너뛰기</a>
+        <a href="Setup5Agent.dc.html" style="display: inline-flex; align-items: center; gap: 10px; height: 44px; padding: 0 18px; background: #0078D4; color: #FFFFFF; border-radius: 6px; font-size: 15px; font-weight: 600; text-decoration: none">다음 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M13 3v5a2 2 0 0 1-2 2H4"></path><path d="M6.5 7.5L4 10l2.5 2.5"></path></svg></a>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex: 1 1 auto; margin: 16px 16px 16px 0; border-radius: 8px; background-color: #181818; background-image: radial-gradient(#2A2A2A 1px, transparent 1px); background-size: 16px 16px; display: flex; flex-direction: column; align-items: center; justify-content: center">
+    <div style="width: 380px; background: #232323; border: 1px solid #3C3C3C; border-radius: 8px; overflow: hidden">
+      <div style="display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid #333333; font-size: 12px; color: #BBBBBB">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#9D9D9D" stroke-width="1.4" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1"></rect><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"></path></svg>
+        Windows 자격 증명 관리자
+      </div>
+      <div style="padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px">
+        <span style="display: flex; justify-content: space-between; gap: 8px"><span style="color: #E7E7E7">kookabug:sample-rpg:accounts.qa_tester_01</span><span style="color: #9D9D9D">●●●●</span></span>
+        <span style="display: flex; justify-content: space-between; gap: 8px"><span style="color: #E7E7E7">kookabug:sample-rpg:accounts.qa_tester_02</span><span style="color: #9D9D9D">●●●●</span></span>
+      </div>
+    </div>
+    <div aria-hidden="true" style="width: 2px; height: 48px; background: repeating-linear-gradient(#555555 0 4px, transparent 4px 8px)"></div>
+    <div style="width: 240px; background: #252526; border: 1px solid #3C3C3C; border-radius: 4px">
+      <div style="height: 32px; box-sizing: border-box; display: flex; align-items: center; padding: 0 10px; background: #3B2A55; border-radius: 3px 3px 0 0; color: #E7E7E7; font-weight: 600">월드 접속</div>
+      <div style="padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #BBBBBB">
+        <span style="display: flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; margin-left: -15px; border-radius: 50%; background: #E2C08D"></span>account · qa_tester_01</span>
+        <span style="display: flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; margin-left: -15px; border-radius: 50%; background: #F48771"></span>password · 비밀값 <span style="margin-left: auto; color: #9D9D9D">가려서 기록</span></span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1120,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const cur = 4;
+    const dots = [1, 2, 3, 4, 5, 6, 7].map((i) => ({ w: i === cur ? '20px' : '6px', c: i <= cur ? '#E7E7E7' : '#4A4A4A' }));
+    return {
+      dots,
+      accounts: [
+        { key: 'accounts.qa_tester_01', id: 'qa_tester_01' },
+        { key: 'accounts.qa_tester_02', id: 'qa_tester_02' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

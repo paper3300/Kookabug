@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>시작 화면</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&amp;family=Fraunces:opsz,wght@9..144,700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#1F1F1F}
+a{color:#4DAAFC}a:hover{color:#7CC0FF}
+button,input,select,textarea{font-family:inherit}
+</style>
+</helmet>
+<div style="position: relative; width: 1120px; height: 720px; box-sizing: border-box; overflow: hidden; border-radius: 10px; background: #1F1F1F; color: #CCCCCC; font-family: 'Segoe UI', 'Noto Sans KR', system-ui, sans-serif; font-size: 14px; display: flex; flex-direction: column; align-items: center">
+
+  <div role="group" aria-label="테마" style="position: absolute; right: 20px; top: 18px; display: inline-flex; align-items: center; gap: 2px; padding: 3px; background: #2A2A2A; border-radius: 6px; font-size: 12px">
+    <button type="button" aria-pressed="false" style="height: 26px; padding: 0 10px; background: none; color: #A9A9A9; border: 0; border-radius: 4px; font-size: 12px">시스템</button>
+    <button type="button" aria-pressed="false" style="height: 26px; padding: 0 10px; background: none; color: #A9A9A9; border: 0; border-radius: 4px; font-size: 12px">라이트</button>
+    <button type="button" aria-pressed="true" style="height: 26px; padding: 0 10px; background: #3C3C3C; color: #F3F3F3; border: 0; border-radius: 4px; font-size: 12px">다크</button>
+  </div>
+
+  <div style="margin-top: 64px; display: flex; flex-direction: column; align-items: center; gap: 18px; text-align: center">
+    <div style="display: flex; align-items: flex-end; gap: 14px"><svg width="73" height="64" viewBox="20 40 216 190" role="img" aria-label="Kookabug"><path d="M160 88 L216 98 C225 100 226 107 218 109 L166 120 C168 134 168 148 162 162 C154 182 136 194 114 194 C100 194 88 190 78 182 L52 212 L34 208 L58 164 C64 150 66 134 64 118 C62 92 82 60 118 58 C138 57 154 68 160 88 Z" fill="#F3F3F3"></path><rect x="99" y="186" width="8" height="20" rx="3" fill="#F3F3F3"></rect><rect x="118" y="186" width="8" height="20" rx="3" fill="#F3F3F3"></rect><rect x="54" y="202" width="164" height="11" rx="5.5" fill="#F3F3F3"></rect><path d="M150 92 C126 90 100 96 72 110 C100 106 126 104 151 104 Z" fill="#1F1F1F"></path><circle cx="140" cy="97" r="5" fill="#F3F3F3"></circle></svg><span style="font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: 40px; line-height: 1; letter-spacing: -.02em; color: #F3F3F3; margin-bottom: 6px">Kookabug</span></div>
+    <h1 style="margin: 0; font-size: 32px; line-height: 1.25; font-weight: 700; color: #F3F3F3">Kookabug에 오신 걸 환영해요</h1>
+    <p style="margin: 0; font-size: 18px; line-height: 1.8; color: #A9A9A9">게임 화면을 보고, 누르고, 확인하는 QA 자동화를<br><span style="display: inline-flex; align-items: center; gap: 5px; padding: 1px 9px; border-radius: 6px; background: #12324D; color: #7CC0FF">노드 그래프</span> <span style="display: inline-flex; align-items: center; gap: 5px; padding: 1px 9px; border-radius: 6px; background: #4A1F1C; color: #F8A79B">녹화</span> <span style="display: inline-flex; align-items: center; gap: 5px; padding: 1px 9px; border-radius: 6px; background: #33264A; color: #D2C2F0">에이전트</span>로 만들어요.</p>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; margin-top: 6px">
+      <a href="Setup1Project.dc.html" style="display: inline-flex; align-items: center; gap: 10px; height: 46px; padding: 0 22px; background: #0078D4; color: #FFFFFF; border-radius: 6px; font-size: 16px; font-weight: 600; text-decoration: none">시작하기 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M13 3v5a2 2 0 0 1-2 2H4"></path><path d="M6.5 7.5L4 10l2.5 2.5"></path></svg></a>
+      <a href="Main.dc.html" style="font-size: 13px">이미 있는 프로젝트 열기</a>
+    </div>
+  </div>
+
+  <!-- 툴 미리보기 -->
+  <div aria-hidden="true" style="position: absolute; left: 150px; right: 150px; top: 452px; height: 320px; display: flex; background: #181818; border: 1px solid #2E2E2E; border-radius: 10px 10px 0 0; overflow: hidden; opacity: .7">
+    <div style="flex: 0 0 40px; border-right: 1px solid #2B2B2B; display: flex; flex-direction: column; align-items: center; gap: 14px; padding-top: 14px">
+      <span style="width: 16px; height: 16px; border-radius: 3px; background: #3A3A3A"></span>
+      <span style="width: 16px; height: 16px; border-radius: 3px; background: #2C2C2C"></span>
+      <span style="width: 16px; height: 16px; border-radius: 3px; background: #2C2C2C"></span>
+    </div>
+    <div style="flex: 0 0 170px; border-right: 1px solid #2B2B2B; padding: 16px 14px; display: flex; flex-direction: column; gap: 10px">
+      <span style="width: 70px; height: 7px; border-radius: 4px; background: #333333"></span>
+      <span style="width: 120px; height: 7px; border-radius: 4px; background: #2A2A2A"></span>
+      <span style="width: 100px; height: 7px; border-radius: 4px; background: #2A2A2A"></span>
+      <span style="width: 110px; height: 7px; border-radius: 4px; background: #2A2A2A"></span>
+    </div>
+    <div style="position: relative; flex: 1 1 auto; background-color: #1F1F1F; background-image: radial-gradient(#2C2C2C 1px, transparent 1px); background-size: 14px 14px">
+      <div style="position: absolute; left: 40px; top: 50px; width: 120px; height: 64px; border-radius: 4px; background: #252526; border: 1px solid #3C3C3C"><div style="height: 18px; border-radius: 3px 3px 0 0; background: #1B3A57"></div></div>
+      <div style="position: absolute; left: 210px; top: 90px; width: 120px; height: 64px; border-radius: 4px; background: #252526; border: 1px solid #3C3C3C"><div style="height: 18px; border-radius: 3px 3px 0 0; background: #1E3D2F"></div></div>
+      <div style="position: absolute; left: 380px; top: 50px; width: 120px; height: 64px; border-radius: 4px; background: #252526; border: 1px solid #3C3C3C"><div style="height: 18px; border-radius: 3px 3px 0 0; background: #3B2A55"></div></div>
+      <div style="position: absolute; left: 160px; top: 82px; width: 50px; height: 2px; background: #555555"></div>
+      <div style="position: absolute; left: 330px; top: 82px; width: 50px; height: 2px; background: #555555"></div>
+    </div>
+    <div style="flex: 0 0 180px; border-left: 1px solid #2B2B2B; padding: 16px 14px; display: flex; flex-direction: column; gap: 10px; align-items: flex-end">
+      <span style="width: 110px; height: 22px; border-radius: 11px; background: #2A2A2A"></span>
+      <span style="align-self: flex-start; width: 140px; height: 7px; border-radius: 4px; background: #2A2A2A"></span>
+      <span style="align-self: flex-start; width: 120px; height: 7px; border-radius: 4px; background: #2A2A2A"></span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1120,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

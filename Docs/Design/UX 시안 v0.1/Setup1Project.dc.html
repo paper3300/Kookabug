@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>프로젝트 만들기</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#1F1F1F}
+a{color:#4DAAFC}a:hover{color:#7CC0FF}
+button,input,select,textarea{font-family:inherit}
+</style>
+</helmet>
+<div style="width: 1120px; height: 720px; box-sizing: border-box; overflow: hidden; border-radius: 10px; background: #1F1F1F; color: #CCCCCC; font-family: 'Segoe UI', 'Noto Sans KR', system-ui, sans-serif; font-size: 14px; display: flex">
+
+  <div style="flex: 0 0 560px; box-sizing: border-box; padding: 52px 44px 28px 52px; display: flex; flex-direction: column">
+    <div style="font-size: 12px; color: #9D9D9D; letter-spacing: .04em">1 / 7 · 프로젝트</div>
+    <h1 style="margin: 10px 0 0; font-size: 30px; line-height: 1.3; font-weight: 700; color: #F3F3F3">프로젝트를 만들어요</h1>
+    <p style="margin: 12px 0 0; font-size: 15px; line-height: 1.65; color: #A9A9A9">게임 하나에 프로젝트 하나예요. 테스트, 찾기 대상, 실행 기록이 이 폴더에 모여요.</p>
+
+    <div role="radiogroup" aria-label="시작 방식" style="margin-top: 26px; border: 1px solid #3C3C3C; border-radius: 8px; overflow: hidden; background: #232323">
+      <label style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #333333">
+        <span style="flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px"><span style="color: #E7E7E7; font-weight: 600">빈 프로젝트</span><span style="font-size: 13px; color: #A9A9A9">내 게임으로 바로 시작해요</span></span>
+        <input type="radio" name="start" checked style="width: 18px; height: 18px; accent-color: #0078D4">
+      </label>
+      <label style="display: flex; align-items: center; gap: 12px; padding: 12px 14px">
+        <span style="flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px"><span style="color: #E7E7E7; font-weight: 600">예제 게임으로 연습</span><span style="font-size: 13px; color: #A9A9A9">연습용 SampleRPG와 예제 테스트가 같이 설치돼요</span></span>
+        <input type="radio" name="start" style="width: 18px; height: 18px; accent-color: #0078D4">
+      </label>
+    </div>
+
+    <div style="margin-top: 18px; display: flex; flex-direction: column; gap: 14px">
+      <label style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #BBBBBB">프로젝트 이름
+        <input type="text" value="sample-rpg" style="height: 36px; box-sizing: border-box; padding: 0 10px; background: #2A2A2A; border: 1px solid #3C3C3C; border-radius: 4px; color: #E7E7E7; font-size: 14px">
+      </label>
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <label for="loc" style="font-size: 13px; color: #BBBBBB">위치</label>
+        <div style="display: flex; gap: 8px">
+          <input id="loc" type="text" value="D:\QA\sample-rpg" style="flex: 1 1 auto; min-width: 0; height: 36px; box-sizing: border-box; padding: 0 10px; background: #2A2A2A; border: 1px solid #3C3C3C; border-radius: 4px; color: #E7E7E7; font-size: 14px; font-family: 'JetBrains Mono', Consolas, monospace">
+          <button type="button" style="height: 36px; padding: 0 14px; background: #313131; color: #CCCCCC; border: 1px solid #3C3C3C; border-radius: 4px; font-size: 13px">찾아보기</button>
+        </div>
+      </div>
+      <label style="display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.55; color: #CCCCCC">
+        <input type="checkbox" checked style="margin-top: 2px; width: 16px; height: 16px; accent-color: #0078D4">
+        <span>Git 저장소로 만들기<br><span style="color: #9D9D9D">실행 기록과 개인 설정은 자동으로 Git에서 빠져요</span></span>
+      </label>
+    </div>
+
+    <div style="flex: 1 1 auto"></div>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+      <a href="Setup0Welcome.dc.html" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 16px; background: #2A2A2A; color: #CCCCCC; border-radius: 6px; font-size: 15px; text-decoration: none"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 3L5 8l5 5"></path></svg>이전</a>
+      <div aria-hidden="true" style="display: flex; align-items: center; gap: 6px">
+        <sc-for list="{{dots}}" as="d" hint-placeholder-count="7"><span style="width: {{d.w}}; height: 6px; border-radius: 3px; background: {{d.c}}"></span></sc-for>
+      </div>
+      <a href="Setup2Game.dc.html" style="display: inline-flex; align-items: center; gap: 10px; height: 44px; padding: 0 18px; background: #0078D4; color: #FFFFFF; border-radius: 6px; font-size: 15px; font-weight: 600; text-decoration: none">만들기 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M13 3v5a2 2 0 0 1-2 2H4"></path><path d="M6.5 7.5L4 10l2.5 2.5"></path></svg></a>
+    </div>
+  </div>
+
+  <div style="flex: 1 1 auto; margin: 16px 16px 16px 0; border-radius: 8px; background-color: #181818; background-image: radial-gradient(#2A2A2A 1px, transparent 1px); background-size: 16px 16px; display: flex; align-items: center; justify-content: center">
+    <div style="width: 400px; background: #232323; border: 1px solid #3C3C3C; border-radius: 8px; overflow: hidden">
+      <div style="padding: 10px 14px; border-bottom: 1px solid #333333; font-size: 12px; color: #9D9D9D; letter-spacing: .04em">만들어질 폴더</div>
+      <div style="padding: 10px 0; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 13px; line-height: 26px">
+        <sc-for list="{{tree}}" as="t" hint-placeholder-count="10">
+          <div style="display: flex; align-items: center; gap: 8px; padding: 0 14px">
+            <span style="color: #6A6A6A; white-space: pre">{{t.pre}}</span>
+            <span style="color: {{t.c}}">{{t.name}}</span>
+            <span style="margin-left: auto; font-family: 'Segoe UI', 'Noto Sans KR', sans-serif; font-size: 11px; color: #9D9D9D">{{t.note}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1120,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const cur = 1;
+    const dots = [1, 2, 3, 4, 5, 6, 7].map((i) => ({ w: i === cur ? '20px' : '6px', c: i <= cur ? '#E7E7E7' : '#4A4A4A' }));
+    const f = (pre, name, c, note) => ({ pre, name, c, note: note || '' });
+    return {
+      dots,
+      tree: [
+        f('', 'sample-rpg\\', '#E7E7E7'),
+        f('├─', 'tests\\', '#B392F0', '테스트'),
+        f('├─', 'subgraphs\\', '#B392F0', '재사용 구간'),
+        f('├─', 'targets\\', '#39C5CF', '찾기 대상·이미지'),
+        f('├─', 'screens\\', '#4DAAFC', '화면 지도'),
+        f('├─', 'runs\\', '#9D9D9D', '실행 기록 · Git 제외'),
+        f('├─', '.kookabug\\', '#9D9D9D', '개인 설정 · Git 제외'),
+        f('├─', 'kookabug.json', '#CBCB41', '팀 공용 설정'),
+        f('├─', 'kookabug.lock', '#CBCB41', '플러그인 버전'),
+        f('└─', 'AGENTS.md', '#4DAAFC', '에이전트 안내')
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

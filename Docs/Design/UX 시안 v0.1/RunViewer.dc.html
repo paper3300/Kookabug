@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>실행 기록 뷰어</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#1F1F1F}
+a{color:#4DAAFC}a:hover{color:#7CC0FF}
+button,input,select,textarea{font-family:inherit}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #1F1F1F; color: #CCCCCC; font-family: 'Segoe UI', 'Noto Sans KR', system-ui, sans-serif; font-size: 13px; display: flex; flex-direction: column">
+
+  <!-- 타이틀 바 -->
+  <div style="display: flex; flex-wrap: wrap; align-items: center; min-height: 35px; background: #181818; border-bottom: 1px solid #2B2B2B">
+    <div style="display: flex; align-items: center; padding: 0 10px" aria-hidden="true">
+      <svg width="18" height="16" viewBox="20 40 216 190" aria-hidden="true"><path d="M160 88 L216 98 C225 100 226 107 218 109 L166 120 C168 134 168 148 162 162 C154 182 136 194 114 194 C100 194 88 190 78 182 L52 212 L34 208 L58 164 C64 150 66 134 64 118 C62 92 82 60 118 58 C138 57 154 68 160 88 Z" fill="#E7E7E7"></path><rect x="99" y="186" width="8" height="20" rx="3" fill="#E7E7E7"></rect><rect x="118" y="186" width="8" height="20" rx="3" fill="#E7E7E7"></rect><rect x="54" y="202" width="164" height="11" rx="5.5" fill="#E7E7E7"></rect><path d="M150 92 C126 90 100 96 72 110 C100 106 126 104 151 104 Z" fill="#181818"></path><circle cx="140" cy="97" r="5" fill="#E7E7E7"></circle></svg>
+    </div>
+    <nav aria-label="메뉴" style="display: flex; flex-wrap: wrap">
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">파일</button>
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">편집</button>
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">보기</button>
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">실행</button>
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">플러그인</button>
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">도움말</button>
+    </nav>
+    <div style="flex: 1 1 24px"></div>
+    <label style="flex: 0 1 460px; display: flex; align-items: center; justify-content: center; gap: 6px; height: 24px; padding: 0 8px; background: #222222; border: 1px solid #2B2B2B; border-radius: 6px; color: #9D9D9D; margin: 5px 0">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>
+      <input type="search" aria-label="명령 검색" placeholder="sample-rpg — 노드·파일·명령 검색 (Ctrl+P)" style="flex: 1; min-width: 0; background: none; border: 0; color: #CCCCCC; font-size: 12px; text-align: center; outline: none">
+    </label>
+    <div style="flex: 1 1 24px"></div>
+    <div style="display: flex">
+      <button type="button" aria-label="최소화" style="width: 46px; height: 35px; background: none; border: 0; color: #CCCCCC"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" stroke="currentColor"></path></svg></button>
+      <button type="button" aria-label="최대화" style="width: 46px; height: 35px; background: none; border: 0; color: #CCCCCC"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x=".5" y=".5" width="9" height="9" fill="none" stroke="currentColor"></rect></svg></button>
+      <button type="button" aria-label="닫기" style="width: 46px; height: 35px; background: none; border: 0; color: #CCCCCC"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor"></path></svg></button>
+    </div>
+  </div>
+
+  <div style="flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: stretch; min-height: 843px">
+
+    <!-- 액티비티 바 + 실행 목록 -->
+    <div style="flex: 1 1 288px; max-width: 100%; display: flex; background: #181818; border-right: 1px solid #2B2B2B">
+      <nav aria-label="작업 영역" style="width: 48px; flex: 0 0 48px; display: flex; flex-direction: column; border-right: 1px solid #2B2B2B">
+        <button type="button" aria-label="탐색기" style="width: 48px; height: 48px; background: none; border: 0; color: #868686; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path></svg></button>
+        <button type="button" aria-label="화면 지도" style="width: 48px; height: 48px; background: none; border: 0; color: #868686; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"></path><path d="M9 3v15M15 6v15"></path></svg></button>
+        <button type="button" aria-label="실행 기록" style="width: 48px; height: 48px; background: none; border: 0; border-left: 2px solid #0078D4; color: #E7E7E7; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></button>
+        <button type="button" aria-label="녹화" style="width: 48px; height: 48px; background: none; border: 0; color: #868686; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="4"></circle></svg></button>
+        <button type="button" aria-label="플러그인" style="width: 48px; height: 48px; background: none; border: 0; color: #868686; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><path d="M14 6.5h7M17.5 3v7"></path></svg></button>
+        <div style="flex: 1 1 auto"></div>
+        <button type="button" aria-label="환경설정" style="width: 48px; height: 48px; background: none; border: 0; color: #868686; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"></path></svg></button>
+      </nav>
+      <div style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column">
+        <div style="height: 35px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px 0 20px; font-size: 11px; letter-spacing: .04em">
+          <span>실행 기록</span>
+          <button type="button" aria-label="필터" style="width: 28px; height: 28px; background: none; border: 0; color: #CCCCCC; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M2 3h12L9.5 8.5V13l-3-1.5v-3z"></path></svg></button>
+        </div>
+        <div style="padding: 0 12px 8px">
+          <label style="display: flex; align-items: center; height: 26px; padding: 0 6px; background: #313131; border: 1px solid #3C3C3C; border-radius: 2px">
+            <input type="search" placeholder="플로·태그·빌드 (예: failed build=1042)" aria-label="실행 검색" style="flex: 1; min-width: 0; background: none; border: 0; color: #CCCCCC; font-size: 12px; outline: none">
+          </label>
+        </div>
+        <sc-for list="{{groups}}" as="grp" hint-placeholder-count="2">
+          <div style="height: 22px; display: flex; align-items: center; gap: 4px; padding: 0 8px; font-size: 11px; font-weight: 700">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.3"></path></svg>{{grp.name}}
+          </div>
+          <sc-for list="{{grp.runs}}" as="r" hint-placeholder-count="4">
+            <div style="display: flex; gap: 8px; padding: 5px 12px 5px 24px; background: {{r.bg}}">
+              <span style="margin-top: 5px; flex: 0 0 8px; height: 8px; border-radius: 50%; background: {{r.color}}"></span>
+              <span style="min-width: 0; display: flex; flex-direction: column">
+                <span style="display: flex; align-items: center; gap: 6px; min-width: 0"><span style="color: {{r.fg}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">#{{r.id}} {{r.flow}}</span><sc-if value="{{r.badge}}" hint-placeholder-val="{{ false }}"><span style="flex: 0 0 auto; padding: 0 5px; border-radius: 2px; font-size: 10px; line-height: 16px; background: {{r.badgeBg}}; color: {{r.badgeFg}}">{{r.badge}}</span></sc-if></span>
+                <span style="font-size: 11px; color: #9D9D9D; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{r.meta}}</span>
+              </span>
+            </div>
+          </sc-for>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- 에디터 -->
+    <div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+      <div style="display: flex; flex-wrap: wrap; align-items: stretch; background: #181818; border-bottom: 1px solid #2B2B2B; min-height: 35px">
+        <div style="display: flex; align-items: center; gap: 6px; padding: 0 10px 0 12px; border-right: 1px solid #2B2B2B; color: #9D9D9D"><span style="font-size: 9px; font-weight: 700; color: #B392F0">TEST</span>장비 강화 반복</div>
+        <div style="display: flex; align-items: center; gap: 6px; padding: 0 6px 0 12px; background: #1F1F1F; border-top: 1px solid #0078D4; border-right: 1px solid #2B2B2B; color: #FFFFFF"><span style="font-size: 9px; font-weight: 700; color: #F0883E">RUN</span>#128 장비 강화 반복<button type="button" aria-label="탭 닫기" style="width: 20px; height: 20px; background: none; border: 0; color: #CCCCCC; padding: 0">×</button></div>
+      </div>
+
+      <div style="padding: 14px 20px 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; border-bottom: 1px solid #2B2B2B">
+        <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0">
+          <div style="display: flex; align-items: center; gap: 10px">
+            <h1 style="margin: 0; font-size: 18px; font-weight: 600; color: #E7E7E7">#128 장비 강화 반복</h1>
+            <span style="padding: 1px 8px; border-radius: 2px; background: #5A1D1D; color: #F48771; font-size: 12px">실패 · 시간 초과</span>
+          </div>
+          <div style="color: #9D9D9D; font-size: 12px">10-28 23:04 · 2시간 41분 · 2,981 / 10,000회 · 스냅샷 runs/128/snapshot · 러너 QA-PC-02 · 1280×720</div>
+        </div>
+        <div style="flex: 1 1 20px"></div>
+        <button type="button" style="background: #313131; color: #CCCCCC; border: 1px solid #3C3C3C; border-radius: 2px; padding: 0 12px; height: 26px; font-size: 12px">에디터에서 재현</button>
+        <button type="button" style="background: #313131; color: #CCCCCC; border: 1px solid #3C3C3C; border-radius: 2px; padding: 0 12px; height: 26px; font-size: 12px">분석 번들 내보내기</button>
+        <button type="button" style="background: #0078D4; color: #FFFFFF; border: 0; border-radius: 2px; padding: 0 12px; height: 26px; font-size: 12px">에이전트에게 분석 요청</button>
+      </div>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 0 4px; padding: 0 16px; border-bottom: 1px solid #2B2B2B; font-size: 11px; letter-spacing: .04em">
+        <div style="padding: 9px 8px 7px; color: #E7E7E7; border-bottom: 1px solid #0078D4">스텝 타임라인</div>
+        <div style="padding: 9px 8px 8px; color: #9D9D9D">노드별 통계</div>
+        <div style="padding: 9px 8px 8px; color: #9D9D9D">#121 과 비교</div>
+        <div style="padding: 9px 8px 8px; color: #9D9D9D">수집 데이터</div>
+        <div style="padding: 9px 8px 8px; color: #9D9D9D">run.json</div>
+      </div>
+
+      <div style="padding: 14px 20px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid #2B2B2B">
+        <div style="display: flex; justify-content: space-between; font-size: 11px; color: #9D9D9D"><span>2,981회차 · 스텝 4개</span><span>01:12:00 — 01:12:15</span></div>
+        <div style="display: flex; gap: 2px; height: 24px">
+          <div style="flex: 2 1 0; background: #1E3D2F; display: flex; align-items: center; padding: 0 8px; font-size: 11px; color: #A8E0A5; overflow: hidden; white-space: nowrap">이미지 클릭</div>
+          <div style="flex: 1 1 0; background: #1E3D2F; display: flex; align-items: center; padding: 0 8px; font-size: 11px; color: #A8E0A5; overflow: hidden; white-space: nowrap">포커스</div>
+          <div style="flex: 10 1 0; background: #4B2A14; outline: 1px solid #F0883E; display: flex; align-items: center; padding: 0 8px; font-size: 11px; color: #F8C08E; overflow: hidden; white-space: nowrap">나타날 때까지 대기 · 10.0s 초과</div>
+          <div style="flex: 2 1 0; background: #2A2A2A; display: flex; align-items: center; padding: 0 8px; font-size: 11px; color: #9D9D9D; overflow: hidden; white-space: nowrap">Agent 건너뜀</div>
+        </div>
+        <div style="display: flex; gap: 2px; height: 18px; align-items: flex-end" aria-label="회차별 소요 시간">
+          <sc-for list="{{bars}}" as="b" hint-placeholder-count="48">
+            <div style="flex: 1 1 0; height: {{b.h}}; background: {{b.c}}"></div>
+          </sc-for>
+        </div>
+        <div style="font-size: 11px; color: #9D9D9D">회차별 소요 시간 · 2,960회차부터 대기 시간이 늘어남</div>
+      </div>
+
+      <div style="padding: 14px 20px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+        <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0">
+          <div style="display: flex; justify-content: space-between; font-size: 12px"><span style="color: #E7E7E7">월드 접속 (로그인)</span><span style="color: #9D9D9D; font-family: 'JetBrains Mono', monospace; font-size: 11px">00:00:02</span></div>
+          <div style="aspect-ratio: 16 / 9; box-sizing: border-box; background: repeating-linear-gradient(135deg, #1A1A1A 0 8px, #202020 8px 16px); border: 1px dashed #4A4A4A; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 8px; text-align: center">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#9D9D9D" stroke-width="1.4" aria-hidden="true"><path d="M2 2l12 12"></path><path d="M6.5 3.5A6.5 6.5 0 0 1 14.5 8a7 7 0 0 1-1.6 2.2M3.4 5.6A7 7 0 0 0 1.5 8 6.5 6.5 0 0 0 10 12.4"></path></svg>
+            <span style="font-size: 11px; color: #BBBBBB">정책으로 생략</span>
+            <span style="font-size: 10px; color: #9D9D9D">서브그래프 기록 끔 · 영상도 없음</span>
+          </div>
+        </div>
+        <sc-for list="{{shots}}" as="s" hint-placeholder-count="3">
+          <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0">
+            <div style="display: flex; justify-content: space-between; font-size: 12px"><span style="color: #E7E7E7">{{s.label}}</span><span style="color: #9D9D9D; font-family: 'JetBrains Mono', monospace; font-size: 11px">{{s.time}}</span></div>
+            <div style="position: relative; aspect-ratio: 16 / 9; background: #141414; border: 1px solid #3C3C3C; overflow: hidden">
+              <div style="position: absolute; left: 6%; top: 10%; width: 22%; height: 70%; background: #222222"></div>
+              <div style="position: absolute; left: 34%; top: 14%; width: 40%; height: 46%; background: #222222"></div>
+              <div style="position: absolute; left: 28%; top: 24%; width: 44%; height: 52%; background: #2D2D2D; border: 1px solid #555555; display: flex; align-items: center; justify-content: center; font-size: 11px; color: #CCCCCC">점검 공지 팝업</div>
+              <sc-if value="{{s.cand}}" hint-placeholder-val="{{ false }}">
+                <div style="position: absolute; left: 30%; top: 62%; width: 18%; height: 10%; border: 1px dashed #CCA700"></div>
+                <div style="position: absolute; left: 49%; top: 62%; font-size: 10px; color: #CCA700; font-family: 'JetBrains Mono', monospace">0.41</div>
+              </sc-if>
+              <div style="position: absolute; left: 6px; bottom: 4px; font-size: 10px; color: #858585">스크린샷 자리</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="padding: 0 20px 20px; display: flex; flex-wrap: wrap; gap: 12px">
+        <div style="flex: 1 1 300px; border: 1px solid #2B2B2B">
+          <div style="padding: 8px 12px; border-bottom: 1px solid #2B2B2B; font-size: 11px; font-weight: 700; letter-spacing: .04em">매칭 후보 · 결과 팝업 (임계값 0.80)</div>
+          <div style="overflow-x: auto">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px; font-family: 'JetBrains Mono', Consolas, monospace">
+              <thead><tr style="color: #9D9D9D; text-align: left"><th style="padding: 6px 12px; font-weight: 400">#</th><th style="padding: 6px 12px; font-weight: 400">점수</th><th style="padding: 6px 12px; font-weight: 400">위치</th><th style="padding: 6px 12px; font-weight: 400">배율</th></tr></thead>
+              <tbody>
+                <tr style="border-top: 1px solid #2B2B2B"><td style="padding: 6px 12px">1</td><td style="padding: 6px 12px; color: #F0883E">0.41</td><td style="padding: 6px 12px">(384, 432)</td><td style="padding: 6px 12px">1.00</td></tr>
+                <tr style="border-top: 1px solid #2B2B2B"><td style="padding: 6px 12px">2</td><td style="padding: 6px 12px; color: #9D9D9D">0.33</td><td style="padding: 6px 12px">(902, 140)</td><td style="padding: 6px 12px">0.95</td></tr>
+                <tr style="border-top: 1px solid #2B2B2B"><td style="padding: 6px 12px">3</td><td style="padding: 6px 12px; color: #9D9D9D">0.29</td><td style="padding: 6px 12px">(120, 610)</td><td style="padding: 6px 12px">1.05</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div style="flex: 1 1 300px; border: 1px solid #2B2B2B">
+          <div style="padding: 8px 12px; border-bottom: 1px solid #2B2B2B; font-size: 11px; font-weight: 700; letter-spacing: .04em">#121 (성공) 과 차이</div>
+          <div style="padding: 8px 12px; display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 6px 10px; line-height: 1.5; font-size: 12px">
+            <span style="color: #F0883E">화면</span><span>#121 에 없던 팝업 영역 (화면 차이 31%)</span>
+            <span style="color: #9D9D9D">그래프</span><span>같음 · a3f9c1</span>
+            <span style="color: #9D9D9D">환경</span><span>같음 · 1280×720 · DPI 100%</span>
+            <span style="color: #F0883E">시간</span><span>대기 평균 0.6s → 3.8s (2,960회차~)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 에이전트 패널 -->
+    <aside aria-label="에이전트" style="flex: 1 1 340px; max-width: 100%; background: #181818; border-left: 1px solid #2B2B2B; display: flex; flex-direction: column">
+      <div style="height: 35px; display: flex; align-items: center; gap: 4px; padding: 0 6px 0 16px; border-bottom: 1px solid #2B2B2B">
+        <span style="font-weight: 600; color: #E7E7E7">실행 #128 번들 분석</span>
+        <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="#9D9D9D" stroke-width="1.5"></path></svg>
+        <div style="flex: 1 1 auto"></div>
+        <button type="button" aria-label="새 대화" style="width: 28px; height: 28px; background: none; border: 0; color: #CCCCCC; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M7 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V9"></path><path d="M11.5 1.5l3 3L8 11H5V8z"></path></svg></button>
+        <button type="button" aria-label="패널 닫기" style="width: 28px; height: 28px; background: none; border: 0; color: #CCCCCC">×</button>
+      </div>
+      <div style="flex: 1 1 auto; padding: 18px 18px 8px; display: flex; flex-direction: column; gap: 14px; overflow: auto; font-size: 14px; line-height: 1.65; color: #D4D4D4">
+        <div style="align-self: flex-end; max-width: 86%; background: #2A2A2A; color: #E7E7E7; border-radius: 18px; padding: 8px 14px">이 번들로 버그 리포트 초안 써 줘. 재현 조건이랑 스크린샷 포함해서.</div>
+        <div style="display: flex; flex-direction: column; gap: 6px; font-size: 13px">
+          <div style="display: flex; align-items: center; gap: 8px; color: #9D9D9D">
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="#3C3C3C" stroke-width="2"></circle><path d="M8 2a6 6 0 0 1 6 6" fill="none" stroke="#4DAAFC" stroke-width="2"></path></svg>
+            작업 중 · 14초
+          </div>
+          <div style="padding-left: 22px; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px; line-height: 1.8; color: #9D9D9D">
+            <div><span style="color: #89D185">✓</span> kb_run_failures #128</div>
+            <div><span style="color: #89D185">✓</span> kb_run_compare #128 #121</div>
+            <div><span style="color: #4DAAFC">●</span> kookabug://runs/128/frames/2981</div>
+          </div>
+        </div>
+        <div>
+          <b style="color: #FFFFFF">재현 조건</b>
+          <ul style="margin: 6px 0; padding-left: 20px">
+            <li>강화를 약 2,950회 이상 반복</li>
+            <li>점검 공지 팝업이 결과 팝업보다 먼저 뜸</li>
+          </ul>
+          스크린샷 3장을 붙이고 있어요…
+        </div>
+      </div>
+      <div style="padding: 8px 12px 12px; display: flex; flex-direction: column; gap: 8px">
+        <div style="background: #222222; border: 1px solid #333333; border-radius: 18px; padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 8px">
+          <textarea aria-label="에이전트에게 메시지" placeholder="무엇이든 요청하세요. @로 실행·노드·화면 첨부" style="height: 40px; resize: none; background: none; border: 0; color: #E7E7E7; font-size: 14px; outline: none; padding: 0 4px"></textarea>
+          <div style="display: flex; align-items: center; gap: 6px">
+            <button type="button" aria-label="첨부" style="width: 28px; height: 28px; border-radius: 50%; background: none; border: 1px solid #3C3C3C; color: #CCCCCC; font-size: 16px; line-height: 1">+</button>
+            <span style="padding: 2px 8px; border-radius: 10px; background: #2A2A2A; color: #BBBBBB; font-size: 11px">@run #128</span>
+            <div style="flex: 1 1 auto"></div>
+            <button type="button" aria-label="중지" style="width: 30px; height: 30px; border-radius: 50%; background: #E7E7E7; border: 0; color: #181818; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true"><rect width="10" height="10" rx="1"></rect></svg></button>
+          </div>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 12px; color: #9D9D9D; padding: 0 6px">
+          <span style="display: flex; align-items: center; gap: 6px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #89D185"></span>Claude Code · ACP</span>
+          <span>권한: 읽기 전용</span>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- 상태 바 -->
+  <div style="display: flex; flex-wrap: wrap; align-items: center; min-height: 22px; background: #005FB8; color: #FFFFFF; font-size: 12px">
+    <span style="display: flex; align-items: center; gap: 6px; padding: 0 10px; height: 22px; background: #16825D"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4l14 8-14 8z"></path></svg>실행 중</span>
+    <span style="padding: 0 10px">#129 반복 3,412 / 10,000</span>
+    <span style="padding: 0 10px">⚠ 1 · ✕ 0</span>
+    <div style="flex: 1 1 auto"></div>
+    <span style="padding: 0 10px">보관: 통과 14일 · 실패 60일 · 12.4 GB</span>
+    <span style="padding: 0 10px">MCP :7317</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const bars = [];
+    for (let i = 0; i < 48; i++) {
+      const late = i > 40;
+      const h = late ? (40 + (i - 40) * 8) : (18 + ((i * 37) % 20));
+      bars.push({ h: Math.min(h, 100) + '%', c: i === 47 ? '#F0883E' : (late ? '#8A5A2E' : '#264F78') });
+    }
+    const tone = { debug: ['#3B2A55', '#C5B3EB'], flaky: ['#4A3B1C', '#E2C08D'], fail: ['#5A1D1D', '#F48771'] };
+    const r = (id, flow, color, meta, sel, badge, kind) => ({ id, flow, color, meta, bg: sel ? '#37373D' : 'transparent', fg: sel ? '#FFFFFF' : '#CCCCCC',
+      badge: badge || '', badgeBg: (tone[kind] || tone.fail)[0], badgeFg: (tone[kind] || tone.fail)[1] });
+    return {
+      bars,
+      groups: [
+        { name: '어제', runs: [
+          r(128, '장비 강화 반복', '#F14C4C', '실패 · 2,981/10,000 · build=1042', true),
+          r(127, '상점 구매 스모크', '#89D185', '성공 · 대기 1개가 재시도 후 통과 · build=1042', false, '불안정', 'flaky'),
+          r(126, '로그인 스모크', '#F14C4C', '실패 · 검증 노드 없이 끝남 · build=1042', false, '검증 없음', 'fail'),
+          r(125, '던전 반복 클리어', '#CCA700', '오류 · 창 찾기 실패 · build=1041'),
+          r(124, 'Agent 탐색 · 메뉴', '#89D185', '성공 · 화면 14개 발견')
+        ] },
+        { name: '10월 27일', runs: [
+          r(121, '장비 강화 반복', '#89D185', '성공 · 10,000/10,000 · build=1040'),
+          r(119, '장비 강화 반복', '#89D185', '성공 · 브레이크포인트 2회 · 통계 제외', false, '디버거 개입', 'debug'),
+          r(118, '상점 구매 스모크', '#89D185', '성공 · 3분 08초')
+        ] }
+      ],
+      shots: [
+        { label: '실행 전', time: '01:12:04.3', cand: false },
+        { label: '대기 5초', time: '01:12:09.3', cand: true },
+        { label: '시간 초과', time: '01:12:14.3', cand: true }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

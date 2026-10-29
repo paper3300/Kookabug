@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>에이전트 연결</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#1F1F1F}
+a{color:#4DAAFC}a:hover{color:#7CC0FF}
+button,input,select,textarea{font-family:inherit}
+</style>
+</helmet>
+<div style="width: 1120px; height: 720px; box-sizing: border-box; overflow: hidden; border-radius: 10px; background: #1F1F1F; color: #CCCCCC; font-family: 'Segoe UI', 'Noto Sans KR', system-ui, sans-serif; font-size: 14px; display: flex">
+
+  <div style="flex: 0 0 560px; box-sizing: border-box; padding: 52px 44px 28px 52px; display: flex; flex-direction: column">
+    <div style="font-size: 12px; color: #9D9D9D; letter-spacing: .04em">5 / 7 · 에이전트 · 선택</div>
+    <h1 style="margin: 10px 0 0; font-size: 30px; line-height: 1.3; font-weight: 700; color: #F3F3F3">에이전트를 연결할까요?</h1>
+    <p style="margin: 12px 0 0; font-size: 15px; line-height: 1.65; color: #A9A9A9">에이전트가 그래프를 만들고 실패한 실행을 분석해요. 연결하지 않아도 모든 기능을 쓸 수 있어요.</p>
+
+    <div role="radiogroup" aria-label="에이전트" style="margin-top: 20px; border: 1px solid #3C3C3C; border-radius: 8px; overflow: hidden; background: #232323">
+      <sc-for list="{{agents}}" as="a" hint-placeholder-count="5">
+        <label style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid #2E2E2E; background: {{a.bg}}">
+          <span aria-hidden="true" style="flex: 0 0 30px; height: 30px; border-radius: 50%; background: #2E2E2E; color: #E7E7E7; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{a.glyph}}</span>
+          <span style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+            <span style="display: flex; align-items: center; gap: 8px"><span style="color: #E7E7E7; font-weight: 600">{{a.name}}</span><sc-if value="{{a.tag}}" hint-placeholder-val="{{ false }}"><span style="padding: 0 6px; border-radius: 3px; background: {{a.tagBg}}; color: {{a.tagFg}}; font-size: 11px; line-height: 18px">{{a.tag}}</span></sc-if></span>
+            <span style="font-size: 13px; color: #A9A9A9">{{a.desc}}</span>
+          </span>
+          <input type="radio" name="agent" checked="{{a.sel}}" style="width: 18px; height: 18px; accent-color: #0078D4">
+        </label>
+      </sc-for>
+    </div>
+
+    <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 8px">
+      <span id="perm" style="font-size: 13px; color: #BBBBBB">에이전트 권한</span>
+      <div role="group" aria-labelledby="perm" style="display: inline-flex; align-self: flex-start; padding: 3px; background: #2A2A2A; border-radius: 6px">
+        <button type="button" aria-pressed="false" style="height: 30px; padding: 0 12px; background: none; color: #A9A9A9; border: 0; border-radius: 4px; font-size: 13px">읽기 전용</button>
+        <button type="button" aria-pressed="true" style="height: 30px; padding: 0 12px; background: #3C3C3C; color: #F3F3F3; border: 0; border-radius: 4px; font-size: 13px">그래프 작성 · 추천</button>
+        <button type="button" aria-pressed="false" style="height: 30px; padding: 0 12px; background: none; color: #A9A9A9; border: 0; border-radius: 4px; font-size: 13px">실행까지</button>
+      </div>
+      <span style="font-size: 12px; color: #9D9D9D">게임을 직접 클릭하는 일은 권한과 상관없이 매번 물어봐요.</span>
+    </div>
+
+    <div style="flex: 1 1 auto"></div>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+      <a href="Setup4Accounts.dc.html" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 16px; background: #2A2A2A; color: #CCCCCC; border-radius: 6px; font-size: 15px; text-decoration: none"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 3L5 8l5 5"></path></svg>이전</a>
+      <div aria-hidden="true" style="display: flex; align-items: center; gap: 6px">
+        <sc-for list="{{dots}}" as="d" hint-placeholder-count="7"><span style="width: {{d.w}}; height: 6px; border-radius: 3px; background: {{d.c}}"></span></sc-for>
+      </div>
+      <a href="Setup6Record.dc.html" style="display: inline-flex; align-items: center; gap: 10px; height: 44px; padding: 0 18px; background: #0078D4; color: #FFFFFF; border-radius: 6px; font-size: 15px; font-weight: 600; text-decoration: none">연결 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M13 3v5a2 2 0 0 1-2 2H4"></path><path d="M6.5 7.5L4 10l2.5 2.5"></path></svg></a>
+    </div>
+  </div>
+
+  <div style="flex: 1 1 auto; margin: 16px 16px 16px 0; border-radius: 8px; background-color: #181818; background-image: radial-gradient(#2A2A2A 1px, transparent 1px); background-size: 16px 16px; display: flex; align-items: center; justify-content: center">
+    <div style="position: relative; width: 420px; height: 420px">
+      <div aria-hidden="true" style="position: absolute; left: 50px; top: 50px; width: 320px; height: 320px; box-sizing: border-box; border: 2px dotted #3E3E3E; border-radius: 50%"></div>
+      <div style="position: absolute; left: 160px; top: 160px; width: 100px; height: 100px; border-radius: 50%; background: #232323; border: 1px solid #3C3C3C; display: flex; align-items: center; justify-content: center">
+        <svg width="55" height="48" viewBox="20 40 216 190" role="img" aria-label="Kookabug"><path d="M160 88 L216 98 C225 100 226 107 218 109 L166 120 C168 134 168 148 162 162 C154 182 136 194 114 194 C100 194 88 190 78 182 L52 212 L34 208 L58 164 C64 150 66 134 64 118 C62 92 82 60 118 58 C138 57 154 68 160 88 Z" fill="#E7E7E7"></path><rect x="99" y="186" width="8" height="20" rx="3" fill="#E7E7E7"></rect><rect x="118" y="186" width="8" height="20" rx="3" fill="#E7E7E7"></rect><rect x="54" y="202" width="164" height="11" rx="5.5" fill="#E7E7E7"></rect><path d="M150 92 C126 90 100 96 72 110 C100 106 126 104 151 104 Z" fill="#232323"></path><circle cx="140" cy="97" r="5" fill="#E7E7E7"></circle></svg>
+      </div>
+      <sc-for list="{{orbit}}" as="o" hint-placeholder-count="4">
+        <div style="position: absolute; left: {{o.x}}; top: {{o.y}}; transform: translate(-50%, -50%); padding: 7px 12px; border-radius: 16px; background: #252526; border: 1px solid {{o.bd}}; color: {{o.fg}}; font-size: 13px; white-space: nowrap">{{o.label}}</div>
+      </sc-for>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1120,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const cur = 5;
+    const dots = [1, 2, 3, 4, 5, 6, 7].map((i) => ({ w: i === cur ? '20px' : '6px', c: i <= cur ? '#E7E7E7' : '#4A4A4A' }));
+    const found = { tag: '감지됨', tagBg: '#1E3D2F', tagFg: '#A8E0A5' };
+    const none = { tag: '', tagBg: 'transparent', tagFg: 'transparent' };
+    return {
+      dots,
+      agents: [
+        { ...found, glyph: 'C', name: 'Claude Code', desc: '설치됨 · ACP로 연결', bg: '#04395E', sel: true },
+        { ...found, glyph: 'X', name: 'Codex CLI', desc: '설치됨 · ACP로 연결', bg: 'transparent', sel: false },
+        { ...none, glyph: 'G', name: 'Gemini CLI', desc: '설치 안 됨 · 설치 방법 보기', bg: 'transparent', sel: false },
+        { ...none, glyph: '⚿', name: 'API 키', desc: 'Agent 판단 노드만 API로 직접 사용', bg: 'transparent', sel: false },
+        { ...none, glyph: '–', name: '연결 안 함', desc: 'AI 없이 쓰고 나중에 연결', bg: 'transparent', sel: false }
+      ],
+      orbit: [
+        { label: '그래프 작성', x: '210px', y: '50px', bd: '#3C5A78', fg: '#9CC8F0' },
+        { label: '실패 분석', x: '370px', y: '210px', bd: '#5B3E8C', fg: '#D2C2F0' },
+        { label: '화면 탐색', x: '210px', y: '370px', bd: '#2E5C46', fg: '#A8E0A5' },
+        { label: '실행', x: '50px', y: '210px', bd: '#6B5320', fg: '#E2C08D' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

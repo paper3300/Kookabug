@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>게임 연결</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#1F1F1F}
+a{color:#4DAAFC}a:hover{color:#7CC0FF}
+button,input,select,textarea{font-family:inherit}
+</style>
+</helmet>
+<div style="width: 1120px; height: 720px; box-sizing: border-box; overflow: hidden; border-radius: 10px; background: #1F1F1F; color: #CCCCCC; font-family: 'Segoe UI', 'Noto Sans KR', system-ui, sans-serif; font-size: 14px; display: flex">
+
+  <div style="flex: 0 0 560px; box-sizing: border-box; padding: 52px 44px 28px 52px; display: flex; flex-direction: column">
+    <div style="font-size: 12px; color: #9D9D9D; letter-spacing: .04em">2 / 7 · 게임</div>
+    <h1 style="margin: 10px 0 0; font-size: 30px; line-height: 1.3; font-weight: 700; color: #F3F3F3">테스트할 게임을 연결해요</h1>
+    <p style="margin: 12px 0 0; font-size: 15px; line-height: 1.65; color: #A9A9A9">이미 떠 있는 게임 창을 고르거나, 실행 파일을 지정해 띄워요.</p>
+
+    <div role="group" aria-label="연결 방식" style="margin-top: 22px; display: inline-flex; align-self: flex-start; padding: 3px; background: #2A2A2A; border-radius: 6px">
+      <button type="button" aria-pressed="true" style="height: 30px; padding: 0 14px; background: #3C3C3C; color: #F3F3F3; border: 0; border-radius: 4px; font-size: 13px">떠 있는 창 고르기</button>
+      <button type="button" aria-pressed="false" style="height: 30px; padding: 0 14px; background: none; color: #A9A9A9; border: 0; border-radius: 4px; font-size: 13px">실행 파일로 띄우기</button>
+    </div>
+
+    <div role="radiogroup" aria-label="게임 창" style="margin-top: 14px; border: 1px solid #3C3C3C; border-radius: 8px; overflow: hidden; background: #232323">
+      <sc-for list="{{wins}}" as="w" hint-placeholder-count="3">
+        <label style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid #2E2E2E; background: {{w.bg}}">
+          <span aria-hidden="true" style="flex: 0 0 52px; height: 30px; border-radius: 3px; background: {{w.thumb}}; border: 1px solid #3C3C3C"></span>
+          <span style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+            <span style="color: #E7E7E7">{{w.title}}</span>
+            <span style="font-size: 12px; color: #9D9D9D; font-family: 'JetBrains Mono', Consolas, monospace">{{w.meta}}</span>
+          </span>
+          <input type="radio" name="win" checked="{{w.sel}}" style="width: 18px; height: 18px; accent-color: #0078D4">
+        </label>
+      </sc-for>
+    </div>
+
+    <label style="margin-top: 16px; display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.55; color: #CCCCCC">
+      <input type="checkbox" checked style="margin-top: 2px; width: 16px; height: 16px; accent-color: #0078D4">
+      <span>다음부터 이 실행 파일로 게임 띄우기<br><span style="font-family: 'JetBrains Mono', Consolas, monospace; font-size: 12px; color: #A9A9A9">D:\Games\SampleRPG\SampleRPG.exe</span><br><span style="color: #9D9D9D">경로는 사람마다 달라서 이 PC에만 저장돼요</span></span>
+    </label>
+
+    <div style="flex: 1 1 auto"></div>
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+      <a href="Setup1Project.dc.html" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 16px; background: #2A2A2A; color: #CCCCCC; border-radius: 6px; font-size: 15px; text-decoration: none"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 3L5 8l5 5"></path></svg>이전</a>
+      <div aria-hidden="true" style="display: flex; align-items: center; gap: 6px">
+        <sc-for list="{{dots}}" as="d" hint-placeholder-count="7"><span style="width: {{d.w}}; height: 6px; border-radius: 3px; background: {{d.c}}"></span></sc-for>
+      </div>
+      <a href="Setup3Check.dc.html" style="display: inline-flex; align-items: center; gap: 10px; height: 44px; padding: 0 18px; background: #0078D4; color: #FFFFFF; border-radius: 6px; font-size: 15px; font-weight: 600; text-decoration: none">연결 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M13 3v5a2 2 0 0 1-2 2H4"></path><path d="M6.5 7.5L4 10l2.5 2.5"></path></svg></a>
+    </div>
+  </div>
+
+  <div style="flex: 1 1 auto; margin: 16px 16px 16px 0; border-radius: 8px; background-color: #181818; background-image: radial-gradient(#2A2A2A 1px, transparent 1px); background-size: 16px 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px">
+    <div style="width: 440px; display: flex; align-items: center; justify-content: space-between; font-size: 12px">
+      <span style="display: flex; align-items: center; gap: 6px; color: #E7E7E7"><span style="width: 8px; height: 8px; border-radius: 50%; background: #89D185"></span>실시간 캡처</span>
+      <span style="color: #9D9D9D">SampleRPG</span>
+    </div>
+    <div style="position: relative; width: 440px; height: 248px; background: #141414; border: 1px solid #3C3C3C; border-radius: 4px; overflow: hidden" role="img" aria-label="게임 화면 미리보기">
+      <div style="position: absolute; left: 0; right: 0; top: 0; height: 60%; background: #1C2430"></div>
+      <div style="position: absolute; left: 50%; top: 26%; transform: translateX(-50%); font-size: 26px; font-weight: 700; color: #6F8FB3; letter-spacing: .06em">SampleRPG</div>
+      <div style="position: absolute; left: 50%; top: 66%; transform: translateX(-50%); width: 120px; height: 30px; border-radius: 4px; background: #2D3B4D; border: 1px solid #4F6782; display: flex; align-items: center; justify-content: center; color: #D5E3F3; font-size: 13px">시작하기</div>
+      <div style="position: absolute; left: 8px; bottom: 6px; font-size: 10px; color: #858585">게임 화면 자리</div>
+    </div>
+    <div style="width: 440px; display: flex; flex-wrap: wrap; gap: 6px">
+      <sc-for list="{{chips}}" as="c" hint-placeholder-count="4"><span style="padding: 3px 9px; border-radius: 4px; background: #2A2A2A; color: #BBBBBB; font-size: 12px">{{c}}</span></sc-for>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1120,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const cur = 2;
+    const dots = [1, 2, 3, 4, 5, 6, 7].map((i) => ({ w: i === cur ? '20px' : '6px', c: i <= cur ? '#E7E7E7' : '#4A4A4A' }));
+    return {
+      dots,
+      wins: [
+        { title: 'SampleRPG', meta: 'SampleRPG.exe · 1280×720', thumb: '#1C2430', bg: '#04395E', sel: true },
+        { title: 'SampleRPG Launcher', meta: 'Launcher.exe · 960×600', thumb: '#2A2A2A', bg: 'transparent', sel: false },
+        { title: '메모장', meta: 'notepad.exe · 800×600', thumb: '#2A2A2A', bg: 'transparent', sel: false }
+      ],
+      chips: ['캡처 WGC', '1280×720', 'DPI 100%', '테두리 없는 창']
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>에이전트 권한 설정</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#1F1F1F}
+a{color:#4DAAFC}a:hover{color:#7CC0FF}
+button,input,select,textarea{font-family:inherit}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #1F1F1F; color: #CCCCCC; font-family: 'Segoe UI', 'Noto Sans KR', system-ui, sans-serif; font-size: 13px; display: flex; flex-direction: column">
+
+  <!-- 타이틀 바 -->
+  <div style="display: flex; flex-wrap: wrap; align-items: center; min-height: 35px; background: #181818; border-bottom: 1px solid #2B2B2B">
+    <div style="display: flex; align-items: center; padding: 0 10px" aria-hidden="true">
+      <svg width="18" height="16" viewBox="20 40 216 190" aria-hidden="true"><path d="M160 88 L216 98 C225 100 226 107 218 109 L166 120 C168 134 168 148 162 162 C154 182 136 194 114 194 C100 194 88 190 78 182 L52 212 L34 208 L58 164 C64 150 66 134 64 118 C62 92 82 60 118 58 C138 57 154 68 160 88 Z" fill="#E7E7E7"></path><rect x="99" y="186" width="8" height="20" rx="3" fill="#E7E7E7"></rect><rect x="118" y="186" width="8" height="20" rx="3" fill="#E7E7E7"></rect><rect x="54" y="202" width="164" height="11" rx="5.5" fill="#E7E7E7"></rect><path d="M150 92 C126 90 100 96 72 110 C100 106 126 104 151 104 Z" fill="#181818"></path><circle cx="140" cy="97" r="5" fill="#E7E7E7"></circle></svg>
+    </div>
+    <nav aria-label="메뉴" style="display: flex; flex-wrap: wrap">
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">파일</button>
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">편집</button>
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">보기</button>
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">실행</button>
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">플러그인</button>
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">도움말</button>
+    </nav>
+    <div style="flex: 1 1 24px"></div>
+    <label style="flex: 0 1 460px; display: flex; align-items: center; justify-content: center; gap: 6px; height: 24px; padding: 0 8px; background: #222222; border: 1px solid #2B2B2B; border-radius: 6px; color: #9D9D9D; margin: 5px 0">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>
+      <input type="search" aria-label="명령 검색" placeholder="sample-rpg — 노드·파일·명령 검색 (Ctrl+P)" style="flex: 1; min-width: 0; background: none; border: 0; color: #CCCCCC; font-size: 12px; text-align: center; outline: none">
+    </label>
+    <div style="flex: 1 1 24px"></div>
+    <div style="display: flex">
+      <button type="button" aria-label="최소화" style="width: 46px; height: 35px; background: none; border: 0; color: #CCCCCC"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" stroke="currentColor"></path></svg></button>
+      <button type="button" aria-label="최대화" style="width: 46px; height: 35px; background: none; border: 0; color: #CCCCCC"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x=".5" y=".5" width="9" height="9" fill="none" stroke="currentColor"></rect></svg></button>
+      <button type="button" aria-label="닫기" style="width: 46px; height: 35px; background: none; border: 0; color: #CCCCCC"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor"></path></svg></button>
+    </div>
+  </div>
+
+  <div style="flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: stretch; min-height: 843px">
+
+    <nav aria-label="작업 영역" style="width: 48px; flex: 0 0 48px; display: flex; flex-direction: column; background: #181818; border-right: 1px solid #2B2B2B">
+      <button type="button" aria-label="탐색기" style="width: 48px; height: 48px; background: none; border: 0; color: #868686; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path></svg></button>
+      <button type="button" aria-label="화면 지도" style="width: 48px; height: 48px; background: none; border: 0; color: #868686; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"></path><path d="M9 3v15M15 6v15"></path></svg></button>
+      <button type="button" aria-label="실행 기록" style="width: 48px; height: 48px; background: none; border: 0; color: #868686; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></button>
+      <button type="button" aria-label="녹화" style="width: 48px; height: 48px; background: none; border: 0; color: #868686; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="4"></circle></svg></button>
+      <button type="button" aria-label="플러그인" style="width: 48px; height: 48px; background: none; border: 0; color: #868686; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><path d="M14 6.5h7M17.5 3v7"></path></svg></button>
+      <div style="flex: 1 1 auto"></div>
+      <button type="button" aria-label="환경설정" style="width: 48px; height: 48px; background: none; border: 0; border-left: 2px solid #0078D4; color: #E7E7E7; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"></path></svg></button>
+    </nav>
+
+    <!-- 설정 에디터 -->
+    <div style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+      <div style="display: flex; flex-wrap: wrap; align-items: stretch; background: #181818; border-bottom: 1px solid #2B2B2B; min-height: 35px">
+        <div style="display: flex; align-items: center; gap: 6px; padding: 0 10px 0 12px; border-right: 1px solid #2B2B2B; color: #9D9D9D"><span style="font-size: 9px; font-weight: 700; color: #B392F0">TEST</span>장비 강화 반복</div>
+        <div style="display: flex; align-items: center; gap: 6px; padding: 0 6px 0 12px; background: #1F1F1F; border-top: 1px solid #0078D4; border-right: 1px solid #2B2B2B; color: #FFFFFF">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"></path></svg>
+          설정<button type="button" aria-label="탭 닫기" style="width: 20px; height: 20px; background: none; border: 0; color: #CCCCCC; padding: 0">×</button>
+        </div>
+        <div style="flex: 1 1 20px"></div>
+        <button type="button" aria-label="JSON으로 열기" style="width: 35px; height: 35px; background: none; border: 0; color: #CCCCCC; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M5 2C3 2 3 3.5 3 5s-1 3-1 3 1 1.5 1 3-0 3 2 3M11 2c2 0 2 1.5 2 3s1 3 1 3-1 1.5-1 3 0 3-2 3"></path></svg></button>
+      </div>
+
+      <div style="padding: 12px 24px 0; display: flex; flex-direction: column; gap: 10px; max-width: 1080px">
+        <label style="display: flex; align-items: center; height: 30px; padding: 0 10px; background: #313131; border: 1px solid #0078D4; border-radius: 2px">
+          <input type="search" aria-label="설정 검색" value="권한" style="flex: 1; min-width: 0; background: none; border: 0; color: #CCCCCC; font-size: 13px; outline: none">
+          <span style="font-size: 12px; color: #9D9D9D">설정 14개 찾음</span>
+        </label>
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0 18px; border-bottom: 1px solid #2B2B2B">
+          <div style="padding: 6px 0; color: #9D9D9D">사용자</div>
+          <div style="padding: 6px 0 5px; color: #E7E7E7; border-bottom: 1px solid #0078D4">프로젝트 · sample-rpg</div>
+          <div style="padding: 6px 0; color: #9D9D9D; display: flex; align-items: center; gap: 4px"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="3" y="7" width="10" height="7"></rect><path d="M5 7V5a3 3 0 0 1 6 0v2"></path></svg>팀 (잠김)</div>
+          <div style="flex: 1 1 auto"></div>
+          <a href="#" style="font-size: 12px; padding: 6px 0">kookabug.json에서 편집</a>
+        </div>
+      </div>
+
+      <div style="flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: flex-start; max-width: 1080px">
+        <!-- 목차 -->
+        <nav aria-label="설정 목차" style="flex: 0 1 200px; padding: 12px 0 12px 16px; display: flex; flex-direction: column">
+          <sc-for list="{{toc}}" as="t" hint-placeholder-count="10">
+            <a href="#" style="height: 22px; display: flex; align-items: center; padding-left: {{t.pad}}; text-decoration: none; color: {{t.fg}}; font-weight: {{t.fw}}">{{t.name}}</a>
+          </sc-for>
+        </nav>
+
+        <!-- 설정 목록 -->
+        <div style="flex: 1 1 520px; min-width: 0; padding: 4px 24px 24px 8px; display: flex; flex-direction: column">
+          <h2 style="margin: 14px 0 6px 14px; font-size: 22px; font-weight: 600; color: #E7E7E7">에이전트 · 권한</h2>
+
+          <div style="padding: 10px 14px 12px; border-left: 2px solid #0078D4; display: flex; flex-direction: column; gap: 6px">
+            <div><span style="color: #9D9D9D">에이전트 › 권한: </span><b style="color: #E7E7E7">프리셋</b> <span style="font-size: 11px; color: #9D9D9D">· 수정됨</span></div>
+            <div style="color: #9D9D9D; line-height: 1.5">에이전트에게 기본으로 줄 권한 묶음입니다. 아래 툴셋별 값이 프리셋보다 우선합니다.</div>
+            <select aria-label="프리셋" style="width: 260px; background: #313131; color: #CCCCCC; border: 1px solid #3C3C3C; border-radius: 2px; height: 26px; font-size: 13px">
+              <option>그래프 작성 — 읽기 + 편집은 확인 후</option>
+              <option>읽기 전용</option>
+              <option>실행 — 작성 + 실행, 입력은 확인 후</option>
+              <option>전체 (주의)</option>
+            </select>
+          </div>
+
+          <sc-for list="{{toolsets}}" as="t" hint-placeholder-count="6">
+            <div style="padding: 10px 14px 12px; border-left: {{t.mod}}; display: flex; flex-direction: column; gap: 6px">
+              <div><span style="color: #9D9D9D">에이전트 › 권한 › 툴셋: </span><b style="color: #E7E7E7; font-family: 'JetBrains Mono', Consolas, monospace">{{t.id}}</b> <span style="font-size: 11px; color: #9D9D9D">{{t.note}}</span></div>
+              <div style="color: #9D9D9D; line-height: 1.5">{{t.desc}}</div>
+              <select aria-label="{{t.id}} 권한" style="width: 160px; background: #313131; color: {{t.fg}}; border: 1px solid #3C3C3C; border-radius: 2px; height: 26px; font-size: 13px">
+                <option>{{t.value}}</option>
+              </select>
+            </div>
+          </sc-for>
+
+          <div style="padding: 10px 14px 12px; border-left: 2px solid #0078D4; display: flex; flex-direction: column; gap: 8px">
+            <div><span style="color: #9D9D9D">에이전트 › 권한: </span><b style="color: #E7E7E7">세부 규칙</b></div>
+            <div style="color: #9D9D9D; line-height: 1.5"><span style="font-family: 'JetBrains Mono', Consolas, monospace">도구(인자 패턴)</span> 형식입니다. 거부 → 확인 → 허용 순서로 적용됩니다.</div>
+            <div style="border: 1px solid #2B2B2B; overflow-x: auto">
+              <table style="width: 100%; border-collapse: collapse; font-size: 12px">
+                <thead><tr style="text-align: left; color: #9D9D9D; background: #252526"><th style="padding: 5px 10px; font-weight: 400">판정</th><th style="padding: 5px 10px; font-weight: 400">규칙</th><th style="padding: 5px 10px; font-weight: 400">출처</th></tr></thead>
+                <tbody>
+                  <sc-for list="{{rules}}" as="r" hint-placeholder-count="5">
+                    <tr style="border-top: 1px solid #2B2B2B">
+                      <td style="padding: 6px 10px; color: {{r.fg}}">{{r.verdict}}</td>
+                      <td style="padding: 6px 10px; font-family: 'JetBrains Mono', Consolas, monospace; white-space: nowrap">{{r.rule}}</td>
+                      <td style="padding: 6px 10px; color: #9D9D9D">{{r.src}}</td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+            <div><button type="button" style="background: #0078D4; color: #FFFFFF; border: 0; border-radius: 2px; padding: 0 12px; height: 26px; font-size: 12px">규칙 추가</button></div>
+          </div>
+
+          <div style="padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 6px">
+            <div><span style="color: #9D9D9D">에이전트 › 권한: </span><b style="color: #E7E7E7">사람 없는 실행</b></div>
+            <label style="display: flex; align-items: flex-start; gap: 8px; color: #9D9D9D; line-height: 1.5"><input type="checkbox" checked style="margin-top: 3px; accent-color: #0078D4">야간·CI 실행의 Agent 노드에서는 "확인"을 "거부"로 처리하고 실행 기록에 남깁니다.</label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 상태 바 -->
+  <div style="display: flex; flex-wrap: wrap; align-items: center; min-height: 22px; background: #181818; border-top: 1px solid #2B2B2B; color: #9D9D9D; font-size: 12px">
+    <span style="padding: 0 10px">대기 중</span>
+    <span style="padding: 0 10px">⚠ 1 · ✕ 0</span>
+    <div style="flex: 1 1 auto"></div>
+    <span style="padding: 0 10px">권한 프리셋: 그래프 작성</span>
+    <span style="padding: 0 10px">Claude Code 연결됨</span>
+    <span style="padding: 0 10px">MCP :7317</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const t = (name, pad, sel) => ({ name, pad, fg: sel ? '#E7E7E7' : '#9D9D9D', fw: sel ? '600' : '400' });
+    const v = { allow: { value: '허용', fg: '#89D185' }, ask: { value: '확인', fg: '#E2C08D' }, deny: { value: '거부', fg: '#F48771' } };
+    const mod = '2px solid #0078D4';
+    const def = '2px solid transparent';
+    return {
+      toc: [
+        t('일반', '0px'), t('에디터', '12px'), t('실행 · 기록', '12px'), t('캡처 · 입력', '12px'), t('OCR', '12px'),
+        t('에이전트', '0px'), t('연결', '12px'), t('권한', '12px', true), t('Agent 노드 · CLI', '12px'), t('Agent 노드 · API 키', '12px'),
+        t('확장', '0px'), t('플러그인', '12px'), t('단축키', '12px')
+      ],
+      toolsets: [
+        { id: 'core', note: '· 항상 켜짐', desc: '프로젝트 정보, 그래프 읽기·검증, 실행 상태, 로그 검색', mod: def, ...v.allow },
+        { id: 'graph', note: '', desc: '그래프 만들기, 노드·연결 패치', mod: def, ...v.ask },
+        { id: 'run', note: '· 수정됨', desc: '실행 시작·정지·단계 실행, 고정 데이터', mod, ...v.ask },
+        { id: 'vision', note: '', desc: '캡처, 이미지 찾기, OCR, 확대 (읽기만)', mod: def, ...v.allow },
+        { id: 'input', note: '· 수정됨', desc: '게임 창에 클릭·키·드래그 입력', mod, ...v.deny },
+        { id: 'explore', note: '', desc: '화면 지도에 화면·이동 추가, 조회', mod: def, ...v.ask }
+      ],
+      rules: [
+        { verdict: '거부', fg: '#F48771', rule: 'kb_input_*(window:!SampleRPG*)', src: '프로젝트' },
+        { verdict: '거부', fg: '#F48771', rule: 'kb_plugin_install', src: '팀 (잠김)' },
+        { verdict: '확인', fg: '#E2C08D', rule: 'kb_input_*(window:SampleRPG*)', src: '프로젝트' },
+        { verdict: '확인', fg: '#E2C08D', rule: 'kb_graph_edit', src: '프리셋' },
+        { verdict: '허용', fg: '#89D185', rule: 'kb_run_failures, kb_run_compare', src: '"항상 허용"으로 저장' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

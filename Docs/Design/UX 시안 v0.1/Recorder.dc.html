@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>녹화와 이미지 캡처</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#1F1F1F}
+a{color:#4DAAFC}a:hover{color:#7CC0FF}
+button,input,select,textarea{font-family:inherit}
+</style>
+</helmet>
+<div style="min-height: 900px; background: #1F1F1F; color: #CCCCCC; font-family: 'Segoe UI', 'Noto Sans KR', system-ui, sans-serif; font-size: 13px; display: flex; flex-direction: column">
+
+  <!-- 타이틀 바 -->
+  <div style="display: flex; flex-wrap: wrap; align-items: center; min-height: 35px; background: #181818; border-bottom: 1px solid #2B2B2B">
+    <div style="display: flex; align-items: center; padding: 0 10px" aria-hidden="true">
+      <svg width="18" height="16" viewBox="20 40 216 190" aria-hidden="true"><path d="M160 88 L216 98 C225 100 226 107 218 109 L166 120 C168 134 168 148 162 162 C154 182 136 194 114 194 C100 194 88 190 78 182 L52 212 L34 208 L58 164 C64 150 66 134 64 118 C62 92 82 60 118 58 C138 57 154 68 160 88 Z" fill="#E7E7E7"></path><rect x="99" y="186" width="8" height="20" rx="3" fill="#E7E7E7"></rect><rect x="118" y="186" width="8" height="20" rx="3" fill="#E7E7E7"></rect><rect x="54" y="202" width="164" height="11" rx="5.5" fill="#E7E7E7"></rect><path d="M150 92 C126 90 100 96 72 110 C100 106 126 104 151 104 Z" fill="#181818"></path><circle cx="140" cy="97" r="5" fill="#E7E7E7"></circle></svg>
+    </div>
+    <nav aria-label="메뉴" style="display: flex; flex-wrap: wrap">
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">파일</button>
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">편집</button>
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">보기</button>
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">실행</button>
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">플러그인</button>
+      <button type="button" style="background: none; border: 0; color: #CCCCCC; padding: 0 8px; height: 35px; font-size: 13px">도움말</button>
+    </nav>
+    <div style="flex: 1 1 24px"></div>
+    <label style="flex: 0 1 460px; display: flex; align-items: center; justify-content: center; gap: 6px; height: 24px; padding: 0 8px; background: #222222; border: 1px solid #2B2B2B; border-radius: 6px; color: #9D9D9D; margin: 5px 0">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>
+      <input type="search" aria-label="명령 검색" placeholder="sample-rpg — 노드·파일·명령 검색 (Ctrl+P)" style="flex: 1; min-width: 0; background: none; border: 0; color: #CCCCCC; font-size: 12px; text-align: center; outline: none">
+    </label>
+    <div style="flex: 1 1 24px"></div>
+    <div style="display: flex">
+      <button type="button" aria-label="최소화" style="width: 46px; height: 35px; background: none; border: 0; color: #CCCCCC"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" stroke="currentColor"></path></svg></button>
+      <button type="button" aria-label="최대화" style="width: 46px; height: 35px; background: none; border: 0; color: #CCCCCC"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x=".5" y=".5" width="9" height="9" fill="none" stroke="currentColor"></rect></svg></button>
+      <button type="button" aria-label="닫기" style="width: 46px; height: 35px; background: none; border: 0; color: #CCCCCC"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor"></path></svg></button>
+    </div>
+  </div>
+
+  <div style="flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: stretch; min-height: 843px">
+
+    <!-- 액티비티 바 + 녹화 사이드바 -->
+    <div style="flex: 1 1 360px; max-width: 100%; display: flex; background: #181818; border-right: 1px solid #2B2B2B">
+      <nav aria-label="작업 영역" style="width: 48px; flex: 0 0 48px; display: flex; flex-direction: column; border-right: 1px solid #2B2B2B">
+        <button type="button" aria-label="탐색기" style="width: 48px; height: 48px; background: none; border: 0; color: #868686; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path></svg></button>
+        <button type="button" aria-label="화면 지도" style="width: 48px; height: 48px; background: none; border: 0; color: #868686; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"></path><path d="M9 3v15M15 6v15"></path></svg></button>
+        <button type="button" aria-label="실행 기록" style="width: 48px; height: 48px; background: none; border: 0; color: #868686; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></button>
+        <button type="button" aria-label="녹화" style="width: 48px; height: 48px; background: none; border: 0; border-left: 2px solid #0078D4; color: #E7E7E7; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="4" fill="#F14C4C" stroke="none"></circle></svg></button>
+        <button type="button" aria-label="플러그인" style="width: 48px; height: 48px; background: none; border: 0; color: #868686; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><path d="M14 6.5h7M17.5 3v7"></path></svg></button>
+        <div style="flex: 1 1 auto"></div>
+        <button type="button" aria-label="환경설정" style="width: 48px; height: 48px; background: none; border: 0; color: #868686; display: flex; align-items: center; justify-content: center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"></path></svg></button>
+      </nav>
+      <div style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column">
+        <div style="height: 35px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px 0 20px; font-size: 11px; letter-spacing: .04em">
+          <span>녹화</span>
+          <span style="display: flex; align-items: center; gap: 6px; color: #F48771"><svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="#F14C4C"></circle></svg>REC 02:14</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px">
+          <button type="button" style="background: #313131; color: #CCCCCC; border: 1px solid #3C3C3C; border-radius: 2px; padding: 0 10px; height: 26px; font-size: 12px">일시정지</button>
+          <button type="button" style="background: #313131; color: #CCCCCC; border: 1px solid #3C3C3C; border-radius: 2px; padding: 0 10px; height: 26px; font-size: 12px">화면 확인 삽입</button>
+          <button type="button" style="background: #313131; color: #CCCCCC; border: 1px solid #3C3C3C; border-radius: 2px; padding: 0 10px; height: 26px; font-size: 12px">값 확인 삽입</button>
+          <button type="button" style="background: #A1260D; color: #FFFFFF; border: 0; border-radius: 2px; padding: 0 10px; height: 26px; font-size: 12px">녹화 정지</button>
+        </div>
+        <div style="margin: 0 12px 10px; padding: 8px 10px; background: #2A2416; border: 1px solid #6B5320; border-radius: 2px; font-size: 12px; line-height: 1.5; color: #E2C08D; display: flex; flex-direction: column; gap: 6px">
+          <span>스텝 P에서 비밀번호 칸에 입력했어요. 글자 그대로 저장하지 않으니 쓸 비밀값을 고르세요.</span>
+          <label style="display: flex; align-items: center; gap: 6px; color: #CCCCCC">비밀값
+            <select style="flex: 1; min-width: 0; background: #313131; color: #CCCCCC; border: 1px solid #3C3C3C; border-radius: 2px; height: 24px; font-size: 12px"><option>accounts.qa_tester_01 (자격 증명 관리자)</option></select>
+          </label>
+        </div>
+        <div style="height: 22px; display: flex; align-items: center; gap: 4px; padding: 0 8px; font-size: 11px; font-weight: 700; border-top: 1px solid #2B2B2B">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.3"></path></svg>녹화된 스텝 · 7
+        </div>
+        <ol style="list-style: none; margin: 0; padding: 0 0 8px">
+          <sc-for list="{{steps}}" as="s" hint-placeholder-count="6">
+            <li style="display: flex; gap: 10px; padding: 7px 12px 7px 16px; background: {{s.bg}}">
+              <span style="flex: 0 0 18px; height: 18px; margin-top: 1px; border-radius: 50%; background: {{s.dot}}; color: #181818; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{s.n}}</span>
+              <span style="min-width: 0; display: flex; flex-direction: column; gap: 1px">
+                <span style="color: {{s.fg}}">{{s.node}}</span>
+                <span style="font-size: 11px; color: #9D9D9D; font-family: 'JetBrains Mono', Consolas, monospace">{{s.raw}}</span>
+                <span style="font-size: 11px; color: {{s.noteColor}}">{{s.note}}</span>
+              </span>
+            </li>
+          </sc-for>
+        </ol>
+        <div style="height: 22px; display: flex; align-items: center; gap: 4px; padding: 0 8px; font-size: 11px; font-weight: 700; border-top: 1px solid #2B2B2B">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.3"></path></svg>변환 옵션
+        </div>
+        <div style="padding: 6px 16px 12px; display: flex; flex-direction: column; gap: 8px; font-size: 12px">
+          <label style="display: flex; align-items: center; gap: 8px"><input type="checkbox" checked style="accent-color: #0078D4">기다린 시간을 "나타날 때까지 대기"로 바꾸기</label>
+          <label style="display: flex; align-items: center; gap: 8px"><input type="checkbox" checked style="accent-color: #0078D4">클릭 직전 화면에서 클릭 지점 주변을 잘라 찾기 대상 만들기</label>
+          <label style="display: flex; align-items: center; gap: 8px; color: #9D9D9D"><input type="checkbox" checked disabled style="accent-color: #0078D4">Kookabug가 보낸 입력은 녹화하지 않기 (항상)</label>
+          <label style="display: flex; align-items: center; gap: 8px"><input type="checkbox" checked style="accent-color: #0078D4">지나간 화면을 화면 지도에 추가</label>
+        </div>
+        <div style="flex: 1 1 auto"></div>
+        <div style="padding: 12px; border-top: 1px solid #2B2B2B; display: flex; flex-wrap: wrap; gap: 6px">
+          <button type="button" style="flex: 1 1 140px; background: #0078D4; color: #FFFFFF; border: 0; border-radius: 2px; padding: 0 10px; height: 28px; font-size: 12px">커서 위치에 노드로 삽입</button>
+          <button type="button" style="flex: 1 1 100px; background: #313131; color: #CCCCCC; border: 1px solid #3C3C3C; border-radius: 2px; padding: 0 10px; height: 28px; font-size: 12px">새 테스트로 저장</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 에디터: 캡처 -->
+    <div style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column">
+      <div style="display: flex; flex-wrap: wrap; align-items: stretch; background: #181818; border-bottom: 1px solid #2B2B2B; min-height: 35px">
+        <div style="display: flex; align-items: center; gap: 6px; padding: 0 10px 0 12px; border-right: 1px solid #2B2B2B; color: #9D9D9D"><span style="font-size: 9px; font-weight: 700; color: #B392F0">TEST</span>장비 강화 반복</div>
+        <div style="display: flex; align-items: center; gap: 6px; padding: 0 6px 0 12px; background: #1F1F1F; border-top: 1px solid #0078D4; border-right: 1px solid #2B2B2B; color: #FFFFFF"><span style="font-size: 9px; font-weight: 700; color: #F14C4C">REC</span>SampleRPG 캡처<button type="button" aria-label="탭 닫기" style="width: 20px; height: 20px; background: none; border: 0; color: #CCCCCC; padding: 0">×</button></div>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 16px; background: #252526; border-bottom: 1px solid #2B2B2B; font-size: 12px">
+        <span style="color: #E7E7E7">정지 화면 · 스텝 3</span>
+        <span style="color: #9D9D9D">드래그 = 템플릿 영역 · Shift+드래그 = 검색 범위 · 십자선 = 클릭 지점</span>
+        <div style="flex: 1 1 20px"></div>
+        <button type="button" style="background: #313131; color: #CCCCCC; border: 1px solid #3C3C3C; border-radius: 2px; padding: 0 10px; height: 24px; font-size: 12px">찾기 대상 탭으로 열기</button>
+        <button type="button" style="background: #313131; color: #CCCCCC; border: 1px solid #3C3C3C; border-radius: 2px; padding: 0 10px; height: 24px; font-size: 12px">실시간 화면으로</button>
+      </div>
+
+      <div style="padding: 16px; display: flex; flex-direction: column; gap: 14px">
+        <div style="position: relative; aspect-ratio: 16 / 9; width: 100%; max-width: 920px; background: #141414; border: 1px solid #3C3C3C; overflow: hidden">
+          <div style="position: absolute; left: 4%; top: 8%; width: 24%; height: 78%; background: #222222"></div>
+          <div style="position: absolute; left: 32%; top: 10%; width: 44%; height: 50%; background: #222222; display: flex; align-items: center; justify-content: center; color: #858585; font-size: 12px">게임 화면 자리 (장비 강화 창)</div>
+          <div style="position: absolute; left: 80%; top: 8%; width: 16%; height: 30%; background: #222222"></div>
+          <div style="position: absolute; left: 52%; top: 64%; width: 40%; height: 30%; border: 1px dashed #39C5CF"></div>
+          <div style="position: absolute; left: 52%; top: 59.5%; font-size: 11px; color: #39C5CF">검색 범위</div>
+          <div style="position: absolute; left: 60%; top: 72%; width: 14%; height: 12%; background: #4A3B1C; outline: 2px solid #CCA700; display: flex; align-items: center; justify-content: center; color: #E2C08D; font-weight: 700">강화</div>
+          <div style="position: absolute; left: 67%; top: 78%; width: 16px; height: 16px; margin: -8px 0 0 -8px" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 0v16M0 8h16" stroke="#F14C4C" stroke-width="2"></path></svg></div>
+          <div style="position: absolute; left: 74.5%; top: 72%; padding: 1px 6px; background: #CCA700; color: #181818; font-size: 11px; font-family: 'JetBrains Mono', monospace">0.93</div>
+          <div style="position: absolute; left: 14%; top: 30%; width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 50%; background: #4DAAFC; color: #181818; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center">1</div>
+          <div style="position: absolute; left: 50%; top: 40%; width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 50%; background: #4DAAFC; color: #181818; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center">2</div>
+        </div>
+
+        <div style="max-width: 920px; display: flex; flex-wrap: wrap; gap: 12px">
+          <div style="flex: 2 1 320px; border: 1px solid #2B2B2B; padding: 12px 14px; display: flex; flex-direction: column; gap: 12px">
+            <div style="display: flex; justify-content: space-between; align-items: center">
+              <span style="font-size: 11px; font-weight: 700; letter-spacing: .04em">매칭 미리보기</span>
+              <span style="color: #89D185; font-size: 12px">지금 화면에서 후보 1개</span>
+            </div>
+            <label style="display: flex; flex-direction: column; gap: 6px; font-size: 12px">
+              <span style="display: flex; justify-content: space-between"><span>유사도 임계값</span><span style="font-family: 'JetBrains Mono', monospace; color: #E7E7E7">0.80</span></span>
+              <input type="range" min="0.5" max="1" step="0.01" value="0.8" style="width: 100%; accent-color: #0078D4">
+            </label>
+            <div style="display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px">
+              <label style="display: flex; align-items: center; gap: 6px"><input type="checkbox" checked style="accent-color: #0078D4">색까지 확인</label>
+              <label style="display: flex; align-items: center; gap: 6px"><input type="checkbox" checked style="accent-color: #0078D4">배율 0.8–1.25</label>
+              <label style="display: flex; align-items: center; gap: 6px"><input type="checkbox" style="accent-color: #0078D4">여러 개면 좌상단부터</label>
+            </div>
+          </div>
+          <div style="flex: 1 1 200px; border: 1px solid #2B2B2B; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px">
+            <span style="font-size: 11px; font-weight: 700; letter-spacing: .04em">클릭 지점</span>
+            <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; width: 120px" role="group" aria-label="클릭 지점 9분할">
+              <button type="button" aria-label="좌상" style="height: 28px; background: #313131; border: 1px solid #3C3C3C"></button>
+              <button type="button" aria-label="상" style="height: 28px; background: #313131; border: 1px solid #3C3C3C"></button>
+              <button type="button" aria-label="우상" style="height: 28px; background: #313131; border: 1px solid #3C3C3C"></button>
+              <button type="button" aria-label="좌" style="height: 28px; background: #313131; border: 1px solid #3C3C3C"></button>
+              <button type="button" aria-label="중앙" aria-pressed="true" style="height: 28px; background: #0078D4; border: 1px solid #0078D4"></button>
+              <button type="button" aria-label="우" style="height: 28px; background: #313131; border: 1px solid #3C3C3C"></button>
+              <button type="button" aria-label="좌하" style="height: 28px; background: #313131; border: 1px solid #3C3C3C"></button>
+              <button type="button" aria-label="하" style="height: 28px; background: #313131; border: 1px solid #3C3C3C"></button>
+              <button type="button" aria-label="우하" style="height: 28px; background: #313131; border: 1px solid #3C3C3C"></button>
+            </div>
+            <span style="font-size: 12px; color: #9D9D9D">오프셋 dx 0 · dy 0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 상태 바 -->
+  <div style="display: flex; flex-wrap: wrap; align-items: center; min-height: 22px; background: #A1260D; color: #FFFFFF; font-size: 12px">
+    <span style="display: flex; align-items: center; gap: 6px; padding: 0 10px"><svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><circle cx="4" cy="4" r="4" fill="#FFFFFF"></circle></svg>녹화 중 02:14</span>
+    <span style="padding: 0 10px">SampleRPG 1280×720 · DPI 100%</span>
+    <span style="padding: 0 10px">스텝 6 · 템플릿 4</span>
+    <div style="flex: 1 1 auto"></div>
+    <span style="padding: 0 10px">녹화 정지 Ctrl+Shift+R</span>
+    <span style="padding: 0 10px">캡처 WGC · 훅 저수준</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const base = { bg: 'transparent', dot: '#4DAAFC', fg: '#CCCCCC', noteColor: '#9D9D9D' };
+    return {
+      steps: [
+        { ...base, n: 'P', dot: '#F0883E', node: '글자 입력 "2차 비밀번호 칸"', raw: 'type ●●●●●● · 00:01.1', note: '비밀값 선택 필요 · 이 스텝은 스크린샷 생략', noteColor: '#E2C08D' },
+        { ...base, n: 1, node: '이미지 클릭 "가방 아이콘"', raw: 'click (180, 216) · 00:03.2', note: '템플릿 자동 생성 · 유사도 0.95' },
+        { ...base, n: '', dot: '#616161', node: '나타날 때까지 대기 "가방 창"', raw: 'wait 1.8s', note: '고정 지연 대신 대기로 변환' },
+        { ...base, n: 2, node: '이미지 클릭 "장비 슬롯"', raw: 'click (640, 288) · 00:06.9', note: '같은 모양 3개 · 여러 개 규칙 필요', noteColor: '#CCA700' },
+        { ...base, n: 3, node: '이미지 클릭 "강화"', raw: 'click (858, 562) · 00:09.4', note: '편집 중 · 검색 범위 지정됨', bg: '#04395E', fg: '#FFFFFF' },
+        { ...base, n: 'V', dot: '#F0883E', node: 'OCR 읽기 → 값 확인', raw: 'assert text', note: '"강화 성공" 또는 "강화 실패" 포함' },
+        { ...base, n: 4, node: '키 입력 Enter', raw: 'key Enter · 00:12.0', note: '' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

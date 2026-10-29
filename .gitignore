@@ -1,0 +1,13 @@
+# Obsidian 개인 상태·플러그인 번들
+Docs/.obsidian/workspace*.json
+Docs/.obsidian/plugins/
+
+# 타사 발표 화면 캡처 (저작권) — 로컬에만 둔다
+Docs/Brainstorming/assets/autoflow-editor.png
+Docs/Brainstorming/assets/autoflow-enchant-repeat-graph.png
+Docs/Brainstorming/assets/casemanager-screens.jpg
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
