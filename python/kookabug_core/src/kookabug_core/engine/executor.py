@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import copy
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, Final, Literal
 
@@ -59,7 +59,7 @@ from kookabug_core.record.policy import (
 )
 from kookabug_core.registry import NodeDef, Registry, default_registry
 from kookabug_core.validate import validate
-from kookabug_core.workspace import WORKSPACE_FILE
+from kookabug_core.workspace import WORKSPACE_FILE, SettingLookup
 from kookabug_sdk import Result, Secret
 from kookabug_sdk.context import Deadline
 
@@ -88,12 +88,16 @@ class ExecOptions:
 
     `graph_prefix`는 `step.end.graph`(서브그래프 경로) 앞에 붙인다. runner는 스냅샷에서 읽은
     프로그램을 돌리므로 실행 폴더 기준 `snapshot/`을 준다.
+
+    `collect_events=False`면 이벤트를 `RunResult.events`에 모으지 않고 싱크로만 보낸다 (runner:
+    긴 실행에서 메모리가 이벤트 수에 비례해 늘지 않게).
     """
 
     deadline_ms: int = DEFAULT_DEADLINE_MS
     validate: bool = True
     run_id: str | None = None
     graph_prefix: str = ""
+    collect_events: bool = True
 
 
 @dataclass(frozen=True)
@@ -133,18 +137,27 @@ class Executor:
         artifacts: ArtifactStore | None = None,
         sink: EventSink | None = None,
         invoker: NodeInvoker | None = None,
+        before_step: Callable[[str], None] | None = None,
+        on_setting: Callable[[SettingLookup], None] | None = None,
     ) -> None:
-        """`sink`는 이벤트를 더 보낼 곳이다 (`RunResult.events`에는 늘 모인다).
+        """`sink`는 이벤트를 더 보낼 곳이다 (`RunResult.events`에는 `collect_events`일 때 모인다).
 
         `invoker`는 노드 함수 실행 경계다 (기본: 같은 프로세스, M0b: 워커 프로세스).
+        `before_step(스텝)`은 스텝을 시작하기 직전(`step.start` 전) 확인 지점에서 불린다 — runner의
+        경계 멈춤이 여기서 기다린다. `Cancelled`를 던지면 그 스텝은 시작하지 않고 실행이 끝난다.
+        `on_setting(조회 결과)`는 노드가 `ctx.setting()`으로 설정을 읽을 때마다 불린다
+        (실행 조건 기록).
+        시계를 주지 않으면 취소로 깨는 `SystemClock`이다.
         """
         self.registry = registry or default_registry()
         self.invoker: NodeInvoker = invoker or InProcessInvoker()
         self.platform: Platform = platform or FakePlatform()
-        self.clock: Clock = clock or SystemClock()
         self.cancel = cancel or CancelToken()
+        self.clock: Clock = clock or SystemClock(self.cancel)
         self.artifacts: ArtifactStore = artifacts or MemoryArtifacts()
         self.sink = sink
+        self.before_step = before_step
+        self.on_setting = on_setting
 
     def run(self, program: Program, options: ExecOptions | None = None) -> RunResult:
         options = options or ExecOptions()
@@ -158,9 +171,11 @@ class Executor:
             raise GraphInvalid(program.diagnostics)
 
         events: list[dict[str, Any]] = []
+        collect = options.collect_events
 
         def emit(event: dict[str, Any]) -> None:
-            events.append(event)
+            if collect:
+                events.append(event)
             if self.sink is not None:
                 self.sink.emit(event)
 
@@ -178,6 +193,7 @@ class Executor:
             deadline=Deadline(self.clock, self.clock.now_ms() + options.deadline_ms),
             deadline_ms=options.deadline_ms,
             emit_to=emit,
+            on_setting=self.on_setting,
         )
         workspace_record = program.workspace.config.get("record")
         policy = (
@@ -189,7 +205,7 @@ class Executor:
             .layer(root.record, graph_source(root.path))
         )
         top = Frame(root, (), None, 0, {}, record_policy=policy)
-        judgement = _Run(runtime, options.graph_prefix).execute(top)
+        judgement = _Run(runtime, options.graph_prefix, self.before_step).execute(top)
         cause = judgement.cause if judgement.verdict != "pass" else None
         return RunResult(
             run=run_id,
@@ -244,7 +260,19 @@ class _TerminalEnd:
 type _Outcome = Result | FrameExit | _TerminalEnd
 
 
-def _cause_of(step: str, path: tuple[str, ...], exc: BaseException) -> Cause:
+def _with_reason(cancel: CancelToken, exc: BaseException) -> BaseException:
+    """다른 곳(입력 액터 게이트 등)이 던진 `Cancelled`도 실행의 취소 사유로 기록한다: 기한 초과로
+    취소됐으면 `DeadlineExceeded`."""
+    if (
+        isinstance(exc, Cancelled)
+        and not isinstance(exc, DeadlineExceeded)
+        and cancel.reason == "deadline_exceeded"
+    ):
+        return DeadlineExceeded("테스트 전체 기한을 넘었다")
+    return exc
+
+
+def _cause_of(step: str | None, path: tuple[str, ...], exc: BaseException) -> Cause:
     if isinstance(exc, DeadlineExceeded):
         return Cause(step, path, "deadline_exceeded", str(exc) or "테스트 전체 기한을 넘었다")
     if isinstance(exc, Cancelled):
@@ -261,9 +289,15 @@ def _cause_of(step: str, path: tuple[str, ...], exc: BaseException) -> Cause:
 
 
 class _Run:
-    def __init__(self, runtime: Runtime, graph_prefix: str) -> None:
+    def __init__(
+        self,
+        runtime: Runtime,
+        graph_prefix: str,
+        before_step: Callable[[str], None] | None = None,
+    ) -> None:
         self.rt = runtime
         self.graph_prefix = graph_prefix
+        self.before_step = before_step
         self.steps = 0
         self.assertions = 0
         self.scopes = LoopScopes(runtime.program, runtime.registry)
@@ -345,6 +379,12 @@ class _Run:
         iteration = self._iteration(frame, node)
         if iteration is not None:
             start["iteration"] = end["iteration"] = iteration
+        if self.before_step is not None:
+            try:
+                self.before_step(step)
+            except Cancelled as exc:
+                # 시작하지 않은 스텝: step.start·step.end 없이 위로 (원인 스텝 없음)
+                raise _Error(_cause_of(None, frame.path, _with_reason(rt.cancel, exc))) from exc
         rt.emit(start)
         rt.recorder.open_step(
             step, frame.record_policy.layer(node.record, node_source(frame.graph.path, node.id))
@@ -372,7 +412,7 @@ class _Run:
             except _Halt:
                 raise
             except (Cancelled, Exception) as exc:
-                raise _Error(_cause_of(step, path, exc)) from exc
+                raise _Error(_cause_of(step, path, _with_reason(rt.cancel, exc))) from exc
         except _Halt as halt:
             # 이 스텝의 고장이거나, 호출한 서브그래프 안에서 올라오는 것
             end.update(status=halt.status, exit=None, outputs={})

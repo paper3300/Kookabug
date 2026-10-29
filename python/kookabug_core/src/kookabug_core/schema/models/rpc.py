@@ -15,6 +15,27 @@ class CancelParams(BaseModel):
     )
 
 
+class ControlState(RootModel[Literal["cancelling", "paused", "pausing", "running"]]):
+    root: Annotated[
+        Literal["cancelling", "paused", "pausing", "running"],
+        Field(
+            description="runner 상태 (제어 요청의 응답): running 실행 중, pausing 다음 경계에서 멈출 것, paused 멈춤, cancelling 취소 순서 진행 중",
+            title="ControlState",
+        ),
+    ]
+
+
+class ControlStateResult(BaseModel):
+    """
+    run.cancel·run.pause·run.resume (감독자 → runner)의 결과. 노드가 실행 중이어도 받는 즉시 답한다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    state: ControlState
+
+
 class CtxArtifactsSaveResult(BaseModel):
     """
     실행 폴더 기준 경로. 기록 정책으로 생략하면 null
@@ -98,6 +119,18 @@ class Params(BaseModel):
     )
 
 
+class ProcessIdent(BaseModel):
+    """
+    프로세스 식별 (PID + 생성 시각). created는 Windows FILETIME(100ns 단위)을 10진 문자열로 — RPC 정수 범위(2^53)를 넘는다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    created: Annotated[str, Field(pattern="^[0-9]+$")]
+    pid: Annotated[int, Field(ge=0)]
+
+
 class RequestId(RootModel[int]):
     root: Annotated[
         int,
@@ -108,6 +141,65 @@ class RequestId(RootModel[int]):
             title="RequestId",
         ),
     ]
+
+
+class Control(BaseModel):
+    """
+    제어 채널: 감독자가 연 파이프 이름과 상호 인증 키(32바이트 hex)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    key: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
+    pipe: str
+
+
+class Hooks(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    after_down: dict[str, str] | None = None
+    before_down: dict[str, str] | None = None
+    before_up: dict[str, str] | None = None
+
+
+class RunSpecPlatform(BaseModel):
+    """
+    플랫폼: none(캡처·입력 없음) 또는 fake(frames를 차례로 캡처, 입력은 input_log JSONL에 기록, hooks는 가짜 백엔드의 키별 훅)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    frames: list[str] | None = None
+    hooks: Hooks | None = None
+    input_log: str | None = None
+    kind: Literal["fake", "none"]
+
+
+class RunnerHelloParams(BaseModel):
+    """
+    runner.hello (runner → 감독자): 제어 채널에 붙은 직후. runner는 자기 식별을 스스로 알린다 (venv 런처를 거쳐 띄웠어도 실제 runner 프로세스)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    protocol: int
+    run_id: str
+    runner: ProcessIdent
+
+
+class RunnerStoppingParams(BaseModel):
+    """
+    runner.stopping 알림 (runner → 감독자): 종료 단계에 들어갔다 (정상 마무리 finish 또는 취소 사유). 감독자는 처음 받은 때부터 마무리 유예가 지나도 runner가 살아 있으면 하드 종료한다 — 외부 취소 없이 기한 초과·정상 마무리에서 멈춘 runner도 같은 규칙
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    reason: Literal["cancelled", "deadline_exceeded", "finish", "supervisor_lost"]
 
 
 class SuccessResponse(BaseModel):
@@ -361,6 +453,54 @@ class Request(BaseModel):
     jsonrpc: JsonRpcVersion
     method: MethodName
     params: Params | None = None
+
+
+class RunSpec(BaseModel):
+    """
+    실행 사양: 감독자가 runner의 stdin에 JSON 하나로 주고 닫는다 (제어 채널 키를 명령줄·실행 폴더에 남기지 않는다). 시간 값을 빼면 runner 기본값(취소 유예 2000, 워커 시작 30000, 마무리 유예 5000, 자기 종료 여유 10000 ms)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    control: Annotated[
+        Control,
+        Field(description="제어 채널: 감독자가 연 파이프 이름과 상호 인증 키(32바이트 hex)"),
+    ]
+    deadline_ms: Annotated[int, Field(description="테스트 전체 기한 (runner 시작부터)", ge=1)]
+    graph: Annotated[str, Field(description="실행할 테스트 그래프 (워크스페이스 기준 경로)")]
+    job_name: Annotated[
+        str,
+        Field(
+            description="감독자가 만든 실행 Job 이름. runner는 어떤 자식도 띄우기 전에 자기를 넣는다"
+        ),
+    ]
+    platform: RunSpecPlatform
+    plugin_modules: Annotated[
+        list[str],
+        Field(
+            description="워커가 import할 플러그인 모듈 (개발용 --plugin-module). 비면 워커를 띄우지 않는다"
+        ),
+    ]
+    profile: str | None
+    run_dir: Annotated[str, Field(description="감독자가 만든 실행 폴더 (절대 경로)")]
+    run_id: Annotated[str, Field(pattern="^[a-z0-9]{8}$")]
+    self_kill_margin_ms: Annotated[
+        int | None,
+        Field(
+            description="감독자가 살아 있을 때 자기 종료 감시자가 마무리 유예 뒤 더 기다리는 시간 (내부 값, 사용자 설정 아님)",
+            ge=0,
+        ),
+    ] = None
+    settings: Annotated[dict[str, Any], Field(description="--set 설정값 (옵션 계층)")]
+    shutdown_grace_ms: Annotated[
+        int | None,
+        Field(description="마무리 유예: 감독자 하드 종료·감독자 사망 뒤 자기 종료까지", ge=0),
+    ] = None
+    supervisor: ProcessIdent
+    worker_cancel_grace_ms: Annotated[int | None, Field(ge=0)] = None
+    worker_start_timeout_ms: Annotated[int | None, Field(ge=1)] = None
+    workspace_root: str
 
 
 class WorkerHelloResult(BaseModel):

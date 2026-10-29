@@ -6,6 +6,24 @@
       "title": "CancelParams",
       "type": "object"
     },
+    "ControlState": {
+      "description": "runner 상태 (제어 요청의 응답): running 실행 중, pausing 다음 경계에서 멈출 것, paused 멈춤, cancelling 취소 순서 진행 중",
+      "enum": ["cancelling", "paused", "pausing", "running"],
+      "title": "ControlState",
+      "type": "string"
+    },
+    "ControlStateResult": {
+      "additionalProperties": false,
+      "description": "run.cancel·run.pause·run.resume (감독자 → runner)의 결과. 노드가 실행 중이어도 받는 즉시 답한다",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/ControlState"
+        }
+      },
+      "required": ["state"],
+      "title": "ControlStateResult",
+      "type": "object"
+    },
     "CtxArtifactsSaveParams": {
       "additionalProperties": false,
       "description": "ctx.artifacts.save (워커 → runner)",
@@ -372,6 +390,23 @@
       "title": "Params",
       "type": "object"
     },
+    "ProcessIdent": {
+      "additionalProperties": false,
+      "description": "프로세스 식별 (PID + 생성 시각). created는 Windows FILETIME(100ns 단위)을 10진 문자열로 — RPC 정수 범위(2^53)를 넘는다",
+      "properties": {
+        "created": {
+          "pattern": "^[0-9]+$",
+          "type": "string"
+        },
+        "pid": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": ["created", "pid"],
+      "title": "ProcessIdent",
+      "type": "object"
+    },
     "Request": {
       "additionalProperties": false,
       "description": "응답을 기다리는 요청",
@@ -399,6 +434,180 @@
       "minimum": 1,
       "title": "RequestId",
       "type": "integer"
+    },
+    "RunSpec": {
+      "additionalProperties": false,
+      "description": "실행 사양: 감독자가 runner의 stdin에 JSON 하나로 주고 닫는다 (제어 채널 키를 명령줄·실행 폴더에 남기지 않는다). 시간 값을 빼면 runner 기본값(취소 유예 2000, 워커 시작 30000, 마무리 유예 5000, 자기 종료 여유 10000 ms)",
+      "properties": {
+        "control": {
+          "additionalProperties": false,
+          "description": "제어 채널: 감독자가 연 파이프 이름과 상호 인증 키(32바이트 hex)",
+          "properties": {
+            "key": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "pipe": {
+              "type": "string"
+            }
+          },
+          "required": ["key", "pipe"],
+          "type": "object"
+        },
+        "deadline_ms": {
+          "description": "테스트 전체 기한 (runner 시작부터)",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "graph": {
+          "description": "실행할 테스트 그래프 (워크스페이스 기준 경로)",
+          "type": "string"
+        },
+        "job_name": {
+          "description": "감독자가 만든 실행 Job 이름. runner는 어떤 자식도 띄우기 전에 자기를 넣는다",
+          "type": "string"
+        },
+        "platform": {
+          "$ref": "#/$defs/RunSpecPlatform"
+        },
+        "plugin_modules": {
+          "description": "워커가 import할 플러그인 모듈 (개발용 --plugin-module). 비면 워커를 띄우지 않는다",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "profile": {
+          "type": ["null", "string"]
+        },
+        "run_dir": {
+          "description": "감독자가 만든 실행 폴더 (절대 경로)",
+          "type": "string"
+        },
+        "run_id": {
+          "pattern": "^[a-z0-9]{8}$",
+          "type": "string"
+        },
+        "self_kill_margin_ms": {
+          "description": "감독자가 살아 있을 때 자기 종료 감시자가 마무리 유예 뒤 더 기다리는 시간 (내부 값, 사용자 설정 아님)",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "settings": {
+          "description": "--set 설정값 (옵션 계층)",
+          "type": "object"
+        },
+        "shutdown_grace_ms": {
+          "description": "마무리 유예: 감독자 하드 종료·감독자 사망 뒤 자기 종료까지",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "supervisor": {
+          "$ref": "#/$defs/ProcessIdent"
+        },
+        "worker_cancel_grace_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "worker_start_timeout_ms": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "workspace_root": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "control",
+        "deadline_ms",
+        "graph",
+        "job_name",
+        "platform",
+        "plugin_modules",
+        "profile",
+        "run_dir",
+        "run_id",
+        "settings",
+        "supervisor",
+        "workspace_root"
+      ],
+      "title": "RunSpec",
+      "type": "object"
+    },
+    "RunSpecPlatform": {
+      "additionalProperties": false,
+      "description": "플랫폼: none(캡처·입력 없음) 또는 fake(frames를 차례로 캡처, 입력은 input_log JSONL에 기록, hooks는 가짜 백엔드의 키별 훅)",
+      "properties": {
+        "frames": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hooks": {
+          "additionalProperties": false,
+          "properties": {
+            "after_down": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "before_down": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "before_up": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "input_log": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": ["fake", "none"]
+        }
+      },
+      "required": ["kind"],
+      "title": "RunSpecPlatform",
+      "type": "object"
+    },
+    "RunnerHelloParams": {
+      "additionalProperties": false,
+      "description": "runner.hello (runner → 감독자): 제어 채널에 붙은 직후. runner는 자기 식별을 스스로 알린다 (venv 런처를 거쳐 띄웠어도 실제 runner 프로세스)",
+      "properties": {
+        "protocol": {
+          "type": "integer"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "runner": {
+          "$ref": "#/$defs/ProcessIdent"
+        }
+      },
+      "required": ["protocol", "run_id", "runner"],
+      "title": "RunnerHelloParams",
+      "type": "object"
+    },
+    "RunnerStoppingParams": {
+      "additionalProperties": false,
+      "description": "runner.stopping 알림 (runner → 감독자): 종료 단계에 들어갔다 (정상 마무리 finish 또는 취소 사유). 감독자는 처음 받은 때부터 마무리 유예가 지나도 runner가 살아 있으면 하드 종료한다 — 외부 취소 없이 기한 초과·정상 마무리에서 멈춘 runner도 같은 규칙",
+      "properties": {
+        "reason": {
+          "enum": ["cancelled", "deadline_exceeded", "finish", "supervisor_lost"]
+        }
+      },
+      "required": ["reason"],
+      "title": "RunnerStoppingParams",
+      "type": "object"
     },
     "SuccessResponse": {
       "additionalProperties": false,

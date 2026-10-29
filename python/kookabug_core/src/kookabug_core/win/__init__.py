@@ -1,5 +1,7 @@
-"""Windows 기반: Job Object, 이름 있는 뮤텍스, 프로세스 식별 (ctypes, 구현 계획 M0b 2.3)."""
+"""Windows 기반: Job Object, 이름 있는 뮤텍스, 프로세스 식별, 이벤트·여러 핸들 대기
+(ctypes, 구현 계획 M0b 2.3·2.6)."""
 
+from kookabug_core.win.event import WinEvent, terminate_current, wait_any
 from kookabug_core.win.job import RUN_JOB_PREFIX, Job, run_job_name
 from kookabug_core.win.mutex import NamedMutex, WaitResult
 from kookabug_core.win.process import (
@@ -20,9 +22,12 @@ __all__ = [
     "Process",
     "ProcessId",
     "WaitResult",
+    "WinEvent",
     "current",
     "identify",
     "is_alive",
     "run_job_name",
     "spawn",
+    "terminate_current",
+    "wait_any",
 ]

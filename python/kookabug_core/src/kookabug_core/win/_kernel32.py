@@ -79,6 +79,13 @@ GetProcessTimes = _fn(
 GetExitCodeProcess = _fn("GetExitCodeProcess", BOOL, HANDLE, ctypes.POINTER(DWORD))
 TerminateProcess = _fn("TerminateProcess", BOOL, HANDLE, ctypes.c_uint)
 
+CreateEventW = _fn("CreateEventW", HANDLE, ctypes.c_void_p, BOOL, BOOL, LPCWSTR)
+SetEvent = _fn("SetEvent", BOOL, HANDLE)
+WaitForMultipleObjects = _fn(
+    "WaitForMultipleObjects", DWORD, DWORD, ctypes.POINTER(HANDLE), BOOL, DWORD
+)
+MAXIMUM_WAIT_OBJECTS: Final = 64
+
 FILE_APPEND_DATA: Final = 0x0004
 FILE_SHARE_ALL: Final = 0x0001 | 0x0002 | 0x0004  # READ | WRITE | DELETE
 OPEN_ALWAYS: Final = 4

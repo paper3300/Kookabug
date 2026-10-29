@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from kookabug_core.engine.cancel import CancelToken, DeadlineExceeded
 from kookabug_core.engine.frame import Frame
@@ -19,10 +19,11 @@ from kookabug_core.ir import Node
 from kookabug_core.loader import Program
 from kookabug_core.record.artifacts import ArtifactStore, Recorder
 from kookabug_core.registry import Registry
+from kookabug_core.workspace import SettingLookup
 from kookabug_sdk.context import ArtifactsApi, Clock, Deadline, InputApi, LogApi, VarsApi
 from kookabug_sdk.types import Image, Match, Point, Rect, Secret, WindowRef
 
-__all__ = ["ArtifactStore", "Platform", "Runtime", "StepContext"]
+__all__ = ["ArtifactStore", "Platform", "Runtime", "StepContext", "StepInputPlatform"]
 
 
 class Platform(Protocol):
@@ -31,6 +32,16 @@ class Platform(Protocol):
     @property
     def input(self) -> InputApi: ...
     def capture(self, window: WindowRef | None, region: Rect | None) -> Image: ...
+
+
+@runtime_checkable
+class StepInputPlatform(Protocol):
+    """스텝마다 입력 경로를 주는 플랫폼 (M0b runner: 입력 액터 큐에 스텝 ID와 함께 넣는다).
+
+    플랫폼이 이것을 구현하면 `ctx.input`은 `input`이 아니라 `input_for(스텝)`으로 간다.
+    """
+
+    def input_for(self, step: str) -> InputApi: ...
 
 
 @dataclass(eq=False)
@@ -49,6 +60,8 @@ class Runtime:
     deadline: Deadline
     deadline_ms: int
     emit_to: Callable[[dict[str, Any]], None]
+    on_setting: Callable[[SettingLookup], None] | None = None
+    """노드가 `ctx.setting()`으로 실제로 읽은 설정 (runner가 실행 조건 `run.json`에 남긴다)."""
 
     def emit(self, event: Mapping[str, Any]) -> None:
         self.emit_to({**event, "run": self.run})
@@ -68,6 +81,7 @@ class Runtime:
         remaining = self.deadline.remaining_ms
         if ms >= remaining:
             self.clock.sleep(remaining)
+            self.cancel.check()  # 기다리는 동안 취소됐으면 그 사유로
             raise DeadlineExceeded(f"테스트 전체 기한 {self.deadline_ms}ms를 넘었다")
         self.clock.sleep(ms)
         self.check()
@@ -139,22 +153,26 @@ class StepArtifacts:
 class CheckedInput:
     """입력 앞뒤로 취소·전체 기한을 확인한다 (취소된 뒤에는 게임에 입력하지 않는다)."""
 
-    def __init__(self, runtime: Runtime) -> None:
+    def __init__(self, runtime: Runtime, step: str) -> None:
         self._runtime = runtime
+        platform = runtime.platform
+        self._input: InputApi = (
+            platform.input_for(step) if isinstance(platform, StepInputPlatform) else platform.input
+        )
 
     def click(self, at: Point | Rect | Match, *, button: str = "left") -> None:
         self._runtime.check()
-        self._runtime.platform.input.click(at, button=button)
+        self._input.click(at, button=button)
         self._runtime.check()
 
     def key(self, key: str) -> None:
         self._runtime.check()
-        self._runtime.platform.input.key(key)
+        self._input.key(key)
         self._runtime.check()
 
     def type_text(self, text: str | Secret) -> None:
         self._runtime.check()
-        self._runtime.platform.input.type_text(text)
+        self._input.type_text(text)
         self._runtime.check()
 
 
@@ -205,7 +223,7 @@ class StepContext:
 
     @property
     def input(self) -> InputApi:
-        return CheckedInput(self._runtime)
+        return CheckedInput(self._runtime, self._step)
 
     def capture(self, region: Rect | None = None) -> Image:
         self._runtime.check()
@@ -230,6 +248,8 @@ class StepContext:
         problem = program.workspace.setting_problem(lookup, program.options)
         if problem is not None:
             raise KeyError(problem[1])
+        if self._runtime.on_setting is not None:
+            self._runtime.on_setting(lookup)
         return lookup.value
 
     def path(self, rel: str) -> Path:

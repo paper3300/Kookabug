@@ -25,6 +25,7 @@ from kookabug_core.schema import check_shape
 from kookabug_core.workspace import (
     RunOptions,
     SecretProvider,
+    SettingLookup,
     Workspace,
     WorkspaceError,
     default_secrets,
@@ -93,6 +94,8 @@ class Program:
     calls: dict[tuple[str, str], CallRef] = field(default_factory=dict[tuple[str, str], CallRef])
     diagnostics: list[Diagnostic] = field(default_factory=list[Diagnostic])
     references: References = field(default_factory=References)
+    settings: dict[str, SettingLookup] = field(default_factory=dict[str, SettingLookup])
+    """그래프가 `$setting`으로 쓴 설정 (키 → 찾은 값·계층). 실행 정보(`run.json`)에 남긴다."""
 
     def callee(self, graph: str, node: str) -> Graph | None:
         ref = self.calls.get((graph, node))
@@ -283,6 +286,7 @@ class _Loader:
                 lookup = self.ws.lookup_setting(inner, self.program.options)
                 problem = self.ws.setting_problem(lookup, self.program.options)
                 if problem is None:
+                    self.program.settings[inner] = lookup
                     return copy.deepcopy(lookup.value)
                 self.program.diagnostics.append(diag(problem[0], problem[1], **where))
                 return Unresolved(tag, inner)

@@ -74,6 +74,11 @@ class Journal:
     def last_seq(self) -> int:
         return self._seq
 
+    @property
+    def broken(self) -> bool:
+        """쓰기가 도중에 실패해 더 쓰지 않는 저널인가."""
+        return self._broken is not None
+
     def emit(self, event: Mapping[str, Any]) -> dict[str, Any]:
         """한 줄을 쓰고 쓴 이벤트를 돌려준다. `seq`·`t`는 작성기가 붙인다."""
         kind = event.get("event")
