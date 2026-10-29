@@ -140,7 +140,20 @@ class WorkerExitEvent(BaseModel):
     event: Literal["worker.exit"]
     exit_code: int | None = None
     pid: Annotated[int, Field(ge=0)]
-    reason: Literal["killed_after_grace", "shutdown", "start_timeout", "unexpected"] | None = None
+    reason: Annotated[
+        Literal[
+            "cancelled",
+            "killed_after_grace",
+            "shutdown",
+            "start_failed",
+            "start_timeout",
+            "unexpected",
+        ]
+        | None,
+        Field(
+            description="shutdown: 마무리에서 정상 종료, killed_after_grace: 취소·shutdown 유예를 넘겨 끝냄, unexpected: 스스로 죽음(실행 중 kill·크래시, hello 전 종료 포함), start_timeout: hello 기한 초과로 끝냄, start_failed: hello 실패(import 오류·프로토콜 불일치)로 끝냄, cancelled: 시작 중 취소·전체 기한으로 끝냄"
+        ),
+    ] = None
     run: RunId
     seq: Seq
     t: Timestamp

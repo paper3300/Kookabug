@@ -109,13 +109,17 @@ class DynamicExitsDecl:
 
 @dataclass(frozen=True)
 class NodeDef:
-    """노드 타입 하나의 선언(노드 스키마 JSON 기준)과 실행 함수."""
+    """노드 타입 하나의 선언(노드 스키마 JSON 기준)과 실행 함수.
+
+    `function`이 None이면 원격 노드다: 워커가 hello로 알려 준 선언만 있고, 실행은 워커에서 한다
+    (runner는 플러그인 코드를 import하지 않는다).
+    """
 
     type: str
     version: int
     plugin: str
     decl: Mapping[str, Any]
-    function: NodeFunction
+    function: NodeFunction | None
     inputs: tuple[InputDecl, ...] | InterfaceSource
     outputs: tuple[OutputDecl, ...] | InterfaceSource
     exits: tuple[ExitDecl, ...] | DynamicExitsDecl | InterfaceSource | None
@@ -156,8 +160,14 @@ class NodeDef:
         merged.update(copy.deepcopy(dict(config)))
         return merged
 
+    @property
+    def remote(self) -> bool:
+        return self.function is None
+
     @classmethod
-    def from_json(cls, plugin: str, decl: Mapping[str, Any], function: NodeFunction) -> NodeDef:
+    def from_json(
+        cls, plugin: str, decl: Mapping[str, Any], function: NodeFunction | None
+    ) -> NodeDef:
         return cls(
             type=decl["type"],
             version=decl["version"],
@@ -231,8 +241,7 @@ class Registry:
         """플러그인 ID → 버전."""
         return dict(self._plugins)
 
-    def add_plugin(self, schema: Mapping[str, Any], functions: Iterable[NodeFunction]) -> None:
-        """노드 스키마 문서와 그 플러그인의 `@node` 함수들을 등록한다."""
+    def _check_document(self, schema: Mapping[str, Any]) -> str:
         problems = check_shape(schema, "node-schema")
         if problems:
             raise RegistryError(
@@ -241,6 +250,33 @@ class Registry:
         plugin = schema["plugin"]["id"]
         if plugin in self._plugins:
             raise RegistryError(f"플러그인 '{plugin}'이(가) 이미 등록돼 있다")
+        return plugin
+
+    def _check_type(self, plugin: str, node_type: str, defs: Mapping[str, NodeDef]) -> None:
+        if node_type.split(".", 1)[0] != plugin:
+            raise RegistryError(f"{node_type}: 플러그인 '{plugin}'의 노드 타입이 아니다")
+        if node_type in defs or node_type in self._nodes:
+            raise RegistryError(f"{node_type}: 같은 노드 타입이 이미 있다")
+
+    def add_remote(self, schema: Mapping[str, Any]) -> None:
+        """워커가 hello로 알려 준 플러그인을 원격 노드(`function` 없음)로 등록한다.
+
+        engine 노드는 실행기가 직접 처리하는 core 전용이라 원격 플러그인에는 둘 수 없다.
+        """
+        plugin = self._check_document(schema)
+        defs: dict[str, NodeDef] = {}
+        for decl in schema["nodes"]:
+            node_type = decl["type"]
+            self._check_type(plugin, node_type, defs)
+            if "engine" in decl:
+                raise RegistryError(f"{node_type}: 원격 노드는 engine을 쓸 수 없다")
+            defs[node_type] = NodeDef.from_json(plugin, copy.deepcopy(decl), None)
+        self._nodes.update(defs)
+        self._plugins[plugin] = schema["plugin"]["version"]
+
+    def add_plugin(self, schema: Mapping[str, Any], functions: Iterable[NodeFunction]) -> None:
+        """노드 스키마 문서와 그 플러그인의 `@node` 함수들을 등록한다."""
+        plugin = self._check_document(schema)
         by_type: dict[str, NodeFunction] = {}
         for fn in functions:
             if by_type.get(fn.spec.type) is fn:
@@ -252,10 +288,7 @@ class Registry:
         defs: dict[str, NodeDef] = {}
         for decl in schema["nodes"]:
             node_type = decl["type"]
-            if node_type.split(".", 1)[0] != plugin:
-                raise RegistryError(f"{node_type}: 플러그인 '{plugin}'의 노드 타입이 아니다")
-            if node_type in defs or node_type in self._nodes:
-                raise RegistryError(f"{node_type}: 같은 노드 타입이 이미 있다")
+            self._check_type(plugin, node_type, defs)
             fn = by_type.pop(node_type, None)
             if fn is None:
                 raise RegistryError(f"{node_type}: 스키마에 있는데 함수가 없다")

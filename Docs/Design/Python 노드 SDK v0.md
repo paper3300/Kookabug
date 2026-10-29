@@ -173,6 +173,17 @@ min_core = "0.1.0"
 - 노드 스키마는 `src/<최상위 패키지>/kookabug.schema.json`에 만든다 (최상위 패키지 = `modules` 첫 항목의 첫 이름). 모듈 디렉터리 안에 있으므로 빌드 백엔드가 **uv_build면** 설정 없이 wheel에 들어간다. setuptools 등 다른 백엔드는 package-data 같은 데이터 파일 포함 설정이 따로 필요하다. 설치된 스키마는 `kookabug_sdk.schema.load_installed("<패키지>")`(`importlib.resources`)로 읽는다
 - 의존성은 `dependencies`로 선언하고 uv로 설치한다. venv는 기본 공유, 충돌하면 그 플러그인만 격리 venv. 워커 프로세스는 venv와 별개로 **실행마다 새로** 띄운다 → [[구현 계획 v0]] 3장
 
+**워커에서 실행될 때**
+
+- 플러그인 노드는 runner가 아니라 워커 프로세스에서 돈다. 워커 호스트는 SDK에 있다(`python -m kookabug_sdk.worker`). 그래서 플러그인 venv에는 SDK만 있으면 되고 본체(`kookabug_core`) 의존성이 들어오지 않는다
+- runner는 플러그인 코드를 import하지 않는다. 워커가 `modules`를 import해 모은 노드 선언(노드 스키마와 같은 모양)으로 그래프를 검증한다
+- `ctx`의 캡처·입력·기록·변수·설정은 runner에 요청으로 간다. runner가 노드 선언(`pure`·`effects`)으로 다시 검사하므로, `ctx`의 제한 래퍼를 건너뛰어도 선언하지 않은 효과는 `error`다. 노드 결과도 runner가 선언과 다시 대조한다
+- `ctx`는 그 노드 실행 동안만 쓴다. 노드가 돌아온 뒤 보관해 둔 `ctx`나 노드가 남긴 스레드에서 부르면 `ContextViolation`이다(runner도 끝난 실행의 요청을 처리하지 않는다)
+- `print()`와 표준 오류 출력은 실행 폴더 `logs/worker.stdout.log`·`worker.stderr.log`로 간다. 통신에 쓰지 않으므로 출력이 통신을 깨지 않는다. 실행 기록에 남길 것은 `ctx.log`를 쓴다
+- `ctx.path(rel)`은 원본 워크스페이스가 아니라 **실행 스냅샷**(`<실행 폴더>/snapshot`) 기준이다. `..`·절대 경로로 그 밖을 가리키면 오류
+- 노드 입력·출력은 JSON 값과 SDK 타입(`Secret`·`Rect`·`Image` 등)만 오간다. 비밀값은 워커에서도 `Secret`이다. 노드 예외는 `error`(`node_error`)가 되고 traceback은 실행 기록의 `log`(error)에 남는다
+- 취소 뒤 유예(`run.worker_cancel_grace_ms`, 기본 2초) 안에 노드가 끝나지 않으면 runner가 워커 프로세스를 끝낸다. 워커가 죽으면 그 스텝은 `error`(`worker_died`)이고, 그 실행에서 워커를 다시 띄우지 않는다
+
 ## 명령
 
 | 명령 | 하는 일 |

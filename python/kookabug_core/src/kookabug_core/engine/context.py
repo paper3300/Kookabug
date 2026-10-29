@@ -178,6 +178,16 @@ class StepContext:
         return self._config
 
     @property
+    def step(self) -> str:
+        """이 ctx의 스텝 ID (워커에 노드를 보낼 때 같이 보낸다)."""
+        return self._step
+
+    @property
+    def run_remaining_ms(self) -> int:
+        """테스트 전체 기한까지 남은 시간 (워커가 자기 쪽 `sleep`·`check_cancel`에 쓴다)."""
+        return self._runtime.deadline.remaining_ms
+
+    @property
     def window(self) -> WindowRef | None:
         return self._frame.current_window
 

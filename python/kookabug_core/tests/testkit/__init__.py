@@ -20,6 +20,18 @@
 - `testkit.pure.count`: 계산될 때마다 `COUNTS[key]`를 올리는 순수 노드 (계산 횟수 확인용)
 - `testkit.pure.capture`·`testkit.pure.log`: 금지된 ctx 기능을 쓰는 순수 노드 (→ error)
 
+프로세스 시나리오용 (워커가 `--plugin-module testkit.nodes`로 실행한다, 구현 계획 M0b 2.12):
+
+- `testkit.block`: 로그 `blocking` 뒤 취소될 때까지 `ctx.check_cancel`·`ctx.sleep(10)` 반복
+- `testkit.gate`: 로그 `gate` 뒤 신호 파일이 생길 때까지 협력 대기 (정상으로 끝날 수 있다)
+- `testkit.hang`: `ctx` 없이 무한 루프 (`hold_gil`이면 GIL을 쥔 채 멈춘다)
+- `testkit.input.hold`: `ctx.input.key` 한 번 (가짜 백엔드 훅과 함께 "키를 누른 채 멈춤")
+- `testkit.ctx_roundtrip`: 캡처·변수·기록·저장·설정 왕복, `print()`
+- `testkit.read_file`: `ctx.path(rel)`로 읽어 출력
+- `testkit.crash`: `os._exit(code)`
+- `testkit.ctx_sneak`·`testkit.ctx_replay`·`testkit.liar`: SDK 제한·실행 번호·결과 대조를 건너뛰는
+  "믿을 수 없는 워커" 흉내
+
 그래프의 `plugins`에 `"testkit"`을 넣고 `registry_with_testkit()`으로 검증·실행한다.
 """
 

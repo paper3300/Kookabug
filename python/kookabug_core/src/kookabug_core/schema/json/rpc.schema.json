@@ -1,5 +1,212 @@
 {
   "$defs": {
+    "CancelParams": {
+      "additionalProperties": false,
+      "description": "cancel 알림 (runner → 워커): 이후 ctx 호출·sleep·check_cancel이 Cancelled",
+      "title": "CancelParams",
+      "type": "object"
+    },
+    "CtxArtifactsSaveParams": {
+      "additionalProperties": false,
+      "description": "ctx.artifacts.save (워커 → runner)",
+      "properties": {
+        "image": {
+          "$ref": "#/$defs/WireValue"
+        },
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": ["image", "invoke", "name"],
+      "title": "CtxArtifactsSaveParams",
+      "type": "object"
+    },
+    "CtxArtifactsSaveResult": {
+      "additionalProperties": false,
+      "description": "실행 폴더 기준 경로. 기록 정책으로 생략하면 null",
+      "properties": {
+        "path": {
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["path"],
+      "title": "CtxArtifactsSaveResult",
+      "type": "object"
+    },
+    "CtxCaptureParams": {
+      "additionalProperties": false,
+      "description": "ctx.capture (워커 → runner)",
+      "properties": {
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "region": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["invoke", "region"],
+      "title": "CtxCaptureParams",
+      "type": "object"
+    },
+    "CtxCaptureResult": {
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["image"],
+      "title": "CtxCaptureResult",
+      "type": "object"
+    },
+    "CtxInputClickParams": {
+      "additionalProperties": false,
+      "description": "ctx.input.click (워커 → runner). at은 point·rect·match",
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/WireValue"
+        },
+        "button": {
+          "type": "string"
+        },
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        }
+      },
+      "required": ["at", "button", "invoke"],
+      "title": "CtxInputClickParams",
+      "type": "object"
+    },
+    "CtxInputKeyParams": {
+      "additionalProperties": false,
+      "description": "ctx.input.key (워커 → runner)",
+      "properties": {
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": ["invoke", "key"],
+      "title": "CtxInputKeyParams",
+      "type": "object"
+    },
+    "CtxInputTypeTextParams": {
+      "additionalProperties": false,
+      "description": "ctx.input.type_text (워커 → runner). text는 문자열이나 비밀값",
+      "properties": {
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "text": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["invoke", "text"],
+      "title": "CtxInputTypeTextParams",
+      "type": "object"
+    },
+    "CtxLogParams": {
+      "additionalProperties": false,
+      "description": "ctx.log (워커 → runner). message는 str()로 만든 것(비밀값은 가려짐)",
+      "properties": {
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "level": {
+          "enum": ["debug", "info", "warn", "error"]
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": ["invoke", "level", "message"],
+      "title": "CtxLogParams",
+      "type": "object"
+    },
+    "CtxSettingParams": {
+      "additionalProperties": false,
+      "description": "ctx.setting (워커 → runner)",
+      "properties": {
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": ["invoke", "key"],
+      "title": "CtxSettingParams",
+      "type": "object"
+    },
+    "CtxSettingResult": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["value"],
+      "title": "CtxSettingResult",
+      "type": "object"
+    },
+    "CtxVarsGetParams": {
+      "additionalProperties": false,
+      "description": "ctx.vars.get·has (워커 → runner)",
+      "properties": {
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": ["invoke", "name"],
+      "title": "CtxVarsGetParams",
+      "type": "object"
+    },
+    "CtxVarsGetResult": {
+      "additionalProperties": false,
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "value": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["found", "value"],
+      "title": "CtxVarsGetResult",
+      "type": "object"
+    },
+    "CtxVarsSetParams": {
+      "additionalProperties": false,
+      "description": "ctx.vars.set (워커 → runner)",
+      "properties": {
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["invoke", "name", "value"],
+      "title": "CtxVarsSetParams",
+      "type": "object"
+    },
+    "EmptyResult": {
+      "additionalProperties": false,
+      "description": "결과 없음 (ctx.log·ctx.vars.set·ctx.input.*·worker.shutdown)",
+      "title": "EmptyResult",
+      "type": "object"
+    },
     "ErrorCode": {
       "description": "표준: -32700 parse_error, -32600 invalid_request, -32601 method_not_found, -32602 invalid_params, -32603 internal_error. Kookabug: -32001 cancelled, -32002 node_error, -32003 context_violation, -32004 node_contract, -32005 protocol_version",
       "enum": [-32700, -32600, -32601, -32602, -32603, -32001, -32002, -32003, -32004, -32005],
@@ -49,6 +256,13 @@
       "title": "ErrorResponse",
       "type": "object"
     },
+    "InvokeId": {
+      "description": "노드 실행 번호 (runner가 워커마다 1부터 붙인다). 워커의 ctx 요청은 자기를 부른 node.invoke의 번호를 싣고, runner는 지금 기다리는 실행의 번호가 아니면 처리하지 않는다(context_violation)",
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "title": "InvokeId",
+      "type": "integer"
+    },
     "JsonRpcVersion": {
       "const": "2.0",
       "title": "JsonRpcVersion"
@@ -58,6 +272,81 @@
       "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
       "title": "MethodName",
       "type": "string"
+    },
+    "NodeInvokeParams": {
+      "additionalProperties": false,
+      "description": "node.invoke (runner → 워커): 노드 하나 실행. pure·effects는 runner가 아는 선언(워커 선언과 다르면 node_contract), deadline_remaining_ms는 테스트 전체 기한까지 남은 시간",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/WireValue"
+        },
+        "deadline_remaining_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "effects": {
+          "items": {
+            "enum": ["capture", "input", "process"]
+          },
+          "type": "array"
+        },
+        "inputs": {
+          "$ref": "#/$defs/WireValue"
+        },
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "pure": {
+          "type": "boolean"
+        },
+        "step": {
+          "type": ["string", "null"]
+        },
+        "type": {
+          "type": "string"
+        },
+        "window": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": [
+        "config",
+        "deadline_remaining_ms",
+        "effects",
+        "inputs",
+        "invoke",
+        "node_id",
+        "pure",
+        "step",
+        "type",
+        "window"
+      ],
+      "title": "NodeInvokeParams",
+      "type": "object"
+    },
+    "NodeInvokeResult": {
+      "additionalProperties": false,
+      "description": "노드 결과. 순수 노드는 exit·kind가 null. 오류는 오류 응답(cancelled·node_error·context_violation·node_contract)",
+      "properties": {
+        "exit": {
+          "type": ["string", "null"]
+        },
+        "kind": {
+          "enum": ["ok", "fail", null]
+        },
+        "message": {
+          "type": ["string", "null"]
+        },
+        "outputs": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["exit", "kind", "message", "outputs"],
+      "title": "NodeInvokeResult",
+      "type": "object"
     },
     "Notification": {
       "additionalProperties": false,
@@ -127,6 +416,75 @@
       },
       "required": ["id", "jsonrpc", "result"],
       "title": "SuccessResponse",
+      "type": "object"
+    },
+    "WireValue": {
+      "description": "노드 입력·출력·ctx 값 (kookabug_sdk.codec). JSON 값은 그대로, SDK 타입은 {\"$kb\": 태그, ...}(secret·rect·point·window·process·image·match·target), $kb 키를 가진 사용자 객체는 {\"$kb\": \"dict\", \"value\": ...}",
+      "title": "WireValue",
+      "tsType": "unknown"
+    },
+    "WorkerHelloParams": {
+      "additionalProperties": false,
+      "description": "worker.hello (runner → 워커): 프로토콜, import할 플러그인 모듈, 실행 ID, 원본 워크스페이스(표시용), ctx.path() 루트(실행 스냅샷)",
+      "properties": {
+        "files_root": {
+          "type": "string"
+        },
+        "modules": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "protocol": {
+          "type": "integer"
+        },
+        "run_id": {
+          "type": "string"
+        },
+        "workspace_id": {
+          "type": "string"
+        }
+      },
+      "required": ["files_root", "modules", "protocol", "run_id", "workspace_id"],
+      "title": "WorkerHelloParams",
+      "type": "object"
+    },
+    "WorkerHelloResult": {
+      "additionalProperties": false,
+      "properties": {
+        "plugins": {
+          "items": {
+            "$ref": "#/$defs/WorkerPlugin"
+          },
+          "type": "array"
+        },
+        "protocol": {
+          "type": "integer"
+        }
+      },
+      "required": ["plugins", "protocol"],
+      "title": "WorkerHelloResult",
+      "type": "object"
+    },
+    "WorkerPlugin": {
+      "additionalProperties": false,
+      "description": "워커가 읽은 플러그인 하나. schema는 노드 스키마 문서(node-schema.schema.json)",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "schema": {
+          "type": "object"
+        },
+        "version": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["id", "schema", "version"],
+      "title": "WorkerPlugin",
       "type": "object"
     }
   },

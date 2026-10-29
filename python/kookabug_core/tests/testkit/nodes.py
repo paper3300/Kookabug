@@ -1,11 +1,14 @@
 """testkit 노드 선언과 구현."""
 
 import copy
+import ctypes
+import os
 from collections import Counter
+from pathlib import Path
 from typing import Any, Literal
 
 from kookabug_sdk import Config, Context, DynamicExits, Exit, Output, Result, Retry, node
-from kookabug_sdk.types import Image, Match, Point, Rect
+from kookabug_sdk.types import Image, Match, Point, Rect, Secret
 
 PLUGIN_ID = "testkit"
 PLUGIN_VERSION = "0"
@@ -282,6 +285,162 @@ def pure_log(ctx: Context) -> dict[str, Any]:
     return {"ok": True}
 
 
+# ---------------------------------------------------------------- 프로세스 시나리오 (M0b)
+# 워커·runner 검사에서 `--plugin-module testkit.nodes`로 워커가 실행한다. 같은 프로세스 실행기에서는
+# 쓰지 않는다 (block·hang·crash는 끝나지 않거나 프로세스를 끝낸다).
+
+
+@node(type="testkit.block", version=1, title="취소될 때까지 대기", exits=[Exit("done", "ok")])
+def block(ctx: Context) -> Result:
+    """`blocking`을 기록한 뒤 `ctx.check_cancel()`·`ctx.sleep(10)`을 반복한다 (취소로만 끝난다)."""
+    ctx.log.info("blocking")
+    while True:
+        ctx.check_cancel()
+        ctx.sleep(10)
+
+
+@node(type="testkit.gate", version=1, title="신호 파일 대기", exits=[Exit("done", "ok")])
+def gate(ctx: Context, signal: str) -> Result:
+    """`gate`를 기록하고 `signal`(절대 경로) 파일이 생길 때까지 협력해 기다린 뒤 정상으로 끝난다."""
+    ctx.log.info("gate")
+    while not Path(signal).exists():
+        ctx.check_cancel()
+        ctx.sleep(10)
+    return Result.ok("done")
+
+
+@node(type="testkit.hang", version=1, title="응답 없는 노드", exits=[Exit("done", "ok")])
+def hang(ctx: Context, hold_gil: bool = False, label: str | None = None) -> Result:
+    """`ctx` 없이 끝나지 않는다(`label`을 주면 그것만 먼저 기록). `hold_gil`이면 GIL을 쥔 채 멈춰
+    같은 프로세스의 다른 스레드(RPC 읽기 포함)도 돌지 못한다 (`ctypes.PyDLL` 호출은 GIL을 놓지
+    않는다)."""
+    if label is not None:
+        ctx.log.info(label)
+    if hold_gil:
+        ctypes.PyDLL("kernel32").Sleep(0xFFFFFFFF)
+    while True:
+        pass
+
+
+@node(
+    type="testkit.input.hold",
+    version=1,
+    title="키 누르기",
+    exits=[Exit("done", "ok")],
+    effects={"input"},
+)
+def input_hold(ctx: Context, key: str = "ctrl", text: str | Secret | None = None) -> Result:
+    """`ctx.input.key(key)` (가짜 백엔드 `after_down` 훅과 함께 쓰면 키를 누른 채 멈춘다).
+    `text`를 주면 그 뒤 `ctx.input.type_text(text)`."""
+    ctx.input.key(key)
+    if text is not None:
+        ctx.input.type_text(text)
+    return Result.ok("done")
+
+
+@node(
+    type="testkit.ctx_roundtrip",
+    version=1,
+    title="ctx 왕복",
+    exits=[Exit("done", "ok")],
+    outputs={
+        "image": Image,
+        "value": Output(Any, nullable=True),
+        "value_type": str,
+        "has_missing": bool,
+        "saved": Output(str, nullable=True),
+        "setting": Output(Any, nullable=True),
+        "window": Output(str, nullable=True),
+    },
+    effects={"capture"},
+)
+def ctx_roundtrip(
+    ctx: Context,
+    value: Any | None = None,
+    message: str = "roundtrip",
+    setting_key: str | None = None,
+) -> Result:
+    """캡처·변수 쓰기/읽기·기록·저장·설정을 한 번씩 하고 받은 값을 돌려준다. `message`는
+    `print()`로도 내보낸다(워커 stdout 로그 확인용)."""
+    print(f"print: {message}", flush=True)
+    image = ctx.capture()
+    ctx.vars.set("roundtrip", value)
+    got = ctx.vars.get("roundtrip")
+    ctx.log.info(f"{message}: {value}")
+    saved = ctx.artifacts.save(image, "roundtrip")
+    window = ctx.window
+    return Result.ok(
+        "done",
+        image=image,
+        value=got,
+        value_type="secret" if isinstance(got, Secret) else type(got).__name__,
+        has_missing=ctx.vars.has("no_such_var"),
+        saved=saved,
+        setting=None if setting_key is None else ctx.setting(setting_key),
+        window=None if window is None else window.title,
+    )
+
+
+@node(
+    type="testkit.read_file",
+    version=1,
+    title="파일 읽기",
+    exits=[Exit("done", "ok")],
+    outputs={"text": str},
+)
+def read_file(ctx: Context, rel: str) -> Result:
+    """`ctx.path(rel)`의 파일을 읽어 출력한다."""
+    return Result.ok("done", text=ctx.path(rel).read_text(encoding="utf-8"))
+
+
+@node(type="testkit.crash", version=1, title="프로세스 종료", exits=[Exit("done", "ok")])
+def crash(ctx: Context, code: int = 3) -> Result:
+    """프로세스를 곧바로 끝낸다 (`os._exit(code)`)."""
+    os._exit(code)
+
+
+@node(type="testkit.ctx_sneak", version=1, title="선언 없는 캡처", exits=[Exit("done", "ok")])
+def ctx_sneak(ctx: Context, swallow: bool = False) -> Result:
+    """`capture` 효과를 선언하지 않고, SDK 제한을 건너뛰어(`ctx.inner`) 캡처를 요청한다.
+    `swallow`면 그 오류를 삼키고 정상으로 끝난다 (runner가 다시 검사하는지 확인용)."""
+    try:
+        getattr(ctx, "inner").capture()  # noqa: B009 - 제한 래퍼를 일부러 건너뛴다
+    except Exception:
+        if not swallow:
+            raise
+    return Result.ok("done")
+
+
+@node(
+    type="testkit.ctx_replay",
+    version=1,
+    title="다른 실행 번호로 ctx 요청",
+    exits=[Exit("done", "ok")],
+    outputs={"rejected": Output(str, nullable=True)},
+    effects={"capture"},
+)
+def ctx_replay(ctx: Context, offset: int = -1) -> Result:
+    """워커 ctx를 건너뛰어 지금 실행 번호 + `offset`을 실은 캡처 요청을 runner에 직접 보낸다
+    ("끝난 실행의 요청을 다시 보내는 워커" 흉내). runner가 거부한 오류 메시지를 출력한다."""
+    inner = getattr(ctx, "inner")  # noqa: B009 - 제한 래퍼를 일부러 건너뛴다
+    request = getattr(inner, "_request")  # noqa: B009
+    try:
+        request("ctx.capture", {"invoke": inner.invoke + offset, "region": None})
+    except Exception as exc:
+        return Result.ok("done", rejected=str(exc))
+    return Result.ok("done", rejected=None)
+
+
+@node(type="testkit.liar", version=1, title="선언과 다른 결과", exits=[Exit("done", "ok")])
+def liar(ctx: Context) -> Result:
+    """선언하지 않은 출구로 나간다. 워커 쪽 대조를 꺼 두었으므로 runner의 재대조만 잡는다."""
+    return Result.ok("other")
+
+
+# 워커 쪽 SDK 대조를 건너뛰는 "믿을 수 없는 워커" 흉내
+setattr(liar, "check_result", lambda returned, config: returned)  # noqa: B010
+
+
 NODES = (
     observe_wait,
     observe_flaky,
@@ -299,4 +458,14 @@ NODES = (
     pure_count,
     pure_capture,
     pure_log,
+    block,
+    gate,
+    hang,
+    input_hold,
+    ctx_roundtrip,
+    read_file,
+    crash,
+    ctx_sneak,
+    ctx_replay,
+    liar,
 )

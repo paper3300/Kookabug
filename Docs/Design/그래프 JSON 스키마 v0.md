@@ -693,7 +693,7 @@ runs/2026-10-29T15-02-11_inventory_open_r8k2x7qm/
 | `cancel.requested` | 취소 시작과 사유 (`cancelled`·`deadline_exceeded`·`supervisor_lost`) |
 | `control.lost` | 러너와 감독자 사이의 제어 채널이 끊김 (취소는 아님) |
 | `debug.pause` / `debug.resume` | 멈춤·재개 (6장) |
-| `worker.start` / `worker.exit` | 플러그인 워커 프로세스 시작·종료 |
+| `worker.start` / `worker.exit` | 플러그인 워커 프로세스 시작·종료. 종료 사유: `shutdown`(정상), `killed_after_grace`(취소 유예 초과로 끝냄), `unexpected`(스스로 죽음), `start_timeout`·`start_failed`·`cancelled`(시작 중 hello 기한 초과·실패·취소) |
 
 - `step.end`의 확정된 노드 결과(`status`, `outputs`, `error`, `artifacts`, `duration_ms`)에 더하는 필드
   - `run`, `step`, `parent`: 실행과 스텝 인스턴스 ID. 같은 노드가 반복·재호출돼도 구별된다

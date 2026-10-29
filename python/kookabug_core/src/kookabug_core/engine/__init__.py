@@ -18,7 +18,7 @@ from kookabug_core.engine.executor import (
     GraphInvalid,
     RunResult,
 )
-from kookabug_core.engine.invoker import InProcessInvoker, NodeInvoker
+from kookabug_core.engine.invoker import InProcessInvoker, NodeInvoker, RoutingInvoker
 from kookabug_core.engine.platform_fake import FakePlatform, MemoryArtifacts
 from kookabug_core.engine.verdict import Cause, Facts, Judgement, judge
 
@@ -44,6 +44,7 @@ __all__ = [
     "MemoryEventSink",
     "NodeInvoker",
     "Platform",
+    "RoutingInvoker",
     "RunResult",
     "SystemClock",
     "event_value",

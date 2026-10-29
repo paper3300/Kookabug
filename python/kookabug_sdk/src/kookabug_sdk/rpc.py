@@ -30,6 +30,7 @@ import queue
 import re
 import threading
 from collections import deque
+from collections.abc import Callable
 from concurrent.futures import Future, InvalidStateError
 from dataclasses import dataclass, field
 from typing import Any, Final, TypeIs
@@ -261,8 +262,12 @@ class RpcPeer:
         name: str = "rpc",
         queue_size: int = SEND_QUEUE_SIZE,
         write_timeout: float | None = WRITE_TIMEOUT,
+        trace: Callable[[str, bytes], None] | None = None,
     ) -> None:
+        """`trace("send"|"recv", 프레임 본문)`은 주고받는 메시지를 보는 검사용 훅이다
+        (송신·읽기 스레드에서 불린다)."""
         self.name = name
+        self._trace = trace
         self.incoming: queue.Queue[Incoming | PeerLost] = queue.Queue()
         self._conn = conn
         self._queue_size = queue_size
@@ -400,6 +405,8 @@ class RpcPeer:
                 data = self._outbox.popleft()
                 self._writing = True
             try:
+                if self._trace is not None:
+                    self._trace("send", data)
                 self._conn.send_frame(data, self._write_timeout)
             except PipeError as e:
                 self._lose(f"보내기 실패: {e}")
@@ -416,6 +423,8 @@ class RpcPeer:
             except PipeError as e:
                 self._lose(f"받기 실패: {e}")
                 return
+            if self._trace is not None:
+                self._trace("recv", frame)
             try:
                 message = _decode(frame)
             except ValueError as e:
