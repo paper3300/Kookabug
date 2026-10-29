@@ -30,3 +30,8 @@ class Diagnostic:
 
 def has_errors(diagnostics: Iterable[Diagnostic]) -> bool:
     return any(d.severity == "error" for d in diagnostics)
+
+
+def json_pointer(*parts: str | int) -> str:
+    """경로 조각 → JSON pointer (`~`·`/` 이스케이프)."""
+    return "".join("/" + str(p).replace("~", "~0").replace("/", "~1") for p in parts)

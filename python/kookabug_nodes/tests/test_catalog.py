@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+import kookabug_nodes
 from kb_testing.core_nodes import (
     CORE_NODE_MODULES,
     CORE_NODE_TYPES,
@@ -63,6 +64,7 @@ def test_modules_list_matches_pyproject() -> None:
     with (PROJECT / "pyproject.toml").open("rb") as f:
         tool = tomllib.load(f)["tool"]["kookabug"]
     assert tuple(tool["modules"]) == CORE_NODE_MODULES
+    assert kookabug_nodes.MODULES == CORE_NODE_MODULES
     assert tool["permissions"] == []
 
 

@@ -30,7 +30,8 @@ SDK_NODE_TYPES: Final = frozenset(
 
 CORE_NODE_TYPES: Final = ENGINE_NODE_TYPES | SDK_NODE_TYPES
 
-# kookabug_nodes의 [tool.kookabug].modules와 같다 (설치된 wheel에는 pyproject가 없다)
+# kookabug_nodes의 [tool.kookabug].modules와 같아야 한다 (설치된 wheel에는 pyproject가 없어서
+# 레지스트리는 kookabug_nodes.MODULES를 읽는다). 일치는 test_modules_list_matches_pyproject가 본다
 CORE_NODE_MODULES: Final = (
     "kookabug_nodes.graph",
     "kookabug_nodes.test",

@@ -29,7 +29,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 [tool.pyright]
 include = ["python", "tools"]
 exclude = ["**/build", "**/node_modules", "**/.venv", "**/__pycache__"]
-extraPaths = ["tools"]
+extraPaths = ["tools", "python/kookabug_core/tests"]
 pythonVersion = "3.14"
 pythonPlatform = "Windows"
 typeCheckingMode = "standard"
@@ -39,7 +39,8 @@ venv = ".venv"
 [tool.pytest.ini_options]
 testpaths = ["python", "tools/tests"]
 addopts = ["--import-mode=importlib", "--strict-markers"]
-pythonpath = ["tools"]
+# core 테스트 공용 헬퍼(helpers·testkit)는 python/kookabug_core/tests에 있다
+pythonpath = ["tools", "python/kookabug_core/tests"]
 markers = [
     "packaging: wheel·venv를 실제로 만드는 느린 검사 (uv 필요, 네트워크를 쓸 수 있음)",
 ]
