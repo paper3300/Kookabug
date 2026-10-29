@@ -3,7 +3,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from helpers.graphs import GraphBuilder
+from helpers.runner import RUNNER_CMD
 
+from kb_testing.proc import Spawned, direct_env, isolated_env
 from kookabug_core.permissions import Principal
 from kookabug_core.service import (
     ApprovalRequired,
@@ -11,6 +14,7 @@ from kookabug_core.service import (
     WorkspaceService,
     cli_principal,
 )
+from kookabug_core.supervisor import RunHandle, StartOptions, Supervisor
 from kookabug_core.workspace import WorkspaceError
 
 AGENT = Principal("agent", "conn-1", attended=False)
@@ -152,6 +156,78 @@ def test_require_raises_for_deny_and_unapproved_ask(ws: tuple[Path, dict[str, st
 def test_service_needs_workspace_root(tmp_path: Path) -> None:
     with pytest.raises(WorkspaceError):
         WorkspaceService(tmp_path)
+
+
+class RecordingSupervisor(Supervisor):
+    """`start`가 불렸는지만 남긴다 (프로세스를 띄우지 않는다)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.started: list[tuple[Path, str]] = []
+
+    def start(self, workspace_root: Any, graph: str, options: Any = None) -> RunHandle:
+        self.started.append((Path(workspace_root), graph))
+        raise AssertionError("실행을 시작하면 안 된다")
+
+
+def test_start_run_denied_does_not_spawn(ws: tuple[Path, dict[str, str]]) -> None:
+    root, env = ws
+    supervisor = RecordingSupervisor()
+    service = WorkspaceService(root, environ=env, supervisor=supervisor)
+    # 기본 프리셋 graph_author: 에이전트의 kb_run_start는 deny
+    with pytest.raises(PermissionDenied) as denied:
+        service.start_run(AGENT, "tests/a.graph.json", approved=True)
+    assert denied.value.tool == "kb_run_start" and denied.value.decision.final == "deny"
+    assert supervisor.started == []
+    assert not (root / "runs").exists()
+
+
+def test_start_run_ask_without_approval_does_not_spawn(ws: tuple[Path, dict[str, str]]) -> None:
+    root, env = ws
+    write(
+        root / ".kookabug" / "local.json",
+        {"format": "kookabug.local/0", "permissions": {"toolsets": {"run": "ask"}}},
+    )
+    supervisor = RecordingSupervisor()
+    service = WorkspaceService(root, environ=env, supervisor=supervisor)
+    with pytest.raises(ApprovalRequired) as ask:
+        service.start_run(PANEL, "tests/a.graph.json")
+    assert ask.value.decision.final == "ask"
+    # 사람 없는 에이전트의 ask는 deny다 (승인으로도 풀리지 않는다)
+    with pytest.raises(PermissionDenied):
+        service.start_run(AGENT, "tests/a.graph.json", approved=True)
+    assert supervisor.started == []
+    assert not (root / "runs").exists()
+    # 승인이 있으면 감독자까지 간다
+    with pytest.raises(AssertionError):
+        service.start_run(PANEL, "tests/a.graph.json", approved=True)
+    assert supervisor.started == [(root.resolve(), "tests/a.graph.json")]
+
+
+@pytest.mark.process
+def test_start_run_allowed_returns_handle(
+    ws: tuple[Path, dict[str, str]], tmp_path: Path, spawned: Spawned
+) -> None:
+    root, env = ws
+    write(
+        Path(env["KOOKABUG_USER_CONFIG_DIR"]) / "settings.json",
+        {"format": "kookabug.user-settings/0", "permissions": {"preset": "runner"}},
+    )
+    GraphBuilder().entry("n_pass").node("n_pass", "core.test.pass").write(
+        root, "tests/a.graph.json"
+    )
+    supervisor = Supervisor(runner_cmd=RUNNER_CMD, env=direct_env(isolated_env(tmp_path)))
+    service = WorkspaceService(root, environ=env, supervisor=supervisor)
+    handle = service.start_run(
+        AGENT, "tests/a.graph.json", StartOptions(deadline_ms=30_000, runs_dir=tmp_path / "runs")
+    )
+    if handle.launcher is not None:
+        spawned.track(handle.launcher)
+    assert handle.start_error is None
+    outcome = handle.wait(30)
+    assert outcome.exit_code == 0 and outcome.verdict == "pass"
+    assert outcome.run_end is not None and outcome.run_end["finalized_by"] == "runner"
+    assert outcome.run_dir.parent == tmp_path / "runs"
 
 
 def test_cli_principal_from_env() -> None:

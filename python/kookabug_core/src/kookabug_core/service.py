@@ -2,7 +2,8 @@
 
 권한·입력 임대권·감독 코드는 `kookabug_core`에 하나만 두고 CLI와 daemon이 같은 코드를 쓴다
 (구현 계획 3장 계약). 같은 요청은 어느 쪽에서 와도 `authorize`가 같은 판정을 낸다.
-실행 시작(`start_run`)은 감독자와 함께 붙인다.
+실행 시작(`start_run`)은 판정(`kb_run_start`, 인자 = 그래프 경로) → ask면 승인 확인 →
+`Supervisor.start` 순서다. 거부·승인 없음이면 실행 폴더도 프로세스도 만들지 않는다.
 """
 
 from __future__ import annotations
@@ -20,10 +21,12 @@ from kookabug_core.permissions import (
     load_policy,
     user_config_dir,
 )
+from kookabug_core.supervisor import RunHandle, StartOptions, Supervisor
 from kookabug_core.workspace import WORKSPACE_FILE, WorkspaceError
 
 __all__ = [
     "AGENT_ENV",
+    "RUN_START_TOOL",
     "ApprovalRequired",
     "PermissionDenied",
     "WorkspaceService",
@@ -31,6 +34,7 @@ __all__ = [
 ]
 
 AGENT_ENV: Final = "KOOKABUG_AGENT"
+RUN_START_TOOL: Final = "kb_run_start"
 
 
 class PermissionDenied(Exception):
@@ -68,13 +72,20 @@ class WorkspaceService:
     정책 파일은 판정할 때마다 다시 읽는다 (설정을 바꾸면 다음 요청부터 적용).
     """
 
-    def __init__(self, root: str | Path, *, environ: Mapping[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        root: str | Path,
+        *,
+        environ: Mapping[str, str] | None = None,
+        supervisor: Supervisor | None = None,
+    ) -> None:
         self.root = Path(root).resolve()
         if not (self.root / WORKSPACE_FILE).is_file():
             raise WorkspaceError(
                 f"{self.root / WORKSPACE_FILE}이(가) 없다. 워크스페이스 루트가 아니다"
             )
         self._environ = environ
+        self.supervisor = supervisor or Supervisor()
 
     def policy(self) -> Policy:
         return load_policy(self.root, user_config_dir(self._environ))
@@ -92,3 +103,17 @@ class WorkspaceService:
         if decision.final == "ask" and not approved:
             raise ApprovalRequired(tool, decision)
         return decision
+
+    def start_run(
+        self,
+        principal: Principal,
+        graph: str,
+        options: StartOptions | None = None,
+        *,
+        approved: bool = False,
+    ) -> RunHandle:
+        """실행을 시작한다. 판정이 deny면 `PermissionDenied`, ask이고 승인이 없으면
+        `ApprovalRequired` — 둘 다 아무것도 만들지 않는다. 시작 뒤의 실패(runner가 hello를 못
+        함 등)는 핸들의 결과(`wait()`)로 알린다."""
+        self.require(principal, RUN_START_TOOL, graph, approved=approved)
+        return self.supervisor.start(self.root, graph, options)
