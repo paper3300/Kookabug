@@ -3,6 +3,7 @@ export * as events from "./generated/events.js";
 export * as graph from "./generated/graph.js";
 export * as local from "./generated/local.js";
 export * as nodeSchema from "./generated/node-schema.js";
+export * as rpc from "./generated/rpc.js";
 export * as run from "./generated/run.js";
 export * as target from "./generated/target.js";
 export * as userSettings from "./generated/user-settings.js";

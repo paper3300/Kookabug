@@ -24,9 +24,9 @@ from kookabug_core.canonical import MAX_SAFE_INTEGER
 from kookabug_core.diagnostics import Diagnostic
 from kookabug_core.schema.pintype import PinTypeError, parse_pin_type
 
-# events는 events.jsonl 한 줄(format 없음)이라 kind를 직접 준다
+# events는 events.jsonl 한 줄, rpc는 파이프 프레임 본문 하나(둘 다 format 없음)라 kind를 직접 준다
 SchemaKind = Literal[
-    "graph", "target", "workspace", "local", "node-schema", "events", "run", "user-settings"
+    "graph", "target", "workspace", "local", "node-schema", "events", "run", "user-settings", "rpc"
 ]
 KINDS: tuple[SchemaKind, ...] = get_args(SchemaKind)
 FORMAT_TO_KIND: dict[str, SchemaKind] = {
