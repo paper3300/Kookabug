@@ -1,4 +1,4 @@
-"""설계 문서의 ```json 예시 블록을 꺼낸다 (```jsonl 등 다른 언어 블록은 제외)."""
+"""설계 문서의 ```json 예시 블록(`json_blocks`)과 ```jsonl 예시 줄(`jsonl_lines`)을 꺼낸다."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ DOCS = {
 }
 
 _BLOCK = re.compile(r"^```json\n(.*?)^```[ \t]*$", re.MULTILINE | re.DOTALL)
+_JSONL_BLOCK = re.compile(r"^```jsonl\n(.*?)^```[ \t]*$", re.MULTILINE | re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -41,3 +42,15 @@ def json_blocks() -> list[DocBlock]:
             line = content.count("\n", 0, m.start(1)) + 1
             blocks.append(DocBlock(doc, index, line, m.group(1)))
     return blocks
+
+
+def jsonl_lines() -> list[DocBlock]:
+    """```jsonl 블록의 줄마다 하나 (`index`는 블록 번호, `line`은 문서 안 줄 번호)."""
+    lines = []
+    for doc, path in DOCS.items():
+        content = path.read_text(encoding="utf-8")
+        for index, m in enumerate(_JSONL_BLOCK.finditer(content)):
+            first = content.count("\n", 0, m.start(1)) + 1
+            for offset, text in enumerate(m.group(1).splitlines()):
+                lines.append(DocBlock(doc, index, first + offset, text))
+    return lines

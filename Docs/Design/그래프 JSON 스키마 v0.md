@@ -644,13 +644,17 @@ workspace/
 ### 실행 폴더
 
 ```
-runs/2026-10-29T15-02-11_inventory_open_r8k2/
-├─ run.json        run_id, 대상 테스트, 러너·플러그인·의존성 버전, 게임 빌드, 실행 조건
-├─ events.jsonl    시작·종료 이벤트. 실행 중에도 한 줄씩 덧붙인다
-├─ snapshot/       실행 시작 때 복사한 그래프·서브그래프·타깃·이미지·화면 정의
-└─ steps/          스크린샷 등 artifacts
+runs/2026-10-29T15-02-11_inventory_open_r8k2x7qm/
+├─ run.json            run_id, 대상 테스트, 러너·플러그인·의존성 버전, 게임 빌드, 실행 조건, 결과
+├─ events.jsonl        시작·종료 이벤트. 실행 중에도 한 줄씩 덧붙인다
+├─ input-recovery.json (있을 때만) 이 실행에서 눌렸을 수 있는 키를 누가 뗐는지
+├─ snapshot/           실행 시작 때 복사한 그래프·서브그래프·타깃·이미지·화면 정의
+├─ steps/              스크린샷 등 artifacts
+└─ logs/               러너·워커의 stdout·stderr
 ```
 
+- 폴더 이름: `<시작 시각 UTC YYYY-MM-DDTHH-MM-SS>_<테스트 그래프 파일 줄기>_<run_id>`. `run_id`는 소문자·숫자 8자이고, 이미 쓰인 ID면 다시 뽑는다
+- `run.json`은 원자적 교체로만 쓴다 (`running` → `finished`). 형식은 `packages/schema/run.schema.json`
 - **실행 시작 때 고정**: 러너는 시작할 때 테스트가 참조하는 모든 파일을 따라가 `snapshot/`에 복사하고, 실행 내내 그 복사본만 읽는다. 실행 중에 서브그래프나 이미지를 고쳐도 이번 실행에는 섞이지 않는다
 - 비밀값은 복사하지 않는다. 참조 키(`accounts.qa_tester_01`)만 남긴다
 - 당시 실행 정의를 재구성할 수는 있지만, 게임 서버 상태까지 되돌릴 수는 없다. "같은 정의로 다시 실행"과 "같은 결과 재현"은 다르다
@@ -658,19 +662,42 @@ runs/2026-10-29T15-02-11_inventory_open_r8k2/
 ### `events.jsonl` (일부)
 
 ```jsonl
-{"event": "step.start", "node": "n_enter_world", "parent": null, "path": ["n_enter_world"], "run": "r8k2", "step": "s1", "t": "2026-10-29T15:02:12.104Z"}
-{"attempt": 1, "event": "step.start", "node": "n_wait_title", "parent": "s1", "path": ["n_enter_world", "n_wait_title"], "run": "r8k2", "step": "s2", "t": "2026-10-29T15:02:13.010Z"}
-{"artifacts": ["steps/s2_before.png", "steps/s2_after.png"], "duration_ms": 8120, "event": "step.end", "exit": "found", "outputs": {"match": {"score": 0.93, "window": "w1", "xywh": [812, 701, 296, 88]}}, "run": "r8k2", "status": "success", "step": "s2", "t": "2026-10-29T15:02:21.130Z"}
-{"duration_ms": 41230, "event": "step.end", "exit": "success", "graph": "snapshot/subgraphs/enter_world.graph.json", "outputs": {"message": null}, "run": "r8k2", "status": "success", "step": "s1", "t": "2026-10-29T15:02:53.334Z"}
+{"attempt": 1, "event": "step.start", "node": "n_enter_world", "parent": null, "path": ["n_enter_world"], "run": "r8k2x7qm", "seq": 4, "step": "s1", "t": "2026-10-29T15:02:12.104Z"}
+{"attempt": 1, "event": "step.start", "node": "n_wait_title", "parent": "s1", "path": ["n_enter_world", "n_wait_title"], "run": "r8k2x7qm", "seq": 7, "step": "s2", "t": "2026-10-29T15:02:13.010Z"}
+{"artifacts": ["steps/s2_before.png", "steps/s2_after.png"], "attempt": 1, "duration_ms": 8120, "event": "step.end", "exit": "found", "outputs": {"match": {"score": 0.93, "window": "w1", "xywh": [812, 701, 296, 88]}}, "run": "r8k2x7qm", "seq": 8, "status": "success", "step": "s2", "t": "2026-10-29T15:02:21.130Z"}
+{"attempt": 1, "duration_ms": 41230, "event": "step.end", "exit": "success", "graph": "snapshot/subgraphs/enter_world.graph.json", "outputs": {"message": null}, "run": "r8k2x7qm", "seq": 31, "status": "success", "step": "s1", "t": "2026-10-29T15:02:53.334Z"}
 ```
 
-- 확정된 노드 결과(`status`, `outputs`, `error`, `artifacts`, `duration_ms`)에 더하는 필드
+- 한 줄이 이벤트 하나다. UTF-8·LF, 키 정렬. 형식은 `packages/schema/events.schema.json`(이벤트 종류마다 필드를 고정)
+- 모든 줄에 붙는 필드
+  - `event`: 이벤트 종류
+  - `run`: 실행 ID
+  - `seq`: 저널 안 순번. 1부터 빈틈 없이 늘어난다. 줄이 빠졌는지를 이것으로 안다
+  - `t`: 쓴 시각 (UTC, 밀리초까지, `Z`)
+- 이벤트 종류
+
+| `event` | 내용 |
+|---|---|
+| `run.start` / `run.end` | 실행 시작·결과 (`verdict`, `code`, `reason`, 실패 위치, 누가 마무리했는지 `finalized_by`) |
+| `step.start` / `step.end` | 스텝 시작·결과 |
+| `attempt.end` | 재시도할 중간 시도의 실패 (6장 "재시도") |
+| `log` | 노드·러너 로그 |
+| `input.down` / `input.up` / `input.recovered` | 키·버튼 누르기·떼기, 앞 실행에서 눌린 채 남은 키를 뗀 기록 |
+| `cancel.requested` | 취소 시작과 사유 (`cancelled`·`deadline_exceeded`·`supervisor_lost`) |
+| `control.lost` | 러너와 감독자 사이의 제어 채널이 끊김 (취소는 아님) |
+| `debug.pause` / `debug.resume` | 멈춤·재개 (6장) |
+| `worker.start` / `worker.exit` | 플러그인 워커 프로세스 시작·종료 |
+
+- `step.end`의 확정된 노드 결과(`status`, `outputs`, `error`, `artifacts`, `duration_ms`)에 더하는 필드
   - `run`, `step`, `parent`: 실행과 스텝 인스턴스 ID. 같은 노드가 반복·재호출돼도 구별된다
   - `attempt`: 재시도 번호
   - `exit`: 어느 exec 출구로 나갔는지
   - `path`: 호출 경로. 실패 위치를 `월드 접속 > 타이틀 대기`처럼 보여 줄 때 쓴다
   - `graph`: 서브그래프 호출이면 이번 실행에 쓴 스냅샷 파일
+  - `omitted`: 정책으로 남기지 않은 증거와 이유 (6장 "화면에 찍힌 비밀값")
 - `step.end`가 없는 스텝은 러너가 중간에 죽은 것이다. 뷰어는 "중단"으로 표시한다
+  - 러너가 죽으면 감독자가 러너 종료를 확인한 뒤 기록을 마무리한다: 잘린 끝 줄을 잘라 내고, 눌렸을 수 있는 키를 떼고, `run.end`가 없으면 `run.end`(`error`/`runner_died`, `finalized_by: supervisor`)를 덧붙이고, `run.json`을 `run.end`에서 다시 만든다. 이미 있는 `run.end`는 덮어쓰지 않는다. 열린 스텝에는 `step.end`를 쓰지 않는다
+  - 감독자도 마무리하지 못하면 기록은 그대로 남는다. 읽는 쪽이 `\n`으로 끝나지 않는 끝 줄을 버리고, `run.end`가 없는 실행 전체를 "중단"으로 표시한다 (읽기는 파일을 고치지 않는다)
 - 중첩 트리(서브그래프를 펼쳐 보기)는 뷰어가 `parent`로 만든다
 
 ---
@@ -909,3 +936,11 @@ Codex 제안을 기본으로 하고, 세 군데는 Claude가 다르게 정했다
 | 테스트 전체 기한 초과는 `error`(`deadline_exceeded`) (2장 "출구 종류"), 실행 중 순수 노드 재진입은 `error` (7장 "`$link` 평가"), 비밀값이 `any`를 거쳐 `string` 핀에 닿으면 실행 때 `error` (1장 "비밀값") | 기한은 실행을 끊는 장치라 fail(테스트 결과)로 보면 원인이 가려진다. 검증을 건너뛴 순환·`any`를 거친 값은 정적 검사가 못 막으므로 실행기가 마지막으로 막는다 |
 | 반복 밖에서 생긴 대기 중인 fail도 첫 본문 끝에서 반복을 멈추고 전파, 스텝·시도·회차 시작 때 지우지 않음. `times`·`max_iterations`는 반복에 들어갈 때 정함. 반복 노드 스텝과 `iteration` 규칙 (7장 "반복") | 반복이 대기 중인 fail을 지우면 반복 앞의 실패가 반복 뒤의 성공에 덮인다. 본문이 한도 입력을 바꿔 반복이 끝나지 않는 경우를 막는다 |
 | 재시도는 스텝 하나, 중간 시도는 `attempt.end`, 재시도 끝 성공은 `retried: true`, `on` 생략은 노드 스키마의 `retry.on` (6장 "재시도") | 이벤트 이름·필드가 정해져야 M0b가 같은 dict를 `events.jsonl`로 쓰고 뷰어가 불안정한 스텝을 찾는다 |
+
+### M0b 구현 반영
+
+| 바뀐 것 | 이유 |
+|---|---|
+| 실행 폴더에 `logs/`·`input-recovery.json`, 폴더 이름 규칙(UTC 시각·그래프 줄기·`run_id` 8자) (5장 "실행 폴더") | 러너·워커 출력을 파이프 대신 파일로 받아야 감독자가 안 읽어도 막히지 않는다. 눌린 키를 누가 뗐는지 남겨야 두 번 떼지 않는다. 이름만으로 실행을 시간순으로 찾는다 |
+| 모든 이벤트에 `seq`·`t`, 이벤트 종류 표, `events`·`run` 메타스키마 (5장 `events.jsonl`) | 잘린 줄·빠진 줄을 `seq`로 알아본다. 형식이 메타스키마로 고정돼야 뷰어·에디터가 같은 필드를 읽는다 |
+| 러너가 죽은 실행은 감독자가 마무리(잘린 줄 자르기 → 키 떼기 → 없을 때만 `run.end` → `run.json`), 아무도 마무리하지 못하면 읽기가 "중단" (5장) | 마무리를 두 번 해도 같은 결과여야 감독자가 같은 실행을 다시 열어도 안전하다. 이미 쓴 결과를 덮으면 러너가 확정한 판정이 사라진다 |

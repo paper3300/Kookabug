@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from kb_testing.doc_examples import DocBlock, json_blocks
+from kb_testing.doc_examples import DocBlock, json_blocks, jsonl_lines
 from kookabug_core.schema import check_shape
 from kookabug_core.schema.shape import SchemaKind
 
@@ -58,7 +58,7 @@ HANDLING: dict[str, tuple[list[str], Whole | Fragment | Unvalidated]] = {
     ),
     "schema#5": (
         ["debug_intervened", "pause_count", "paused_ms"],
-        Unvalidated("run.json 디버그 개입 조각. events·run 메타스키마는 M0b에서 만든다 (G18)"),
+        Fragment((((), "run", "#/$defs/DebugInfo"),)),
     ),
     "schema#6": (["record"], Fragment(((("record",), "graph", "#/$defs/RecordPolicy"),))),
     "workspace#0": (["format", "profiles", "record", "retention", "settings"], Whole("workspace")),
@@ -110,7 +110,7 @@ def test_doc_unvalidated_blocks_are_listed() -> None:
         if isinstance(handling, Whole):
             assert block.data["format"].startswith("kookabug.")
     unvalidated = [i for i, (_, h) in HANDLING.items() if isinstance(h, Unvalidated)]
-    assert unvalidated == ["schema#5"]
+    assert unvalidated == []
 
 
 WHOLE = [b for b in BLOCKS if isinstance(HANDLING.get(b.id, (None, None))[1], Whole)]
@@ -138,7 +138,12 @@ def test_doc_fragments_validate_against_defs() -> None:
         for path, kind, ref in handling.parts:
             assert check_shape(_dig(block.data, path), kind, ref=ref) == [], (block.id, ref)
             checked.append(ref)
-    assert {"#/$defs/RetryConfig", "#/$defs/RetryDecl", "#/$defs/RecordPolicy"} <= set(checked)
+    assert {
+        "#/$defs/RetryConfig",
+        "#/$defs/RetryDecl",
+        "#/$defs/RecordPolicy",
+        "#/$defs/DebugInfo",
+    } <= set(checked)
 
 
 def test_fragment_check_rejects_bad_values() -> None:
@@ -146,3 +151,33 @@ def test_fragment_check_rejects_bad_values() -> None:
     assert check_shape({"max_attempts": 0}, "graph", ref="#/$defs/RetryConfig")
     assert check_shape({"mode": "observation"}, "node-schema", ref="#/$defs/RetryDecl")
     assert check_shape({"video": "maybe"}, "graph", ref="#/$defs/RecordPolicy")
+    assert check_shape({"paused_ms": -1}, "run", ref="#/$defs/DebugInfo")
+
+
+def test_doc_run_debug_fragment_validates() -> None:
+    (block,) = [b for b in BLOCKS if b.id == "schema#5"]
+    assert check_shape(block.data, "run", ref="#/$defs/DebugInfo") == []
+    # run.json 전체의 같은 필드로도 쓸 수 있다
+    whole = {
+        "format": "kookabug.run/0",
+        "graph": "tests/inventory_open.graph.json",
+        "run_id": "r8k2x7qm",
+        "started_at": "2026-10-29T15:02:11.000Z",
+        "status": "running",
+        **block.data,
+    }
+    assert check_shape(whole) == []
+
+
+JSONL = jsonl_lines()
+
+
+@pytest.mark.parametrize("line", JSONL, ids=[f"{b.id}:{b.line}" for b in JSONL])
+def test_doc_jsonl_lines_validate_against_events_schema(line: DocBlock) -> None:
+    assert check_shape(line.data, "events") == []
+    assert list(line.data) == sorted(line.data)  # 작성기와 같은 키 정렬
+
+
+def test_doc_jsonl_lines_found() -> None:
+    assert len(JSONL) == 4
+    assert [e.data["seq"] for e in JSONL] == sorted(e.data["seq"] for e in JSONL)

@@ -24,12 +24,14 @@ from kookabug_core.canonical import MAX_SAFE_INTEGER
 from kookabug_core.diagnostics import Diagnostic
 from kookabug_core.schema.pintype import PinTypeError, parse_pin_type
 
-SchemaKind = Literal["graph", "target", "workspace", "local", "node-schema"]
+# events는 events.jsonl 한 줄(format 없음)이라 kind를 직접 준다
+SchemaKind = Literal["graph", "target", "workspace", "local", "node-schema", "events", "run"]
 KINDS: tuple[SchemaKind, ...] = get_args(SchemaKind)
 FORMAT_TO_KIND: dict[str, SchemaKind] = {
     "kookabug.graph/0": "graph",
     "kookabug.local/0": "local",
     "kookabug.nodes/0": "node-schema",
+    "kookabug.run/0": "run",
     "kookabug.target/0": "target",
     "kookabug.workspace/0": "workspace",
 }
@@ -203,7 +205,8 @@ def _node_of(path: Sequence[str | int], kind: SchemaKind | None) -> str | None:
 def _leaves(error: ValidationError) -> list[ValidationError]:
     """anyOf·oneOf 오류를 실제로 맞춰 보려던 갈래의 오류로 바꾼다.
 
-    같은 값에 대한 `type` 오류만 낸 갈래는 "다른 모양을 위한 갈래"이므로 버리고, 남은 갈래 중
+    같은 값에 대한 `type` 오류만 낸 갈래와 바로 아래 필드의 `const`(종류 표시, 예: 이벤트의
+    `event`)가 틀린 갈래는 "다른 모양을 위한 갈래"이므로 버리고, 남은 갈래 중
     오류가 가장 깊은 곳을 가리키는 갈래를 고른다. 깊이가 같으면 `type` 오류가 적은 갈래
     (모양은 맞고 값만 틀린 쪽), 그다음 오류가 적은 갈래를 고른다.
     """
@@ -218,9 +221,10 @@ def _leaves(error: ValidationError) -> list[ValidationError]:
         i: errs
         for i, errs in branches.items()
         if not all(e.validator == "type" and not e.relative_path for e in errs)
+        and not any(e.validator == "const" and len(e.relative_path) == 1 for e in errs)
     }
     if not relevant:
-        return [error]
+        return _unknown_tag(error, branches) or [error]
 
     def rank(i: int) -> tuple[int, int, int, int]:
         errs = relevant[i]
@@ -230,6 +234,33 @@ def _leaves(error: ValidationError) -> list[ValidationError]:
 
     best = min(relevant, key=rank)
     return [leaf for sub in relevant[best] for leaf in _leaves(sub)]
+
+
+def _unknown_tag(
+    error: ValidationError, branches: dict[int, list[ValidationError]]
+) -> list[ValidationError]:
+    """모든 갈래가 같은 종류 표시 필드의 `const`에서 틀렸으면 그 필드의 `enum` 오류 하나로 바꾼다
+    (모르는 이벤트 종류를 "가능한 값" 목록과 함께 알린다)."""
+    tags: dict[str, list[Any]] = {}
+    instance: Any = None
+    for errs in branches.values():
+        tag = next((e for e in errs if e.validator == "const" and len(e.relative_path) == 1), None)
+        if tag is None:
+            return []
+        tags.setdefault(str(tag.relative_path[0]), []).append(tag.validator_value)
+        instance = tag.instance
+    if len(tags) != 1:
+        return []
+    key, values = next(iter(tags.items()))
+    return [
+        ValidationError(
+            f"{instance!r} is not one of {values!r}",
+            validator="enum",
+            validator_value=sorted(values),
+            instance=instance,
+            path=[*error.absolute_path, key],
+        )
+    ]
 
 
 def _pointer(path: Sequence[str | int]) -> str:

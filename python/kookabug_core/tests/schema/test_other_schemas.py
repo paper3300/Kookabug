@@ -263,7 +263,7 @@ def test_ecma_pattern_translation() -> None:
     assert ecma_regex(r"^[^\\]+\.json$").search("a.json\n") is None
 
 
-@pytest.mark.parametrize("kind", ["graph", "target", "workspace", "local", "node-schema"])
+@pytest.mark.parametrize("kind", ["graph", "target", "workspace", "local", "node-schema", "run"])
 def test_empty_object_reports_required_fields(kind: Any) -> None:
     diags = check_shape({}, kind)
     assert diags
