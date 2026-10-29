@@ -32,6 +32,50 @@ def observe_wait(ctx: Context, expect: str, timeout_ms: int = 1000, poll_ms: int
 
 
 @node(
+    type="testkit.observe.wait_any",
+    version=1,
+    title="가짜 화면 여럿 대기",
+    config={"exits": Config(list[str])},
+    exits=DynamicExits(from_config="exits", extra=[Exit("timeout", "fail")]),
+    outputs={"match": Output(Match)},
+    effects={"capture"},
+)
+def observe_wait_any(
+    ctx: Context, targets: dict[str, str], timeout_ms: int = 1000, poll_ms: int = 100
+) -> Result:
+    """`targets`(출구 → 프레임 이름) 중 먼저 보이는 출구로 나간다.
+
+    동시에 보이면 `config.exits` 앞쪽."""
+    deadline = ctx.deadline(timeout_ms)
+    while True:
+        ctx.check_cancel()
+        frame = ctx.capture()
+        stem = frame.path.stem if frame.path is not None else None
+        for exit in ctx.config["exits"]:
+            if targets.get(exit) == stem:
+                return Result.ok(exit, match=Match(Rect(0, 0, 1, 1), 1.0, frame=frame.frame))
+        if deadline.passed:
+            return Result.fail(
+                "timeout", f"{sorted(targets)} 중 {timeout_ms}ms 안에 보인 것이 없다"
+            )
+        ctx.sleep(min(poll_ms, deadline.remaining_ms))
+
+
+@node(
+    type="testkit.read_text",
+    version=1,
+    title="가짜 글자 읽기",
+    exits=[Exit("done", "ok"), Exit("unreadable", "fail")],
+    outputs={"text": str},
+)
+def read_text(ctx: Context, text: str = "text", readable: bool = True) -> Result:
+    """`readable`이면 `text`를 출력하고 `done`, 아니면 `unreadable`로 나간다."""
+    if readable:
+        return Result.ok("done", text=text)
+    return Result.fail("unreadable", "testkit.read_text: 읽을 수 없다")
+
+
+@node(
     type="testkit.input.tap",
     version=1,
     title="가짜 탭",
@@ -82,4 +126,4 @@ def choose(ctx: Context, pick: str = "done") -> Result:
     return Result.ok(pick)
 
 
-NODES = (observe_wait, input_tap, boom, fail_once, choose)
+NODES = (observe_wait, observe_wait_any, read_text, input_tap, boom, fail_once, choose)

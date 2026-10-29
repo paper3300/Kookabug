@@ -11,6 +11,7 @@ from helpers.graphs import (
     link,
     make_workspace,
     subgraph_interface,
+    without_flow,
 )
 
 from kookabug_core.diagnostics import Diagnostic
@@ -293,7 +294,7 @@ def test_call_pins_from_interface(tmp_path: Path) -> None:
         )
         .node("n_log", "core.log.message", inputs={"text": link("n_call.message")})
     )
-    assert check(ws, good.write(ws, TEST)) == []
+    assert without_flow(check(ws, good.write(ws, TEST))) == []
 
     bad = caller(
         SUB,
@@ -301,7 +302,7 @@ def test_call_pins_from_interface(tmp_path: Path) -> None:
         next={"done": "n_check", "timeout": "n_pass"},
     ).node("n_check", "core.flow.branch", inputs={"condition": link("n_call.gold")})
     bad.node("n_get", "core.logic.compare", inputs={"a": link("n_call.nope"), "op": "==", "b": 1})
-    assert [(d.code, d.pointer) for d in check(ws, bad.write(ws, TEST))] == [
+    assert [(d.code, d.pointer) for d in without_flow(check(ws, bad.write(ws, TEST)))] == [
         ("missing_required_input", "/nodes/n_call/in"),
         ("unknown_input", "/nodes/n_call/in/extra"),
         ("type_mismatch", "/nodes/n_call/in/server"),

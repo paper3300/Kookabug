@@ -76,6 +76,19 @@ CODES: Final[dict[str, CodeInfo]] = {
     "retry_max_attempts": _e("retry", "config.retry.max_attempts는 1 이상의 정수다"),
     # 변수
     "var_never_set": _w("vars", "같은 그래프에 그 이름을 상수로 정하는 core.var.set이 없다"),
+    # 흐름
+    "exec_cycle": _e("flow", "exec 연결이 순환한다 (반복은 body의 암묵적 귀환으로만)"),
+    "pure_cycle": _e("flow", "순수 노드끼리 $link가 순환한다"),
+    "link_not_dominated": _e(
+        "flow", "$link로 읽는 exec 출력을 주는 출구를 지나지 않고 소비 노드에 닿는 경로가 있다"
+    ),
+    "loop_scope_entry": _e("flow", "반복 범위 밖에서 범위 안 노드로 들어온다 (body 출구로만)"),
+    "link_out_of_scope": _e("flow", "반복 범위 밖에서 범위 안 노드(또는 index)의 출력을 읽는다"),
+    "unconnected_ok_exit": _w(
+        "flow", "테스트에서 연결 안 된 ok 출구로 끝나는 경로 (검증 노드 제외)"
+    ),
+    "subgraph_path_open": _e("flow", "서브그래프에서 연결 안 된 ok 출구로 끝나는 경로"),
+    "while_requires_limit": _e("flow", "core.flow.while에 max_iterations가 없다"),
 }
 
 

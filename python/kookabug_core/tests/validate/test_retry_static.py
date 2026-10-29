@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from helpers.graphs import GraphBuilder, check, make_workspace
+from helpers.graphs import GraphBuilder, check, make_workspace, without_flow
 from testkit import registry_with_testkit
 
 from kookabug_core.diagnostics import Diagnostic
@@ -25,7 +25,7 @@ def graph(node_type: str, retry: Any, inputs: dict[str, Any] | None = None) -> G
 
 def run(tmp_path: Path, g: GraphBuilder) -> list[Diagnostic]:
     ws = make_workspace(tmp_path)
-    return check(ws, g.write(ws, GRAPH), registry=registry_with_testkit())
+    return without_flow(check(ws, g.write(ws, GRAPH), registry=registry_with_testkit()))
 
 
 WAIT = ("testkit.observe.wait", {"expect": "title"})
@@ -75,7 +75,7 @@ def test_retry_max_attempts_shape_and_semantic(tmp_path: Path) -> None:
     ir, load_diags = graph_from_data(data, GRAPH, ws)
     assert load_diags == []
     program = Program(ws, GRAPH, RunOptions(), graphs={GRAPH: ir})
-    diags = validate(program, registry_with_testkit())
+    diags = without_flow(validate(program, registry_with_testkit()))
     assert [(d.code, d.pointer) for d in diags] == [
         ("retry_max_attempts", "/nodes/n_x/config/retry/max_attempts")
     ]

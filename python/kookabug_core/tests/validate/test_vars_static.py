@@ -1,6 +1,13 @@
 from pathlib import Path
 
-from helpers.graphs import GraphBuilder, check, link, make_workspace, subgraph_interface
+from helpers.graphs import (
+    GraphBuilder,
+    check,
+    link,
+    make_workspace,
+    subgraph_interface,
+    without_flow,
+)
 
 
 def test_var_never_set_warning(tmp_path: Path) -> None:
@@ -15,7 +22,7 @@ def test_var_never_set_warning(tmp_path: Path) -> None:
         # 이름이 연결이면 정적으로 알 수 없어 경고하지 않는다
         .node("n_get_dyn", "core.var.get", inputs={"name": link("n_get_ok.value")})
     )
-    diags = check(ws, g.write(ws, "tests/v.graph.json"))
+    diags = without_flow(check(ws, g.write(ws, "tests/v.graph.json")))
     assert [(d.code, d.severity, d.node, d.pointer) for d in diags] == [
         ("var_never_set", "warning", "n_get_default", "/nodes/n_get_default/in/name"),
         ("var_never_set", "warning", "n_get_typo", "/nodes/n_get_typo/in/name"),

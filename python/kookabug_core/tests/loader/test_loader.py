@@ -10,6 +10,7 @@ from helpers.graphs import (
     only,
     subgraph_interface,
     target,
+    without_flow,
     write_json,
     write_target,
 )
@@ -31,7 +32,7 @@ def test_literal_unwrapped_as_is(tmp_path: Path) -> None:
         inputs={"name": "v", "value": literal(raw)},
     ).write(ws, GRAPH)
     program, diags = check_program(ws, GRAPH)
-    assert diags == []
+    assert without_flow(diags) == []
     graph = program.graphs[GRAPH]
     assert graph.nodes["n_set"].inputs["value"] == raw
     assert graph.links == []
@@ -71,7 +72,7 @@ def test_target_path_relative_to_workspace_image_relative_to_target(tmp_path: Pa
     ).write(ws, GRAPH)
 
     program, diags = check_program(ws, GRAPH)
-    assert diags == []
+    assert without_flow(diags) == []
     value = program.graphs[GRAPH].nodes["n_set"].inputs["value"]
     assert isinstance(value, Target)
     assert value.name == "targets/login/button.target.json"
@@ -119,7 +120,7 @@ def test_target_image_outside_workspace_is_invalid(tmp_path: Path) -> None:
     GraphBuilder().entry("n_set").node(
         "n_set", "core.var.set", inputs={"name": "v", "value": target("targets/a.target.json")}
     ).write(ws, GRAPH)
-    assert codes(check_program(ws, GRAPH)[1]) == ["target_invalid"]
+    assert codes(without_flow(check_program(ws, GRAPH)[1])) == ["target_invalid"]
 
 
 def test_reference_closure_lists_subgraphs_targets_images(tmp_path: Path) -> None:

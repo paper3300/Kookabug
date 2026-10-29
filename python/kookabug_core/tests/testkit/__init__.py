@@ -1,6 +1,9 @@
 """테스트 전용 플러그인 `testkit` (배포하지 않는다).
 
 - `testkit.observe.wait`: 가짜 캡처 프레임을 보는 관측 노드 (`effects={"capture"}`, 관측 재시도)
+- `testkit.observe.wait_any`: 여러 프레임 중 먼저 보이는 것으로 분기 (`config.exits` 동적 출구 +
+  `timeout`, 모든 동적 출구가 `match`를 준다. 문서의 `core.image.wait_any` 자리)
+- `testkit.read_text`: `text`(string)를 주는 `done` / 출력 없는 `unreadable`(fail)
 - `testkit.input.tap`: 가짜 입력 (`effects={"input"}`)
 - `testkit.boom`: 예외 → error
 - `testkit.fail_once`: 입력 `exit`로 정한 출구로 나간다 (출구 연결 시나리오용)

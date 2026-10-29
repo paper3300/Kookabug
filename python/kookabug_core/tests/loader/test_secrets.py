@@ -1,6 +1,13 @@
 from pathlib import Path
 
-from helpers.graphs import GraphBuilder, check_program, make_workspace, only, secret
+from helpers.graphs import (
+    GraphBuilder,
+    check_program,
+    make_workspace,
+    only,
+    secret,
+    without_flow,
+)
 
 from kookabug_core.ir import Unresolved
 from kookabug_core.workspace import EnvSecrets, MemorySecrets, SecretChain, secret_env_name
@@ -48,7 +55,7 @@ def test_secret_value_wrapped(tmp_path: Path) -> None:
     ws = make_workspace(tmp_path)
     env = EnvSecrets({"KOOKABUG_SECRET_ACCOUNTS_QA_TESTER_01": "hunter2"})
     program, diags = check_program(ws, rel, secrets=env)
-    assert diags == []
+    assert without_flow(diags) == []
     value = program.graphs[GRAPH].nodes["n_log"].inputs["text"]
     assert isinstance(value, Secret)
     assert value.reveal() == "hunter2"

@@ -15,6 +15,8 @@ __all__ = ["check"]
 
 # config에서 노드 스키마가 아니라 그래프 공통 규칙이 정하는 키 (retry 검사가 본다)
 COMMON_CONFIG = frozenset({"retry"})
+# 빠지면 따로 알아보기 쉬운 진단을 내는 필수 입력 (`while_requires_limit`, validate.scopes)
+_OWN_MISSING_CHECK = frozenset({("core.flow.while", "max_iterations")})
 _FOLDER_KIND = {"tests": "test", "subgraphs": "subgraph"}
 _EXIT_NAME = re.compile(r"^[a-z_][a-z0-9_]*\Z")
 
@@ -118,7 +120,11 @@ def _node(ctx: ValidationContext, graph: Graph, node: Node) -> None:
                 )
         if node.type != GRAPH_EXIT:  # exit 노드의 필수 출력은 subgraph 검사(G16)가 본다
             for name, decl in pins.inputs.items():
-                if decl.required and name not in node.inputs:
+                if (
+                    decl.required
+                    and name not in node.inputs
+                    and (node.type, name) not in _OWN_MISSING_CHECK
+                ):
                     ctx.report(
                         "missing_required_input",
                         f"입력 '{name}'에 값이 없다 (기본값 없는 입력)",

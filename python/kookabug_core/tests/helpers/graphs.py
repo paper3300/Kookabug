@@ -13,6 +13,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from kookabug_core.codes import CODES
 from kookabug_core.diagnostics import Diagnostic
 from kookabug_core.loader import Program
 from kookabug_core.registry import Registry
@@ -232,3 +233,9 @@ def errors(diags: Iterable[Diagnostic]) -> list[Diagnostic]:
 
 def only(diags: Iterable[Diagnostic], code: str) -> list[Diagnostic]:
     return [d for d in diags if d.code == code]
+
+
+def without_flow(diags: Iterable[Diagnostic]) -> list[Diagnostic]:
+    """흐름 검사(코드 표 그룹 `flow`) 진단을 뺀다. 다른 검사를 보려고 경로를 다 잇지 않은 작은
+    그래프를 쓰는 테스트용 (예: 연결 안 된 ok 출구 경고)."""
+    return [d for d in diags if (info := CODES.get(d.code)) is None or info.group != "flow"]

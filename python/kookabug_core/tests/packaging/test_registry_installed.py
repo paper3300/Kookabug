@@ -32,7 +32,13 @@ graph = {
             "type": "core.assert.compare",
             "version": 1,
         },
-        "n_bad": {"in": {"times": "3"}, "type": "core.flow.repeat", "version": 1},
+        "n_bad": {
+            "in": {"times": "3"},
+            "next": {"done": "n_pass"},
+            "type": "core.flow.repeat",
+            "version": 1,
+        },
+        "n_pass": {"type": "core.test.pass", "version": 1},
     },
     "plugins": {"core": "0.1.0"},
 }

@@ -14,6 +14,7 @@ from helpers.graphs import (
     setting,
     subgraph_interface,
     target,
+    without_flow,
     write_target,
 )
 from testkit import registry_with_testkit
@@ -35,7 +36,8 @@ def where(diags: list[Diagnostic]) -> list[tuple[str, str | None, str | None]]:
 
 def run(tmp_path: Path, g: GraphBuilder, rel: str = GRAPH, **ws_kw: Any) -> list[Diagnostic]:
     ws = make_workspace(tmp_path, **ws_kw)
-    return check(ws, g.write(ws, rel), registry=registry_with_testkit(), secrets={"pw": "x"})
+    diags = check(ws, g.write(ws, rel), registry=registry_with_testkit(), secrets={"pw": "x"})
+    return without_flow(diags)
 
 
 def valid() -> GraphBuilder:
@@ -80,7 +82,10 @@ def test_code_table_covers_plan_codes() -> None:
     }
     assert plan <= set(CODES)
     warnings = {c for c, info in CODES.items() if info.severity == "warning"}
-    assert warnings == {"kind_folder_mismatch", "interface_exit_unused", "var_never_set"}
+    assert warnings == {
+        *("kind_folder_mismatch", "interface_exit_unused", "var_never_set"),
+        "unconnected_ok_exit",  # T6
+    }
 
 
 # ---------------------------------------------------------------- 구조
