@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import copy
 import importlib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -145,6 +146,15 @@ class NodeDef:
     def retry_on(self) -> tuple[str, ...]:
         retry = self.decl.get("retry")
         return tuple(retry.get("on", ())) if isinstance(retry, Mapping) else ()
+
+    def effective_config(self, config: Mapping[str, Any]) -> dict[str, Any]:
+        """그래프 노드의 `config`에 선언 기본값을 채운 것 (복사본).
+
+        검증(동적 출구 이름)과 실행 ctx(`ctx.config`)가 같이 쓴다. 적힌 값이 기본값보다 앞선다.
+        """
+        merged = {c.name: copy.deepcopy(c.default) for c in self.config if c.default is not MISSING}
+        merged.update(copy.deepcopy(dict(config)))
+        return merged
 
     @classmethod
     def from_json(cls, plugin: str, decl: Mapping[str, Any], function: NodeFunction) -> NodeDef:

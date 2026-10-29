@@ -107,11 +107,7 @@ def dynamic_exit_names(node: Node, nodedef: NodeDef) -> list[str] | None:
     exits = nodedef.exits
     if not isinstance(exits, DynamicExitsDecl):
         return None
-    if exits.from_config in node.config:
-        names = node.config[exits.from_config]
-    else:
-        decl = next((c for c in nodedef.config if c.name == exits.from_config), None)
-        names = MISSING if decl is None else decl.default
+    names = nodedef.effective_config(node.config).get(exits.from_config, MISSING)
     if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
         return None
     return list(names)

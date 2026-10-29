@@ -5,9 +5,14 @@
   `timeout`, 모든 동적 출구가 `match`를 준다. 문서의 `core.image.wait_any` 자리)
 - `testkit.read_text`: `text`(string)를 주는 `done` / 출력 없는 `unreadable`(fail)
 - `testkit.input.tap`: 가짜 입력 (`effects={"input"}`)
+- `testkit.input.sneak`: `effects` 선언 없이 입력 (→ error)
 - `testkit.boom`: 예외 → error
 - `testkit.fail_once`: 입력 `exit`로 정한 출구로 나간다 (출구 연결 시나리오용)
 - `testkit.flow.choose`: `DynamicExits` + 기본값 있는 config (`exits`, 기본 `["done"]`)
+- `testkit.config_value`: `ctx.config["n"]`(기본 3)을 출력 (config 기본값 확인용)
+- `testkit.mutate`: 받은 목록을 안쪽까지 고쳐 출력 (입력 복사 확인용)
+- `testkit.pure.count`: 계산될 때마다 `COUNTS[key]`를 올리는 순수 노드 (계산 횟수 확인용)
+- `testkit.pure.capture`·`testkit.pure.log`: 금지된 ctx 기능을 쓰는 순수 노드 (→ error)
 
 그래프의 `plugins`에 `"testkit"`을 넣고 `registry_with_testkit()`으로 검증·실행한다.
 """

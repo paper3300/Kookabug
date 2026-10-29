@@ -1,6 +1,7 @@
 """testkit 노드 선언과 구현."""
 
-from typing import Literal
+from collections import Counter
+from typing import Any, Literal
 
 from kookabug_sdk import Config, Context, DynamicExits, Exit, Output, Result, Retry, node
 from kookabug_sdk.types import Match, Point, Rect
@@ -88,6 +89,13 @@ def input_tap(ctx: Context, x: int, y: int) -> Result:
     return Result.ok("done")
 
 
+@node(type="testkit.input.sneak", version=1, title="선언 없는 입력", exits=[Exit("done", "ok")])
+def input_sneak(ctx: Context) -> Result:
+    """`effects`에 `input`을 선언하지 않고 누른다 (→ error)."""
+    ctx.input.click(Point(0, 0))
+    return Result.ok("done")
+
+
 @node(type="testkit.boom", version=1, title="예외", exits=[Exit("done", "ok")])
 def boom(ctx: Context, message: str = "boom") -> Result:
     """늘 예외를 던진다 (error 전파 시나리오용)."""
@@ -126,4 +134,87 @@ def choose(ctx: Context, pick: str = "done") -> Result:
     return Result.ok(pick)
 
 
-NODES = (observe_wait, observe_wait_any, read_text, input_tap, boom, fail_once, choose)
+@node(
+    type="testkit.config_value",
+    version=1,
+    title="config 읽기",
+    config={"n": Config(int, default=3)},
+    exits=[Exit("done", "ok")],
+    outputs={"n": int},
+)
+def config_value(ctx: Context) -> Result:
+    """`ctx.config["n"]`(기본 3)을 출력한다."""
+    return Result.ok("done", n=ctx.config["n"])
+
+
+@node(
+    type="testkit.mutate",
+    version=1,
+    title="받은 목록 고치기",
+    exits=[Exit("done", "ok")],
+    outputs={"items": list[Any]},
+)
+def mutate(ctx: Context, items: list[Any]) -> Result:
+    """받은 목록 안쪽까지 고치고(`"x"` 덧붙임, 안쪽 목록에도) 그 목록을 출력한다."""
+    items.append("x")
+    for item in items:
+        if isinstance(item, list):
+            inner: list[Any] = item
+            inner.append("x")
+    return Result.ok("done", items=items)
+
+
+COUNTS: Counter[str] = Counter()
+"""`testkit.pure.count`가 계산된 횟수 (키별). 테스트마다 비운다."""
+
+
+@node(
+    type="testkit.pure.count",
+    version=1,
+    title="계산 횟수",
+    pure=True,
+    outputs={"n": int},
+)
+def pure_count(ctx: Context, key: str = "c") -> dict[str, Any]:
+    """계산될 때마다 `COUNTS[key]`를 1 올리고 그 값을 준다 (순수 노드 계산 횟수 확인용)."""
+    COUNTS[key] += 1
+    return {"n": COUNTS[key]}
+
+
+@node(
+    type="testkit.pure.capture",
+    version=1,
+    title="캡처하는 순수 노드",
+    pure=True,
+    outputs={"ok": bool},
+)
+def pure_capture(ctx: Context) -> dict[str, Any]:
+    """순수 노드인데 캡처한다 (금지 → error)."""
+    ctx.capture()
+    return {"ok": True}
+
+
+@node(
+    type="testkit.pure.log", version=1, title="기록하는 순수 노드", pure=True, outputs={"ok": bool}
+)
+def pure_log(ctx: Context) -> dict[str, Any]:
+    """순수 노드인데 기록한다 (금지 → error)."""
+    ctx.log.info("순수 노드 기록")
+    return {"ok": True}
+
+
+NODES = (
+    observe_wait,
+    observe_wait_any,
+    read_text,
+    input_tap,
+    input_sneak,
+    boom,
+    fail_once,
+    choose,
+    config_value,
+    mutate,
+    pure_count,
+    pure_capture,
+    pure_log,
+)
