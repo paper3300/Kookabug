@@ -274,3 +274,27 @@ def test_no_fault_env_single_write(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     with Journal(tmp_path / "e.jsonl", RUN) as journal:
         journal.emit({"event": "debug.pause"})
     assert len(writes) == 1 and writes[0].endswith(b"\n")
+
+
+def test_write_failure_rejects_later_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 줄 앞부분만 쓰고 실패한 저널에 이어 쓰면 읽기가 그 줄과 다음 줄을 함께 버린다
+    path = tmp_path / "e.jsonl"
+    real = os.write
+
+    def half_then_fail(fd: int, data: Any) -> int:
+        real(fd, bytes(data)[:5])
+        raise OSError("디스크 오류")
+
+    with Journal(path, RUN) as journal:
+        journal.emit({"event": "debug.pause"})
+        monkeypatch.setattr(os, "write", half_then_fail)
+        with pytest.raises(OSError, match="디스크"):
+            journal.emit({"event": "debug.resume"})
+        monkeypatch.setattr(os, "write", real)
+        with pytest.raises(JournalClosed, match="쓰기가 실패한"):
+            journal.emit({"event": "debug.resume"})
+    view = read_journal(path)
+    assert view.truncated
+    assert [e["event"] for e in view.events] == ["debug.pause"]

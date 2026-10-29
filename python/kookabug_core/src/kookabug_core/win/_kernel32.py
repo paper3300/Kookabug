@@ -79,6 +79,19 @@ GetProcessTimes = _fn(
 GetExitCodeProcess = _fn("GetExitCodeProcess", BOOL, HANDLE, ctypes.POINTER(DWORD))
 TerminateProcess = _fn("TerminateProcess", BOOL, HANDLE, ctypes.c_uint)
 
+FILE_APPEND_DATA: Final = 0x0004
+FILE_SHARE_ALL: Final = 0x0001 | 0x0002 | 0x0004  # READ | WRITE | DELETE
+OPEN_ALWAYS: Final = 4
+FILE_ATTRIBUTE_NORMAL: Final = 0x80
+INVALID_HANDLE_VALUE: Final = HANDLE(-1).value
+
+CreateFileW = _fn(
+    "CreateFileW", HANDLE, LPCWSTR, DWORD, DWORD, ctypes.c_void_p, DWORD, DWORD, HANDLE
+)
+WriteFile = _fn(
+    "WriteFile", BOOL, HANDLE, ctypes.c_char_p, DWORD, ctypes.POINTER(DWORD), ctypes.c_void_p
+)
+
 
 def win_error(what: str, code: int | None = None) -> OSError:
     """마지막 Win32 오류를 OSError로. winerror에 맞는 하위 클래스(FileNotFoundError 등)가 된다."""

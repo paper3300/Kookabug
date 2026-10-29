@@ -8,6 +8,8 @@
   (감독자 마무리가 먼저 잘라 낸다)
 - runner 작성기는 `run.end`를 쓴 뒤의 쓰기를 거부한다(`JournalClosed`). 감독자 작성기는 `run.end`
   뒤에도 `input.recovered`를 더할 수 있다
+- 쓰기가 도중에 실패한 저널은 그 뒤 쓰기를 모두 거부한다(`JournalClosed`). 끝의 반쯤 쓴 줄 뒤에
+  이어 쓰면 읽기가 그 줄과 다음 줄을 함께 버린다 — 잘라 내는 것은 감독자 마무리 몫이다
 
 값은 `event_value()`로 JSON 값으로 바꾼다. 비밀값은 가린 값으로만 남는다.
 """
@@ -65,6 +67,7 @@ class Journal:
         self._lock = threading.Lock()
         # 이미 run.end가 있는 저널을 다시 열어도 runner 작성기는 더 쓰지 못한다
         self._seq, self._ended = _existing_state(self.path)
+        self._broken: BaseException | None = None
         self._fd: int | None = os.open(self.path, _FLAGS, 0o644)
 
     @property
@@ -84,6 +87,8 @@ class Journal:
                 raise JournalClosed(f"닫힌 저널이다: {self.path}")
             if self._ended and self.writer == "runner":
                 raise JournalClosed(f"run.end 뒤에는 쓰지 않는다 ({kind})")
+            if self._broken is not None:
+                raise JournalClosed(f"쓰기가 실패한 저널이다 ({kind}): {self._broken!r}")
             record = {
                 **event_value(dict(event)),
                 "run": self.run_id,
@@ -92,14 +97,19 @@ class Journal:
             }
             data = _line(record)
             action = _faults.check("journal.partial_line", event=kind)
-            if action is None:
-                _write_all(self._fd, data)
-            else:
-                # 실제로 쓰다가 멈춘 줄: 앞 절반만 쓰고 동작한다 (테스트 전용)
-                half = len(data) // 2
-                _write_all(self._fd, data[:half])
-                _faults.perform(action)
-                _write_all(self._fd, data[half:])
+            try:
+                if action is None:
+                    _write_all(self._fd, data)
+                else:
+                    # 실제로 쓰다가 멈춘 줄: 앞 절반만 쓰고 동작한다 (테스트 전용)
+                    half = len(data) // 2
+                    _write_all(self._fd, data[:half])
+                    _faults.perform(action)
+                    _write_all(self._fd, data[half:])
+            except BaseException as exc:
+                # 끝에 반쯤 쓴 줄이 남았을 수 있다: 그 뒤에 이어 쓰면 다음 줄까지 읽기가 버린다
+                self._broken = exc
+                raise
             self._seq += 1
             if kind == "run.end":
                 self._ended = True
