@@ -1,4 +1,5 @@
-"""실행 기록: 실행 폴더·`run.json`, `events.jsonl` 작성·읽기, 멱등 마무리 (스키마 v0 5장)."""
+"""실행 기록: 실행 폴더·`run.json`, `events.jsonl` 작성·읽기, 멱등 마무리, 실행 시작 스냅샷
+(스키마 v0 5장)."""
 
 from kookabug_core.record.finalize import (
     FinalizeResult,
@@ -24,6 +25,12 @@ from kookabug_core.record.runfolder import (
     read_run_json,
     write_run_json,
 )
+from kookabug_core.record.snapshot import (
+    Snapshot,
+    SnapshotError,
+    SnapshotLimits,
+    take_snapshot,
+)
 
 __all__ = [
     "FinalizeResult",
@@ -35,6 +42,9 @@ __all__ = [
     "RecoverInputs",
     "RunFolder",
     "RunView",
+    "Snapshot",
+    "SnapshotError",
+    "SnapshotLimits",
     "StepView",
     "create_run_folder",
     "finalize_run",
@@ -45,5 +55,6 @@ __all__ = [
     "read_journal",
     "read_run",
     "read_run_json",
+    "take_snapshot",
     "write_run_json",
 ]

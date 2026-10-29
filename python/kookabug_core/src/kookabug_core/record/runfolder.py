@@ -39,6 +39,7 @@ __all__ = [
     "RUN_ID_ALPHABET",
     "RUN_ID_LENGTH",
     "RUN_JSON_FILE",
+    "SNAPSHOT_DIR",
     "RunFolder",
     "create_run_folder",
     "finished_run_json",
@@ -56,6 +57,7 @@ RUN_FORMAT: Final = "kookabug.run/0"
 RUN_JSON_FILE: Final = "run.json"
 EVENTS_FILE: Final = "events.jsonl"
 INPUT_RECOVERY_FILE: Final = "input-recovery.json"
+SNAPSHOT_DIR: Final = "snapshot"
 RUN_ID_ALPHABET: Final = "abcdefghijklmnopqrstuvwxyz0123456789"
 RUN_ID_LENGTH: Final = 8
 _RUN_ID = re.compile(rf"[a-z0-9]{{{RUN_ID_LENGTH}}}")
@@ -101,7 +103,7 @@ class RunFolder:
 
     @property
     def snapshot(self) -> Path:
-        return self.path / "snapshot"
+        return self.path / SNAPSHOT_DIR
 
     @property
     def steps(self) -> Path:

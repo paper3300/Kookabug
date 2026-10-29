@@ -5,7 +5,7 @@
 `$link`는 `LinkRef`로 바꿔 두기만 한다 (값은 실행 때 읽는다).
 
 참조 파일 목록(`references`)은 서브그래프·target·이미지의 워크스페이스 기준 경로다
-(M0b 실행 시작 스냅샷이 쓴다).
+(M0b 실행 시작 스냅샷이 쓴다). `discovered`는 파일이 없거나 읽지 못한 경로까지 담는다.
 """
 
 from __future__ import annotations
@@ -64,11 +64,18 @@ class CallRef:
 
 @dataclass
 class References:
-    """실행이 읽는 파일 (워크스페이스 기준 경로). 루트 그래프 자신은 `graphs`에 들어간다."""
+    """실행이 읽는 파일 (워크스페이스 기준 경로). 루트 그래프 자신은 `graphs`에 들어간다.
+
+    `graphs`·`targets`·`images`는 있는 파일만이다. `discovered`는 그래프가 가리킨 모든 경로
+    (서브그래프·target·target의 이미지)로, 파일이 없거나 읽기·형식 오류인 것, 호출 깊이 한도 밖이라
+    읽지 않은 서브그래프(`unloaded`)도 든다. 워크스페이스 경로가 아닌 값은 들지 않는다.
+    스냅샷이 이것으로 복사할 파일을 찾는다.
+    """
 
     graphs: set[str] = field(default_factory=set[str])
     targets: set[str] = field(default_factory=set[str])
     images: set[str] = field(default_factory=set[str])
+    discovered: set[str] = field(default_factory=set[str])
 
     def all(self) -> list[str]:
         return sorted(self.graphs | self.targets | self.images)
@@ -172,6 +179,8 @@ class _Loader:
                 status: CallStatus = (
                     "bad_path" if path is None else self._status.get(path, "unloaded")
                 )
+                if path is not None:
+                    self.program.references.discovered.add(path)
                 self.program.calls[(graph.path, node.id)] = CallRef(
                     graph.path, node.id, path, status
                 )
@@ -186,6 +195,7 @@ class _Loader:
     def _load(self, rel: str) -> CallStatus:
         path = self.ws.resolve(rel)
         assert path is not None
+        self.program.references.discovered.add(rel)
         if not path.is_file():
             self._status[rel] = "missing"
             return "missing"
@@ -299,9 +309,11 @@ class _Loader:
         path = self.ws.resolve(rel)
         if path is None:
             return "target_missing", f"target 경로 '{rel}'이(가) 워크스페이스 경로가 아니다"
+        refs = self.program.references
+        refs.discovered.add(rel)
         if not path.is_file():
             return "target_missing", f"target 파일 '{rel}'이(가) 없다"
-        self.program.references.targets.add(rel)
+        refs.targets.add(rel)
         try:
             data = loads_strict(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, ValueError) as exc:
@@ -314,7 +326,9 @@ class _Loader:
         if image is None:
             return "target_invalid", f"target '{rel}'의 image 경로가 워크스페이스 밖이거나 틀렸다"
         image_path = self.ws.resolve(image)
+        if image_path is not None:
+            refs.discovered.add(image)
         if image_path is None or not image_path.is_file():
             return "target_invalid", f"target '{rel}'의 이미지 '{image}'이(가) 없다"
-        self.program.references.images.add(image)
+        refs.images.add(image)
         return Target(name=rel, path=path, spec=data)

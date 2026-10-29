@@ -73,11 +73,16 @@ _LOOPS: Final = frozenset({"repeat", "while"})
 
 @dataclass(frozen=True, slots=True)
 class ExecOptions:
-    """실행기 옵션. 설정값(`$setting`)·프로필은 로더 옵션(`RunOptions`)이다."""
+    """실행기 옵션. 설정값(`$setting`)·프로필은 로더 옵션(`RunOptions`)이다.
+
+    `graph_prefix`는 `step.end.graph`(서브그래프 경로) 앞에 붙인다. runner는 스냅샷에서 읽은
+    프로그램을 돌리므로 실행 폴더 기준 `snapshot/`을 준다.
+    """
 
     deadline_ms: int = DEFAULT_DEADLINE_MS
     validate: bool = True
     run_id: str | None = None
+    graph_prefix: str = ""
 
 
 @dataclass(frozen=True)
@@ -160,7 +165,7 @@ class Executor:
             deadline_ms=options.deadline_ms,
             emit_to=emit,
         )
-        judgement = _Run(runtime).execute(Frame(root, (), None, 0, {}))
+        judgement = _Run(runtime, options.graph_prefix).execute(Frame(root, (), None, 0, {}))
         cause = judgement.cause if judgement.verdict != "pass" else None
         return RunResult(
             run=run_id,
@@ -231,8 +236,9 @@ def _cause_of(step: str, path: tuple[str, ...], exc: BaseException) -> Cause:
 
 
 class _Run:
-    def __init__(self, runtime: Runtime) -> None:
+    def __init__(self, runtime: Runtime, graph_prefix: str) -> None:
         self.rt = runtime
+        self.graph_prefix = graph_prefix
         self.steps = 0
         self.assertions = 0
         self.scopes = LoopScopes(runtime.program, runtime.registry)
@@ -525,7 +531,7 @@ class _Run:
                 raise EngineError(
                     "missing_required_input", f"'{node.id}': 서브그래프 입력 '{name}'이(가) 없다"
                 )
-        end["graph"] = callee.path
+        end["graph"] = self.graph_prefix + callee.path
         inner = Frame(
             callee,
             frame.node_path(node.id),
