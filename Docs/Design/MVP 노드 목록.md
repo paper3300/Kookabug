@@ -44,6 +44,8 @@
 | `core.assert.text` | OCR 문구 검증 | `region`, `equals` / `contains` / `regex` | `text` | **ok**, fail |
 | `core.assert.compare` | 값 비교 검증 (예: 구매 후 골드가 줄었는지). `op`는 `core.logic.compare`와 같다 (8장) | `a`, `op`, `b` | | **ok**, fail |
 
+`core.test.*`의 `reason`은 `string|secret`이다 (생략 가능). 비밀값이 든 사유(`core.text.format` 결과 등)도 받고, 판정 사유와 실행 기록에는 가린 값(`***`)만 남는다. 받는 값만 넓힌 것이라 노드 `version`은 1 그대로다.
+
 ## 3. 앱·창
 
 | 타입 | 하는 일 | 주요 입력 | 출력 | 출구 |

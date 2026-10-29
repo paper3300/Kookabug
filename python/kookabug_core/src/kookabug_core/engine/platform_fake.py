@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
+from kookabug_core.record.artifacts import artifact_path, image_artifact_path
 from kookabug_sdk.testing import FakeInput
 from kookabug_sdk.types import Image, Rect, WindowRef
 
@@ -48,12 +49,21 @@ class FakePlatform:
 
 
 class MemoryArtifacts:
-    """artifacts를 메모리에 둔다. 경로는 M0b 실행 폴더와 같은 모양(`steps/<스텝>_<이름>`)."""
+    """artifacts를 메모리에 둔다. 경로는 `FileArtifacts`와 같다(`steps/<스텝>_<이름>`)."""
 
     def __init__(self) -> None:
         self.saved: dict[str, Image] = {}
+        self.texts: dict[str, str] = {}
+
+    def _taken(self, path: str) -> bool:
+        return path in self.saved or path in self.texts
 
     def save(self, step: str, image: Image, name: str) -> str:
-        path = f"steps/{step}_{name}"
+        path = image_artifact_path(step, image, name, self._taken)
         self.saved[path] = image
+        return path
+
+    def save_text(self, step: str, name: str, text: str) -> str:
+        path = artifact_path(step, name, "", self._taken)
+        self.texts[path] = text
         return path

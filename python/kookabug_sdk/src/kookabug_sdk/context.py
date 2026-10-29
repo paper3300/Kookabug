@@ -83,7 +83,10 @@ class LogApi(Protocol):
 
 
 class ArtifactsApi(Protocol):
-    def save(self, image: Image, name: str) -> str: ...
+    def save(self, image: Image, name: str) -> str | None:
+        """저장하고 실행 폴더 기준 경로를 준다. 기록 정책(구간 끄기·비밀값 입력)으로 남기지 않으면
+        None (실행 기록에는 생략 이유가 남는다)."""
+        ...
 
 
 class InputApi(Protocol):

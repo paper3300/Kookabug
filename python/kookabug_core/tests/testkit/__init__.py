@@ -15,6 +15,8 @@
 - `testkit.flow.choose`: `DynamicExits` + 기본값 있는 config (`exits`, 기본 `["done"]`)
 - `testkit.config_value`: `ctx.config["n"]`(기본 3)을 출력 (config 기본값 확인용)
 - `testkit.mutate`: 받은 목록을 안쪽까지 고쳐 출력 (입력 복사 확인용)
+- `testkit.shot`: 캡처·`ctx.artifacts.save`·예외를 골라 하는 노드, `value`(any)로 비밀값 입력 스텝을
+  만든다 (기록 정책 확인용)
 - `testkit.pure.count`: 계산될 때마다 `COUNTS[key]`를 올리는 순수 노드 (계산 횟수 확인용)
 - `testkit.pure.capture`·`testkit.pure.log`: 금지된 ctx 기능을 쓰는 순수 노드 (→ error)
 

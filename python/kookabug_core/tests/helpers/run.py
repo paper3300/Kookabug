@@ -22,6 +22,7 @@ from kookabug_core.engine import (
     Executor,
     FakeClock,
     FakePlatform,
+    MemoryArtifacts,
     NodeInvoker,
     RunResult,
 )
@@ -31,9 +32,14 @@ from kookabug_core.workspace import MemorySecrets, Workspace
 TEST = "tests/t.graph.json"
 
 
-def tk(kind: str = "test", *, interface: Mapping[str, Any] | None = None) -> GraphBuilder:
+def tk(
+    kind: str = "test",
+    *,
+    interface: Mapping[str, Any] | None = None,
+    record: Mapping[str, Any] | None = None,
+) -> GraphBuilder:
     """testkit 플러그인을 쓰는 그래프."""
-    return GraphBuilder(kind, interface=interface, plugins={"testkit": "0"})
+    return GraphBuilder(kind, interface=interface, plugins={"testkit": "0"}, record=record)
 
 
 @dataclass
@@ -42,6 +48,7 @@ class Ran:
     platform: FakePlatform
     clock: FakeClock
     program: Program
+    artifacts: MemoryArtifacts
 
     @property
     def events(self) -> list[dict[str, Any]]:
@@ -88,18 +95,20 @@ def run_graph(
     program = load_program(ws, rel, secrets=MemorySecrets(secrets or {}))
     platform = FakePlatform(frames, on_capture=on_capture)
     clock = clock or FakeClock()
+    artifacts = MemoryArtifacts()
     executor = Executor(
         registry_with_testkit(),
         platform=platform,
         clock=clock,
         cancel=cancel,
+        artifacts=artifacts,
         invoker=invoker,
         sink=sink,
     )
     result = executor.run(
         program, ExecOptions(deadline_ms=deadline_ms, validate=validate, run_id="r1")
     )
-    return Ran(result, platform, clock, program)
+    return Ran(result, platform, clock, program, artifacts)
 
 
 def check_ok(**extra: Any) -> dict[str, Any]:

@@ -52,7 +52,7 @@ def wait_image(ctx: Context, target: Target, timeout_ms: int = 10000) -> Result:
 - 기본값 자리에 `OMITTED`를 쓰면 **생략할 수 있는 입력**이 된다 (노드 스키마 `optional: true`, `default` 없음). 그래프가 값을 주지 않으면 함수는 `OMITTED`를 받으므로 생략과 명시적 `null`을 구분할 수 있다. 예: `core.var.get`의 `default: Any | None = OMITTED`
 - 출력 핀은 `outputs=`로 선언하고, 값은 `Result`에 키워드로 넘긴다 (아래)
 - `Result.ok(출구, **출력)` / `Result.fail(출구, message=..., **출력)`. 선언하지 않은 출구, 그 출구가 주지 않는 출력, 출구 종류(`ok`/`fail`)와 다른 반환, 빠진 non-nullable 출력은 `error`. 빠진 nullable 출력은 `null`로 채운다
-- 예외가 나면 `error`. 러너가 예외 내용과 마지막 스크린샷을 기록한다
+- 예외가 나면 `error`. 러너가 예외 내용과 **그 노드가 실행 중에 얻은 마지막 캡처**를 기록한다 (그 노드가 캡처하지 않았으면 스크린샷은 없다). 기록 정책이 막으면 남기지 않는다 ([[그래프 JSON 스키마 v0]] 6장 "화면에 찍힌 비밀값")
 - docstring은 노드 설명이 된다 (팔레트 툴팁, MCP 도구 설명)
 
 ### 출력과 설정 선언
@@ -96,7 +96,7 @@ def wait_any(ctx: Context, targets: dict[str, Target], timeout_ms: int = 10000) 
 | `target` | `Target` | `*.target.json` |
 | `match` | `Match` | 위치, 점수, 창 ID, 캡처 프레임 번호 |
 | `rect`, `point` | `Rect`, `Point` | 클라이언트 영역 기준 |
-| `image` | `Image` | 기록에는 파일로 저장 |
+| `image` | `Image` | 기록에는 파일로 저장. `ctx.capture`가 준 이미지에는 러너가 캡처 번호(`capture_id`)를 붙인다. 기록 정책이 이 번호로 "얻을 때 허용됐는가"를 보므로 노드는 받은 이미지를 그대로 넘긴다 (값 비교에는 들지 않는다) |
 | `window`, `process` | `WindowRef`, `ProcessRef` | 유효성 확인 가능 |
 | `list[T]`, `dict[str, T]` | 같음 | |
 | `any` | `Any` | 연결 검사를 하지 않음. 가급적 쓰지 않는다 |
@@ -118,7 +118,7 @@ def wait_any(ctx: Context, targets: dict[str, Target], timeout_ms: int = 10000) 
 | 캡처 | `ctx.capture(region=None)` |
 | 이미지·OCR 엔진 | `ctx.vision.find(...)`, `ctx.ocr.read(...)` |
 | 입력 | `ctx.input.click(...)`, `ctx.input.key(...)` (입력 직전 창 유효성·포그라운드 확인 포함) |
-| 기록 | `ctx.log.info(...)`, `ctx.artifacts.save(image, name)` |
+| 기록 | `ctx.log.info(...)`, `ctx.artifacts.save(image, name) -> str \| None` (실행 폴더 기준 경로. 기록 정책으로 생략하면 `None`) |
 | 시간·취소 | `ctx.deadline(ms)`, `ctx.sleep(ms)`, `ctx.check_cancel()` |
 | 워크스페이스 | `ctx.setting(key)`, `ctx.path(rel)` |
 | 노드 설정 | `ctx.config` (그래프 노드의 `config` 값) |
@@ -136,6 +136,7 @@ def wait_any(ctx: Context, targets: dict[str, Target], timeout_ms: int = 10000) 
 
 - 오래 걸리는 노드는 `ctx.check_cancel()`을 자주 부른다. 응답하지 않으면 러너가 워커 프로세스를 종료한다 (취소 순서는 [[구현 계획 v0]] 3장)
 - 스크린샷·텍스트 기록은 반드시 `ctx.artifacts`/`ctx.log`를 거친다. 기록 정책(비밀값 생략, 구간 끄기)이 여기서 집행된다. 노드가 파일을 직접 쓰지 않는다
+  - `ctx.artifacts.save`가 `None`을 주면 정책으로 생략된 것이다. 경로를 출력이나 로그로 넘기는 노드는 `None`을 처리한다. 가짜 ctx(`fake_context`)는 정책이 없어 늘 경로(이름)를 준다
 - 플러그인이 `ctx`를 거치지 않고 OS를 직접 건드릴 수는 있다. 막지 못하므로 매니페스트에 권한을 선언하게 하고 설치할 때 보여 준다
 
 ---

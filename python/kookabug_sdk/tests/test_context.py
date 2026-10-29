@@ -140,6 +140,29 @@ def test_fake_capture_frames_in_order_then_last() -> None:
     assert ctx.path("x/y.png").as_posix() == "ws/x/y.png"
 
 
+def test_fake_context_artifacts_save_returns_path() -> None:
+    # 가짜 ctx에는 기록 정책이 없다: 늘 경로(이름)를 준다. 실행기는 생략하면 None을 준다
+    ctx = fake_context(frames=["a.png"])
+    frame = ctx.capture()
+    assert ctx.artifacts.save(frame, "before") == "before"
+    assert ctx.artifacts.saved == {"before": frame}
+
+    @node(
+        type="sample.act.shoot",
+        version=1,
+        title="t",
+        exits=[Exit("done", "ok")],
+        outputs={"saved": str},
+        effects={"capture"},
+    )
+    def shoot(ctx: Context) -> Result:
+        saved = ctx.artifacts.save(ctx.capture(), "shot")
+        assert saved is not None
+        return Result.ok("done", saved=saved)
+
+    assert shoot(fake_context(frames=["a.png"])).outputs == {"saved": "shot"}
+
+
 def test_fake_clock_deadline_and_cancel() -> None:
     clock = FakeClock(100)
     ctx = fake_context(clock=clock, settings={"game.exe": "g.exe"})

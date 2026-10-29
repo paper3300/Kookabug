@@ -2,7 +2,7 @@
 
 - `step.start`: `run`, `step`, `parent`, `node`, `path`, `attempt` (반복 안이면 `iteration`)
 - `step.end`: `run`, `step`, `attempt`, `status`(`success`·`fail`·`error`·`cancelled`), `exit`,
-  `outputs`, `duration_ms`, 상황에 따라 `error`·`message`·`graph`·`artifacts`·`iteration`
+  `outputs`, `duration_ms`, 상황에 따라 `error`·`message`·`graph`·`artifacts`·`omitted`·`iteration`
 - `log`: `run`, `step`, `node`, `level`, `message` (`ctx.log`)
 
 M0a는 메모리에만 남긴다. M0b가 같은 dict를 `events.jsonl`에 쓴다 (시각 `t`는 쓰는 쪽이 붙인다).

@@ -91,6 +91,8 @@ class FakeLog:
 
 
 class FakeArtifacts:
+    """저장한 이미지를 이름으로 모은다. 기록 정책이 없으므로 늘 경로(이름)를 준다."""
+
     def __init__(self) -> None:
         self.saved: dict[str, Image] = {}
 

@@ -376,10 +376,11 @@ def test_secret_to_string_pin_rejected(tmp_path: Path) -> None:
     sub_with_types("secret", "string", ws)
     g = valid()
     g.nodes["n_set"]["in"]["value"] = 1
-    g.node("n_log", "core.test.fail", inputs={"reason": secret("pw")})  # $secret → string
+    g.node("n_log", "testkit.read_text", inputs={"text": secret("pw")})  # $secret → string
     g.write(ws, GRAPH)
     diags = check(ws, GRAPH, registry=registry_with_testkit(), secrets={"pw": "x"})
-    assert where(diags) == [("type_mismatch", "n_log", "/nodes/n_log/in/reason")]
+    diags = without_flow(diags)
+    assert where(diags) == [("type_mismatch", "n_log", "/nodes/n_log/in/text")]
     assert "secret" in diags[0].message
 
     diags = check(ws, SUB, registry=registry_with_testkit())

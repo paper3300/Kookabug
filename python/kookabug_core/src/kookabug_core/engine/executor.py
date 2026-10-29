@@ -15,6 +15,9 @@
   (그 범위의 출력을 지운다). 반복 안 스텝의 이벤트에 `iteration`
 - 재시도(`retry`): 노드 함수가 재시도 출구로 나오면 출구를 확정하기 전에 다시 부른다. 중간 시도는
   `attempt.end`, 재시도 끝 성공은 `step.end`의 `retried: true`
+- 기록 정책: 프레임마다 실효 정책(`Frame.record_policy`), 스텝마다 노드 `record`와 입력의 비밀값을
+  더해 `Recorder`가 집행한다. 노드가 error로 끝나면 그 스텝의 마지막 캡처를 예외 스크린샷으로.
+  생략은 `step.end.omitted` (스키마 v0 6장 "화면에 찍힌 비밀값")
 """
 
 from __future__ import annotations
@@ -47,9 +50,17 @@ from kookabug_core.engine.retry import retry_policy
 from kookabug_core.engine.verdict import Cause, Facts, Judgement, Terminal, Verdict, judge
 from kookabug_core.ir import GRAPH_ENTRY, Node
 from kookabug_core.loader import MAX_CALL_DEPTH, Program
+from kookabug_core.record.artifacts import Recorder
+from kookabug_core.record.policy import (
+    RecordPolicy,
+    graph_source,
+    node_inputs_source,
+    node_source,
+)
 from kookabug_core.registry import NodeDef, Registry, default_registry
 from kookabug_core.validate import validate
-from kookabug_sdk import Result
+from kookabug_core.workspace import WORKSPACE_FILE
+from kookabug_sdk import Result, Secret
 from kookabug_sdk.context import Deadline
 
 __all__ = [
@@ -97,6 +108,8 @@ class RunResult:
     failure_path: tuple[str, ...] | None
     events: list[dict[str, Any]]
     diagnostics: list[Diagnostic] = field(default_factory=list[Diagnostic])
+    recorder: Recorder | None = None
+    """스텝별 기록 정책 (실행 뒤 영상 정리 `video_allowed` 등에 쓴다)."""
 
 
 class GraphInvalid(Exception):
@@ -152,20 +165,31 @@ class Executor:
                 self.sink.emit(event)
 
         run_id = options.run_id or uuid.uuid4().hex[:8]
+        recorder = Recorder(self.artifacts)
         runtime = Runtime(
             run=run_id,
             program=program,
             registry=self.registry,
             invoker=self.invoker,
             platform=self.platform,
-            artifacts=self.artifacts,
+            recorder=recorder,
             clock=self.clock,
             cancel=self.cancel,
             deadline=Deadline(self.clock, self.clock.now_ms() + options.deadline_ms),
             deadline_ms=options.deadline_ms,
             emit_to=emit,
         )
-        judgement = _Run(runtime, options.graph_prefix).execute(Frame(root, (), None, 0, {}))
+        workspace_record = program.workspace.config.get("record")
+        policy = (
+            RecordPolicy()
+            .layer(
+                workspace_record if isinstance(workspace_record, Mapping) else None,
+                graph_source(WORKSPACE_FILE),
+            )
+            .layer(root.record, graph_source(root.path))
+        )
+        top = Frame(root, (), None, 0, {}, record_policy=policy)
+        judgement = _Run(runtime, options.graph_prefix).execute(top)
         cause = judgement.cause if judgement.verdict != "pass" else None
         return RunResult(
             run=run_id,
@@ -176,6 +200,7 @@ class Executor:
             failure_path=cause.path if cause is not None else None,
             events=events,
             diagnostics=diagnostics,
+            recorder=recorder,
         )
 
 
@@ -321,6 +346,9 @@ class _Run:
         if iteration is not None:
             start["iteration"] = end["iteration"] = iteration
         rt.emit(start)
+        rt.recorder.open_step(
+            step, frame.record_policy.layer(node.record, node_source(frame.graph.path, node.id))
+        )
         began = rt.clock.now_ms()
 
         try:
@@ -335,6 +363,7 @@ class _Run:
                 inputs = resolve_inputs(
                     rt, frame, node, step, self._recompute(frame, node, nodedef)
                 )
+                rt.recorder.note_inputs(step, inputs, node_inputs_source(frame.graph.path, node.id))
                 rt.check()
                 outcome = self._dispatch(frame, node, nodedef, step, inputs, end)
                 # 노드가 돌아온 뒤에도 본다: 실행 중 생긴 취소·기한 초과를 성공으로 확정하지 않는다
@@ -349,6 +378,9 @@ class _Run:
             end.update(status=halt.status, exit=None, outputs={})
             if isinstance(halt, _Error):
                 end["error"] = {"code": halt.cause.code, "message": halt.cause.message}
+                if halt.status == "error" and halt.cause.step == step:
+                    # 이 스텝의 오류만. 서브그래프 안쪽 오류는 안쪽 스텝이 이미 처리했다
+                    self._error_screenshot(node, step)
             elif isinstance(halt, _Unhandled):
                 end["message"] = halt.cause.message
             self._finish(end, began)
@@ -410,10 +442,27 @@ class _Run:
             )
         return found
 
+    def _error_screenshot(self, node: Node, step: str) -> None:
+        """저장이 실패해도(디스크 등) 원래 오류를 덮지 않는다. 경고 로그만 남긴다."""
+        try:
+            self.rt.recorder.error_screenshot(step)
+        except Exception as exc:
+            self.rt.emit(
+                {
+                    "event": "log",
+                    "level": "warn",
+                    "message": f"예외 스크린샷을 남기지 못했다: {type(exc).__name__}: {exc}",
+                    "node": node.id,
+                    "step": step,
+                }
+            )
+
     def _finish(self, end: dict[str, Any], began: int) -> None:
-        artifacts = self.rt.step_artifacts.get(end["step"])
+        artifacts, omitted = self.rt.recorder.close_step(end["step"])
         if artifacts:
-            end["artifacts"] = list(artifacts)
+            end["artifacts"] = artifacts
+        if omitted:
+            end["omitted"] = omitted
         end["duration_ms"] = self.rt.clock.now_ms() - began
         self.rt.emit(end)
 
@@ -437,6 +486,8 @@ class _Run:
             return self._graph_call(frame, node, step, inputs, end)
         if engine in _TERMINALS:
             reason = inputs.get("reason")
+            if isinstance(reason, Secret):
+                reason = str(reason)  # 판정 사유·기록에는 가린 값만 (P12)
             return _TerminalEnd(_TERMINALS[engine], reason if isinstance(reason, str) else None)
         if engine in _LOOPS:
             return self._loop(frame, node, nodedef, step, inputs)
@@ -532,6 +583,10 @@ class _Run:
                     "missing_required_input", f"'{node.id}': 서브그래프 입력 '{name}'이(가) 없다"
                 )
         end["graph"] = self.graph_prefix + callee.path
+        # 호출 노드의 record까지 더한 정책 위에 서브그래프의 record (비밀값 입력 표시는 잇지 않는다)
+        policy = self.rt.recorder.policy(step).policy.layer(
+            callee.record, graph_source(callee.path)
+        )
         inner = Frame(
             callee,
             frame.node_path(node.id),
@@ -539,6 +594,7 @@ class _Run:
             frame.depth + 1,
             values,
             current_window=frame.current_window,
+            record_policy=policy,
         )
         done = self._run_frame(inner)
         if done is None:

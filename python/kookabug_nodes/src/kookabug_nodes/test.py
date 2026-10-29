@@ -1,9 +1,12 @@
-"""테스트 판정 노드: 종료 노드(실행기가 처리)와 값 비교 검증."""
+"""테스트 판정 노드: 종료 노드(실행기가 처리)와 값 비교 검증.
+
+종료 노드의 `reason`은 `string|secret`이다. 비밀값이면 판정 사유·기록에는 가린 값만 남는다.
+"""
 
 from typing import Any
 
 from kookabug_nodes.values import CompareOp, compare_values, show
-from kookabug_sdk import Context, Exit, Result, node
+from kookabug_sdk import Context, Exit, Result, Secret, node
 
 
 @node(
@@ -14,7 +17,7 @@ from kookabug_sdk import Context, Exit, Result, node
     exits=[],
     engine="test_pass",
 )
-def test_pass(ctx: Context, reason: str | None = None) -> Result:
+def test_pass(ctx: Context, reason: str | Secret | None = None) -> Result:
     """테스트를 성공으로 끝낸다 (테스트 전용)."""
     raise NotImplementedError
 
@@ -27,7 +30,7 @@ def test_pass(ctx: Context, reason: str | None = None) -> Result:
     exits=[],
     engine="test_fail",
 )
-def test_fail(ctx: Context, reason: str | None = None) -> Result:
+def test_fail(ctx: Context, reason: str | Secret | None = None) -> Result:
     """테스트를 실패로 끝낸다 (테스트 전용)."""
     raise NotImplementedError
 
@@ -40,7 +43,7 @@ def test_fail(ctx: Context, reason: str | None = None) -> Result:
     exits=[],
     engine="test_skip",
 )
-def test_skip(ctx: Context, reason: str | None = None) -> Result:
+def test_skip(ctx: Context, reason: str | Secret | None = None) -> Result:
     """테스트를 건너뜀으로 끝낸다 (테스트 전용)."""
     raise NotImplementedError
 

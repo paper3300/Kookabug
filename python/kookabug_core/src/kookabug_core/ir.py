@@ -85,6 +85,8 @@ class Node:
     config: dict[str, Any]
     next: dict[str, str]
     raw: Mapping[str, Any]
+    record: Mapping[str, Any] | None = None
+    """노드 기록 정책 (스키마 v0 6장, `{screenshots, video}`)."""
 
     @property
     def retry(self) -> Mapping[str, Any] | None:
@@ -107,6 +109,8 @@ class Graph:
     interface: Mapping[str, Any] | None = None
     links: list[Link] = field(default_factory=list[Link])
     data: Mapping[str, Any] = field(default_factory=dict[str, Any])
+    record: Mapping[str, Any] | None = None
+    """그래프 기록 정책 (테스트·서브그래프 구간)."""
 
     def exec_edges(self) -> Iterator[ExecEdge]:
         for node in self.nodes.values():

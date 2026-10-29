@@ -146,6 +146,12 @@ def graph_from_data(
     return graph, loader.program.diagnostics
 
 
+def _record_of(data: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    """`record` 객체 (형식 검사를 통과했으므로 있으면 `{screenshots?, video?}`)."""
+    record = data.get("record")
+    return dict(record) if isinstance(record, Mapping) else None
+
+
 class _Loader:
     def __init__(self, workspace: Workspace, options: RunOptions, secrets: SecretProvider) -> None:
         self.ws = workspace
@@ -227,6 +233,7 @@ class _Loader:
             plugins=dict(data.get("plugins", {})),
             interface=data.get("interface"),
             data=data,
+            record=_record_of(data),
         )
         for node_id, raw in data["nodes"].items():
             inputs = {
@@ -242,6 +249,7 @@ class _Loader:
                 config=copy.deepcopy(dict(raw.get("config", {}))),
                 next=dict(raw.get("next", {})),
                 raw=raw,
+                record=_record_of(raw),
             )
             graph.nodes[node_id] = node
         return graph

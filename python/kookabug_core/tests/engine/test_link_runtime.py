@@ -85,7 +85,8 @@ def test_inputs_computed_once_per_step(tmp_path: Path) -> None:
 
 
 def test_secret_through_any_into_string_pin_is_error(tmp_path: Path) -> None:
-    # var.set(any) → var.get(any) → test.fail.reason(string): 정적으로는 막지 못하고 실행 때 막는다
+    # var.set(any) → var.get(any) → read_text.text(string): 정적으로는 막지 못하고 실행 때 막는다
+    # (test.fail.reason은 M0b부터 string|secret이라 받는다)
     g = (
         tk()
         .entry("n_set")
@@ -93,12 +94,18 @@ def test_secret_through_any_into_string_pin_is_error(tmp_path: Path) -> None:
             "n_set",
             "core.var.set",
             inputs={"name": "pw", "value": secret("acc.pw")},
-            next={"done": "n_fail"},
+            next={"done": "n_read"},
         )
         .node("n_get", "core.var.get", inputs={"name": "pw"})
-        .node("n_fail", "core.test.fail", inputs={"reason": link("n_get.value")})
+        .node(
+            "n_read",
+            "testkit.read_text",
+            inputs={"text": link("n_get.value")},
+            next={"done": "n_pass"},
+        )
+        .node("n_pass", "core.test.pass")
     )
     ran = run_graph(make_workspace(tmp_path), g, secrets={"acc.pw": "hunter2"})
     r = ran.result
-    assert (r.verdict, r.code, r.failure_path) == ("error", "type_mismatch", ("n_fail",))
+    assert (r.verdict, r.code, r.failure_path) == ("error", "type_mismatch", ("n_read",))
     assert "hunter2" not in repr(ran.events)

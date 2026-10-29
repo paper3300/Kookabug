@@ -163,9 +163,8 @@ def test_terminal_only_inside_body_reads_body_output_allowed(tmp_path: Path) -> 
         "core.text.format",
         inputs={"template": "{i}", "values": {"i": link("n_loop.index")}},
     )
-    diags = run(tmp_path / "2", g)
-    # text.format 출력(string|secret) → reason(string)은 타입 문제일 뿐 범위 문제가 아니다
-    assert [d.code for d in diags] == ["type_mismatch"]
+    # text.format 출력(string|secret) → reason(string|secret, P12): 범위·타입 문제 모두 없다
+    assert run(tmp_path / "2", g) == []
 
 
 def test_terminal_inside_nested_body_reads_outer_body_output_allowed(tmp_path: Path) -> None:

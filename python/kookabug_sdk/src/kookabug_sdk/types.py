@@ -104,13 +104,19 @@ class ProcessRef:
 
 @dataclass(frozen=True, slots=True)
 class Image:
-    """캡처 프레임이나 이미지 파일. `frame`은 캡처 프레임 번호."""
+    """캡처 프레임이나 이미지 파일. `frame`은 캡처 프레임 번호.
+
+    `capture_id`는 러너가 `ctx.capture` 때 붙이는 실행 안 번호다. 노드는 만들지 않는다. 기록 정책이
+    "얻을 때 스크린샷이 허용됐는가"를 이것으로 찾으므로, 복사·출력·워커 경계를 넘어도 유지된다.
+    값 비교에는 들지 않는다.
+    """
 
     width: int = 0
     height: int = 0
     path: Path | None = None
     frame: int | None = None
     data: bytes | None = field(default=None, repr=False)
+    capture_id: int | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True, slots=True)

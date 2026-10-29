@@ -294,7 +294,7 @@
         "reason": {
           "default": null,
           "nullable": true,
-          "type": "string"
+          "type": "string|secret"
         }
       },
       "outputs": {},
@@ -311,7 +311,7 @@
         "reason": {
           "default": null,
           "nullable": true,
-          "type": "string"
+          "type": "string|secret"
         }
       },
       "outputs": {},
@@ -328,7 +328,7 @@
         "reason": {
           "default": null,
           "nullable": true,
-          "type": "string"
+          "type": "string|secret"
         }
       },
       "outputs": {},

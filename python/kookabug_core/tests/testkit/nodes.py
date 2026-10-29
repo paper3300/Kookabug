@@ -5,7 +5,7 @@ from collections import Counter
 from typing import Any, Literal
 
 from kookabug_sdk import Config, Context, DynamicExits, Exit, Output, Result, Retry, node
-from kookabug_sdk.types import Match, Point, Rect
+from kookabug_sdk.types import Image, Match, Point, Rect
 
 PLUGIN_ID = "testkit"
 PLUGIN_VERSION = "0"
@@ -208,6 +208,41 @@ def mutate(ctx: Context, items: list[Any]) -> Result:
     return Result.ok("done", items=items)
 
 
+@node(
+    type="testkit.shot",
+    version=1,
+    title="캡처와 저장",
+    exits=[Exit("done", "ok")],
+    outputs={
+        "image": Output(Image, nullable=True),
+        "saved": Output(str, nullable=True),
+    },
+    effects={"capture"},
+)
+def shot(
+    ctx: Context,
+    name: str = "shot",
+    captures: int = 1,
+    save: bool = False,
+    image: Image | None = None,
+    boom: bool = False,
+    value: Any | None = None,
+) -> Result:
+    """기록 정책 시나리오용. `captures`번 캡처(마지막 것을 출력), `save`면 저장(`image`를 주면
+    그것을), `boom`이면 그 뒤 예외. `value`는 받기만 한다(비밀값 입력 스텝 만들기). 출력 `saved`는
+    `ctx.artifacts.save`의 반환값(생략이면 null)."""
+    frame: Image | None = None
+    for _ in range(captures):
+        frame = ctx.capture()
+    saved: str | None = None
+    target = image if image is not None else frame
+    if save and target is not None:
+        saved = ctx.artifacts.save(target, name)
+    if boom:
+        raise RuntimeError("testkit.shot boom")
+    return Result.ok("done", image=frame, saved=saved)
+
+
 COUNTS: Counter[str] = Counter()
 """`testkit.pure.count`가 계산된 횟수 (키별). 테스트마다 비운다."""
 
@@ -260,6 +295,7 @@ NODES = (
     choose,
     config_value,
     mutate,
+    shot,
     pure_count,
     pure_capture,
     pure_log,

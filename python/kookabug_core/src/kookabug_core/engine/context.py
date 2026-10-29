@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -17,6 +17,7 @@ from kookabug_core.engine.frame import Frame
 from kookabug_core.engine.invoker import NodeInvoker
 from kookabug_core.ir import Node
 from kookabug_core.loader import Program
+from kookabug_core.record.artifacts import ArtifactStore, Recorder
 from kookabug_core.registry import Registry
 from kookabug_sdk.context import ArtifactsApi, Clock, Deadline, InputApi, LogApi, VarsApi
 from kookabug_sdk.types import Image, Match, Point, Rect, Secret, WindowRef
@@ -32,29 +33,22 @@ class Platform(Protocol):
     def capture(self, window: WindowRef | None, region: Rect | None) -> Image: ...
 
 
-class ArtifactStore(Protocol):
-    def save(self, step: str, image: Image, name: str) -> str:
-        """저장하고 실행 폴더 기준 경로를 돌려준다."""
-        ...
-
-
 @dataclass(eq=False)
 class Runtime:
     """한 실행의 공용 상태: 프로그램, 레지스트리, 노드 실행 경계, 플랫폼, 시계, 취소, 전체 기한,
-    이벤트."""
+    이벤트, 기록 정책(`recorder`)."""
 
     run: str
     program: Program
     registry: Registry
     invoker: NodeInvoker
     platform: Platform
-    artifacts: ArtifactStore
+    recorder: Recorder
     clock: Clock
     cancel: CancelToken
     deadline: Deadline
     deadline_ms: int
     emit_to: Callable[[dict[str, Any]], None]
-    step_artifacts: dict[str, list[str]] = field(default_factory=dict[str, list[str]])
 
     def emit(self, event: Mapping[str, Any]) -> None:
         self.emit_to({**event, "run": self.run})
@@ -132,14 +126,14 @@ class StepLog:
 
 
 class StepArtifacts:
+    """`ctx.artifacts`. 기록 정책으로 생략하면 None을 주고 artifacts 목록에 넣지 않는다."""
+
     def __init__(self, runtime: Runtime, step: str) -> None:
         self._runtime = runtime
         self._step = step
 
-    def save(self, image: Image, name: str) -> str:
-        path = self._runtime.artifacts.save(self._step, image, name)
-        self._runtime.step_artifacts.setdefault(self._step, []).append(path)
-        return path
+    def save(self, image: Image, name: str) -> str | None:
+        return self._runtime.recorder.screenshot(self._step, image, name)
 
 
 class CheckedInput:
@@ -205,7 +199,9 @@ class StepContext:
 
     def capture(self, region: Rect | None = None) -> Image:
         self._runtime.check()
-        image = self._runtime.platform.capture(self._frame.current_window, region)
+        image = self._runtime.recorder.captured(
+            self._step, self._runtime.platform.capture(self._frame.current_window, region)
+        )
         self._runtime.check()
         return image
 

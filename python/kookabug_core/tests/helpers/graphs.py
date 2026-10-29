@@ -59,10 +59,12 @@ class GraphBuilder:
         *,
         interface: Mapping[str, Any] | None = None,
         plugins: Mapping[str, str] | None = None,
+        record: Mapping[str, Any] | None = None,
     ) -> None:
         self.kind = kind
         self.interface = copy.deepcopy(dict(interface)) if interface is not None else None
         self.plugins = {"core": CORE_VERSION, **(plugins or {})}
+        self.record = dict(record) if record is not None else None
         self.nodes: dict[str, dict[str, Any]] = {}
 
     def node(
@@ -75,6 +77,7 @@ class GraphBuilder:
         config: Mapping[str, Any] | None = None,
         next: Mapping[str, str] | None = None,
         title: str | None = None,
+        record: Mapping[str, Any] | None = None,
     ) -> GraphBuilder:
         node: dict[str, Any] = {"type": node_type, "version": version}
         if inputs is not None:
@@ -85,6 +88,8 @@ class GraphBuilder:
             node["next"] = dict(next)
         if title is not None:
             node["title"] = title
+        if record is not None:
+            node["record"] = dict(record)
         self.nodes[node_id] = node
         return self
 
@@ -103,9 +108,15 @@ class GraphBuilder:
         *,
         inputs: Mapping[str, Any] | None = None,
         next: Mapping[str, str] | None = None,
+        record: Mapping[str, Any] | None = None,
     ) -> GraphBuilder:
         return self.node(
-            node_id, "core.graph.call", config={"graph": graph}, inputs=inputs, next=next
+            node_id,
+            "core.graph.call",
+            config={"graph": graph},
+            inputs=inputs,
+            next=next,
+            record=record,
         )
 
     def build(self) -> dict[str, Any]:
@@ -117,6 +128,8 @@ class GraphBuilder:
         }
         if self.interface is not None:
             data["interface"] = copy.deepcopy(self.interface)
+        if self.record is not None:
+            data["record"] = dict(self.record)
         return data
 
     def write(self, ws: Workspace | Path, rel: str) -> str:
@@ -183,14 +196,17 @@ def make_workspace(
     settings: Mapping[str, Any] | None = None,
     profiles: Mapping[str, Mapping[str, Any]] | None = None,
     local: Mapping[str, Any] | None = None,
+    record: Mapping[str, Any] | None = None,
 ) -> Workspace:
     """`kookabug.json`(그리고 `local`을 주면 `.kookabug/local.json`)을 쓰고 연다.
 
-    `profiles`는 프로필 이름 → 그 프로필의 settings.
+    `profiles`는 프로필 이름 → 그 프로필의 settings. `record`는 워크스페이스 기록 정책.
     """
     config: dict[str, Any] = {"format": "kookabug.workspace/0"}
     if settings is not None:
         config["settings"] = dict(settings)
+    if record is not None:
+        config["record"] = dict(record)
     if profiles is not None:
         config["profiles"] = {k: {"settings": dict(v)} for k, v in profiles.items()}
     write_json(root, WORKSPACE_FILE, config)

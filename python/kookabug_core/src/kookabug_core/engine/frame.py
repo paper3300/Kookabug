@@ -14,6 +14,7 @@ from typing import Any
 from kookabug_core.engine.errors import EngineError
 from kookabug_core.engine.verdict import Cause
 from kookabug_core.ir import Graph, LinkRef
+from kookabug_core.record.policy import RecordPolicy
 from kookabug_sdk.result import ExitKind
 from kookabug_sdk.types import WindowRef
 
@@ -55,6 +56,9 @@ class Frame:
     inputs: Mapping[str, Any]
     """`core.graph.entry`가 줄 값 (interface 입력, 기본값 채움)."""
     current_window: WindowRef | None = None
+    record_policy: RecordPolicy = field(default_factory=RecordPolicy)
+    """이 프레임의 실효 기록 정책 (워크스페이스 → 테스트 → 호출 노드 → 서브그래프 → …).
+    `record()` 메서드(출력 표)와 별개다."""
     outputs: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
     vars: dict[str, Any] = field(default_factory=dict[str, Any])
     pending: list[Cause] = field(default_factory=list[Cause])
