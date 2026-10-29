@@ -1,5 +1,6 @@
 """testkit 노드 선언과 구현."""
 
+import copy
 from collections import Counter
 from typing import Any, Literal
 
@@ -30,6 +31,49 @@ def observe_wait(ctx: Context, expect: str, timeout_ms: int = 1000, poll_ms: int
         if deadline.passed:
             return Result.fail("timeout", f"'{expect}' 프레임이 {timeout_ms}ms 안에 없다")
         ctx.sleep(min(poll_ms, deadline.remaining_ms))
+
+
+@node(
+    type="testkit.observe.flaky",
+    version=1,
+    title="시도마다 다른 결과",
+    exits=[Exit("found", "ok"), Exit("timeout", "fail"), Exit("missing", "fail")],
+    outputs={"seen": int},
+    retry=Retry.observation(on=["timeout", "missing"]),
+)
+def observe_flaky(ctx: Context, script: list[str], seen: int = 0) -> Result:
+    """부를 때마다 `script`의 다음 결과를 낸다 (`COUNTS["flaky"]`번째, 끝나면 마지막 것).
+
+    `"found"`면 `seen`(받은 입력 그대로)을 출력, `"boom"`이면 예외, 그 밖은 그 fail 출구."""
+    pick = script[min(COUNTS["flaky"], len(script) - 1)]
+    COUNTS["flaky"] += 1
+    if pick == "found":
+        return Result.ok("found", seen=seen)
+    if pick == "boom":
+        raise RuntimeError("flaky boom")
+    return Result.fail(pick, f"testkit.observe.flaky: {pick}")
+
+
+SEEN: list[Any] = []
+"""`testkit.observe.consume`가 시도마다 받은 입력 (깊은 복사). 테스트마다 비운다."""
+
+
+@node(
+    type="testkit.observe.consume",
+    version=1,
+    title="받은 입력을 고치는 관측",
+    exits=[Exit("found", "ok"), Exit("timeout", "fail")],
+    retry=Retry.observation(on=["timeout"]),
+)
+def observe_consume(ctx: Context, targets: list[list[int]]) -> Result:
+    """받은 `targets`를 `SEEN`에 남기고 안쪽 목록 첫 값을 꺼낸다(작업용으로 고침).
+
+    첫 호출은 `timeout`, 그 뒤는 `found`."""
+    SEEN.append(copy.deepcopy(targets))
+    for inner in targets:
+        if inner:
+            inner.pop(0)
+    return Result.fail("timeout", "다음 시도") if len(SEEN) == 1 else Result.ok("found")
 
 
 @node(
@@ -205,6 +249,8 @@ def pure_log(ctx: Context) -> dict[str, Any]:
 
 NODES = (
     observe_wait,
+    observe_flaky,
+    observe_consume,
     observe_wait_any,
     read_text,
     input_tap,

@@ -131,12 +131,15 @@ def test_var_value_is_copied_not_shared(tmp_path: Path) -> None:
 
 
 def test_copy_test_detects_missing_copies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # 위 테스트의 검증력: 실행기·SDK 순수 변수 읽기의 복사를 없애면 위 테스트가 실패해야 한다
+    # 위 테스트의 검증력: 실행기(입력 계산·시도마다 복사)·SDK 순수 변수 읽기의 복사를 없애면 위
+    # 테스트가 실패해야 한다
+    import kookabug_core.engine.executor as engine_executor
     import kookabug_core.engine.pure as engine_pure
     import kookabug_sdk.pure as sdk_pure
 
     no_copy = SimpleNamespace(deepcopy=lambda value: value)
     monkeypatch.setattr(engine_pure, "copy", no_copy)
+    monkeypatch.setattr(engine_executor, "copy", no_copy)
     monkeypatch.setattr(sdk_pure, "copy", no_copy)
     with pytest.raises(AssertionError):
         test_var_value_is_copied_not_shared(tmp_path)

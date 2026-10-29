@@ -11,9 +11,10 @@
   (원인은 목록의 첫 스텝). 대기 목록은 다른 스텝이 성공해도 지우지 않는다 (G14)
 - error·취소·전체 기한 초과는 호출 스택을 따라 바로 위로 전파한다
 - 서브그래프 호출은 새 프레임 (변수는 이어받지 않고, 현재 대상 창은 이어받는다)
-
-반복·재시도(T8)가 끼어들 자리: `_path_end`(경로 끝 → 반복 노드로 귀환), `Frame.invalidate`(회차
-이동 때 범위 출력 지우기), `_attempt`(출구 확정 전 재시도), `_iteration`(이벤트 `iteration`).
+- 반복(`loops`): 반복 노드에 도착할 때마다 스텝 하나, 경로 끝은 가장 안쪽 반복 노드로 돌아간다
+  (그 범위의 출력을 지운다). 반복 안 스텝의 이벤트에 `iteration`
+- 재시도(`retry`): 노드 함수가 재시도 출구로 나오면 출구를 확정하기 전에 다시 부른다. 중간 시도는
+  `attempt.end`, 재시도 끝 성공은 `step.end`의 `retried: true`
 """
 
 from __future__ import annotations
@@ -32,8 +33,17 @@ from kookabug_core.engine.errors import EngineError, error_code
 from kookabug_core.engine.events import EventSink, event_value
 from kookabug_core.engine.frame import Frame, FrameExit
 from kookabug_core.engine.invoker import InProcessInvoker, NodeInvoker
+from kookabug_core.engine.loops import (
+    REENTRY_INPUTS,
+    LoopScopes,
+    enter,
+    iteration,
+    path_end,
+    resuming,
+)
 from kookabug_core.engine.platform_fake import FakePlatform, MemoryArtifacts
 from kookabug_core.engine.pure import nodedef_of, resolve_inputs
+from kookabug_core.engine.retry import retry_policy
 from kookabug_core.engine.verdict import Cause, Facts, Judgement, Terminal, Verdict, judge
 from kookabug_core.ir import GRAPH_ENTRY, Node
 from kookabug_core.loader import MAX_CALL_DEPTH, Program
@@ -225,6 +235,7 @@ class _Run:
         self.rt = runtime
         self.steps = 0
         self.assertions = 0
+        self.scopes = LoopScopes(runtime.program, runtime.registry)
 
     def execute(self, frame: Frame) -> Judgement:
         try:
@@ -275,12 +286,13 @@ class _Run:
         return self._path_end(frame)
 
     def _path_end(self, frame: Frame) -> Node | None:
-        """T8 훅: 반복 범위 안의 경로 끝이면 가장 안쪽 반복 노드로 돌아간다."""
-        return None
+        """반복 범위 안의 경로 끝이면 가장 안쪽 반복 노드로 돌아간다 (암묵적 귀환)."""
+        loop = path_end(frame)
+        return frame.graph.nodes[loop] if loop is not None else None
 
     def _iteration(self, frame: Frame, node: Node) -> int | None:
-        """T8 훅: 반복 안 스텝의 회차 (0부터)."""
-        return None
+        """반복 안 스텝의 회차 (0부터)."""
+        return iteration(frame, node.id)
 
     # ------------------------------------------------------------ 스텝
 
@@ -314,7 +326,9 @@ class _Run:
                         "exec_into_pure",
                         f"'{node.id}'은(는) 순수 노드라 exec 흐름으로 실행할 수 없다",
                     )
-                inputs = resolve_inputs(rt, frame, node, step)
+                inputs = resolve_inputs(
+                    rt, frame, node, step, self._recompute(frame, node, nodedef)
+                )
                 rt.check()
                 outcome = self._dispatch(frame, node, nodedef, step, inputs, end)
                 # 노드가 돌아온 뒤에도 본다: 실행 중 생긴 취소·기한 초과를 성공으로 확정하지 않는다
@@ -353,6 +367,9 @@ class _Run:
         frame.record(node.id, outcome.outputs)
         if nodedef.assertion and outcome.kind == "ok":
             self.assertions += 1
+        if outcome.kind == "ok" and end["attempt"] > 1:
+            # 마지막 확인까지 통과해 성공이 확정된 뒤에만 표시한다 (중단된 스텝에는 없다)
+            end["retried"] = True
         end.update(
             status="success" if outcome.kind == "ok" else "fail",
             exit=outcome.exit,
@@ -405,7 +422,7 @@ class _Run:
     ) -> _Outcome:
         engine = nodedef.engine
         if engine is None:
-            return self._attempt(frame, node, nodedef, step, inputs)
+            return self._attempt(frame, node, nodedef, step, inputs, end)
         if engine == "graph_entry":
             return Result("start", "ok", copy.deepcopy(dict(frame.inputs)))
         if engine == "graph_exit":
@@ -420,17 +437,70 @@ class _Run:
         raise EngineError("unknown_engine", f"'{node.id}': 실행기가 모르는 engine '{engine}'")
 
     def _attempt(
-        self, frame: Frame, node: Node, nodedef: NodeDef, step: str, inputs: Mapping[str, Any]
+        self,
+        frame: Frame,
+        node: Node,
+        nodedef: NodeDef,
+        step: str,
+        inputs: Mapping[str, Any],
+        end: dict[str, Any],
     ) -> Result:
-        """노드 함수를 한 번 실행한다. T8 훅: 재시도는 출구가 확정되기 전에 여기서 다시 부른다."""
-        ctx = StepContext(self.rt, frame, node, step, nodedef.effective_config(node.config))
-        return self.rt.invoker.invoke(nodedef, node, ctx, inputs)
+        """노드 함수를 실행한다. 재시도 출구로 나오면 출구를 확정하기 전에 다시 부른다.
+
+        입력은 스텝 시작 때 계산한 값을 시도마다 깊은 복사해 준다 (다시 계산하지 않고, 앞 시도가
+        고친 값이 다음 시도로 새지 않는다). ctx는 시도마다 새로 (노드 기한이 새로 시작한다).
+        """
+        rt = self.rt
+        policy = retry_policy(nodedef, node)
+        config = nodedef.effective_config(node.config)
+        attempt = 1
+        while True:
+            end["attempt"] = attempt
+            if attempt > 1:
+                # 시도 사이(이벤트 싱크 처리 포함)에 생긴 취소·기한 초과면 다시 부르지 않는다
+                rt.check()
+            began = rt.clock.now_ms()
+            ctx = StepContext(rt, frame, node, step, config)
+            result = rt.invoker.invoke(nodedef, node, ctx, copy.deepcopy(dict(inputs)))
+            if not policy.again(result, attempt):
+                break
+            # 시도 중에 생긴 취소·기한 초과는 중간 실패로 남기지 않고 이 스텝의 error로 전파한다
+            rt.check()
+            record: dict[str, Any] = {
+                "attempt": attempt,
+                "duration_ms": rt.clock.now_ms() - began,
+                "event": "attempt.end",
+                "exit": result.exit,
+                "outputs": event_value(result.outputs),
+                "status": "fail",
+                "step": step,
+            }
+            if "iteration" in end:
+                record["iteration"] = end["iteration"]
+            if result.message:
+                record["message"] = result.message
+            rt.emit(record)
+            attempt += 1
+        return result
+
+    def _recompute(self, frame: Frame, node: Node, nodedef: NodeDef) -> frozenset[str] | None:
+        """이번 스텝에서 계산할 입력 (None = 전부).
+
+        본문 끝에서 돌아온 반복 노드는 한도를 다시 계산하지 않는다 (`REENTRY_INPUTS`).
+        """
+        engine = nodedef.engine
+        if engine in _LOOPS and resuming(frame, node.id):
+            return REENTRY_INPUTS[engine]
+        return None
 
     def _loop(
         self, frame: Frame, node: Node, nodedef: NodeDef, step: str, inputs: Mapping[str, Any]
     ) -> Result:
-        """T8 훅: `core.flow.repeat`·`while`."""
-        raise EngineError("loop_not_supported", f"'{node.id}': 반복 실행은 아직 없다 (M0a T8)")
+        """`core.flow.repeat`·`while`: 이번에 나갈 출구(`body`·`done`·`limit`)를 정한다."""
+        engine = nodedef.engine
+        assert engine is not None
+        scope = self.scopes.of(frame.graph).get(node.id, frozenset[str]())
+        return enter(frame, node, engine, inputs, scope)
 
     # ------------------------------------------------------------ 그래프 경계
 

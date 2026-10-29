@@ -15,7 +15,7 @@ INNER = "subgraphs/inner.graph.json"
 # 설계 5장 예시의 필드. M0a는 시각 `t`를 남기지 않는다 (M0b가 쓸 때 붙인다)
 DOC_START = {"event", "node", "parent", "path", "run", "step", "attempt"}
 DOC_END = {"duration_ms", "event", "exit", "outputs", "run", "status", "step", "attempt"}
-END_OPTIONAL = {"artifacts", "error", "graph", "iteration", "message"}
+END_OPTIONAL = {"artifacts", "error", "graph", "iteration", "message", "retried"}
 
 
 def _nested(tmp_path: Path):

@@ -1,6 +1,10 @@
 """테스트 전용 플러그인 `testkit` (배포하지 않는다).
 
 - `testkit.observe.wait`: 가짜 캡처 프레임을 보는 관측 노드 (`effects={"capture"}`, 관측 재시도)
+- `testkit.observe.flaky`: 부를 때마다 `script`의 다음 결과(`found`·`timeout`·`missing`·`boom`)를
+  내는 관측 노드 (재시도 출구 `timeout`·`missing`, 재시도 시나리오용)
+- `testkit.observe.consume`: 받은 중첩 목록을 `SEEN`에 남기고 고친다. 첫 호출 `timeout`, 그 뒤
+  `found` (재시도 입력 복사 확인용)
 - `testkit.observe.wait_any`: 여러 프레임 중 먼저 보이는 것으로 분기 (`config.exits` 동적 출구 +
   `timeout`, 모든 동적 출구가 `match`를 준다. 문서의 `core.image.wait_any` 자리)
 - `testkit.read_text`: `text`(string)를 주는 `done` / 출력 없는 `unreadable`(fail)

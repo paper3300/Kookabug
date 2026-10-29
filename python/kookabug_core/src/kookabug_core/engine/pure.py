@@ -42,9 +42,15 @@ def nodedef_of(runtime: Runtime, node: Node) -> NodeDef:
     return nodedef
 
 
-def resolve_inputs(runtime: Runtime, frame: Frame, node: Node, step: str) -> dict[str, Any]:
-    """`node`의 입력을 계산한다 (소비 한 번)."""
-    return _Evaluation(runtime, frame, step).inputs(node)
+def resolve_inputs(
+    runtime: Runtime,
+    frame: Frame,
+    node: Node,
+    step: str,
+    only: frozenset[str] | None = None,
+) -> dict[str, Any]:
+    """`node`의 입력을 계산한다 (소비 한 번). `only`를 주면 그 핀만 계산·대조한다."""
+    return _Evaluation(runtime, frame, step).inputs(node, only)
 
 
 def _no_link(ref: LinkRef) -> None:
@@ -75,8 +81,10 @@ class _Evaluation:
         self.memo: dict[str, Mapping[str, Any]] = {}
         self.stack: list[str] = []
 
-    def inputs(self, node: Node) -> dict[str, Any]:
-        values = {pin: self.value(v) for pin, v in node.inputs.items()}
+    def inputs(self, node: Node, only: frozenset[str] | None = None) -> dict[str, Any]:
+        values = {
+            pin: self.value(v) for pin, v in node.inputs.items() if only is None or pin in only
+        }
         check_inputs(self.runtime, self.frame, node, values)
         return values
 

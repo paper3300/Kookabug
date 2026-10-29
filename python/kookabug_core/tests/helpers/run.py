@@ -17,6 +17,7 @@ from helpers.graphs import GraphBuilder
 from kookabug_core.engine import (
     DEFAULT_DEADLINE_MS,
     CancelToken,
+    EventSink,
     ExecOptions,
     Executor,
     FakeClock,
@@ -81,13 +82,19 @@ def run_graph(
     on_capture: Callable[[int], None] | None = None,
     clock: FakeClock | None = None,
     invoker: NodeInvoker | None = None,
+    sink: EventSink | None = None,
 ) -> Ran:
     graph.write(ws, rel)
     program = load_program(ws, rel, secrets=MemorySecrets(secrets or {}))
     platform = FakePlatform(frames, on_capture=on_capture)
     clock = clock or FakeClock()
     executor = Executor(
-        registry_with_testkit(), platform=platform, clock=clock, cancel=cancel, invoker=invoker
+        registry_with_testkit(),
+        platform=platform,
+        clock=clock,
+        cancel=cancel,
+        invoker=invoker,
+        sink=sink,
     )
     result = executor.run(
         program, ExecOptions(deadline_ms=deadline_ms, validate=validate, run_id="r1")
