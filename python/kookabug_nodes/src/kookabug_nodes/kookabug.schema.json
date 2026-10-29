@@ -1,0 +1,412 @@
+{
+  "format": "kookabug.nodes/0",
+  "nodes": [
+    {
+      "assertion": true,
+      "category": "test",
+      "description": "`a op b`가 참인지 검증한다. 예: 구매 후 골드가 줄었는지.",
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "ok",
+          "outputs": []
+        },
+        {
+          "kind": "fail",
+          "name": "fail",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "a": {
+          "type": "any"
+        },
+        "b": {
+          "type": "any"
+        },
+        "op": {
+          "enum": [
+            "==",
+            "!=",
+            "<",
+            "<=",
+            ">",
+            ">=",
+            "contains"
+          ],
+          "type": "string"
+        }
+      },
+      "outputs": {},
+      "title": "값 비교 검증",
+      "type": "core.assert.compare",
+      "version": 1
+    },
+    {
+      "category": "flow",
+      "description": "`condition`이 참이면 `true`, 거짓이면 `false`로 나간다.",
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "true",
+          "outputs": []
+        },
+        {
+          "kind": "ok",
+          "name": "false",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "condition": {
+          "type": "bool"
+        }
+      },
+      "outputs": {},
+      "title": "참·거짓 분기",
+      "type": "core.flow.branch",
+      "version": 1
+    },
+    {
+      "category": "flow",
+      "description": "`ms`만큼 기다린다. 화면을 기다릴 때는 대기 노드를 쓴다.",
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "ms": {
+          "minimum": 0,
+          "type": "int"
+        }
+      },
+      "outputs": {},
+      "title": "고정 지연",
+      "type": "core.flow.delay",
+      "version": 1
+    },
+    {
+      "category": "flow",
+      "description": "`body`를 `times`번 실행한 뒤 `done`으로 나간다. `index`(0부터)는 본문 안에서만 읽는다.",
+      "engine": "repeat",
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "body",
+          "outputs": [
+            "index"
+          ]
+        },
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "times": {
+          "minimum": 0,
+          "type": "int"
+        }
+      },
+      "outputs": {
+        "index": {
+          "type": "int"
+        }
+      },
+      "title": "정해진 횟수 반복",
+      "type": "core.flow.repeat",
+      "version": 1
+    },
+    {
+      "category": "flow",
+      "description": "조건이 참인 동안 `body`를 실행한다. 조건은 검사할 때마다 새로 계산한다.\n\n조건이 거짓 → `done`, 참인데 이미 `max_iterations`번 실행함 → `limit`(fail).",
+      "engine": "while",
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "body",
+          "outputs": [
+            "index"
+          ]
+        },
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": []
+        },
+        {
+          "kind": "fail",
+          "name": "limit",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "condition": {
+          "type": "bool"
+        },
+        "max_iterations": {
+          "minimum": 1,
+          "type": "int"
+        }
+      },
+      "outputs": {
+        "index": {
+          "type": "int"
+        }
+      },
+      "title": "조건 반복",
+      "type": "core.flow.while",
+      "version": 1
+    },
+    {
+      "category": "graph",
+      "config": {
+        "graph": {
+          "description": "부를 서브그래프 경로 (워크스페이스 기준)",
+          "type": "string"
+        }
+      },
+      "description": "서브그래프를 새 호출 프레임에서 실행한다. 핀·출구는 서브그래프 `interface`에서 만든다.",
+      "engine": "graph_call",
+      "exits": {
+        "from_interface": "exits"
+      },
+      "inputs": {
+        "from_interface": "inputs"
+      },
+      "outputs": {
+        "from_interface": "outputs"
+      },
+      "title": "서브그래프 호출",
+      "type": "core.graph.call",
+      "version": 1
+    },
+    {
+      "category": "graph",
+      "description": "그래프 시작점. 서브그래프면 `interface.inputs`가 출력 핀이 된다.",
+      "engine": "graph_entry",
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "start",
+          "outputs": []
+        }
+      ],
+      "inputs": {},
+      "outputs": {
+        "from_interface": "inputs"
+      },
+      "title": "시작",
+      "type": "core.graph.entry",
+      "version": 1
+    },
+    {
+      "category": "graph",
+      "config": {
+        "exit": {
+          "description": "나갈 `interface.exits` 이름",
+          "type": "string"
+        }
+      },
+      "description": "서브그래프를 끝내고 공개 출구로 나간다. 입력 핀은 `interface.outputs`다.",
+      "engine": "graph_exit",
+      "exits": [],
+      "inputs": {
+        "from_interface": "outputs"
+      },
+      "outputs": {},
+      "title": "공개 출구",
+      "type": "core.graph.exit",
+      "version": 1
+    },
+    {
+      "category": "log",
+      "description": "실행 기록에 메시지를 남긴다. 비밀값은 가려서 남긴다.",
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "level": {
+          "default": "info",
+          "enum": [
+            "info",
+            "warn",
+            "error"
+          ],
+          "type": "string"
+        },
+        "text": {
+          "type": "string|secret"
+        }
+      },
+      "outputs": {},
+      "title": "메시지 기록",
+      "type": "core.log.message",
+      "version": 1
+    },
+    {
+      "category": "value",
+      "description": "`a op b`의 참·거짓. 대소 비교는 숫자끼리·문자열끼리만 된다.",
+      "inputs": {
+        "a": {
+          "type": "any"
+        },
+        "b": {
+          "type": "any"
+        },
+        "op": {
+          "enum": [
+            "==",
+            "!=",
+            "<",
+            "<=",
+            ">",
+            ">=",
+            "contains"
+          ],
+          "type": "string"
+        }
+      },
+      "outputs": {
+        "result": {
+          "type": "bool"
+        }
+      },
+      "pure": true,
+      "title": "비교",
+      "type": "core.logic.compare",
+      "version": 1
+    },
+    {
+      "category": "test",
+      "description": "테스트를 실패로 끝낸다 (테스트 전용).",
+      "engine": "test_fail",
+      "exits": [],
+      "inputs": {
+        "reason": {
+          "default": null,
+          "nullable": true,
+          "type": "string"
+        }
+      },
+      "outputs": {},
+      "title": "실패로 끝냄",
+      "type": "core.test.fail",
+      "version": 1
+    },
+    {
+      "category": "test",
+      "description": "테스트를 성공으로 끝낸다 (테스트 전용).",
+      "engine": "test_pass",
+      "exits": [],
+      "inputs": {
+        "reason": {
+          "default": null,
+          "nullable": true,
+          "type": "string"
+        }
+      },
+      "outputs": {},
+      "title": "성공으로 끝냄",
+      "type": "core.test.pass",
+      "version": 1
+    },
+    {
+      "category": "test",
+      "description": "테스트를 건너뜀으로 끝낸다 (테스트 전용).",
+      "engine": "test_skip",
+      "exits": [],
+      "inputs": {
+        "reason": {
+          "default": null,
+          "nullable": true,
+          "type": "string"
+        }
+      },
+      "outputs": {},
+      "title": "건너뜀으로 끝냄",
+      "type": "core.test.skip",
+      "version": 1
+    },
+    {
+      "category": "value",
+      "description": "`template`의 `{이름}`을 `values`의 값으로 바꾼다. `{{`·`}}`는 중괄호 자체.\n\n값 중 하나라도 비밀값이면 결과도 비밀값이다.",
+      "inputs": {
+        "template": {
+          "type": "string"
+        },
+        "values": {
+          "type": "dict[str,any]"
+        }
+      },
+      "outputs": {
+        "text": {
+          "type": "string|secret"
+        }
+      },
+      "pure": true,
+      "title": "문자열 조합",
+      "type": "core.text.format",
+      "version": 1
+    },
+    {
+      "category": "value",
+      "description": "호출 프레임 변수를 읽는다. 계산하는 순간의 값이다.\n\n변수가 없으면 `default`(`null`도 값이다). `default`를 생략했으면 error.",
+      "inputs": {
+        "default": {
+          "nullable": true,
+          "optional": true,
+          "type": "any"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "outputs": {
+        "value": {
+          "type": "any"
+        }
+      },
+      "pure": true,
+      "title": "변수 읽기",
+      "type": "core.var.get",
+      "version": 1
+    },
+    {
+      "category": "value",
+      "description": "호출 프레임 변수에 값을 저장한다.",
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "any"
+        }
+      },
+      "outputs": {},
+      "title": "변수 저장",
+      "type": "core.var.set",
+      "version": 1
+    }
+  ],
+  "plugin": {
+    "id": "core",
+    "title": "Kookabug 코어",
+    "version": "0.1.0.dev0"
+  }
+}

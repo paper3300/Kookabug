@@ -213,6 +213,19 @@ def test_node_schema_pure_and_exec_rules() -> None:
     assert codes(check_shape(node_file(no_exits))) == [("missing_field", "/nodes/0")]
 
 
+def test_node_schema_optional_input_pin() -> None:
+    # optional = default 없이 생략할 수 있는 입력 (생략과 null을 구분). default와 같이 쓰지 않는다
+    optional = {"nullable": True, "optional": True, "type": "any"}
+    assert check_shape(node_file(VAR_GET | {"inputs": {"default": optional}})) == []
+    both = optional | {"default": None}
+    diags = check_shape(node_file(VAR_GET | {"inputs": {"default": both}}))
+    assert codes(diags) == [("not_allowed", "/nodes/0/inputs/default")]
+    not_true = {"optional": False, "type": "any"}
+    assert codes(check_shape(node_file(VAR_GET | {"inputs": {"default": not_true}}))) == [
+        ("invalid_value", "/nodes/0/inputs/default/optional")
+    ]
+
+
 def test_node_schema_file_fields() -> None:
     data = node_file(TEST_PASS)
     data["plugin"]["id"] = "Core"

@@ -51,9 +51,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: uv sync --locked --all-packages
-      # 생성 단계: 메타스키마 → JSON 복사·pydantic(gen_schema.py), TS(pnpm gen). T4가 kookabug-sdk build를 추가한다
+      # 생성 단계: 메타스키마 → JSON 복사·pydantic(gen_schema.py), TS(pnpm gen), 코어 노드 스키마(build)
       - run: uv run python tools/gen_schema.py
       - run: pnpm -r run gen
+      - run: uv run kookabug-sdk build python/kookabug_nodes
       # 새로 생긴 미추적 생성물도 잡도록 status까지 본다
       - name: 생성물 드리프트 검사
         shell: bash

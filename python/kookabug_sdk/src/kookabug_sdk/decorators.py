@@ -12,7 +12,7 @@ import math
 import re
 import typing
 from collections.abc import Callable, Collection, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Final, Literal
 
 from kookabug_sdk.context import EFFECTS, Context, EffectContext, GuardedContext
@@ -23,6 +23,7 @@ from kookabug_sdk.types import PinTypeDeclError, describe
 __all__ = [
     "CORE_PLUGIN",
     "MISSING",
+    "OMITTED",
     "Config",
     "DynamicExits",
     "Exit",
@@ -50,6 +51,19 @@ class _Missing:
 
 
 MISSING: Final[Any] = _Missing()
+
+
+class _Omitted:
+    def __repr__(self) -> str:
+        return "OMITTED"
+
+
+OMITTED: Final[Any] = _Omitted()
+"""입력 기본값 자리에 쓰면 "생략할 수 있는 입력"(스키마 `optional: true`)이 된다.
+
+그래프가 값을 주지 않으면 함수는 이 값을 받는다. 명시적 `null`(None)과 생략을 구분할 때 쓴다:
+`def var_get(ctx, name: str, default: Any | None = OMITTED)` → `if default is OMITTED: ...`
+"""
 
 
 class NodeDeclarationError(ValueError):
@@ -149,15 +163,18 @@ class PinSpec:
     minimum: float | None = None
     maximum: float | None = None
     min_items: int | None = None
+    optional: bool = False
 
     @property
     def required(self) -> bool:
-        return self.default is MISSING
+        return self.default is MISSING and not self.optional
 
     def to_json(self, *, with_nullable: bool = True) -> dict[str, Any]:
         out: dict[str, Any] = {"type": self.type}
         if with_nullable and self.nullable:
             out["nullable"] = True
+        if self.optional:
+            out["optional"] = True
         if self.default is not MISSING:
             out["default"] = self.default
         if self.description:
@@ -539,19 +556,19 @@ class _NodeDecl:
                     self.fail(f"입력 '{p.name}': Input(...)은 하나만 쓴다")
                 if metas:
                     meta = metas[0]
-            pins.append(
-                self._pin(
-                    f"입력 '{p.name}'",
-                    p.name,
-                    hint,
-                    default=MISSING if p.default is inspect.Parameter.empty else p.default,
-                    description=meta.description,
-                    enum=meta.enum,
-                    minimum=meta.minimum,
-                    maximum=meta.maximum,
-                    min_items=meta.min_items,
-                )
+            optional = p.default is OMITTED
+            pin = self._pin(
+                f"입력 '{p.name}'",
+                p.name,
+                hint,
+                default=MISSING if p.default is inspect.Parameter.empty or optional else p.default,
+                description=meta.description,
+                enum=meta.enum,
+                minimum=meta.minimum,
+                maximum=meta.maximum,
+                min_items=meta.min_items,
             )
+            pins.append(replace(pin, optional=True) if optional else pin)
         return tuple(pins)
 
     def _outputs(self) -> Pins:
@@ -579,6 +596,8 @@ class _NodeDecl:
                 self.fail(f"config 이름 {name!r}은(는) 소문자·숫자·밑줄만 쓴다")
             if not isinstance(decl, Config):
                 self.fail(f"config '{name}'은(는) Config(...)로 선언한다")
+            if decl.default is OMITTED:
+                self.fail(f"config '{name}': OMITTED는 입력 핀 기본값에만 쓴다")
             pin = self._pin(
                 f"config '{name}'",
                 name,

@@ -102,7 +102,7 @@ class ExitOutputs(RootModel[list[PinName]]):
 
 class InputPin(BaseModel):
     """
-    입력 핀. default가 없으면 필수
+    입력 핀. default도 optional도 없으면 필수
     """
 
     model_config = ConfigDict(
@@ -115,6 +115,12 @@ class InputPin(BaseModel):
     min_items: Annotated[int | None, Field(ge=0)] = None
     minimum: float | None = None
     nullable: bool | None = None
+    optional: Annotated[
+        Literal[True] | None,
+        Field(
+            description="default 없이 생략할 수 있는 입력. 생략과 null을 노드가 구분한다 (default와 같이 쓰지 않는다)"
+        ),
+    ] = None
     type: PinType
 
 

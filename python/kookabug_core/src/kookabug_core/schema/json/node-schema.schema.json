@@ -101,7 +101,10 @@
     },
     "InputPin": {
       "additionalProperties": false,
-      "description": "입력 핀. default가 없으면 필수",
+      "description": "입력 핀. default도 optional도 없으면 필수",
+      "not": {
+        "required": ["default", "optional"]
+      },
       "properties": {
         "default": {
           "tsType": "unknown"
@@ -125,6 +128,10 @@
         },
         "nullable": {
           "type": "boolean"
+        },
+        "optional": {
+          "const": true,
+          "description": "default 없이 생략할 수 있는 입력. 생략과 null을 노드가 구분한다 (default와 같이 쓰지 않는다)"
         },
         "type": {
           "$ref": "#/$defs/PinType"

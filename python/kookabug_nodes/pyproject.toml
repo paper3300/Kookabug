@@ -7,6 +7,19 @@ requires-python = ">=3.14"
 license = "Apache-2.0"
 dependencies = ["kookabug-sdk"]
 
+[tool.kookabug]
+id = "core"
+title = "Kookabug 코어"
+modules = [
+    "kookabug_nodes.graph",
+    "kookabug_nodes.test",
+    "kookabug_nodes.flow",
+    "kookabug_nodes.values",
+    "kookabug_nodes.log",
+]
+# M0a 노드는 캡처·입력·프로세스 효과가 없다
+permissions = []
+
 [tool.uv.sources]
 kookabug-sdk = { workspace = true }
 

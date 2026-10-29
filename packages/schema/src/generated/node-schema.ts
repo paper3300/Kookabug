@@ -142,7 +142,7 @@ export interface FromInterface {
   from_interface: "exits" | "inputs" | "outputs";
 }
 /**
- * 입력 핀. default가 없으면 필수
+ * 입력 핀. default도 optional도 없으면 필수
  *
  * This interface was referenced by `NodeSchemaFile`'s JSON-Schema
  * via the `definition` "InputPin".
@@ -158,6 +158,10 @@ export interface InputPin {
   min_items?: number;
   minimum?: number;
   nullable?: boolean;
+  /**
+   * default 없이 생략할 수 있는 입력. 생략과 null을 노드가 구분한다 (default와 같이 쓰지 않는다)
+   */
+  optional?: true;
   type: PinType;
 }
 /**

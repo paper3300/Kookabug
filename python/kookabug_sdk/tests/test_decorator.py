@@ -2,7 +2,9 @@ from typing import Annotated, Any, Literal
 
 import pytest
 
+from kookabug_core.schema import check_shape
 from kookabug_sdk import (
+    OMITTED,
     Config,
     Context,
     DynamicExits,
@@ -75,6 +77,45 @@ def test_signature_becomes_inputs_with_defaults() -> None:
         "score": {"type": "float", "nullable": True, "description": "점수"},
     }
     assert schema["effects"] == ["capture"]
+
+
+def test_omitted_default_makes_optional_input() -> None:
+    @node(type="sample.var.read", version=1, title="t", pure=True, outputs={"value": Any})
+    def read(ctx: Context, name: str, default: Any | None = OMITTED) -> dict[str, Any]:
+        return {"value": "omitted" if default is OMITTED else default}
+
+    assert read.schema()["inputs"]["default"] == {
+        "nullable": True,
+        "optional": True,
+        "type": "any",
+    }
+    assert [p.name for p in read.spec.inputs if p.required] == ["name"]  # type: ignore[union-attr]
+    ctx = fake_context(pure=True)
+    assert read.invoke(ctx, {"name": "a"}).outputs == {"value": "omitted"}
+    assert read.invoke(ctx, {"name": "a", "default": None}).outputs == {"value": None}
+    assert (
+        check_shape(
+            {
+                "format": "kookabug.nodes/0",
+                "nodes": [read.schema()],
+                "plugin": {"id": "sample", "version": "0.1.0"},
+            },
+            "node-schema",
+        )
+        == []
+    )
+
+    with pytest.raises(NodeDeclarationError, match="OMITTED"):
+
+        @node(
+            type="sample.a.b",
+            version=1,
+            title="t",
+            exits=[Exit("ok", "ok")],
+            config={"x": Config(str, default=OMITTED)},
+        )
+        def bad_config(ctx: Context) -> Result:
+            return Result.ok("ok")
 
 
 def test_signature_errors() -> None:

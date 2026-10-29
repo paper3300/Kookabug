@@ -49,6 +49,7 @@ def wait_image(ctx: Context, target: Target, timeout_ms: int = 10000) -> Result:
 ```
 
 - 함수 인자 = data 입력 핀. 타입 힌트가 핀 타입, 기본값이 핀 기본값이 된다
+- 기본값 자리에 `OMITTED`를 쓰면 **생략할 수 있는 입력**이 된다 (노드 스키마 `optional: true`, `default` 없음). 그래프가 값을 주지 않으면 함수는 `OMITTED`를 받으므로 생략과 명시적 `null`을 구분할 수 있다. 예: `core.var.get`의 `default: Any | None = OMITTED`
 - 출력 핀은 `outputs=`로 선언하고, 값은 `Result`에 키워드로 넘긴다 (아래)
 - `Result.ok(출구, **출력)` / `Result.fail(출구, message=..., **출력)`. 선언하지 않은 출구, 그 출구가 주지 않는 출력, 출구 종류(`ok`/`fail`)와 다른 반환, 빠진 non-nullable 출력은 `error`. 빠진 nullable 출력은 `null`로 채운다
 - 예외가 나면 `error`. 러너가 예외 내용과 마지막 스크린샷을 기록한다

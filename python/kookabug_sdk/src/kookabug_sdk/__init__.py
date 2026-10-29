@@ -2,6 +2,7 @@
 
 from kookabug_sdk.context import Context
 from kookabug_sdk.decorators import (
+    OMITTED,
     Config,
     DynamicExits,
     Exit,
@@ -19,6 +20,7 @@ from kookabug_sdk.types import Secret
 __version__ = "0.1.0.dev0"
 
 __all__ = [
+    "OMITTED",
     "Config",
     "Context",
     "DynamicExits",

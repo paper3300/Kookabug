@@ -17,12 +17,10 @@
 
 ## 공통 입력
 
-모든 노드가 가질 수 있는 입력. 노드 스키마에 따로 적지 않는다.
-
 | 입력 | 뜻 |
 |---|---|
-| `window` | 이 노드만 다른 창을 대상으로 한다 (기본: 현재 대상 창) |
-| `timeout_ms` | 기다리는 노드의 제한 시간. 노드마다 기본값이 있고 무제한은 없다 |
+| `window` | 이 노드만 다른 창을 대상으로 한다 (기본: 현재 대상 창). 모든 exec 노드가 가질 수 있고 노드 스키마에 따로 적지 않는다 (M1) |
+| `timeout_ms` | 기다리는 노드의 제한 시간. 노드마다 기본값이 있고 무제한은 없다. **기다리는 노드만** 함수 인자로 선언한다 (노드 스키마에 있음). 선언하지 않은 노드에 주면 실행 전 검증 오류(`unknown_input`) |
 
 ---
 
@@ -44,7 +42,7 @@
 | `core.assert.visible` | 대상이 보이는지 검증 | `target` | `match` | **ok**, fail |
 | `core.assert.not_visible` | 대상이 안 보이는지 검증 | `target` | | **ok**, fail |
 | `core.assert.text` | OCR 문구 검증 | `region`, `equals` / `contains` / `regex` | `text` | **ok**, fail |
-| `core.assert.compare` | 값 비교 검증 (예: 구매 후 골드가 줄었는지) | `a`, `op`, `b` | | **ok**, fail |
+| `core.assert.compare` | 값 비교 검증 (예: 구매 후 골드가 줄었는지). `op`는 `core.logic.compare`와 같다 (8장) | `a`, `op`, `b` | | **ok**, fail |
 
 ## 3. 앱·창
 
@@ -100,24 +98,39 @@
 | `core.flow.while` | 조건이 참인 동안 반복. 횟수 한도 필수 | `condition`, `max_iterations` | `index` | **body**, **done**, limit |
 | `core.flow.delay` | 고정 지연. 경고 배지 | `ms` | | **done** |
 
-재시도는 노드가 아니라 노드 설정(`config.retry`)이다. MVP는 관측 재시도만 한다 → [[그래프 JSON 스키마 v0]] 6장. 대기·OCR 계열(`wait`, `wait_any`, `wait_gone`, `wait_stable`, `ocr.read`, `ocr.wait_text`, `assert.*`)이 `retry.mode: observation`이고, 입력·실행 노드와 `image.click`·`ocr.click_text`는 `never`다.
+- `repeat`의 `times`는 0 이상(0이면 바로 `done`), `while`의 `max_iterations`는 1 이상이고 필수다
+- `index`(0부터)는 `body` 출구만 주는 출력이다. 그래서 반복 범위 밖(`done` 이후)에서는 읽을 수 없다
+
+재시도는 노드가 아니라 노드 설정(`config.retry`)이다. MVP는 관측 재시도만 한다 → [[그래프 JSON 스키마 v0]] 6장. 대기·OCR 계열(`wait`, `wait_any`, `wait_gone`, `wait_stable`, `ocr.read`, `ocr.wait_text`, `assert.visible`·`not_visible`·`text`)이 `retry.mode: observation`이고, 입력·실행 노드와 `image.click`·`ocr.click_text`는 `never`다. `assert.compare`도 `never`다: 입력은 스텝 시작 때 한 번만 계산하므로 다시 해도 결과가 같다.
 
 ## 8. 값
 
 | 타입 | 하는 일 | 주요 입력 | 출력 | 출구 |
 |---|---|---|---|---|
 | `core.var.set` | 그래프 변수에 저장 (호출 프레임 안에서만) | `name`, `value` | | **done** |
-| `core.var.get` | 그래프 변수 읽기 (exec 없는 순수 노드) | `name` | `value` | |
+| `core.var.get` | 그래프 변수 읽기 (exec 없는 순수 노드) | `name`, `default` | `value` | |
 | `core.logic.compare` | 비교 (exec 없는 순수 노드) | `a`, `op`, `b` | `result` | |
-| `core.text.format` | 문자열 조합 (exec 없는 순수 노드) | `template`, 값들 | `text` | |
+| `core.text.format` | 문자열 조합 (exec 없는 순수 노드) | `template`, `values` | `text` | |
 
 순수 노드는 exec 핀이 없고, 값이 필요할 때 계산한다 (Unreal 순수 노드). 부작용이 없어야 한다. 평가 시점과 반복 규칙은 [[그래프 JSON 스키마 v0]] 7장.
+
+- `var.get`: 변수가 없으면 `default`를 준다. `in`에 `default` 키가 **없을 때만** "기본값 없음"이라 `error`다. `"default": null`은 기본값 `null`을 준 것이므로 `null`을 돌려준다 (키 없음과 `null`을 구분. 노드 스키마의 `optional` 입력). 같은 그래프에 그 이름을 상수로 정하는 `var.set`이 없으면 실행 전 검증 경고
+- `compare`의 `op`: `==`, `!=`, `<`, `<=`, `>`, `>=`, `contains`
+  - `==`·`!=`는 JSON 값으로 비교한다. 타입이 다르면 다른 값이다 (`true`와 `1`은 다르고, `1`과 `1.0`은 같다)
+  - 대소 비교는 숫자끼리·문자열끼리만 된다. 다른 타입끼리는 `error`
+  - `contains`: `a`가 문자열이면 `b`(문자열)가 들어 있는지, `a`가 목록이면 `b`와 같은 원소가 있는지. 그 외는 `error`
+- `text.format`: `template`의 `{이름}`을 `values`(`dict[str,any]`)의 값으로 바꾼다. `{{`·`}}`는 중괄호 자체
+  - 자리 표시는 `{이름}`만 된다. 속성·인덱스 접근(`{a.b}`, `{a[0]}`)·형식 지정(`{a:>3}`, 빈 지정자 `{a:}`, `{a!r}`)·빈 `{}`·짝 없는 중괄호·`values`에 없는 이름은 `error`
+  - 문자열이 아닌 값은 JSON 표기로 넣는다 (`true`, `null`, `[1, 2]`)
+  - `values` 중 하나라도 비밀값이면 결과 `text`도 비밀값이다. 그래서 출력 타입은 `string|secret`
 
 ## 9. 기록
 
 | 타입 | 하는 일 | 주요 입력 | 출력 | 출구 |
 |---|---|---|---|---|
 | `core.log.message` | 실행 기록에 메시지 남김 | `level`, `text` | | **done** |
+
+`level`은 `info`(기본)·`warn`·`error`. `text`는 `string|secret`이고 비밀값은 가려서 남긴다.
 
 ## 10. Agent
 
