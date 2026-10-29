@@ -1,0 +1,14 @@
+{
+  "name": "@kookabug/schema",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "gen": "node -e \"console.log('생성 단계 없음 (T2에서 추가)')\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

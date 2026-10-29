@@ -1,0 +1,22 @@
+[project]
+name = "kookabug-core"
+version = "0.1.0.dev0"
+description = "Kookabug 그래프 로더·검증·실행기"
+readme = "README.md"
+requires-python = ">=3.14"
+license = "Apache-2.0"
+dependencies = [
+    "jsonschema>=4.25",
+    "kookabug-nodes",
+    "kookabug-sdk",
+    "pydantic>=2.12",
+    "referencing>=0.36",
+]
+
+[tool.uv.sources]
+kookabug-sdk = { workspace = true }
+kookabug-nodes = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14"]
+build-backend = "uv_build"

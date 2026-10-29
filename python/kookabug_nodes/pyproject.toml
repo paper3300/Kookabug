@@ -1,0 +1,15 @@
+[project]
+name = "kookabug-nodes"
+version = "0.1.0.dev0"
+description = "Kookabug 코어 노드"
+readme = "README.md"
+requires-python = ">=3.14"
+license = "Apache-2.0"
+dependencies = ["kookabug-sdk"]
+
+[tool.uv.sources]
+kookabug-sdk = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14"]
+build-backend = "uv_build"

@@ -1,0 +1,13 @@
+{
+  "name": "kookabug",
+  "private": true,
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@10.34.9",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "gen": "pnpm -r run gen",
+    "typecheck": "pnpm -r run typecheck"
+  }
+}

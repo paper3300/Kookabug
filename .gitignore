@@ -11,3 +11,16 @@ Docs/Brainstorming/assets/casemanager-screens.jpg
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# 에이전트 오케스트레이션 작업 기록 (로컬 전용)
+.orchestration/
+
+# Python·Node 빌드 산출물과 환경
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+dist/
+build/

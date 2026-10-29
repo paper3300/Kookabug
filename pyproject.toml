@@ -1,0 +1,40 @@
+# uv 워크스페이스 루트. 패키지가 아니다 (가상 루트).
+
+[tool.uv.workspace]
+members = ["python/*"]
+
+[dependency-groups]
+dev = [
+    "packaging>=25",
+    "pyright[nodejs]>=1.1.400",
+    "pytest>=8.4",
+    "ruff>=0.13",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+src = ["python/kookabug_sdk/src", "python/kookabug_nodes/src", "python/kookabug_core/src", "tools"]
+# Docs의 그림 생성 스크립트는 제품 코드가 아니다
+extend-exclude = ["Docs", "build", "node_modules"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pyright]
+include = ["python", "tools"]
+exclude = ["**/build", "**/node_modules", "**/.venv", "**/__pycache__"]
+extraPaths = ["tools"]
+pythonVersion = "3.14"
+pythonPlatform = "Windows"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"
+
+[tool.pytest.ini_options]
+testpaths = ["python", "tools/tests"]
+addopts = ["--import-mode=importlib", "--strict-markers"]
+pythonpath = ["tools"]
+markers = [
+    "packaging: wheel·venv를 실제로 만드는 느린 검사 (uv 필요, 네트워크를 쓸 수 있음)",
+]

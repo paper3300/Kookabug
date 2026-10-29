@@ -1,0 +1,56 @@
+# 라이선스 감사 허용 목록 (tools/license_audit.py)
+#
+# - 라이선스는 SPDX 식으로 판정한다. OR은 하나만 허용돼도 되고, AND는 전부 허용돼야 한다
+# - conditional은 [exceptions]에 패키지 이름별 예외(이유 포함)가 있을 때만 허용한다
+# - denied_patterns에 걸리는 라이선스는 예외로도 허용하지 않는다
+# - 라이선스 미상은 [exceptions]에 직접 확인한 라이선스와 이유를 적어야 허용한다
+
+allowed = [
+    "0BSD",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT",
+    "PSF-2.0",
+    "Python-2.0",
+    "Unlicense",
+]
+
+conditional = ["MPL-2.0"]
+
+# 검토한 "라이선스 WITH 예외" 조합. 예외가 붙으면 조건이 달라지므로 목록 밖 조합은 미상으로 실패한다
+allowed_with = [
+    "Apache-2.0 WITH LLVM-exception",
+]
+
+# 대소문자 무시 정규식. SPDX ID와 스캐너가 준 긴 이름 모두에 적용한다
+denied_patterns = [
+    "^A?GPL",
+    "^LGPL",
+    "GPLv",
+    "General Public License",
+    "Affero",
+    "^SSPL",
+    "Server Side Public License",
+]
+
+# 스캐너가 SPDX 대신 주는 이름(분류자·메타데이터 문자열) → SPDX 식
+[aliases]
+"MIT License" = "MIT"
+"The MIT License" = "MIT"
+"Apache Software License" = "Apache-2.0"
+"Apache 2.0" = "Apache-2.0"
+"Apache License 2.0" = "Apache-2.0"
+"Apache License, Version 2.0" = "Apache-2.0"
+# 분류자만으로는 2조항·3조항을 구분할 수 없다. 둘 다 허용이므로 OR로 둔다
+"BSD License" = "BSD-2-Clause OR BSD-3-Clause"
+"BSD" = "BSD-2-Clause OR BSD-3-Clause"
+"ISC License (ISCL)" = "ISC"
+"Python Software Foundation License" = "PSF-2.0"
+"The Unlicense (Unlicense)" = "Unlicense"
+"Mozilla Public License 2.0 (MPL 2.0)" = "MPL-2.0"
+
+# 패키지 이름별 예외. 예:
+# "some-package" = { license = "MPL-2.0", reason = "수정 없이 동적으로만 쓴다. 소스 위치를 NOTICES에 적는다" }
+[exceptions]
