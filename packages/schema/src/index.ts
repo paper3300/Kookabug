@@ -5,4 +5,5 @@ export * as local from "./generated/local.js";
 export * as nodeSchema from "./generated/node-schema.js";
 export * as run from "./generated/run.js";
 export * as target from "./generated/target.js";
+export * as userSettings from "./generated/user-settings.js";
 export * as workspace from "./generated/workspace.js";

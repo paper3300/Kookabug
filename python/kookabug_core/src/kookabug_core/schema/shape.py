@@ -25,7 +25,9 @@ from kookabug_core.diagnostics import Diagnostic
 from kookabug_core.schema.pintype import PinTypeError, parse_pin_type
 
 # events는 events.jsonl 한 줄(format 없음)이라 kind를 직접 준다
-SchemaKind = Literal["graph", "target", "workspace", "local", "node-schema", "events", "run"]
+SchemaKind = Literal[
+    "graph", "target", "workspace", "local", "node-schema", "events", "run", "user-settings"
+]
 KINDS: tuple[SchemaKind, ...] = get_args(SchemaKind)
 FORMAT_TO_KIND: dict[str, SchemaKind] = {
     "kookabug.graph/0": "graph",
@@ -33,6 +35,7 @@ FORMAT_TO_KIND: dict[str, SchemaKind] = {
     "kookabug.nodes/0": "node-schema",
     "kookabug.run/0": "run",
     "kookabug.target/0": "target",
+    "kookabug.user-settings/0": "user-settings",
     "kookabug.workspace/0": "workspace",
 }
 SPECIAL_VALUE_KEYS = ("$link", "$literal", "$secret", "$setting", "$target")

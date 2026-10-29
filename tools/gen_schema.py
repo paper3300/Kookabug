@@ -26,7 +26,7 @@ from kookabug_sdk.console import utf8_stdio
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = REPO_ROOT / "packages" / "schema"
 CORE_SCHEMA = REPO_ROOT / "python" / "kookabug_core" / "src" / "kookabug_core" / "schema"
-KINDS = ("graph", "target", "workspace", "local", "node-schema", "events", "run")
+KINDS = ("graph", "target", "workspace", "local", "node-schema", "events", "run", "user-settings")
 
 MODELS_INIT = '''\
 """메타스키마에서 생성한 pydantic v2 모델 (tools/gen_schema.py). 직접 고치지 않는다.

@@ -6,6 +6,7 @@ import pytest
 from kookabug_core.diagnostics import Diagnostic
 from kookabug_core.schema import KINDS, check_shape, metaschema
 from kookabug_core.schema.models.node_schema import DynamicExits, FromInterface, NodeSchemaFile
+from kookabug_core.schema.models.user_settings import UserSettings
 from kookabug_core.schema.shape import ecma_regex
 
 
@@ -77,6 +78,49 @@ def test_local_schema() -> None:
     assert check_shape({"format": "kookabug.local/0"}) == []
     assert codes(check_shape({"settings": {}}, "local")) == [("missing_field", "")]
     assert codes(check_shape(local | {"profile": "qa"})) == [("unknown_field", "/profile")]
+
+
+PERMISSIONS = {
+    "preset": "graph_author",
+    "rules": [
+        {"rule": "kb_run_start(tests/smoke/*)", "verdict": "allow"},
+        {"rule": "kb_input_*", "verdict": "deny"},
+        {"rule": "kb_run_start()", "verdict": "ask"},
+    ],
+    "toolsets": {"control": "deny", "run": "ask"},
+}
+
+
+def test_workspace_permissions_shape() -> None:
+    for fmt in ("kookabug.workspace/0", "kookabug.local/0"):
+        assert check_shape({"format": fmt, "permissions": PERMISSIONS}) == []
+        assert check_shape({"format": fmt, "permissions": {}}) == []
+        bad = copy.deepcopy(PERMISSIONS)
+        bad["preset"] = "admin"
+        bad["toolsets"] = {"shell": "allow", "run": "maybe"}
+        bad["rules"] = [{"rule": "KB_RUN"}, {"rule": "kb_x(", "verdict": "deny", "why": 1}]
+        bad["extra"] = True
+        assert codes(check_shape({"format": fmt, "permissions": bad})) == [
+            ("unknown_field", "/permissions/extra"),
+            ("invalid_value", "/permissions/preset"),
+            ("missing_field", "/permissions/rules/0"),
+            ("pattern_mismatch", "/permissions/rules/0/rule"),
+            ("pattern_mismatch", "/permissions/rules/1/rule"),
+            ("unknown_field", "/permissions/rules/1/why"),
+            ("invalid_value", "/permissions/toolsets/run"),
+            ("invalid_key", "/permissions/toolsets/shell"),
+        ]
+
+
+def test_user_settings_schema() -> None:
+    data = {"format": "kookabug.user-settings/0", "permissions": PERMISSIONS}
+    assert check_shape(data) == []
+    assert check_shape({"format": "kookabug.user-settings/0"}) == []
+    assert codes(check_shape({"permissions": {}}, "user-settings")) == [("missing_field", "")]
+    # 사용자 설정에는 워크스페이스 값(settings·profiles)을 두지 않는다
+    assert codes(check_shape(data | {"settings": {}})) == [("unknown_field", "/settings")]
+    model = UserSettings.model_validate(data)
+    assert model.permissions is not None and model.permissions.preset == "graph_author"
 
 
 def node_file(*nodes: dict[str, Any]) -> dict[str, Any]:
@@ -263,7 +307,9 @@ def test_ecma_pattern_translation() -> None:
     assert ecma_regex(r"^[^\\]+\.json$").search("a.json\n") is None
 
 
-@pytest.mark.parametrize("kind", ["graph", "target", "workspace", "local", "node-schema", "run"])
+@pytest.mark.parametrize(
+    "kind", ["graph", "target", "workspace", "local", "node-schema", "run", "user-settings"]
+)
 def test_empty_object_reports_required_fields(kind: Any) -> None:
     diags = check_shape({}, kind)
     assert diags

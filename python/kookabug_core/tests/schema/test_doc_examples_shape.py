@@ -62,6 +62,10 @@ HANDLING: dict[str, tuple[list[str], Whole | Fragment | Unvalidated]] = {
     ),
     "schema#6": (["record"], Fragment(((("record",), "graph", "#/$defs/RecordPolicy"),))),
     "workspace#0": (["format", "profiles", "record", "retention", "settings"], Whole("workspace")),
+    "workspace#1": (
+        ["permissions"],
+        Fragment(((("permissions",), "workspace", "#/$defs/Permissions"),)),
+    ),
 }
 
 BLOCKS = json_blocks()

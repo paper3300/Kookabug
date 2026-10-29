@@ -1,5 +1,51 @@
 {
   "$defs": {
+    "PermissionRule": {
+      "additionalProperties": false,
+      "description": "권한 규칙 하나. rule은 \"도구\" 또는 \"도구(인자 패턴)\". 도구·인자 모두 glob(*, ?), 대소문자 구분",
+      "properties": {
+        "rule": {
+          "pattern": "^[a-z0-9_*?]+(\\(.*\\))?$",
+          "type": "string"
+        },
+        "verdict": {
+          "$ref": "#/$defs/PermissionVerdict"
+        }
+      },
+      "required": ["rule", "verdict"],
+      "title": "PermissionRule",
+      "type": "object"
+    },
+    "PermissionVerdict": {
+      "enum": ["allow", "ask", "deny"],
+      "title": "PermissionVerdict"
+    },
+    "Permissions": {
+      "additionalProperties": false,
+      "description": "에이전트 권한 (프로젝트 계층). 툴셋·프리셋 값이 사용자 설정보다 먼저다",
+      "properties": {
+        "preset": {
+          "enum": ["full", "graph_author", "read_only", "runner"]
+        },
+        "rules": {
+          "items": {
+            "$ref": "#/$defs/PermissionRule"
+          },
+          "type": "array"
+        },
+        "toolsets": {
+          "additionalProperties": {
+            "$ref": "#/$defs/PermissionVerdict"
+          },
+          "propertyNames": {
+            "enum": ["control", "core", "graph_edit", "observe", "run", "screens"]
+          },
+          "type": "object"
+        }
+      },
+      "title": "Permissions",
+      "type": "object"
+    },
     "SettingKey": {
       "pattern": "^[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)*$",
       "title": "SettingKey",
@@ -21,6 +67,9 @@
   "properties": {
     "format": {
       "const": "kookabug.local/0"
+    },
+    "permissions": {
+      "$ref": "#/$defs/Permissions"
     },
     "settings": {
       "$ref": "#/$defs/Settings"

@@ -6,7 +6,16 @@ import { compile } from "json-schema-to-typescript";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const outDir = path.join(root, "src", "generated");
-const kinds = ["graph", "target", "workspace", "local", "node-schema", "events", "run"];
+const kinds = [
+  "graph",
+  "target",
+  "workspace",
+  "local",
+  "node-schema",
+  "events",
+  "run",
+  "user-settings",
+];
 
 const banner =
   "/* 생성물 (packages/schema/*.schema.json → scripts/gen.mjs). 직접 고치지 않는다. */";

@@ -2,6 +2,11 @@
 
 /**
  * This interface was referenced by `Workspace`'s JSON-Schema
+ * via the `definition` "PermissionVerdict".
+ */
+export type PermissionVerdict = "allow" | "ask" | "deny";
+/**
+ * This interface was referenced by `Workspace`'s JSON-Schema
  * via the `definition` "SettingKey".
  */
 export type SettingKey = string;
@@ -11,12 +16,36 @@ export type SettingKey = string;
  */
 export interface Workspace {
   format: "kookabug.workspace/0";
+  permissions?: Permissions;
   profiles?: {
     [k: string]: Profile | undefined;
   };
   record?: RecordPolicy;
   retention?: Retention;
   settings?: Settings;
+}
+/**
+ * 에이전트 권한. 이 파일(kookabug.json)의 툴셋·프리셋 값은 상한이다 (사용자·프로젝트 계층이 더 풀 수 없다)
+ *
+ * This interface was referenced by `Workspace`'s JSON-Schema
+ * via the `definition` "Permissions".
+ */
+export interface Permissions {
+  preset?: "full" | "graph_author" | "read_only" | "runner";
+  rules?: PermissionRule[];
+  toolsets?: {
+    [k: string]: PermissionVerdict | undefined;
+  };
+}
+/**
+ * 권한 규칙 하나. rule은 "도구" 또는 "도구(인자 패턴)". 도구·인자 모두 glob(*, ?), 대소문자 구분
+ *
+ * This interface was referenced by `Workspace`'s JSON-Schema
+ * via the `definition` "PermissionRule".
+ */
+export interface PermissionRule {
+  rule: string;
+  verdict: PermissionVerdict;
 }
 /**
  * This interface was referenced by `Workspace`'s JSON-Schema
