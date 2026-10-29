@@ -111,7 +111,12 @@ def test_local_wheel_wins_over_index_with_same_name(
 
 
 def test_workspace_names_are_the_uv_members() -> None:
-    assert pk.workspace_names() == {"kookabug-sdk", "kookabug-nodes", "kookabug-core"}
+    assert pk.workspace_names() == {
+        "kookabug-sdk",
+        "kookabug-nodes",
+        "kookabug-core",
+        "kookabug-cli",
+    }
 
 
 def test_helpers_refuse_venv_inside_repo() -> None:

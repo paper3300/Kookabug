@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from kookabug_core.inputs.lease import LEASE_NAME_ENV, STATE_DIR_ENV
+from kookabug_core.permissions import Decision
 from kookabug_core.record import read_run, read_run_json
 from kookabug_core.record.journal import format_t
 from kookabug_core.record.runfolder import RunFolder, create_run_folder
@@ -223,6 +224,8 @@ class RunHandle:
         self.hard_stopped = False
         self.channel_lost = False
         self.start_error: str | None = None
+        self.decision: Decision | None = None
+        """이 실행을 허용한 권한 판정 (`WorkspaceService.start_run`이 집행한 그 판정)."""
         self._env = owner.env
         self._cmd = owner.runner_cmd
         self._hello_timeout = owner.hello_timeout

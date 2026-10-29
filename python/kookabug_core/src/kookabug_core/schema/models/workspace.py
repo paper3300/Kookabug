@@ -34,6 +34,36 @@ class Retention(BaseModel):
     passed_days: Annotated[int | None, Field(ge=0)] = None
 
 
+class RunConditions(BaseModel):
+    """
+    실행 조건 기본값 (밀리초). CLI 옵션이 이 값보다 우선한다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    deadline_ms: Annotated[int | None, Field(description="실행 전체 기한. 없으면 30분", ge=1)] = (
+        None
+    )
+    shutdown_grace_ms: Annotated[
+        int | None,
+        Field(
+            description="취소·마무리를 시작한 runner가 끝나기를 기다리는 시간. 넘으면 감독자가 끝낸다. 없으면 5000",
+            ge=1,
+        ),
+    ] = None
+    worker_cancel_grace_ms: Annotated[
+        int | None,
+        Field(
+            description="취소한 워커 노드가 끝나기를 기다리는 시간. 넘으면 워커를 끝낸다. 없으면 2000",
+            ge=1,
+        ),
+    ] = None
+    worker_start_timeout_ms: Annotated[
+        int | None, Field(description="워커가 시작 인사에 답하기까지의 기한. 없으면 30000", ge=1)
+    ] = None
+
+
 class SettingKey(RootModel[str]):
     root: Annotated[str, Field(pattern="^[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)*$", title="SettingKey")]
 
@@ -104,4 +134,5 @@ class Workspace(BaseModel):
     ) = None
     record: RecordPolicy | None = None
     retention: Retention | None = None
+    run: RunConditions | None = None
     settings: Settings | None = None

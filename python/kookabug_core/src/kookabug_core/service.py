@@ -114,6 +114,11 @@ class WorkspaceService:
     ) -> RunHandle:
         """실행을 시작한다. 판정이 deny면 `PermissionDenied`, ask이고 승인이 없으면
         `ApprovalRequired` — 둘 다 아무것도 만들지 않는다. 시작 뒤의 실패(runner가 hello를 못
-        함 등)는 핸들의 결과(`wait()`)로 알린다."""
-        self.require(principal, RUN_START_TOOL, graph, approved=approved)
-        return self.supervisor.start(self.root, graph, options)
+        함 등)는 핸들의 결과(`wait()`)로 알린다.
+
+        판정은 한 번만 한다. 집행한 그 판정을 핸들(`handle.decision`)이나 예외(`exc.decision`)로
+        돌려주므로, 호출자는 따로 `authorize()`를 부르지 않고 이것을 보고한다."""
+        decision = self.require(principal, RUN_START_TOOL, graph, approved=approved)
+        handle = self.supervisor.start(self.root, graph, options)
+        handle.decision = decision
+        return handle

@@ -22,6 +22,7 @@ export interface Workspace {
   };
   record?: RecordPolicy;
   retention?: Retention;
+  run?: RunConditions;
   settings?: Settings;
 }
 /**
@@ -83,4 +84,28 @@ export interface Retention {
   failed_days?: number;
   keep_last?: number;
   passed_days?: number;
+}
+/**
+ * 실행 조건 기본값 (밀리초). CLI 옵션이 이 값보다 우선한다
+ *
+ * This interface was referenced by `Workspace`'s JSON-Schema
+ * via the `definition` "RunConditions".
+ */
+export interface RunConditions {
+  /**
+   * 실행 전체 기한. 없으면 30분
+   */
+  deadline_ms?: number;
+  /**
+   * 취소·마무리를 시작한 runner가 끝나기를 기다리는 시간. 넘으면 감독자가 끝낸다. 없으면 5000
+   */
+  shutdown_grace_ms?: number;
+  /**
+   * 취소한 워커 노드가 끝나기를 기다리는 시간. 넘으면 워커를 끝낸다. 없으면 2000
+   */
+  worker_cancel_grace_ms?: number;
+  /**
+   * 워커가 시작 인사에 답하기까지의 기한. 없으면 30000
+   */
+  worker_start_timeout_ms?: number;
 }

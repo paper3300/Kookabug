@@ -90,6 +90,34 @@
       "title": "Retention",
       "type": "object"
     },
+    "RunConditions": {
+      "additionalProperties": false,
+      "description": "실행 조건 기본값 (밀리초). CLI 옵션이 이 값보다 우선한다",
+      "properties": {
+        "deadline_ms": {
+          "description": "실행 전체 기한. 없으면 30분",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "shutdown_grace_ms": {
+          "description": "취소·마무리를 시작한 runner가 끝나기를 기다리는 시간. 넘으면 감독자가 끝낸다. 없으면 5000",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "worker_cancel_grace_ms": {
+          "description": "취소한 워커 노드가 끝나기를 기다리는 시간. 넘으면 워커를 끝낸다. 없으면 2000",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "worker_start_timeout_ms": {
+          "description": "워커가 시작 인사에 답하기까지의 기한. 없으면 30000",
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "title": "RunConditions",
+      "type": "object"
+    },
     "SettingKey": {
       "pattern": "^[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)*$",
       "title": "SettingKey",
@@ -129,6 +157,9 @@
     },
     "retention": {
       "$ref": "#/$defs/Retention"
+    },
+    "run": {
+      "$ref": "#/$defs/RunConditions"
     },
     "settings": {
       "$ref": "#/$defs/Settings"

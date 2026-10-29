@@ -16,7 +16,13 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py314"
-src = ["python/kookabug_sdk/src", "python/kookabug_nodes/src", "python/kookabug_core/src", "tools"]
+src = [
+    "python/kookabug_sdk/src",
+    "python/kookabug_nodes/src",
+    "python/kookabug_core/src",
+    "python/kookabug_cli/src",
+    "tools",
+]
 # Docs의 그림 생성 스크립트는 제품 코드가 아니다
 extend-exclude = ["Docs", "build", "node_modules"]
 

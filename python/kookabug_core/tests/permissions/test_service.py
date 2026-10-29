@@ -218,12 +218,24 @@ def test_start_run_allowed_returns_handle(
     )
     supervisor = Supervisor(runner_cmd=RUNNER_CMD, env=direct_env(isolated_env(tmp_path)))
     service = WorkspaceService(root, environ=env, supervisor=supervisor)
+    decisions: list[Any] = []
+    authorize = service.authorize
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        decisions.append(authorize(*args, **kwargs))
+        return decisions[-1]
+
+    service.authorize = counted  # type: ignore[method-assign]
     handle = service.start_run(
         AGENT, "tests/a.graph.json", StartOptions(deadline_ms=30_000, runs_dir=tmp_path / "runs")
     )
     if handle.launcher is not None:
         spawned.track(handle.launcher)
     assert handle.start_error is None
+    # 판정은 한 번이고, 핸들은 집행한 그 판정 객체를 돌려준다
+    assert len(decisions) == 1 and handle.decision is decisions[0]
+    assert handle.decision is not None
+    assert (handle.decision.final, handle.decision.source) == ("allow", "preset:runner")
     outcome = handle.wait(30)
     assert outcome.exit_code == 0 and outcome.verdict == "pass"
     assert outcome.run_end is not None and outcome.run_end["finalized_by"] == "runner"
