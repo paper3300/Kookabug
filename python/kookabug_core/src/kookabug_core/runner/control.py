@@ -15,8 +15,9 @@
    백엔드를 부르지 않는다
 4. 워커에 `cancel`(송신 큐) + 유예 타이머 (만료 시 워커 종료, 송신 성공과 무관)
 5. 감독자에 `runner.stopping{reason}` 알림 (감독자 하드 종료 타이머의 시작점)
-6. `cancel.requested{reason}` 기록 (저널 잠금이 필요한 일은 마지막에). 주 스레드는 취소가 시작된
-   실행이면 이 기록이 확정되기를 기다린 뒤 `run.end`를 쓴다(`wait_recorded`). 실행기가 먼저 기한을
+6. `cancel.requested{reason}` 기록 (저널 잠금이 필요한 일은 마지막에). 주 스레드는 `run.end` 전에
+   `record_cancel()`을 부른다: 기록이 끝났으면 바로, 쓰는 중이면 끝난 뒤 돌아가고, 제어 스레드가
+   사유만 정하고 아직 기록에 닿지 못했으면 주 스레드가 대신 쓴다(한 번만). 실행기가 먼저 기한을
    본 경우도 주 스레드가 같은 `cancel("deadline_exceeded")`로 모은다
 
 `cancel.requested`·액터의 `input.up`·`worker.exit`·`step.end`는 서로 다른 스레드·프로세스가 쓰므로
@@ -137,7 +138,7 @@ class Controller:
         self._worker: WorkerProcess | None = None
         self._emit: Emit | None = None
         self._cancel_logged = False
-        self._recorded = threading.Event()
+        self._record_lock = threading.Lock()  # `cancel.requested` 차지·기록을 한 번에
         self._stopping_sent = False
         self._channel_lost = False
         self._stop = threading.Event()
@@ -163,17 +164,22 @@ class Controller:
         """저널이 열렸다. 그 전에 취소됐으면 `cancel.requested`를 지금 남긴다."""
         with self._lock:
             self._emit = emit
-            log = self._reason is not None and not self._cancel_logged
-            self._cancel_logged = self._cancel_logged or log
-            reason = self._reason
-        if log and reason is not None:
-            self._safe_emit({"event": "cancel.requested", "reason": reason})
-            self._recorded.set()
+        self.record_cancel()
 
-    def wait_recorded(self, timeout: float) -> bool:
-        """주 스레드 마무리: 시작된 취소의 `cancel.requested` 쓰기(시도)가 끝날 때까지 기다린다 —
-        `run.end` 뒤에는 작성기가 거부하므로 그 전에 확정한다. 기한을 넘기면 False."""
-        return self._recorded.wait(timeout)
+    def record_cancel(self) -> None:
+        """시작된 취소의 `cancel.requested`를 한 번만 쓴다. 제어 스레드든 주 스레드든 먼저 온
+        쪽이 쓰고, 늦게 온 쪽은 그 쓰기(시도)가 끝난 뒤에 돌아간다.
+
+        주 스레드 마무리는 `run.end` 전에 이것을 부른다: 제어 스레드가 사유만 정하고 아직 기록에
+        닿지 못했으면 주 스레드가 대신 쓴다(`run.end` 뒤에는 작성기가 거부하므로 기다림만으로는
+        늦은 기록이 버려질 수 있다)."""
+        with self._record_lock:
+            with self._lock:
+                reason = self._reason
+                if reason is None or self._emit is None or self._cancel_logged:
+                    return
+                self._cancel_logged = True
+            self._safe_emit({"event": "cancel.requested", "reason": reason})
 
     def attach_actor(self, actor: InputActor) -> None:
         with self._lock:
@@ -212,8 +218,6 @@ class Controller:
             self._reason = reason
             actor = self._actor
             worker = self._worker
-            emit = self._emit
-            self._cancel_logged = emit is not None
         self.watchdog.arm()
         self.token.cancel(reason)
         self.pause.wake()
@@ -222,9 +226,7 @@ class Controller:
         if worker is not None:
             worker.cancel()
         self.notify_stopping(reason)
-        if emit is not None:
-            self._safe_emit({"event": "cancel.requested", "reason": reason})
-            self._recorded.set()
+        self.record_cancel()
         return True
 
     def _safe_emit(self, event: Mapping[str, Any]) -> None:

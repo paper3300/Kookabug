@@ -516,10 +516,9 @@ class Runner:
 
         run_end: dict[str, Any] | None = None
         if end is not None and self.journal is not None:
-            if self.controller.cancel_reason is not None:
-                # 취소가 시작됐으면 cancel.requested가 확정된 뒤에 run.end를 쓴다
-                # (run.end 뒤의 쓰기는 거부된다)
-                self.controller.wait_recorded(spec.shutdown_grace_ms / 2 / 1000)
+            # 취소가 시작됐으면 cancel.requested가 확정된 뒤에 run.end를 쓴다 (run.end 뒤의 쓰기는
+            # 거부된다). 쓰기가 멈추면 run.end도 쓸 수 없으므로 기다림의 끝은 감시자의 자기 종료다
+            self.controller.record_cancel()
             event = self._run_end_event(end)
             try:
                 run_end = self.journal.emit(event)

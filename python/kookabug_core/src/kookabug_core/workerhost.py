@@ -141,6 +141,7 @@ class WorkerProcess:
         self._cancel_at: float | None = None
         self._exit_reason: ExitReason | None = None
         self._exit_emitted = False
+        self._exit_lock = threading.Lock()  # `worker.exit` 차지·기록을 한 번에 (`_exited`)
         self._timer: threading.Timer | None = None
 
     @property
@@ -380,19 +381,23 @@ class WorkerProcess:
             return None
 
     def _exited(self, reason: ExitReason, exit_code: int | None) -> None:
-        """`worker.exit`는 한 번만. 먼저 기록된 사유가 이긴다."""
-        with self._lock:
-            if self._exit_reason is not None and self._exit_reason != reason:
-                reason = self._exit_reason
-            emitted = self._exit_emitted
-            self._exit_emitted = True
-            self._exit_reason = reason
-        if emitted:
-            return
-        event: dict[str, Any] = {"event": "worker.exit", "pid": self.proc.pid, "reason": reason}
-        if exit_code is not None:
-            event["exit_code"] = exit_code
-        self._emit(event)
+        """`worker.exit`는 한 번만. 먼저 기록된 사유가 이긴다.
+
+        어느 호출이든 기록이 끝난 뒤에 돌아간다: 유예 타이머가 먼저 차지하고 아직 쓰지 못했을 때
+        주 스레드의 `shutdown`이 먼저 돌아가 `run.end`를 쓰면 늦은 `worker.exit`가 버려진다."""
+        with self._exit_lock:
+            with self._lock:
+                if self._exit_reason is not None and self._exit_reason != reason:
+                    reason = self._exit_reason
+                emitted = self._exit_emitted
+                self._exit_emitted = True
+                self._exit_reason = reason
+            if emitted:
+                return
+            event: dict[str, Any] = {"event": "worker.exit", "pid": self.proc.pid, "reason": reason}
+            if exit_code is not None:
+                event["exit_code"] = exit_code
+            self._emit(event)
 
     def died(self) -> EngineError:
         """실행 중 연결을 잃었다: 종료를 기다려 `worker.exit`를 남기고 스텝 오류를 만든다."""

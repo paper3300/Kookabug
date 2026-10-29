@@ -200,3 +200,32 @@ class Background:
         if self.error is not None:
             raise self.error
         return self.result
+
+
+class ObservedLock:
+    """제품 잠금을 감싸 처음 잡은 스레드가 아닌 스레드가 잡으러 왔는지(`attempted`)·잡았는지
+    (`acquired`)를 본다. 경쟁 검사에서 두 번째 호출이 실제로 잠금 앞에 닿았음을 확인하는 데 쓴다.
+    `inner`가 진짜 잠금이 아니면(`locked()` 없음) 검사가 실패한다."""
+
+    def __init__(self, inner: Any) -> None:
+        self.inner = inner
+        self.first: threading.Thread | None = None
+        self.attempted = threading.Event()
+        self.acquired = threading.Event()
+
+    def locked(self) -> bool:
+        return bool(self.inner.locked())
+
+    def __enter__(self) -> None:
+        me = threading.current_thread()
+        if self.first is None:
+            self.first = me
+        later = me is not self.first
+        if later:
+            self.attempted.set()
+        self.inner.__enter__()
+        if later:
+            self.acquired.set()
+
+    def __exit__(self, *exc: object) -> None:
+        self.inner.__exit__(*exc)

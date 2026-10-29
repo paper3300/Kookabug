@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
+import json
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -10,11 +14,13 @@ from typing import Any
 import pytest
 from helpers.graphs import GraphBuilder, make_workspace
 from helpers.run import tk
-from helpers.worker import Background, WorkerHarness, worker_env
+from helpers.worker import Background, ObservedLock, WorkerHarness, worker_env
 
 from kb_testing.proc import wait_until
 from kookabug_core.engine import RunResult
+from kookabug_core.record import Journal, JournalClosed
 from kookabug_core.win import Process
+from kookabug_core.workerhost import WorkerProcess
 from kookabug_sdk.pipe import WRITE_TIMEOUT
 
 pytestmark = pytest.mark.process
@@ -133,6 +139,58 @@ def test_grace_kill_independent_of_send(tmp_path: Path) -> None:
     assert result.code == "cancelled"
     (exit,) = h.events.of("worker.exit")
     assert exit["reason"] == "killed_after_grace"
+
+
+def test_shutdown_returns_after_grace_timer_records_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 유예 타이머가 worker.exit를 차지하고 아직 쓰지 못한 사이 주 스레드의 shutdown이 먼저 돌아가면
+    # runner가 run.end를 먼저 써서 늦은 worker.exit가 버려진다 (CI의 기한 초과 검사 실패).
+    # shutdown은 그 기록이 끝난 뒤에 돌아간다
+    journal = Journal(tmp_path / "events.jsonl", "r1")
+    journal.emit({"event": "run.start"})
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    claimed, release = threading.Event(), threading.Event()
+    released: list[bool] = []
+    timer: list[threading.Thread] = []
+
+    def emit(event: dict[str, Any]) -> None:
+        if not claimed.is_set():  # 첫 기록(유예 타이머)을 붙잡는다
+            timer.append(threading.current_thread())
+            claimed.set()
+            released.append(release.wait(10))
+        with contextlib.suppress(JournalClosed):  # runner의 `_emit_quiet`처럼 늦은 기록은 버려진다
+            journal.emit(event)
+
+    def finish() -> None:  # runner 주 스레드의 마무리 순서
+        worker.shutdown()
+        journal.emit({"event": "run.end"})
+
+    worker = WorkerProcess(proc, emit=emit, cancel_grace_ms=10)
+    lock = ObservedLock(worker._exit_lock)
+    monkeypatch.setattr(worker, "_exit_lock", lock)
+    try:
+        worker.set_busy(True)
+        worker.cancel()
+        assert claimed.wait(10)
+        stopping = Background(finish)
+        assert lock.attempted.wait(10)  # shutdown이 worker.exit 잠금 앞에 닿았다
+        assert lock.locked()  # 유예 타이머가 기록을 붙잡은 채 잠금을 쥐고 있다
+        assert not lock.acquired.is_set()
+        release.set()
+        stopping.join()
+        timer[0].join(10)
+        assert not timer[0].is_alive()
+    finally:
+        release.set()
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait(10)
+        journal.close()
+    assert released == [True] and lock.acquired.is_set()
+    records = [json.loads(line) for line in journal.path.read_text("utf-8").splitlines()]
+    assert [r["event"] for r in records] == ["run.start", "worker.exit", "run.end"]
+    assert records[1]["reason"] == "killed_after_grace"
 
 
 def test_worker_killed_externally_step_error_worker_died(tmp_path: Path) -> None:
