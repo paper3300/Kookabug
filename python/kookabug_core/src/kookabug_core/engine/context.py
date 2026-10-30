@@ -3,15 +3,27 @@
 노드 함수는 이 ctx를 SDK `guard()`로 감싼 것을 받는다 (순수 노드는 `PureContext`, exec 노드는
 선언한 효과만 쓰는 `EffectContext`). 그래서 순수 노드 제한은 `fake_context`와 같은 래퍼 하나로
 걸린다.
+
+**대상 창** (M1 2.8): 스텝 ctx의 창은 만들 때 정한다 — 그 스텝의 공통 입력 `in.window`, 없으면 그
+스텝 시작 때의 호출 프레임 현재 창. 캡처·입력 요청은 이 창으로 간다. `set_window`는 호출 프레임의
+현재 창만 바꾼다(다음 스텝부터).
+
+**관측** (M1 2.6): `capture`·`vision.find`·`ocr.read`·`process.find_window`는 노드 기한
+(`deadline`)이 이미 지났으면 시작하지 않고 `ObservationTimeout`. 플랫폼에는 `ObservationLimits`
+(설정 기한 `run.capture_timeout_ms`, 노드 기한·전체 기한의 남은 시간, 취소 확인)를 넘기고,
+플랫폼이 원인별 예외(노드 기한 → `ObservationTimeout`, 설정 기한 → `capture_timeout`, 전체 기한
+→ `DeadlineExceeded`)를 낸다. 플랫폼에 그 기능이 없으면 `platform_unavailable`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, cast, runtime_checkable
+from types import EllipsisType
+from typing import Any, Final, Protocol, cast, runtime_checkable
 
+from kookabug_core.canonical import loads_strict
 from kookabug_core.engine.cancel import CancelToken, DeadlineExceeded
 from kookabug_core.engine.errors import EngineError
 from kookabug_core.engine.frame import Frame
@@ -34,17 +46,48 @@ from kookabug_sdk.context import (
     Where,
     WindowsApi,
 )
-from kookabug_sdk.errors import ObservationTimeout
-from kookabug_sdk.types import Image, Rect, Secret, WindowRef
+from kookabug_sdk.errors import ObservationTimeout, StaleObservation
+from kookabug_sdk.types import (
+    Image,
+    Match,
+    OcrResult,
+    ProcessRef,
+    Rect,
+    Secret,
+    Target,
+    WindowInfo,
+    WindowRef,
+)
 
 __all__ = [
+    "DEFAULT_CAPTURE_TIMEOUT_MS",
     "ArtifactStore",
+    "ObservationLimits",
+    "ObservingPlatform",
     "PixelPlatform",
     "Platform",
     "Runtime",
     "StepContext",
     "StepInputPlatform",
+    "WindowPlatform",
 ]
+
+DEFAULT_CAPTURE_TIMEOUT_MS: Final = 2000
+"""`run.capture_timeout_ms` 기본값 (조율자 결정 Q2)."""
+
+
+@dataclass(frozen=True, slots=True)
+class ObservationLimits:
+    """관측 호출 하나의 기한 재료 (M1 2.6). 플랫폼이 원인별 기한으로 바꾼다.
+
+    `config_ms`는 설정 기한, `node_ms`는 노드가 넘긴 기한의 남은 시간(없으면 None), `run_ms`는 전체
+    기한의 남은 시간(없으면 None), `check`는 취소·전체 기한 확인(취소됐으면 예외).
+    """
+
+    config_ms: int
+    node_ms: int | None = None
+    run_ms: int | None = None
+    check: Callable[[], None] | None = None
 
 
 class Platform(Protocol):
@@ -55,14 +98,29 @@ class Platform(Protocol):
     def capture(self, window: WindowRef | None, region: Rect | None) -> Image: ...
 
 
+class InputObserver(Protocol):
+    """입력 요청을 만든 스텝의 관측 (`inputs.service.Observer`와 같은 모양)."""
+
+    def rematch(self, match: Match) -> Match | None: ...
+    def note(self, message: str) -> None: ...
+
+
 @runtime_checkable
 class StepInputPlatform(Protocol):
-    """스텝마다 입력 경로를 주는 플랫폼 (M0b runner: 입력 액터 큐에 스텝 ID와 함께 넣는다).
+    """스텝마다 입력 경로를 주는 플랫폼 (runner: 공용 입력 서비스 → 입력 액터 큐).
 
-    플랫폼이 이것을 구현하면 `ctx.input`은 `input`이 아니라 `input_for(스텝)`으로 간다.
+    플랫폼이 이것을 구현하면 `ctx.input`은 `input`이 아니라 `input_for(스텝, 그 스텝의 창, 관측)`
+    으로 간다. 창은 그 스텝 ctx를 만들 때 정한 것이라 요청 뒤에 바뀌지 않는다. `observer`는
+    재검증의 다시 찾기·기록에 쓴다. `sleep`은 누르고 있기의 기다림(취소로 깬다).
     """
 
-    def input_for(self, step: str) -> InputApi: ...
+    def input_for(
+        self,
+        step: str,
+        window: WindowRef | None,
+        observer: InputObserver,
+        sleep: Callable[[int], None],
+    ) -> InputApi: ...
 
 
 @runtime_checkable
@@ -74,14 +132,46 @@ class PixelPlatform(Protocol):
     """
 
     def capture_staged(
-        self, window: WindowRef | None, region: Rect | None
+        self, window: WindowRef | None, region: Rect | None, limits: ObservationLimits
     ) -> tuple[Image, StagedFrame]: ...
+
+
+@runtime_checkable
+class ObservingPlatform(Protocol):
+    """찾기·비교·OCR을 주는 플랫폼 (M1 2.5·2.6). 참조 이미지면 픽셀은 프레임 저장소에 있다."""
+
+    def find(
+        self, image: Image, target: Target, *, region: Rect | None, limits: ObservationLimits
+    ) -> Match | None: ...
+    def diff(self, a: Image, b: Image, *, region: Rect | None) -> float: ...
+    def read_text(
+        self, image: Image, *, region: Rect | None, sensitive: bool, limits: ObservationLimits
+    ) -> OcrResult: ...
+
+
+@runtime_checkable
+class WindowPlatform(Protocol):
+    """창·프로세스를 주는 플랫폼 (M1 2.2). 돌려주는 창 참조에는 이 실행의 바인딩이 붙어 있다."""
+
+    def find_window(
+        self, title: str | None, process_name: str | None, owned: bool
+    ) -> WindowRef | None: ...
+    def window_info(self, window: WindowRef) -> WindowInfo: ...
+    def set_client_size(self, window: WindowRef, width: int, height: int) -> bool: ...
+    def activate(self, window: WindowRef) -> None: ...
+    def launch(self, path: str, args: Sequence[str], cwd: str | None) -> ProcessRef: ...
+    def close_process(self, process: ProcessRef, force_after_ms: int) -> bool: ...
+    def process_window(
+        self, process: ProcessRef, title: str | None, limits: ObservationLimits | None
+    ) -> WindowRef | None:
+        """`limits`가 None이면 지금 있는 창만 본다. 있으면 노드 기한까지 기다린다."""
+        ...
 
 
 @dataclass(eq=False)
 class Runtime:
     """한 실행의 공용 상태: 프로그램, 레지스트리, 노드 실행 경계, 플랫폼, 시계, 취소, 전체 기한,
-    이벤트, 기록 정책(`recorder`)."""
+    이벤트, 기록 정책(`recorder`), 관측의 설정 기한(`capture_timeout_ms`)."""
 
     run: str
     program: Program
@@ -96,6 +186,19 @@ class Runtime:
     emit_to: Callable[[dict[str, Any]], None]
     on_setting: Callable[[SettingLookup], None] | None = None
     """노드가 `ctx.setting()`으로 실제로 읽은 설정 (runner가 실행 조건 `run.json`에 남긴다)."""
+    capture_timeout_ms: int = DEFAULT_CAPTURE_TIMEOUT_MS
+
+    def limits(self, deadline: Deadline | None) -> ObservationLimits:
+        """관측 호출 하나의 기한. 노드 기한이 이미 지났으면 `ObservationTimeout`(시작하지 않음)."""
+        if deadline is not None and deadline.passed:
+            raise ObservationTimeout("노드 기한이 지나 관측을 시작하지 않았다")
+        self.check()
+        return ObservationLimits(
+            config_ms=self.capture_timeout_ms,
+            node_ms=None if deadline is None else deadline.remaining_ms,
+            run_ms=self.deadline.remaining_ms,
+            check=self.check,
+        )
 
     def emit(self, event: Mapping[str, Any]) -> None:
         self.emit_to({**event, "run": self.run})
@@ -187,11 +290,13 @@ class StepArtifacts:
 class CheckedInput:
     """입력 앞뒤로 취소·전체 기한을 확인한다 (취소된 뒤에는 게임에 입력하지 않는다)."""
 
-    def __init__(self, runtime: Runtime, step: str) -> None:
+    def __init__(self, runtime: Runtime, ctx: StepContext) -> None:
         self._runtime = runtime
         platform = runtime.platform
         self._input: InputApi = (
-            platform.input_for(step) if isinstance(platform, StepInputPlatform) else platform.input
+            platform.input_for(ctx.step, ctx.window, ctx, runtime.sleep)
+            if isinstance(platform, StepInputPlatform)
+            else platform.input
         )
 
     def click(self, at: Where, *, button: str = "left", count: int = 1) -> None:
@@ -220,11 +325,9 @@ class CheckedInput:
         self._runtime.check()
 
 
-class Unconnected:
-    """아직 실행기에 연결하지 않은 ctx 기능 (`ctx.vision`·`ocr`·`windows`·`process`·`set_window`).
-
-    SDK 계약(M1 T8)이 먼저 들어오고 runner 연결(T9)이 붙인다. 부르면 `platform_unavailable`.
-    """
+class _Unavailable:
+    """플랫폼에 없는 ctx 기능 (`ctx.vision`·`ocr`·`windows`·`process`). 부르면
+    `platform_unavailable`."""
 
     def __init__(self, api: str) -> None:
         self._api = api
@@ -237,20 +340,166 @@ class Unconnected:
         )
 
 
+class _StepVision:
+    """`ctx.vision` → 플랫폼 찾기·비교. 찾기 앞뒤로 취소·기한을 본다."""
+
+    def __init__(self, ctx: StepContext, platform: ObservingPlatform) -> None:
+        self._ctx = ctx
+        self._platform = platform
+
+    def find(
+        self,
+        image: Image,
+        target: Target,
+        *,
+        region: Rect | None = None,
+        deadline: Deadline | None = None,
+    ) -> Match | None:
+        runtime = self._ctx.runtime
+        limits = runtime.limits(deadline)
+        found = self._platform.find(image, target, region=region, limits=limits)
+        runtime.check()
+        return found
+
+    def diff(self, a: Image, b: Image, *, region: Rect | None = None) -> float:
+        runtime = self._ctx.runtime
+        runtime.check()
+        value = self._platform.diff(a, b, region=region)
+        runtime.check()
+        return value
+
+
+class _StepOcr:
+    def __init__(self, ctx: StepContext, platform: ObservingPlatform) -> None:
+        self._ctx = ctx
+        self._platform = platform
+
+    def read(
+        self,
+        image: Image,
+        *,
+        region: Rect | None = None,
+        sensitive: bool = False,
+        deadline: Deadline | None = None,
+    ) -> OcrResult:
+        runtime = self._ctx.runtime
+        limits = runtime.limits(deadline)
+        result = self._platform.read_text(image, region=region, sensitive=sensitive, limits=limits)
+        runtime.check()
+        return result
+
+
+class _StepWindows:
+    def __init__(self, ctx: StepContext, platform: WindowPlatform) -> None:
+        self._ctx = ctx
+        self._platform = platform
+
+    def find(
+        self, title: str | None = None, process_name: str | None = None, *, owned: bool = False
+    ) -> WindowRef | None:
+        self._ctx.runtime.check()
+        return self._platform.find_window(title, process_name, owned)
+
+    def info(self, window: WindowRef) -> WindowInfo:
+        self._ctx.runtime.check()
+        return self._platform.window_info(window)
+
+    def set_client_size(self, window: WindowRef, width: int, height: int) -> bool:
+        self._ctx.runtime.check()
+        return self._platform.set_client_size(window, width, height)
+
+    def activate(self, window: WindowRef) -> None:
+        self._ctx.runtime.check()
+        self._platform.activate(window)
+
+
+class _StepProcess:
+    def __init__(self, ctx: StepContext, platform: WindowPlatform) -> None:
+        self._ctx = ctx
+        self._platform = platform
+
+    def launch(self, path: str, args: Sequence[str] = (), cwd: str | None = None) -> ProcessRef:
+        self._ctx.runtime.check()
+        process = self._platform.launch(path, list(args), cwd)
+        self._ctx.runtime.check()
+        return process
+
+    def close(self, process: ProcessRef, force_after_ms: int) -> bool:
+        self._ctx.runtime.check()
+        return self._platform.close_process(process, force_after_ms)
+
+    def find_window(
+        self, process: ProcessRef, title: str | None = None, *, deadline: Deadline | None = None
+    ) -> WindowRef | None:
+        runtime = self._ctx.runtime
+        limits = runtime.limits(deadline) if deadline is not None else None
+        if limits is None:
+            runtime.check()
+        found = self._platform.process_window(process, title, limits)
+        runtime.check()
+        return found
+
+
+class _RecordedInput:
+    """입력이 재검증으로 거부되면(`StaleObservation`) 스텝 ctx에 남긴다 — 노드가 그 예외를
+    삼키고 정상으로 끝나도 실행기가 처리되지 않은 fail로 본다."""
+
+    def __init__(self, ctx: StepContext, inner: InputApi) -> None:
+        self._ctx = ctx
+        self._inner = inner
+
+    def _guarded(self, call: Callable[[], None]) -> None:
+        try:
+            call()
+        except StaleObservation as exc:
+            self._ctx.stale = exc
+            raise
+
+    def click(self, at: Where, *, button: str = "left", count: int = 1) -> None:
+        self._guarded(lambda: self._inner.click(at, button=button, count=count))
+
+    def drag(self, start: Where, end: Where, *, duration_ms: int = 0, button: str = "left") -> None:
+        self._guarded(lambda: self._inner.drag(start, end, duration_ms=duration_ms, button=button))
+
+    def scroll(self, at: Where, amount: int) -> None:
+        self._guarded(lambda: self._inner.scroll(at, amount))
+
+    def key(self, key: str, *, hold_ms: int = 0) -> None:
+        self._guarded(lambda: self._inner.key(key, hold_ms=hold_ms))
+
+    def type_text(self, text: str | Secret) -> None:
+        self._guarded(lambda: self._inner.type_text(text))
+
+
 class StepContext:
     """노드 하나(스텝 하나)의 ctx. 순수 노드는 그 노드를 소비하는 스텝의 ID를 쓴다.
 
-    `config`는 선언 기본값을 채운 것이다 (`NodeDef.effective_config`).
+    `config`는 선언 기본값을 채운 것이다 (`NodeDef.effective_config`). `window`를 주면(None 포함)
+    그 스텝의 대상 창으로 확정된 것이고, 주지 않으면 지금 호출 프레임의 현재 창이다 — 만들 때
+    정해진다. 실행기는 스텝 시작 때 한 번 정해 재시도마다 같은 값을 준다.
     """
 
     def __init__(
-        self, runtime: Runtime, frame: Frame, node: Node, step: str, config: Mapping[str, Any]
+        self,
+        runtime: Runtime,
+        frame: Frame,
+        node: Node,
+        step: str,
+        config: Mapping[str, Any],
+        window: WindowRef | EllipsisType | None = ...,
     ) -> None:
         self._runtime = runtime
         self._frame = frame
         self._node = node
         self._step = step
         self._config = config
+        self._window = frame.current_window if isinstance(window, EllipsisType) else window
+        self.stale: StaleObservation | None = None
+        """이 스텝의 입력이 재검증으로 거부됐다 (노드가 삼켜도 처리되지 않은 fail)."""
+
+    @property
+    def runtime(self) -> Runtime:
+        return self._runtime
 
     @property
     def config(self) -> Mapping[str, Any]:
@@ -268,7 +517,7 @@ class StepContext:
 
     @property
     def window(self) -> WindowRef | None:
-        return self._frame.current_window
+        return self._window
 
     @property
     def vars(self) -> VarsApi:
@@ -284,42 +533,76 @@ class StepContext:
 
     @property
     def input(self) -> InputApi:
-        return CheckedInput(self._runtime, self._step)
+        return _RecordedInput(self, CheckedInput(self._runtime, self))
 
     @property
     def vision(self) -> VisionApi:
-        return cast(VisionApi, Unconnected("vision"))
+        platform = self._runtime.platform
+        if isinstance(platform, ObservingPlatform):
+            return _StepVision(self, platform)
+        return cast(VisionApi, _Unavailable("vision"))
 
     @property
     def ocr(self) -> OcrApi:
-        return cast(OcrApi, Unconnected("ocr"))
+        platform = self._runtime.platform
+        if isinstance(platform, ObservingPlatform):
+            return _StepOcr(self, platform)
+        return cast(OcrApi, _Unavailable("ocr"))
 
     @property
     def windows(self) -> WindowsApi:
-        return cast(WindowsApi, Unconnected("windows"))
+        platform = self._runtime.platform
+        if isinstance(platform, WindowPlatform):
+            return _StepWindows(self, platform)
+        return cast(WindowsApi, _Unavailable("windows"))
 
     @property
     def process(self) -> ProcessApi:
-        return cast(ProcessApi, Unconnected("process"))
+        platform = self._runtime.platform
+        if isinstance(platform, WindowPlatform):
+            return _StepProcess(self, platform)
+        return cast(ProcessApi, _Unavailable("process"))
 
     def set_window(self, window: WindowRef) -> None:
-        raise EngineError("platform_unavailable", "이 실행에서는 ctx.set_window를 쓸 수 없다")
+        """호출 프레임의 현재 창을 바꾼다 (다음 스텝부터). 이 스텝의 창·입력 요청은 그대로다."""
+        self._frame.current_window = window
 
     def capture(self, region: Rect | None = None, *, deadline: Deadline | None = None) -> Image:
-        # 노드 기한을 캡처 대기에 넣는 것은 플랫폼 연결(T9). 여기서는 지난 기한이면 시작하지 않는다
-        if deadline is not None and deadline.passed:
-            raise ObservationTimeout("노드 기한이 지나 캡처를 시작하지 않았다")
-        self._runtime.check()
-        platform = self._runtime.platform
-        recorder = self._runtime.recorder
-        window = self._frame.current_window
+        runtime = self._runtime
+        limits = runtime.limits(deadline)
+        platform = runtime.platform
+        recorder = runtime.recorder
         if recorder.frames is not None and isinstance(platform, PixelPlatform):
-            raw, staged = platform.capture_staged(window, region)
+            raw, staged = platform.capture_staged(self._window, region, limits)
             image = recorder.captured(self._step, raw, staged)
         else:
-            image = recorder.captured(self._step, platform.capture(window, region))
-        self._runtime.check()
+            image = recorder.captured(self._step, platform.capture(self._window, region))
+        runtime.check()
         return image
+
+    # ------------------------------------------------------------ 입력 재검증 (공용 입력 서비스)
+
+    def rematch(self, match: Match) -> Match | None:
+        """`match.target`을 이 스텝 창의 새 캡처에서 다시 찾는다 (설정 기한만, 노드 기한 없음)."""
+        if match.target is None:
+            return None
+        target = self._load_target(match.target)
+        return self.vision.find(self.capture(), target)
+
+    def note(self, message: str) -> None:
+        self.log.info(message)
+
+    def _load_target(self, rel: str) -> Target:
+        path = self._runtime.program.workspace.resolve(rel)
+        if path is None:
+            path = Path(rel)
+        try:
+            spec = loads_strict(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            raise EngineError(
+                "target_image_invalid", f"다시 찾을 target '{rel}'을(를) 읽을 수 없다: {exc}"
+            ) from exc
+        return Target(name=rel, path=path, spec=spec)
 
     def deadline(self, ms: int) -> Deadline:
         return Deadline(self._runtime.clock, self._runtime.clock.now_ms() + ms)

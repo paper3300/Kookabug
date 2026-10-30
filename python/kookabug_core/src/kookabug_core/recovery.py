@@ -53,7 +53,11 @@ def supervisor_backend(platform: Mapping[str, Any], run_id: str | None) -> Input
     `windows`면 SendInput). 감독자는 떼기만 하므로 입력 직전 확인도 훅도 없다."""
     kind = platform.get("kind")
     if kind == "windows":
-        return create_backend("windows")
+        try:
+            return create_backend("windows")
+        except ImportError:
+            # 플랫폼 패키지가 없는 설치: runner도 실제 입력을 넣을 수 없었다 (떼어야 할 키가 없다)
+            return None
     if kind != "fake" or not platform.get("input_log"):
         return None
     return create_backend("fake", input_log=platform["input_log"], run=run_id, by="supervisor")

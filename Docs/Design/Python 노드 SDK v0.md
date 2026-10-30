@@ -121,7 +121,7 @@ def wait_any(ctx: Context, targets: dict[str, Target], timeout_ms: int = 10000) 
 |---|---|
 | 현재 대상 창 | `ctx.window`, `ctx.set_window(window)` (호출 프레임의 현재 창을 **다음 스텝부터** 바꾼다. 그 노드의 `ctx.window`는 노드 호출 동안 그대로다. 서브그래프는 부른 쪽의 창을 이어받고, 안에서 바꾼 것은 밖으로 나오지 않는다) |
 | 캡처 | `ctx.capture(region=None, *, deadline=None) -> Image` (참조 이미지) |
-| 이미지 찾기·비교 | `ctx.vision.find(image, target, *, region=None, deadline=None) -> Match \| None`, `ctx.vision.diff(a, b, *, region=None) -> float` (채널 평균 절대 차이 / 255. 0 = 같음, 크기가 다르면 1) |
+| 이미지 찾기·비교 | `ctx.vision.find(image, target, *, region=None, deadline=None) -> Match \| None`, `ctx.vision.diff(a, b, *, region=None) -> float` (채널 평균 절대 차이 / 255. 0 = 같음, 크기가 다르면 1. `region`(클라이언트 좌표)을 주면 두 관측의 클라이언트 크기가 다를 때 1, 같으면 이미지마다 자기 원점 기준으로 같은 클라이언트 영역끼리) |
 | OCR | `ctx.ocr.read(image, *, region=None, sensitive=False, deadline=None) -> OcrResult` (`text`·`lines`(`OcrLine`: `text`·`box`·`score`)·`confidence`). `sensitive=True`(비밀 target 영역)면 글자가 `Secret`으로 온다 |
 | 창 | `ctx.windows.find(title=None, process_name=None, *, owned=False) -> WindowRef \| None` (제목 부분 일치·`/정규식/`, 기본은 소유자 없는 창만), `ctx.windows.info(window) -> WindowInfo`, `ctx.windows.set_client_size(window, w, h) -> bool`, `ctx.windows.activate(window)` (최선 노력) |
 | 프로세스 | `ctx.process.launch(path, args=(), cwd=None) -> ProcessRef`, `ctx.process.close(process, force_after_ms) -> bool`, `ctx.process.find_window(process, title=None, *, deadline=None) -> WindowRef \| None` (런처가 띄운 아래 프로세스의 창까지) |
@@ -141,14 +141,15 @@ def wait_any(ctx: Context, targets: dict[str, Target], timeout_ms: int = 10000) 
 | `process` | `ctx.process.*`, `ctx.windows.set_client_size`·`activate` |
 | (효과 없이) | `ctx.windows.find`·`info`, `ctx.set_window`, 기록·시간·변수·설정 |
 
-**관측 호출의 기한** (`deadline` 인자): `capture`·`vision.find`·`ocr.read`·`process.find_window`는 노드가 `ctx.deadline(timeout_ms)`로 만든 기한을 받는다. 관측 하나의 유효 기한은 `min(설정 기한 run.capture_timeout_ms, 노드 기한 남은 시간, 전체 기한 남은 시간)`이다. 노드 기한 때문에 끝나면 `ObservationTimeout`이고 노드는 이것을 잡아 `timeout` 출구로 간다. 남은 시간이 0이면 관측을 시작하지 않고 바로 `ObservationTimeout`이다. 설정 기한으로 끝나면 `capture_timeout`(`error`), 전체 기한이면 `deadline_exceeded`다. 워커는 남은 시간(ms)을 관측 요청에 실어 러너가 같은 규칙을 쓴다
+**관측 호출의 기한** (`deadline` 인자): `capture`·`vision.find`·`ocr.read`·`process.find_window`는 노드가 `ctx.deadline(timeout_ms)`로 만든 기한을 받는다. 관측 하나의 유효 기한은 `min(설정 기한 run.capture_timeout_ms, 노드 기한 남은 시간, 전체 기한 남은 시간)`이다. 노드 기한 때문에 끝나면 `ObservationTimeout`이고 노드는 이것을 잡아 `timeout` 출구로 간다. 남은 시간이 0이면 관측을 시작하지 않고 바로 `ObservationTimeout`이다. 설정 기한으로 끝나면 `capture_timeout`(`error`), 전체 기한이면 `deadline_exceeded`다. 워커는 남은 시간(ms)을 관측 요청에 실어 러너가 같은 규칙을 쓴다. 예외: `process.find_window`(창이 뜨기를 기다리기)에는 설정 기한을 걸지 않는다 — `min(노드 기한, 전체 기한)`. 게임 시작은 캡처 한 번보다 길다
 
 **예외**
 
 | 예외 | 바탕 | 뜻 | 노드 쪽 |
 |---|---|---|---|
 | `ObservationTimeout` | `Exception` | 관측이 노드 기한 안에 끝나지 않았다 | 잡아서 `timeout` 출구 |
-| `StaleObservation` | `BaseException` | 입력 직전 재검증에서 `Match`가 지금 창(크기·DPI·캡처 방식)과 맞지 않고 다시 찾지도 못했다 | 잡지 않는다. `except Exception`에 삼켜지지 않고 그 스텝의 처리되지 않은 fail(`stale_observation`, 출구 없음)이 된다 |
+| `StaleObservation` | `BaseException` | 입력 직전 재검증에서 `Match`가 지금 창(크기·DPI·캡처 방식)과 맞지 않고 다시 찾지도 못했다 | 잡지 않는다. `except Exception`에 삼켜지지 않고 그 스텝의 처리되지 않은 fail(`stale_observation`, 출구 없음)이 된다. 잡아서 삼켜도 그 스텝은 처리되지 않은 fail이다 |
+| `RunnerError` | `RuntimeError` | (워커 노드만) runner가 ctx 요청을 오류 코드(`code`: `frame_expired`·`window_gone`·`capture_timeout` 등)로 거부했다 | 잡지 않으면 그 스텝은 그 코드의 `error`. 같은 프로세스의 코어 노드는 실행기 오류가 그대로 온다 |
 
 **순수 노드의 `ctx`** (부작용 금지 → [[그래프 JSON 스키마 v0]] 7장)
 
@@ -261,3 +262,4 @@ def test_wait_image_found():
 | 바뀐 것 | 이유 |
 |---|---|
 | M1 SDK 계약: `ctx.vision`(`find`·`diff`)·`ctx.ocr`·`ctx.windows`·`ctx.process`·`ctx.set_window`, 입력 `drag`·`scroll`·`click(count)`·`key(hold_ms)`, 관측 호출의 `deadline` 인자, 예외 `ObservationTimeout`·`StaleObservation`, 효과 표, `Match`(배율·방법·target·클릭 지점·`frame_info`)·`WindowRef`(PID·생성 시각·바인딩) 필드, `fake_context`의 엔진 주입·`scenario`·`windows` | 화면 안정 대기에 두 프레임 비교가 필요하고(`diff`), 관측이 노드 기한을 넘기지 않아야 하며(`ObservationTimeout`), 입력 직전 재검증은 노드가 삼킬 수 없어야 한다(`StaleObservation`). 같은 HWND를 다시 쓴 창은 바인딩으로 가린다. 워커는 픽셀 없이 참조 이미지만 받으므로 찾기·OCR을 runner에 맡긴다. `ctx.ocr.read`의 `sensitive`와 `Match.click`은 계약 표에 없던 것을 더했다 — 비밀 target 영역의 글자가 워커·기록으로 원문 그대로 가지 않게, 워커가 target 없이도 클릭 지점을 넘기게 |
+| M1 runner 연결: 워커 예외 `RunnerError(code)`, 삼킨 `StaleObservation`도 처리되지 않은 fail, 가짜 ctx 실제 엔진 `kookabug_platform.fake_engines`(파일·바이트 이미지 매칭·OCR) | 워커 노드가 `frame_expired`·`window_gone` 같은 사유를 코드로 가려 처리할 수 있어야 하고, 잡지 않았을 때 스텝 오류 코드가 `node_error`로 뭉개지면 안 된다. 재검증 실패를 노드가 삼키면 입력하지 않은 채 성공으로 끝난다. 노드 테스트가 실제 매칭·OCR을 게임 없이 돌린다 |

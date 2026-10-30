@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Any, Final
 
 import pytest
-from helpers.graphs import make_workspace, secret
+from helpers.graphs import make_workspace, secret, target
+from helpers.m1 import START, ScenePlatform, StubEngines, write_target
 from helpers.run import tk
 from helpers.worker import Background, WorkerHarness, worker_env
 
@@ -36,7 +37,26 @@ METHODS: Final[dict[str, tuple[str | None, str | None]]] = {
     "ctx.input.key": ("CtxInputKeyParams", "EmptyResult"),
     "ctx.input.type_text": ("CtxInputTypeTextParams", "EmptyResult"),
     "ctx.setting": ("CtxSettingParams", "CtxSettingResult"),
+    # M1 (runner 연결 T9)
+    "ctx.vision.find": ("CtxVisionFindParams", "CtxVisionFindResult"),
+    "ctx.vision.diff": ("CtxVisionDiffParams", "CtxVisionDiffResult"),
+    "ctx.ocr.read": ("CtxOcrReadParams", "CtxOcrReadResult"),
+    "ctx.windows.find": ("CtxWindowsFindParams", "CtxWindowResult"),
+    "ctx.windows.info": ("CtxWindowParams", "CtxWindowsInfoResult"),
+    "ctx.windows.set_client_size": (
+        "CtxWindowsSetClientSizeParams",
+        "CtxWindowsSetClientSizeResult",
+    ),
+    "ctx.windows.activate": ("CtxWindowParams", "EmptyResult"),
+    "ctx.process.launch": ("CtxProcessLaunchParams", "CtxProcessLaunchResult"),
+    "ctx.process.close": ("CtxProcessCloseParams", "CtxProcessCloseResult"),
+    "ctx.process.find_window": ("CtxProcessFindWindowParams", "CtxWindowResult"),
+    "ctx.set_window": ("CtxWindowParams", "EmptyResult"),
+    "ctx.input.drag": ("CtxInputDragParams", "EmptyResult"),
+    "ctx.input.scroll": ("CtxInputScrollParams", "EmptyResult"),
 }
+M1_TEST = "tests/m1.graph.json"
+TARGET = "targets/start.target.json"
 
 
 class Recorder:
@@ -138,9 +158,35 @@ def test_recorded_session_messages_validate(tmp_path: Path) -> None:
     finally:
         h.shutdown()
 
+    # M1: 창·프로세스·관측·입력 한 바퀴 + 노드 기한(observation_timeout)·재검증 실패(stale)
+    write_target(ws, TARGET)
+    (
+        tk()
+        .entry("n_tour")
+        .node(
+            "n_tour", "testkit.m1.tour", inputs={"target": target(TARGET)}, next={"done": "n_wait"}
+        )
+        .node(
+            "n_wait", "testkit.m1.find_window_wait", inputs={"pid": 4001}, next={"timeout": "n_l"}
+        )
+        .node("n_l", "testkit.m1.launch", inputs={"path": "game.exe"}, next={"done": "n_fc"})
+        .node("n_fc", "testkit.m1.find_click", inputs={"target": target(TARGET)})
+        .write(ws, M1_TEST)
+    )
+    engines = StubEngines({TARGET: [START]}, with_target=False)
+    platform = ScenePlatform.sample(engines)
+    engines.after_find.append(
+        lambda: platform.resize((2048, 1280)) if len(engines.calls) > 1 else None
+    )
+    m1 = WorkerHarness(
+        ws, M1_TEST, tmp_path / "c", env=worker_env(tmp_path), trace=recorder, platform=platform
+    ).run_all()
+    assert (m1.code, m1.failure_path) == ("unhandled_fail", ("n_fc",)), m1.reason
+
     with recorder.lock:
         messages = list(recorder.messages)
     seen = check_session(messages)
     assert seen == set(METHODS)
     errors = {m["error"]["code"] for _, m in messages if "error" in m}
-    assert {-32001, -32002} <= errors  # cancelled, node_error
+    # cancelled, node_error, observation_timeout, stale_observation
+    assert {-32001, -32002, -32006, -32007} <= errors

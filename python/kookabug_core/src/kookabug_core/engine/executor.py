@@ -18,6 +18,13 @@
 - 기록 정책: 프레임마다 실효 정책(`Frame.record_policy`), 스텝마다 노드 `record`와 입력의 비밀값을
   더해 `Recorder`가 집행한다. 노드가 error로 끝나면 그 스텝의 마지막 캡처를 예외 스크린샷으로.
   생략은 `step.end.omitted` (스키마 v0 6장 "화면에 찍힌 비밀값")
+- 공통 입력 `window` (M1 2.8): 노드 함수 인자·서브그래프 입력·출력으로 넘기지 않고 떼어 그 스텝의
+  대상 창(서브그래프 호출이면 안쪽 프레임의 시작 창)으로만 쓴다. `ctx.set_window`는 호출 프레임의
+  현재 창을 다음 스텝부터 바꾼다
+- 입력 직전 재검증 실패(`StaleObservation`)는 출구 없는 처리되지 않은 fail(`stale_observation`)이다.
+  노드가 삼키고 끝내도 같다
+- 프레임 저장소 (M1 2.7): 스텝 출력에 든 캡처는 출력 참조로 표시하고, 서브그래프 안 스텝이 닫힐 때
+  그 마지막 캡처를 부른 스텝의 증거로 넘긴다 (실패 증거 2.15)
 """
 
 from __future__ import annotations
@@ -31,7 +38,13 @@ from typing import Any, Final, Literal
 from kookabug_core.diagnostics import Diagnostic, has_errors
 from kookabug_core.engine.cancel import Cancelled, CancelToken, DeadlineExceeded
 from kookabug_core.engine.clock import Clock, SystemClock
-from kookabug_core.engine.context import ArtifactStore, Platform, Runtime, StepContext
+from kookabug_core.engine.context import (
+    DEFAULT_CAPTURE_TIMEOUT_MS,
+    ArtifactStore,
+    Platform,
+    Runtime,
+    StepContext,
+)
 from kookabug_core.engine.errors import EngineError, error_code
 from kookabug_core.engine.events import EventSink, event_value
 from kookabug_core.engine.frame import Frame, FrameExit
@@ -59,9 +72,12 @@ from kookabug_core.record.policy import (
 )
 from kookabug_core.registry import NodeDef, Registry, default_registry
 from kookabug_core.validate import validate
+from kookabug_core.validate.pins import COMMON_WINDOW, node_pins
 from kookabug_core.workspace import WORKSPACE_FILE, SettingLookup
 from kookabug_sdk import Result, Secret
 from kookabug_sdk.context import Deadline
+from kookabug_sdk.errors import StaleObservation
+from kookabug_sdk.types import WindowRef
 
 __all__ = [
     "DEFAULT_DEADLINE_MS",
@@ -80,6 +96,8 @@ _TERMINALS: Final[dict[str, Terminal]] = {
     "test_skip": "skip",
 }
 _LOOPS: Final = frozenset({"repeat", "while"})
+STALE_OBSERVATION: Final = "stale_observation"
+"""입력 직전 재검증 실패의 원인 코드 (처리되지 않은 fail, 출구 없음 — M1 2.4)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +109,8 @@ class ExecOptions:
 
     `collect_events=False`면 이벤트를 `RunResult.events`에 모으지 않고 싱크로만 보낸다 (runner:
     긴 실행에서 메모리가 이벤트 수에 비례해 늘지 않게).
+
+    `capture_timeout_ms`는 관측 호출의 설정 기한(`run.capture_timeout_ms`, M1 2.6)이다.
     """
 
     deadline_ms: int = DEFAULT_DEADLINE_MS
@@ -98,6 +118,7 @@ class ExecOptions:
     run_id: str | None = None
     graph_prefix: str = ""
     collect_events: bool = True
+    capture_timeout_ms: int = DEFAULT_CAPTURE_TIMEOUT_MS
 
 
 @dataclass(frozen=True)
@@ -198,6 +219,7 @@ class Executor:
             deadline_ms=options.deadline_ms,
             emit_to=emit,
             on_setting=self.on_setting,
+            capture_timeout_ms=options.capture_timeout_ms,
         )
         workspace_record = program.workspace.config.get("record")
         policy = (
@@ -408,13 +430,18 @@ class _Run:
                     rt, frame, node, step, self._recompute(frame, node, nodedef)
                 )
                 rt.recorder.note_inputs(step, inputs, node_inputs_source(frame.graph.path, node.id))
+                window, inputs = self._common_window(frame, node, nodedef, inputs)
                 rt.check()
-                outcome = self._dispatch(frame, node, nodedef, step, inputs, end)
+                outcome = self._dispatch(frame, node, nodedef, step, inputs, end, window)
                 # 노드가 돌아온 뒤에도 본다: 실행 중 생긴 취소·기한 초과를 성공으로 확정하지 않는다
                 rt.check()
                 target = self._target(frame, node, outcome)
             except _Halt:
                 raise
+            except StaleObservation as exc:
+                # 입력 직전 재검증 실패: 출구 없는 처리되지 않은 fail (노드가 잡지 않는다)
+                detail = str(exc) or "관측 뒤 창이 바뀌어 입력하지 않았다"
+                raise _Unhandled(Cause(step, path, STALE_OBSERVATION, detail)) from exc
             except (Cancelled, Exception) as exc:
                 raise _Error(_cause_of(step, path, _with_reason(rt.cancel, exc))) from exc
         except _Halt as halt:
@@ -427,12 +454,14 @@ class _Run:
                     self._error_screenshot(node, step)
             elif isinstance(halt, _Unhandled):
                 end["message"] = halt.cause.message
-            self._finish(end, began)
+                if halt.cause.code == STALE_OBSERVATION and halt.cause.step == step:
+                    end["message"] = f"{STALE_OBSERVATION}: {halt.cause.message}"
+            self._finish(end, began, frame)
             raise
 
         if isinstance(outcome, _TerminalEnd):
             end.update(status="success", exit=None, outputs={})
-            self._finish(end, began)
+            self._finish(end, began, frame)
             default = {
                 "pass": "core.test.pass에 도달했다",
                 "fail": "core.test.fail에 도달했다",
@@ -443,10 +472,11 @@ class _Run:
             )
         if isinstance(outcome, FrameExit):
             end.update(status="success", exit=None, outputs=event_value(outcome.outputs))
-            self._finish(end, began)
+            self._finish(end, began, frame)
             return outcome
 
         frame.record(node.id, outcome.outputs)
+        rt.recorder.note_outputs(outcome.outputs)
         if nodedef.assertion and outcome.kind == "ok":
             self.assertions += 1
         if outcome.kind == "ok" and end["attempt"] > 1:
@@ -459,7 +489,7 @@ class _Run:
         )
         if outcome.kind == "fail" and outcome.message:
             end["message"] = outcome.message
-        self._finish(end, began)
+        self._finish(end, began, frame)
         if outcome.kind == "fail":
             cause = Cause(
                 step,
@@ -501,14 +531,30 @@ class _Run:
                 }
             )
 
-    def _finish(self, end: dict[str, Any], began: int) -> None:
-        artifacts, omitted = self.rt.recorder.close_step(end["step"])
+    def _finish(self, end: dict[str, Any], began: int, frame: Frame) -> None:
+        # 서브그래프 안 스텝의 마지막 캡처는 부른 스텝의 증거로 넘어간다 (실패 증거, M1 2.15)
+        artifacts, omitted = self.rt.recorder.close_step(end["step"], parent=frame.parent)
         if artifacts:
             end["artifacts"] = artifacts
         if omitted:
             end["omitted"] = omitted
         end["duration_ms"] = self.rt.clock.now_ms() - began
         self.rt.emit(end)
+
+    def _common_window(
+        self, frame: Frame, node: Node, nodedef: NodeDef, inputs: dict[str, Any]
+    ) -> tuple[WindowRef | None, dict[str, Any]]:
+        """공통 입력 `in.window`를 떼어 낸다 (M1 2.8). 노드 함수 인자·서브그래프 입력·서브그래프
+        출력으로 넘기지 않고, 그 스텝의 대상 창(서브그래프 호출이면 안쪽 프레임의 시작 창)으로만
+        쓴다. 노드가 `window`라는 입력을 직접 선언했으면 그 입력이다(떼지 않는다)."""
+        if COMMON_WINDOW.name not in inputs:
+            return None, inputs
+        pins = node_pins(self.rt.program, frame.graph, node, nodedef).inputs
+        if pins is None or pins.get(COMMON_WINDOW.name) is not COMMON_WINDOW:
+            return None, inputs
+        rest = dict(inputs)
+        window = rest.pop(COMMON_WINDOW.name)
+        return (window if isinstance(window, WindowRef) else None), rest
 
     def _dispatch(
         self,
@@ -518,16 +564,17 @@ class _Run:
         step: str,
         inputs: dict[str, Any],
         end: dict[str, Any],
+        window: WindowRef | None = None,
     ) -> _Outcome:
         engine = nodedef.engine
         if engine is None:
-            return self._attempt(frame, node, nodedef, step, inputs, end)
+            return self._attempt(frame, node, nodedef, step, inputs, end, window)
         if engine == "graph_entry":
             return Result("start", "ok", copy.deepcopy(dict(frame.inputs)))
         if engine == "graph_exit":
             return self._graph_exit(frame, node, inputs)
         if engine == "graph_call":
-            return self._graph_call(frame, node, step, inputs, end)
+            return self._graph_call(frame, node, step, inputs, end, window)
         if engine in _TERMINALS:
             reason = inputs.get("reason")
             if isinstance(reason, Secret):
@@ -545,15 +592,19 @@ class _Run:
         step: str,
         inputs: Mapping[str, Any],
         end: dict[str, Any],
+        window: WindowRef | None = None,
     ) -> Result:
         """노드 함수를 실행한다. 재시도 출구로 나오면 출구를 확정하기 전에 다시 부른다.
 
         입력은 스텝 시작 때 계산한 값을 시도마다 깊은 복사해 준다 (다시 계산하지 않고, 앞 시도가
         고친 값이 다음 시도로 새지 않는다). ctx는 시도마다 새로 (노드 기한이 새로 시작한다).
+        그 스텝의 대상 창(`window`, 없으면 스텝 시작 때 호출 프레임의 현재 창)은 시도 전에 한 번
+        정해 모든 시도가 같이 쓴다 — 앞 시도의 `set_window`는 다음 스텝부터다.
         """
         rt = self.rt
         policy = retry_policy(nodedef, node)
         config = nodedef.effective_config(node.config)
+        step_window = window if window is not None else frame.current_window
         attempt = 1
         while True:
             end["attempt"] = attempt
@@ -561,8 +612,11 @@ class _Run:
                 # 시도 사이(이벤트 싱크 처리 포함)에 생긴 취소·기한 초과면 다시 부르지 않는다
                 rt.check()
             began = rt.clock.now_ms()
-            ctx = StepContext(rt, frame, node, step, config)
+            ctx = StepContext(rt, frame, node, step, config, step_window)
             result = rt.invoker.invoke(nodedef, node, ctx, copy.deepcopy(dict(inputs)))
+            if ctx.stale is not None:
+                # 노드가 재검증 실패를 삼키고 끝났어도 그 입력은 하지 않았다
+                raise ctx.stale
             if not policy.again(result, attempt):
                 break
             # 시도 중에 생긴 취소·기한 초과는 중간 실패로 남기지 않고 이 스텝의 error로 전파한다
@@ -606,7 +660,13 @@ class _Run:
     # ------------------------------------------------------------ 그래프 경계
 
     def _graph_call(
-        self, frame: Frame, node: Node, step: str, inputs: Mapping[str, Any], end: dict[str, Any]
+        self,
+        frame: Frame,
+        node: Node,
+        step: str,
+        inputs: Mapping[str, Any],
+        end: dict[str, Any],
+        window: WindowRef | None = None,
     ) -> Result:
         callee = self.rt.program.callee(frame.graph.path, node.id)
         if callee is None:
@@ -637,7 +697,7 @@ class _Run:
             step,
             frame.depth + 1,
             values,
-            current_window=frame.current_window,
+            current_window=window if window is not None else frame.current_window,
             record_policy=policy,
         )
         done = self._run_frame(inner)

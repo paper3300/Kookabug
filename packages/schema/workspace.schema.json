@@ -1,5 +1,48 @@
 {
   "$defs": {
+    "OcrSettings": {
+      "additionalProperties": false,
+      "description": "OCR 엔진과 그 설정. engine이 없으면 rapidocr",
+      "properties": {
+        "det": {
+          "additionalProperties": false,
+          "description": "rapidocr 검출 크기 설정 (없는 값은 기본값)",
+          "properties": {
+            "limit_side_len": {
+              "description": "짧은 변이 이보다 작을 때만 검출 입력을 늘린다. 기본 64",
+              "minimum": 32,
+              "type": "integer"
+            },
+            "max_side_len": {
+              "description": "긴 변이 이보다 크면 줄인다. 기본 4096",
+              "minimum": 256,
+              "type": "integer"
+            },
+            "single_max_pixels": {
+              "description": "픽셀 수가 이 이하면 한 번에 검출, 넘으면 타일로 나눈다. 기본 655360",
+              "minimum": 65536,
+              "type": "integer"
+            },
+            "tile_overlap": {
+              "description": "이웃 타일이 겹치는 픽셀. 기본 128",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "tile_side": {
+              "description": "타일 한 변 (32의 배수). 기본 640",
+              "minimum": 256,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "engine": {
+          "enum": ["rapidocr"]
+        }
+      },
+      "title": "OcrSettings",
+      "type": "object"
+    },
     "PermissionRule": {
       "additionalProperties": false,
       "description": "권한 규칙 하나. rule은 \"도구\" 또는 \"도구(인자 패턴)\". 도구·인자 모두 glob(*, ?), 대소문자 구분",
@@ -92,11 +135,26 @@
     },
     "RunConditions": {
       "additionalProperties": false,
-      "description": "실행 조건 기본값 (밀리초). CLI 옵션이 이 값보다 우선한다",
+      "description": "실행 조건 기본값 (시간은 밀리초). CLI 옵션이 이 값보다 우선한다",
       "properties": {
+        "capture_timeout_ms": {
+          "description": "관측 호출(캡처·찾기·OCR) 하나의 설정 기한. 넘으면 capture_timeout. 없으면 2000",
+          "minimum": 1,
+          "type": "integer"
+        },
         "deadline_ms": {
           "description": "실행 전체 기한. 없으면 30분",
           "minimum": 1,
+          "type": "integer"
+        },
+        "frame_budget_mib": {
+          "description": "프레임 저장소 바이트 예산 (MiB). 넘으면 스텝 출력으로 나간 프레임부터 버린다. 없으면 512",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "frame_output_refs": {
+          "description": "스텝 출력(이미지·찾기 결과)으로 나간 프레임을 남기는 개수. 없으면 32",
+          "minimum": 0,
           "type": "integer"
         },
         "shutdown_grace_ms": {
@@ -139,6 +197,9 @@
   "properties": {
     "format": {
       "const": "kookabug.workspace/0"
+    },
+    "ocr": {
+      "$ref": "#/$defs/OcrSettings"
     },
     "permissions": {
       "$ref": "#/$defs/Permissions"

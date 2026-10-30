@@ -32,6 +32,10 @@
 - `testkit.ctx_sneak`·`testkit.ctx_replay`·`testkit.liar`: SDK 제한·실행 번호·결과 대조를 건너뛰는
   "믿을 수 없는 워커" 흉내
 
+M1 runner 연결 검사용 (`testkit.m1.*`, `testkit/m1.py`): 찾기·클릭·키·글자, 현재 창 보기·바꾸기,
+띄우기·창 기다리기, 기한 있는 캡처, 참조 캡처, 두 캡처 비교, 버린 프레임 쓰기, 선언 없는 찾기,
+ctx 한 바퀴(`tour`).
+
 그래프의 `plugins`에 `"testkit"`을 넣고 `registry_with_testkit()`으로 검증·실행한다.
 """
 

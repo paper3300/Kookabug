@@ -138,8 +138,11 @@ class FakeFrames:
     def register(self, capture_id: int, staged: StagedFrame, step: str) -> None:
         self.registered[capture_id] = (staged, step)
 
-    def close_step(self, step: str) -> None:
+    def close_step(self, step: str, *, parent: str | None = None) -> None:
         self.closed.append(step)
+
+    def mark_output(self, capture_id: int) -> None:
+        pass
 
     def encode_png(self, capture_id: int) -> bytes:
         self.encoded.append(capture_id)

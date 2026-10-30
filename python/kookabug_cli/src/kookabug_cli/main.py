@@ -1,7 +1,8 @@
 """`kookabug` 명령 (구현 계획 M0b 2.11, M1 2.11).
 
     kookabug run <그래프 경로> [--workspace DIR] [--profile 이름] [--set 키=JSON값]...
-                 [--deadline-ms N] [--json] [--quiet] [--plugin-module 모듈]...
+                 [--deadline-ms N] [--capture-timeout-ms N] [--json] [--quiet]
+                 [--plugin-module 모듈]...
     kookabug target test <target.json> (--window 제목 | --hwnd N | --image PNG) ...  (target_cmd)
     kookabug screen test <ID|파일> (--window 제목 | --hwnd N | --image PNG) ...       (screen_cmd)
 
@@ -9,8 +10,11 @@
 `step.end` 한 줄씩) → `RunHandle.wait()`(runner 종료 → 복구 경로) → 판정에 맞는 종료 코드.
 
 - 워크스페이스는 `--workspace` 또는 그래프 경로에서 위로 찾는다. `--set` 값은 JSON, 아니면 문자열
-- 기한: `--deadline-ms` → `kookabug.json`의 `run.deadline_ms` → 30분. 다른 시간 값은 `run` 블록 →
-  감독자 기본값
+- 기한: `--deadline-ms` → `kookabug.json`의 `run.deadline_ms` → 30분. 관측 기한은
+  `--capture-timeout-ms` → `run.capture_timeout_ms` → 2000. 다른 값(워커·마무리 유예, 프레임 예산
+  `frame_budget_mib`·출력 참조 수 `frame_output_refs`)은 `run` 블록 → 감독자 기본값
+- 플랫폼: 실제 Windows(WGC 캡처·SendInput 입력). 가짜 플랫폼은 숨은 테스트 옵션
+  `--platform-fake 사양.json`(`frames`·`scenario`·`input_log`·`hooks`)
 - 주체: `KOOKABUG_AGENT=<연결 ID>`가 있으면 사람 없는 에이전트(ask = 거부), 없으면 사람. CLI는
   에이전트에게 승인을 주지 않는다
 - Ctrl+C: 첫 번째는 취소 요청, 두 번째는 runner를 바로 끝낸다. 결과(기록 마무리)는 주 흐름의
@@ -33,7 +37,7 @@ from typing import Any, Final, NoReturn, Protocol, TextIO
 from kookabug_core.canonical import loads_strict
 from kookabug_core.permissions import Decision, Principal
 from kookabug_core.record import follow
-from kookabug_core.runner.spec import PlatformSpec
+from kookabug_core.runner.spec import DEFAULT_CAPTURE_TIMEOUT_MS, PlatformSpec
 from kookabug_core.service import (
     RUN_START_TOOL,
     ApprovalRequired,
@@ -60,6 +64,7 @@ __all__ = [
     "exit_code_of",
     "main",
     "parse_setting",
+    "resolve_capture_timeout",
     "resolve_deadline",
     "resolve_target",
     "start_options",
@@ -151,6 +156,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=_positive_int,
         metavar="N",
         help="실행 전체 기한 (기본: kookabug.json의 run.deadline_ms, 없으면 30분)",
+    )
+    run.add_argument(
+        "--capture-timeout-ms",
+        type=_positive_int,
+        metavar="N",
+        help="캡처·찾기·OCR 하나의 기한 (기본: kookabug.json의 run.capture_timeout_ms, 없으면 "
+        "2000)",
     )
     run.add_argument("--json", action="store_true", help="결과 JSON 한 개만 출력한다")
     run.add_argument("--quiet", action="store_true", help="스텝 진행 줄을 출력하지 않는다")
@@ -254,19 +266,39 @@ def read_platform_fake(path: str) -> PlatformSpec:
     if not isinstance(data, dict):
         raise UsageError(f"--platform-fake {path}은(는) JSON 객체여야 한다")
     spec: dict[str, Any] = data
+    scenario = spec.get("scenario")
+    if scenario is not None:
+        # 장면 표 경로는 이 사양 파일 기준 (runner는 다른 작업 폴더에서 돈다)
+        scenario = str((Path(path).parent / str(scenario)).resolve())
     return PlatformSpec(
         "fake",
         frames=tuple(spec.get("frames", ())),
         input_log=spec.get("input_log"),
         hooks=spec.get("hooks", {}),
+        scenario=scenario,
     )
+
+
+def resolve_capture_timeout(cli: int | None, conditions: RunConditions) -> int:
+    """`--capture-timeout-ms` → `kookabug.json`의 `run.capture_timeout_ms` → 2000."""
+    if cli is not None:
+        return cli
+    if conditions.capture_timeout_ms is not None:
+        return conditions.capture_timeout_ms
+    return DEFAULT_CAPTURE_TIMEOUT_MS
 
 
 def start_options(args: argparse.Namespace, ws: Workspace) -> StartOptions:
     conditions = ws.run_conditions()
     timing = {
         name: value
-        for name in ("worker_cancel_grace_ms", "worker_start_timeout_ms", "shutdown_grace_ms")
+        for name in (
+            "worker_cancel_grace_ms",
+            "worker_start_timeout_ms",
+            "shutdown_grace_ms",
+            "frame_budget_mib",
+            "frame_output_refs",
+        )
         if (value := getattr(conditions, name)) is not None
     }
     return StartOptions(
@@ -274,9 +306,13 @@ def start_options(args: argparse.Namespace, ws: Workspace) -> StartOptions:
         profile=args.profile,
         settings=dict(args.settings),
         plugin_modules=tuple(args.plugin_modules),
+        # 기본은 실제 Windows 플랫폼. 가짜 플랫폼은 숨은 테스트 옵션으로만
         platform=(
-            PlatformSpec() if args.platform_fake is None else read_platform_fake(args.platform_fake)
+            PlatformSpec("windows")
+            if args.platform_fake is None
+            else read_platform_fake(args.platform_fake)
         ),
+        capture_timeout_ms=resolve_capture_timeout(args.capture_timeout_ms, conditions),
         **timing,
     )
 

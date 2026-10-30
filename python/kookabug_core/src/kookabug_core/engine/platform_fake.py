@@ -10,15 +10,27 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Final
 
-from kookabug_core.record.artifacts import StagedFrame, artifact_path, image_artifact_path
+from kookabug_core.record.artifacts import (
+    CaptureMeta,
+    StagedFrame,
+    artifact_path,
+    image_artifact_path,
+)
 from kookabug_sdk.testing import FakeInput
 from kookabug_sdk.types import Image, Rect, WindowRef
 
-__all__ = ["FakePlatform", "MemoryArtifacts"]
+if TYPE_CHECKING:
+    from kookabug_core.engine.context import ObservationLimits
+
+__all__ = ["FAKE_BACKEND", "FakePlatform", "MemoryArtifacts", "stage_frame"]
+
+FAKE_BACKEND: Final = "fake"
+"""가짜 플랫폼 캡처의 캡처 방식 이름 (`Match.frame_info.backend`)."""
 
 
 class FakePlatform:
@@ -58,32 +70,71 @@ class FakePlatform:
         return self._next(window, region)[1]
 
     def capture_staged(
-        self, window: WindowRef | None, region: Rect | None
+        self,
+        window: WindowRef | None,
+        region: Rect | None,
+        limits: ObservationLimits | None = None,
     ) -> tuple[Image, StagedFrame]:
         """프레임을 픽셀로 풀어 저장소용으로 준다. 같은 프레임·같은 영역이면 같은 키다."""
         if self.decode is None:
             raise RuntimeError("FakePlatform에 decode가 없어 프레임을 저장소에 둘 수 없다")
         index, frame = self._next(window, region)
-        pixels = self._decoded.get(index)
-        if pixels is None:
-            if frame.data is not None:
-                data = frame.data
-            elif frame.path is not None:
-                data = frame.path.read_bytes()
-            else:
-                raise RuntimeError(f"가짜 프레임 {index}에 바이트·파일이 없다")
-            pixels = self.decode(data)
-            self._decoded[index] = pixels
-        box = None
-        if region is not None:
-            box = (region.x, region.y, region.width, region.height)
-            # 복사본: 뷰는 프레임 전체 할당을 붙잡아 저장소 예산을 속인다
-            pixels = pixels[
-                region.y : region.y + region.height, region.x : region.x + region.width
-            ].copy()
-        height, width = int(pixels.shape[0]), int(pixels.shape[1])
-        image = Image(width=width, height=height, frame=frame.frame)
-        return image, StagedFrame(("fake", index, box), pixels)
+        return stage_frame(
+            ("fake", id(self), index),
+            frame,
+            self._decoded,
+            index,
+            self.decode,
+            region,
+            window=window,
+        )
+
+
+def stage_frame(
+    key: object,
+    frame: Image,
+    cache: dict[int, Any],
+    index: int,
+    decode: Callable[[bytes], Any],
+    region: Rect | None,
+    *,
+    window: WindowRef | None = None,
+    dpi: int = 96,
+) -> tuple[Image, StagedFrame]:
+    """가짜 프레임 하나를 픽셀로 풀어(`cache[index]`에 한 번만) 저장소용으로 만든다. 같은
+    `key`·같은 영역이면 같은 동일성 키다. 관측 조건은 프레임 전체 크기·`dpi`·캡처 방식 `fake`."""
+    pixels = cache.get(index)
+    if pixels is None:
+        if frame.data is not None:
+            data = frame.data
+        elif frame.path is not None:
+            data = frame.path.read_bytes()
+        else:
+            raise RuntimeError(f"가짜 프레임 {index}에 바이트·파일이 없다")
+        pixels = decode(data)
+        cache[index] = pixels
+    full = (int(pixels.shape[1]), int(pixels.shape[0]))
+    box = None
+    origin = (0, 0)
+    if region is not None:
+        box = (region.x, region.y, region.width, region.height)
+        origin = (region.x, region.y)
+        # 복사본: 뷰는 프레임 전체 할당을 붙잡아 저장소 예산을 속인다
+        pixels = pixels[
+            region.y : region.y + region.height, region.x : region.x + region.width
+        ].copy()
+    height, width = int(pixels.shape[0]), int(pixels.shape[1])
+    image = Image(width=width, height=height, frame=frame.frame)
+    meta = CaptureMeta(
+        client_size=full,
+        dpi=dpi,
+        origin=origin,
+        backend=FAKE_BACKEND,
+        window=window,
+        observed_at=time.time(),
+        frame=frame.frame,
+    )
+    return image, StagedFrame((key, box), pixels, meta)
 
 
 class MemoryArtifacts:

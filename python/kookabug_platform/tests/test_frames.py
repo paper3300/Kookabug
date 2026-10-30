@@ -274,8 +274,8 @@ def test_fake_platform_png_frames_go_to_store_and_saved_as_png(tmp_path: Path) -
     image = end["outputs"]["image"]
     assert (image["width"], image["height"], image["data"], image["path"]) == (30, 20, None, None)
     assert image["capture_id"] == 1
-    # 스텝이 닫혀 저장소는 비었다 (출력 참조는 T9가 건다)
-    assert store.held() == set()
+    # 스텝은 닫혔지만 출력(image 핀)으로 나간 캡처라 출력 참조 등급으로 남는다 (T9)
+    assert store.held() == {1}
 
 
 def test_fake_platform_staged_region_and_identity() -> None:

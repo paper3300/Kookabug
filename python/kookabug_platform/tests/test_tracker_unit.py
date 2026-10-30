@@ -84,6 +84,43 @@ def test_binding_created_on_first_use_of_unbound_ref(api: FakeWindowApi) -> None
     assert info.value.code == WINDOW_GONE
 
 
+def test_reference_forms_of_same_live_window_share_binding(api: FakeWindowApi) -> None:
+    """부분 참조·완전한 참조가 같은 살아 있는 창이면 바인딩 하나 (T9 2차 검수 2). 창이 닫힌 뒤
+    처음 쓰는 참조는 새 창의 새 바인딩, 앞서 쓴 참조는 window_gone 그대로."""
+    tracker = WindowTracker(api)
+    created = api.process_created(PID)
+    assert created is not None
+    partial = tracker.resolve(HWND)
+    full = tracker.resolve(HWND, pid=PID, process_created=created)
+    assert full == partial
+    assert tracker.resolve(HWND, pid=PID) == partial
+    tracker.notify_destroyed(HWND)
+    with pytest.raises(PlatformError):
+        tracker.resolve(HWND)  # 앞서 쓴 참조: 그 창은 닫혔다
+    fresh = tracker.resolve(HWND, process_created=created)  # 처음 쓰는 표현: 지금 창의 새 바인딩
+    assert fresh.binding_id != partial.binding_id
+    tracker.check(fresh)
+
+
+def test_acquire_reuses_live_binding_after_recreate(api: FakeWindowApi) -> None:
+    """새로 찾은 창(`acquire`)은 그 살아 있는 창의 바인딩을 재사용한다. 같은 HWND로 다시 만든 창을
+    여러 번 찾아도 하나, 옛 바인딩·참조는 window_gone (T9 3차 검수)."""
+    tracker = WindowTracker(api)
+    created = api.process_created(PID)
+    assert created is not None
+    first = tracker.acquire(HWND)
+    assert tracker.acquire(HWND) == first
+    assert tracker.resolve(HWND, pid=PID, process_created=created) == first
+    tracker.notify_destroyed(HWND)
+    api.destroy(HWND)
+    api.add(HWND, PID, title="Game")
+    again = tracker.acquire(HWND)
+    assert again != first and tracker.acquire(HWND) == again
+    gone(tracker, first)
+    with pytest.raises(PlatformError):
+        tracker.resolve(HWND, pid=PID, process_created=created)  # 앞서 쓴 참조는 옛 창
+
+
 def test_ref_of_other_process_is_gone(api: FakeWindowApi) -> None:
     tracker = WindowTracker(api)
     # 참조한 PID·생성 시각과 지금 그 hwnd의 프로세스가 다르다 (hwnd 재사용)

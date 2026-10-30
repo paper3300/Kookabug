@@ -53,7 +53,7 @@ from kookabug_sdk.context import (
     WindowsApi,
 )
 from kookabug_sdk.decorators import NodeFunction
-from kookabug_sdk.errors import ObservationTimeout, StaleObservation
+from kookabug_sdk.errors import ObservationTimeout, RunnerError, StaleObservation
 from kookabug_sdk.pipe import connect
 from kookabug_sdk.result import NodeContractError, Result
 from kookabug_sdk.rpc import (
@@ -363,6 +363,9 @@ def _remote_error(exc: RpcError) -> BaseException:
     if exc.code == STALE_OBSERVATION:
         return StaleObservation(exc.message)
     data = exc.data if isinstance(exc.data, dict) else {}
+    code = data.get("code")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+    if data.get("type") == "EngineError" and isinstance(code, str):  # pyright: ignore[reportUnknownMemberType]
+        return RunnerError(code, exc.message)
     kind = _REMOTE_ERRORS.get(str(data.get("type")), RuntimeError)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
     return kind(exc.message)
 
@@ -559,10 +562,14 @@ def error_reply(exc: BaseException) -> ErrorReply:
         reason = "deadline" if isinstance(exc, RunDeadline) else "cancelled"
         return ErrorReply(CANCELLED, message or "실행이 취소됐다", {"reason": reason})
     data: dict[str, Any] = {"type": type(exc).__name__}
+    if isinstance(exc, StaleObservation):
+        return ErrorReply(STALE_OBSERVATION, message or "관측 뒤 창이 바뀌어 입력하지 않았다", data)
     if isinstance(exc, ContextViolation):
         return ErrorReply(CONTEXT_VIOLATION, message or type(exc).__name__, data)
     if isinstance(exc, NodeContractError):
         return ErrorReply(NODE_CONTRACT, message or type(exc).__name__, data)
+    if isinstance(exc, RunnerError):
+        data["code"] = exc.code
     data["message"] = message
     data["traceback"] = "".join(traceback.format_exception(exc))
     text = f"{type(exc).__name__}: {message}" if message else type(exc).__name__

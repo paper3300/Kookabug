@@ -262,8 +262,11 @@ class WindowTracker:
         - `binding`이 이 추적기의 것이고 hwnd가 같으면 그 바인딩 (죽었으면 `window_gone`). 참조가
           준 PID·생성 시각이 그 바인딩과 다르면 `window_gone` — 다른 실행이 우연히 같은 ID를 쓴
           참조(같은 hwnd를 다른 프로세스가 재사용)를 이 실행의 창으로 받지 않는다
-        - 아니면(바인딩 없음·다른 실행의 ID) `(hwnd, pid, process_created)` 참조로 처음 쓸 때 만든
-          바인딩. 처음이면 새로 만들고, 참조의 PID·생성 시각이 지금 창과 다르면 `window_gone`
+        - 아니면(바인딩 없음·다른 실행의 ID) `(hwnd, pid, process_created)` 참조로 처음 쓸 때 정한
+          바인딩. 처음이면 **같은 살아 있는 창의 바인딩이 이미 있으면 그것**(참조 표현이 달라도 —
+          부분 참조·완전한 참조 — 같은 창 수명은 바인딩 하나), 없으면 새로 만든다. 참조의 PID·생성
+          시각이 지금 창과 다르면 `window_gone`. 같은 참조를 다시 쓰면 처음 정한 바인딩이다(그사이
+          닫혔으면 `window_gone`)
         """
         known = self.get(binding) if binding else None
         if known is not None and known.hwnd == hwnd:
@@ -284,6 +287,12 @@ class WindowTracker:
         if found is not None:
             self.check(found)
             return found
+        alias = self._live_binding(hwnd, pid, process_created)
+        if alias is not None:
+            self.check(alias)
+            with self._lock:
+                self._unbound[key] = alias.binding_id
+            return alias
         made = self.bind(hwnd)
         if (pid and made.pid != pid) or (
             process_created and made.process_created != process_created
@@ -299,6 +308,38 @@ class WindowTracker:
         with self._lock:
             self._unbound[key] = made.binding_id
         return made
+
+    def acquire(self, hwnd: int) -> WindowBinding:
+        """지금 그 hwnd의 창을 **새로 찾았을 때**(`windows.find`·`process.find_window`)의 바인딩:
+        그 살아 있는 창의 바인딩이 이미 있으면 그것, 없으면 새로 만든다. 같은 HWND로 다시 만든
+        창을 여러 번 찾아도 바인딩 하나다. 앞서 쓴 참조를 풀 때는 `resolve`(처음 정한 창이 죽었으면
+        `window_gone`)."""
+        alias = self._live_binding(hwnd, 0, 0)
+        if alias is not None:
+            self.check(alias)
+            return alias
+        return self.bind(hwnd)
+
+    def _live_binding(self, hwnd: int, pid: int, process_created: int) -> WindowBinding | None:
+        """지금 그 hwnd 창(같은 PID·생성 시각)의 살아 있는 바인딩. 참조가 준 PID·생성 시각이 지금
+        창과 다르면 None (새로 만들어 `window_gone`으로 끝나게 둔다)."""
+        api = self._api
+        if not api.is_window(hwnd):
+            return None
+        now_pid = api.window_pid(hwnd)
+        now_created = api.process_created(now_pid)
+        if (pid and pid != now_pid) or (process_created and process_created != now_created):
+            return None
+        with self._lock:
+            ids = sorted(self._by_hwnd.get(hwnd, ()))
+            live = [
+                self._bindings[i]
+                for i in ids
+                if i not in self._dead
+                and self._bindings[i].pid == now_pid
+                and self._bindings[i].process_created == now_created
+            ]
+        return live[0] if live else None
 
     def is_alive(self, binding: WindowBinding) -> bool:
         try:

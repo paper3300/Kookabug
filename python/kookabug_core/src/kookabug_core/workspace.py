@@ -62,12 +62,16 @@ class RunOptions:
 
 @dataclass(frozen=True, slots=True)
 class RunConditions:
-    """`kookabug.json`의 `run`: 실행 조건 기본값(밀리초). 없는 값은 None (감독자 기본값을 쓴다)."""
+    """`kookabug.json`의 `run`: 실행 조건 기본값(시간은 밀리초). 없는 값은 None (감독자 기본값을
+    쓴다)."""
 
     deadline_ms: int | None = None
     worker_cancel_grace_ms: int | None = None
     worker_start_timeout_ms: int | None = None
     shutdown_grace_ms: int | None = None
+    capture_timeout_ms: int | None = None
+    frame_budget_mib: int | None = None
+    frame_output_refs: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +175,9 @@ class Workspace:
             worker_cancel_grace_ms=run.get("worker_cancel_grace_ms"),
             worker_start_timeout_ms=run.get("worker_start_timeout_ms"),
             shutdown_grace_ms=run.get("shutdown_grace_ms"),
+            capture_timeout_ms=run.get("capture_timeout_ms"),
+            frame_budget_mib=run.get("frame_budget_mib"),
+            frame_output_refs=run.get("frame_output_refs"),
         )
 
     def profile_names(self) -> list[str]:

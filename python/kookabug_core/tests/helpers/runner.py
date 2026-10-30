@@ -97,6 +97,11 @@ class RunnerHarness:
     profile: str | None = None
     lease_name: str | None = None
     state_dir: Path | None = None
+    scenario: str | None = None
+    """가짜 장면 전이 표 (`platform.scenario`, 있으면 `frames` 대신)."""
+    windows: bool = False
+    """`platform.kind: windows` (실제 캡처·입력)."""
+    capture_timeout_ms: int = 2_000
 
     # 실행 중 상태
     handle: RunHandle | None = None
@@ -189,13 +194,16 @@ class RunnerHarness:
         return direct_env(env)
 
     def platform(self) -> PlatformSpec:
-        if not self.fake_input and not self.frames:
+        if self.windows:
+            return PlatformSpec("windows", hooks=self.hooks)
+        if not self.fake_input and not self.frames and self.scenario is None:
             return PlatformSpec("none")
         return PlatformSpec(
             "fake",
             frames=tuple(self.frames),
             input_log=str(self.input_log) if self.fake_input else None,
             hooks=self.hooks,
+            scenario=self.scenario,
         )
 
     def options(self) -> StartOptions:
@@ -210,6 +218,7 @@ class RunnerHarness:
             worker_start_timeout_ms=self.worker_start_timeout_ms,
             shutdown_grace_ms=self.shutdown_grace_ms,
             self_kill_margin_ms=self.self_kill_margin_ms,
+            capture_timeout_ms=self.capture_timeout_ms,
         )
 
     # ------------------------------------------------------------ 시작

@@ -10,6 +10,25 @@ from typing import Any, Literal
 from kookabug_sdk import Config, Context, DynamicExits, Exit, Output, Result, Retry, node
 from kookabug_sdk.types import Image, Match, Point, Rect, Secret
 
+# 워커는 이 모듈의 이름공간에서 노드를 모은다 (`collect_plugins`): M1 노드도 여기 이름으로 둔다
+from testkit.m1 import M1_NODES
+from testkit.m1 import capture_ref as m1_capture_ref  # noqa: F401
+from testkit.m1 import capture_wait as m1_capture_wait  # noqa: F401
+from testkit.m1 import click as m1_click  # noqa: F401
+from testkit.m1 import diff as m1_diff  # noqa: F401
+from testkit.m1 import expired as m1_expired  # noqa: F401
+from testkit.m1 import find as m1_find  # noqa: F401
+from testkit.m1 import find_click as m1_find_click  # noqa: F401
+from testkit.m1 import find_window_wait as m1_find_window_wait  # noqa: F401
+from testkit.m1 import key as m1_key  # noqa: F401
+from testkit.m1 import launch as m1_launch  # noqa: F401
+from testkit.m1 import set_window as m1_set_window  # noqa: F401
+from testkit.m1 import switch_click as m1_switch_click  # noqa: F401
+from testkit.m1 import tour as m1_tour  # noqa: F401
+from testkit.m1 import type_text as m1_type_text  # noqa: F401
+from testkit.m1 import vision_sneak as m1_vision_sneak  # noqa: F401
+from testkit.m1 import window as m1_window  # noqa: F401
+
 PLUGIN_ID = "testkit"
 PLUGIN_VERSION = "0"
 
@@ -468,4 +487,5 @@ NODES = (
     ctx_sneak,
     ctx_replay,
     liar,
+    *M1_NODES,
 )

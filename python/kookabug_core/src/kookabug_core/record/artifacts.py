@@ -23,19 +23,20 @@ from __future__ import annotations
 import json
 import re
 import shutil
-from collections.abc import Callable, Hashable, Mapping
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Final, Protocol
+from typing import Any, Final, Protocol, cast
 
 from kookabug_core.record.policy import OmitReason, RecordPolicy, StepPolicy, VideoMode, find_secret
 from kookabug_sdk import Secret
-from kookabug_sdk.types import Image
+from kookabug_sdk.types import Image, Match, WindowRef
 
 __all__ = [
     "ERROR_SCREENSHOT",
     "STEPS_DIR",
     "ArtifactStore",
+    "CaptureMeta",
     "FileArtifacts",
     "FrameRegistry",
     "Recorder",
@@ -63,14 +64,34 @@ class ArtifactStore(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class CaptureMeta:
+    """캡처 하나의 관측 조건 (찾기·OCR·재검증용, M1 2.5).
+
+    `client_size`·`dpi`는 캡처 순간 대상 창의 것, `origin`은 픽셀 (0, 0)의 클라이언트 좌표(영역
+    캡처면 영역 왼쪽 위), `backend`는 캡처 방식(`wgc`·`fake`), `window`는 캡처한 창(SDK 참조),
+    `observed_at`은 관측 시각(벽시계 초), `frame`은 프레임 번호.
+    """
+
+    client_size: tuple[int, int]
+    dpi: int = 96
+    origin: tuple[int, int] = (0, 0)
+    backend: str = "image"
+    window: WindowRef | None = None
+    observed_at: float | None = None
+    frame: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class StagedFrame:
     """플랫폼이 캡처한 픽셀과 그 동일성 키 — 저장소에 등록하기 전 (M1 2.7).
 
     `key`가 같으면 같은 픽셀이다(같은 프레임·같은 자르기). 코어는 `pixels`를 열지 않는다.
+    `meta`는 그 캡처의 관측 조건이다 (저장소가 캡처 번호와 함께 둔다).
     """
 
     key: Hashable
     pixels: Any = field(repr=False)
+    meta: CaptureMeta | None = field(default=None, repr=False, compare=False)
 
 
 class FrameRegistry(Protocol):
@@ -80,8 +101,13 @@ class FrameRegistry(Protocol):
         """캡처 하나를 그 스텝의 프레임으로 등록한다."""
         ...
 
-    def close_step(self, step: str) -> None:
-        """스텝이 닫혔다: 그 스텝 증거 등급을 푼다."""
+    def close_step(self, step: str, *, parent: str | None = None) -> None:
+        """스텝이 닫혔다: 그 스텝 증거 등급을 푼다. `parent`(부른 스텝)를 주면 마지막 캡처를 그
+        스텝의 증거로 넘긴다 (실패 증거, M1 2.15)."""
+        ...
+
+    def mark_output(self, capture_id: int) -> None:
+        """스텝 출력(이미지 핀·`Match`)으로 나간 캡처 (출력 참조 등급)."""
         ...
 
     def encode_png(self, capture_id: int) -> bytes:
@@ -198,14 +224,31 @@ class Recorder:
         record.policy = StepPolicy(record.policy.policy, where + found)
         self._policies[step] = record.policy
 
-    def close_step(self, step: str) -> tuple[list[str], list[dict[str, Any]]]:
-        """스텝을 닫고 `(artifacts, omitted)`를 돌려준다. 스텝의 마지막 캡처는 놓는다."""
+    def close_step(
+        self, step: str, *, parent: str | None = None
+    ) -> tuple[list[str], list[dict[str, Any]]]:
+        """스텝을 닫고 `(artifacts, omitted)`를 돌려준다. 스텝의 마지막 캡처는 놓는다 — `parent`
+        (부른 스텝)를 주면 프레임 저장소에서 그 스텝의 증거로 넘긴다."""
         record = self._open.pop(step, None)
         if self.frames is not None:
-            self.frames.close_step(step)
+            self.frames.close_step(step, parent=parent if parent in self._open else None)
         if record is None:
             return [], []
         return record.artifacts, record.omitted
+
+    def note_outputs(self, outputs: Mapping[str, Any]) -> None:
+        """스텝 출력에 든 캡처(이미지·`Match`의 `capture_id`)를 출력 참조로 표시한다. 이미 버린
+        캡처는 건너뛴다(출력은 그대로 남고, 나중에 쓰면 `frame_expired`)."""
+        if self.frames is None:
+            return
+        # engine 패키지가 이 모듈을 import한다 (_masked_text와 같은 이유로 늦게)
+        from kookabug_core.engine.errors import EngineError
+
+        for capture_id in _capture_ids(outputs):
+            try:
+                self.frames.mark_output(capture_id)
+            except EngineError:
+                continue
 
     def policy(self, step: str) -> StepPolicy:
         return self._policies[step]
@@ -287,6 +330,24 @@ class Recorder:
         """이 스텝 구간의 영상을 남겨도 되는가 (`failed_only`는 실행이 실패했을 때만)."""
         mode = self.video_policy(step)
         return mode == "on" or (mode == "failed_only" and run_failed)
+
+
+def _capture_ids(value: Any) -> list[int]:
+    found: list[int] = []
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, Image):
+            if item.capture_id is not None:
+                found.append(item.capture_id)
+        elif isinstance(item, Match):
+            if item.frame_info is not None and item.frame_info.capture_id is not None:
+                found.append(item.frame_info.capture_id)
+        elif isinstance(item, Mapping):
+            stack.extend(cast(Mapping[Any, Any], item).values())
+        elif isinstance(item, list | tuple):
+            stack.extend(cast(Sequence[Any], item))
+    return found
 
 
 def _masked_text(value: Any) -> str:

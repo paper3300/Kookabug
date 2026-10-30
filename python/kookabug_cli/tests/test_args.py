@@ -98,6 +98,45 @@ def test_deadline_precedence(tmp_path: Path) -> None:
     assert cli.start_options(parse("a.graph.json"), bad).deadline_ms == DEFAULT_DEADLINE_MS
 
 
+def test_default_platform_windows(tmp_path: Path) -> None:
+    ws = Workspace.open(workspace(tmp_path / "ws"))
+    assert cli.start_options(parse("a.graph.json"), ws).platform.kind == "windows"
+    # 숨은 테스트 옵션 --platform-fake: 가짜 플랫폼, 장면 표 경로는 사양 파일 기준
+    spec = write(tmp_path / "fake" / "platform.json", {"scenario": "frames/scenario.json"})
+    platform = cli.start_options(parse("a.graph.json", "--platform-fake", str(spec)), ws).platform
+    assert platform.kind == "fake"
+    assert platform.scenario == str((tmp_path / "fake" / "frames" / "scenario.json").resolve())
+
+
+def test_capture_timeout_precedence(tmp_path: Path) -> None:
+    assert cli.resolve_capture_timeout(None, RunConditions()) == 2000
+    assert cli.resolve_capture_timeout(None, RunConditions(capture_timeout_ms=750)) == 750
+    assert cli.resolve_capture_timeout(80, RunConditions(capture_timeout_ms=750)) == 80
+    ws = Workspace.open(workspace(tmp_path / "ws", run={"capture_timeout_ms": 1500}))
+    assert ws.diagnostics == []
+    assert cli.start_options(parse("a.graph.json"), ws).capture_timeout_ms == 1500
+    options = cli.start_options(parse("a.graph.json", "--capture-timeout-ms", "300"), ws)
+    assert options.capture_timeout_ms == 300
+    with pytest.raises(SystemExit):
+        parse("a.graph.json", "--capture-timeout-ms", "0")
+
+
+def test_frame_budget_settings(tmp_path: Path) -> None:
+    ws = Workspace.open(workspace(tmp_path / "default"))
+    options = cli.start_options(parse("a.graph.json"), ws)
+    assert (options.frame_budget_mib, options.frame_output_refs) == (512, 32)
+    run = {"frame_budget_mib": 64, "frame_output_refs": 4}
+    ws = Workspace.open(workspace(tmp_path / "ws", run=run, ocr={"engine": "rapidocr"}))
+    assert ws.diagnostics == []
+    options = cli.start_options(parse("a.graph.json"), ws)
+    assert (options.frame_budget_mib, options.frame_output_refs) == (64, 4)
+    # 틀린 값은 형식 검사에서 진단
+    bad = Workspace.open(workspace(tmp_path / "bad", run={"frame_budget_mib": 0}))
+    assert [d.code for d in bad.diagnostics]
+    bad_ocr = Workspace.open(workspace(tmp_path / "bad_ocr", ocr={"engine": "other"}))
+    assert [d.code for d in bad_ocr.diagnostics]
+
+
 @pytest.mark.parametrize(
     "argv",
     [

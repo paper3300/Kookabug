@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING, Final
 import cv2
 import numpy as np
 
-from kookabug_core.record.artifacts import StagedFrame
+from kookabug_core.record.artifacts import CaptureMeta, StagedFrame
 from kookabug_platform.errors import FRAME_EXPIRED, PlatformError
 
 if TYPE_CHECKING:
@@ -95,6 +95,7 @@ class _Entry:
 @dataclass(eq=False, slots=True)
 class _Ref:
     key: Hashable
+    meta: CaptureMeta | None = None
     working: int = 0
     recent: int = 0
     """이 캡처를 최근 목록에 둔 열린 스텝 수."""
@@ -152,7 +153,7 @@ class FrameStore:
                 self._entries[staged.key] = entry
                 self.bytes_held += entry.nbytes
             entry.refs.add(capture_id)
-            self._refs[capture_id] = _Ref(staged.key)
+            self._refs[capture_id] = _Ref(staged.key, staged.meta)
             self._push_recent(step, capture_id)
             self._enforce_budget()
             self.peak_bytes = max(self.peak_bytes, self.bytes_held)
@@ -249,6 +250,11 @@ class FrameStore:
         """픽셀 동일성 키. 두 캡처의 키가 같으면 같은 픽셀이다."""
         with self._lock:
             return self._ref(capture_id).key
+
+    def meta(self, capture_id: int) -> CaptureMeta | None:
+        """그 캡처의 관측 조건 (등록할 때 받은 것). 버렸으면 `frame_expired`."""
+        with self._lock:
+            return self._ref(capture_id).meta
 
     def encode_png(self, capture_id: int) -> bytes:
         with self.pinned(capture_id) as (pixels,):

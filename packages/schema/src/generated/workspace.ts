@@ -16,6 +16,7 @@ export type SettingKey = string;
  */
 export interface Workspace {
   format: "kookabug.workspace/0";
+  ocr?: OcrSettings;
   permissions?: Permissions;
   profiles?: {
     [k: string]: Profile | undefined;
@@ -24,6 +25,40 @@ export interface Workspace {
   retention?: Retention;
   run?: RunConditions;
   settings?: Settings;
+}
+/**
+ * OCR 엔진과 그 설정. engine이 없으면 rapidocr
+ *
+ * This interface was referenced by `Workspace`'s JSON-Schema
+ * via the `definition` "OcrSettings".
+ */
+export interface OcrSettings {
+  /**
+   * rapidocr 검출 크기 설정 (없는 값은 기본값)
+   */
+  det?: {
+    /**
+     * 짧은 변이 이보다 작을 때만 검출 입력을 늘린다. 기본 64
+     */
+    limit_side_len?: number;
+    /**
+     * 긴 변이 이보다 크면 줄인다. 기본 4096
+     */
+    max_side_len?: number;
+    /**
+     * 픽셀 수가 이 이하면 한 번에 검출, 넘으면 타일로 나눈다. 기본 655360
+     */
+    single_max_pixels?: number;
+    /**
+     * 이웃 타일이 겹치는 픽셀. 기본 128
+     */
+    tile_overlap?: number;
+    /**
+     * 타일 한 변 (32의 배수). 기본 640
+     */
+    tile_side?: number;
+  };
+  engine?: "rapidocr";
 }
 /**
  * 에이전트 권한. 이 파일(kookabug.json)의 툴셋·프리셋 값은 상한이다 (사용자·프로젝트 계층이 더 풀 수 없다)
@@ -86,16 +121,28 @@ export interface Retention {
   passed_days?: number;
 }
 /**
- * 실행 조건 기본값 (밀리초). CLI 옵션이 이 값보다 우선한다
+ * 실행 조건 기본값 (시간은 밀리초). CLI 옵션이 이 값보다 우선한다
  *
  * This interface was referenced by `Workspace`'s JSON-Schema
  * via the `definition` "RunConditions".
  */
 export interface RunConditions {
   /**
+   * 관측 호출(캡처·찾기·OCR) 하나의 설정 기한. 넘으면 capture_timeout. 없으면 2000
+   */
+  capture_timeout_ms?: number;
+  /**
    * 실행 전체 기한. 없으면 30분
    */
   deadline_ms?: number;
+  /**
+   * 프레임 저장소 바이트 예산 (MiB). 넘으면 스텝 출력으로 나간 프레임부터 버린다. 없으면 512
+   */
+  frame_budget_mib?: number;
+  /**
+   * 스텝 출력(이미지·찾기 결과)으로 나간 프레임을 남기는 개수. 없으면 32
+   */
+  frame_output_refs?: number;
   /**
    * 취소·마무리를 시작한 runner가 끝나기를 기다리는 시간. 넘으면 감독자가 끝낸다. 없으면 5000
    */

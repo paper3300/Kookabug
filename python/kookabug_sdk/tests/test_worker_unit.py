@@ -12,6 +12,7 @@ import pytest
 
 from kookabug_sdk import rpc
 from kookabug_sdk.context import Cancelled, ContextViolation
+from kookabug_sdk.errors import RunnerError, StaleObservation
 from kookabug_sdk.result import NodeContractError
 from kookabug_sdk.schema import FORMAT
 from kookabug_sdk.types import Image, Point, Secret
@@ -292,3 +293,27 @@ def test_error_reply_mapping() -> None:
     assert reply.data["type"] == "RuntimeError"
     assert "Traceback" in reply.data["traceback"] and "터짐" in reply.data["traceback"]
     assert error_reply(KeyError()).message == "KeyError"
+
+
+def test_m1_error_reply_and_remote_error_mapping() -> None:
+    # 노드가 잡지 않은 재검증 실패 → stale_observation (runner가 처리되지 않은 fail로)
+    stale = error_reply(StaleObservation("창이 바뀌었다"))
+    assert (stale.code, stale.data["type"]) == (rpc.STALE_OBSERVATION, "StaleObservation")
+    # 노드가 잡지 않은 runner 오류 코드는 그 코드를 싣는다 (runner가 자기가 낸 코드인지 대조)
+    refused = error_reply(RunnerError("frame_expired", "버린 프레임"))
+    assert (refused.code, refused.data["type"], refused.data["code"]) == (
+        rpc.NODE_ERROR,
+        "RunnerError",
+        "frame_expired",
+    )
+    # runner의 EngineError 응답 → RunnerError(code)
+    runner = FakeRunner(
+        {
+            "ctx.setting": rpc.RpcError(
+                rpc.NODE_ERROR, "window_gone: 닫힘", {"type": "EngineError", "code": "window_gone"}
+            )
+        }
+    )
+    with pytest.raises(RunnerError) as caught:
+        make_ctx(runner).setting("k")
+    assert caught.value.code == "window_gone"

@@ -244,7 +244,7 @@ class Hooks(BaseModel):
 
 class RunSpecPlatform(BaseModel):
     """
-    플랫폼: none(캡처·입력 없음), fake(frames를 차례로 캡처, 입력은 input_log JSONL에 기록) 또는 windows(SendInput 입력). hooks는 어느 종류에서나 입력 백엔드에 씌우는 키별 훅(숨은 테스트 기능)
+    플랫폼: none(캡처·입력 없음), fake(frames를 차례로 캡처하거나 scenario 장면 전이 표를 따름, 입력은 input_log JSONL에 기록) 또는 windows(WGC 캡처·SendInput 입력·창·프로세스). hooks는 어느 종류에서나 입력 백엔드에 씌우는 키별 훅(숨은 테스트 기능)
     """
 
     model_config = ConfigDict(
@@ -254,6 +254,12 @@ class RunSpecPlatform(BaseModel):
     hooks: Hooks | None = None
     input_log: str | None = None
     kind: Literal["fake", "none", "windows"]
+    scenario: Annotated[
+        str | None,
+        Field(
+            description="fake: 장면 전이 표 파일(kookabug.fake-scenario/0, 절대 경로). 있으면 frames 대신 이 장면·가짜 창·프로세스를 쓴다"
+        ),
+    ] = None
 
 
 class RunnerHelloParams(BaseModel):
@@ -748,11 +754,28 @@ class RunSpec(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    capture_timeout_ms: Annotated[
+        int | None,
+        Field(
+            description="관측 호출(캡처·찾기·OCR) 하나의 설정 기한. 넘으면 capture_timeout. 없으면 2000",
+            ge=1,
+        ),
+    ] = None
     control: Annotated[
         Control,
         Field(description="제어 채널: 감독자가 연 파이프 이름과 상호 인증 키(32바이트 hex)"),
     ]
     deadline_ms: Annotated[int, Field(description="테스트 전체 기한 (runner 시작부터)", ge=1)]
+    frame_budget_mib: Annotated[
+        int | None,
+        Field(
+            description="프레임 저장소 바이트 예산 (MiB). 넘으면 출력 참조 프레임부터 버린다. 없으면 512",
+            ge=1,
+        ),
+    ] = None
+    frame_output_refs: Annotated[
+        int | None, Field(description="스텝 출력으로 나간 캡처를 남기는 개수. 없으면 32", ge=0)
+    ] = None
     graph: Annotated[str, Field(description="실행할 테스트 그래프 (워크스페이스 기준 경로)")]
     job_name: Annotated[
         str,

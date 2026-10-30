@@ -7,11 +7,14 @@
 
 설정 기한(`run.capture_timeout_ms`)으로 끝나면 `capture_timeout`(`error`), 전체 기한이면
 `DeadlineExceeded`라 둘 다 이 예외가 아니다.
+
+- `RunnerError`: 워커 노드의 ctx 요청을 runner가 오류 코드로 거부했다(`frame_expired`·`window_gone`·
+  `capture_timeout` 등). 노드가 잡지 않으면 그 스텝은 그 코드의 `error`다
 """
 
 from __future__ import annotations
 
-__all__ = ["ObservationTimeout", "StaleObservation"]
+__all__ = ["ObservationTimeout", "RunnerError", "StaleObservation"]
 
 
 class ObservationTimeout(Exception):
@@ -25,3 +28,11 @@ class StaleObservation(BaseException):
     노드가 `except Exception`으로 삼키지 않도록 `BaseException`이다. 노드 고장(`error`)이 아니라
     그 스텝의 처리되지 않은 fail이 되어야 하기 때문이다.
     """
+
+
+class RunnerError(RuntimeError):
+    """runner가 워커 노드의 ctx 요청을 오류 코드(`code`)로 거부했다 (워커 안에서만 생긴다)."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code

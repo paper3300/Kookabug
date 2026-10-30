@@ -33,7 +33,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Final, Literal, NoReturn
+from typing import Any, Final, Literal, NoReturn, cast
 
 from kookabug_core.engine.cancel import DeadlineExceeded
 from kookabug_core.engine.errors import EngineError
@@ -53,9 +53,11 @@ from kookabug_sdk.context import (
     Cancelled,
     Context,
     ContextViolation,
+    Deadline,
     EffectContext,
     GuardedContext,
 )
+from kookabug_sdk.errors import ObservationTimeout, StaleObservation
 from kookabug_sdk.pipe import PipeConnection, PipeListener, new_key, new_pipe_name
 from kookabug_sdk.pure import PureContext
 from kookabug_sdk.rpc import (
@@ -65,14 +67,16 @@ from kookabug_sdk.rpc import (
     METHOD_NOT_FOUND,
     NODE_CONTRACT,
     NODE_ERROR,
+    OBSERVATION_TIMEOUT,
     PROTOCOL_VERSION,
+    STALE_OBSERVATION,
     Call,
     Incoming,
     PeerLost,
     RpcError,
     RpcPeer,
 )
-from kookabug_sdk.types import Image, Match, Point, Rect, Secret
+from kookabug_sdk.types import Image, Match, Point, ProcessRef, Rect, Secret, Target, WindowRef
 from kookabug_sdk.worker import ENV_KEY, ENV_PIPE, PROTOCOL
 
 __all__ = [
@@ -526,6 +530,17 @@ def _param[T](params: Mapping[str, Any], name: str, kind: type[T]) -> T:
     return value
 
 
+def _optional(params: Mapping[str, Any], name: str) -> str | None:
+    value = params.get(name)
+    if value is not None and not isinstance(value, str):
+        raise _BadParams(f"'{name}'은(는) 문자열 또는 null이어야 한다")
+    return value
+
+
+def _window(params: Mapping[str, Any]) -> WindowRef:
+    return _decoded(params, "window", (WindowRef,))
+
+
 def _decoded[T](params: Mapping[str, Any], name: str, kinds: tuple[type[T], ...]) -> T:
     try:
         value = decode(params.get(name))
@@ -552,6 +567,10 @@ class CtxServer:
         self.ctx: GuardedContext = (
             PureContext(ctx) if nodedef.pure else EffectContext(ctx, nodedef.effects)
         )
+        self.stale: StaleObservation | None = None
+        """이 실행의 입력이 재검증으로 거부됐다 (노드가 삼켜도 처리되지 않은 fail)."""
+        self.engine_codes: set[str] = set()
+        """이 실행의 ctx 요청이 낸 실행기 오류 코드 (`frame_expired`·`window_gone` 등)."""
 
     @property
     def violations(self) -> list[ContextViolation]:
@@ -581,8 +600,20 @@ class CtxServer:
             except Cancelled as exc:
                 peer.respond_error(request, CANCELLED, str(exc) or "실행이 취소됐다")
                 return
+            except StaleObservation as exc:
+                message = str(exc) or "관측 뒤 창이 바뀌어 입력하지 않았다"
+                peer.respond_error(request, STALE_OBSERVATION, message, _kind(exc))
+                return
+            except ObservationTimeout as exc:
+                message = str(exc) or "노드 기한 안에 관측이 끝나지 않았다"
+                peer.respond_error(request, OBSERVATION_TIMEOUT, message, _kind(exc))
+                return
             except ContextViolation as exc:
                 peer.respond_error(request, CONTEXT_VIOLATION, str(exc), _kind(exc))
+                return
+            except EngineError as exc:
+                data = {"type": "EngineError", "code": exc.code}
+                peer.respond_error(request, NODE_ERROR, f"{exc.code}: {exc.message}", data)
                 return
             except _UnknownMethod as exc:
                 peer.respond_error(request, METHOD_NOT_FOUND, str(exc))
@@ -598,12 +629,115 @@ class CtxServer:
             except (TypeError, ValueError) as exc:  # JSON으로 보낼 수 없는 값
                 peer.respond_error(request, NODE_ERROR, f"결과를 보낼 수 없다: {exc}", _kind(exc))
 
+    def _deadline(self, params: Mapping[str, Any]) -> Deadline | None:
+        """관측 요청의 노드 기한 남은 시간 → runner 시계의 기한 (없으면 노드 기한 없음)."""
+        if "deadline_ms" not in params:
+            return None
+        ms = _param(params, "deadline_ms", int)
+        if ms < 0:
+            raise _BadParams("'deadline_ms'는 0 이상이다")
+        return self.ctx.deadline(ms)
+
     def _call(self, method: str, params: Mapping[str, Any]) -> dict[str, Any]:
+        try:
+            return self._dispatch(method, params)
+        except StaleObservation as exc:
+            self.stale = exc
+            raise
+        except EngineError as exc:
+            # 노드가 이 오류를 잡지 않고 끝나면 그 코드로 (워커가 보낸 코드는 이것과 맞을 때만
+            # 믿는다)
+            self.engine_codes.add(exc.code)
+            raise
+
+    def _dispatch(self, method: str, params: Mapping[str, Any]) -> dict[str, Any]:
         ctx = self.ctx
         match method:
             case "ctx.capture":
                 region = _decoded(params, "region", (Rect, type(None)))
-                return {"image": encode(ctx.capture(region))}
+                return {"image": encode(ctx.capture(region, deadline=self._deadline(params)))}
+            case "ctx.vision.find":
+                image = _decoded(params, "image", (Image,))
+                target = _decoded(params, "target", (Target,))
+                region = _decoded(params, "region", (Rect, type(None)))
+                found = ctx.vision.find(
+                    image, target, region=region, deadline=self._deadline(params)
+                )
+                return {"match": encode(found)}
+            case "ctx.vision.diff":
+                a = _decoded(params, "a", (Image,))
+                b = _decoded(params, "b", (Image,))
+                region = _decoded(params, "region", (Rect, type(None)))
+                return {"value": ctx.vision.diff(a, b, region=region)}
+            case "ctx.ocr.read":
+                image = _decoded(params, "image", (Image,))
+                region = _decoded(params, "region", (Rect, type(None)))
+                result = ctx.ocr.read(
+                    image,
+                    region=region,
+                    sensitive=_param(params, "sensitive", bool),
+                    deadline=self._deadline(params),
+                )
+                return {"result": encode(result)}
+            case "ctx.windows.find":
+                found = ctx.windows.find(
+                    _optional(params, "title"),
+                    _optional(params, "process_name"),
+                    owned=_param(params, "owned", bool),
+                )
+                return {"window": encode(found)}
+            case "ctx.windows.info":
+                return {"info": encode(ctx.windows.info(_window(params)))}
+            case "ctx.windows.set_client_size":
+                ok = ctx.windows.set_client_size(
+                    _window(params), _param(params, "width", int), _param(params, "height", int)
+                )
+                return {"ok": ok}
+            case "ctx.windows.activate":
+                ctx.windows.activate(_window(params))
+                return {}
+            case "ctx.process.launch":
+                args = params.get("args", [])
+                if not isinstance(args, list) or not all(isinstance(a, str) for a in args):  # pyright: ignore[reportUnknownVariableType]
+                    raise _BadParams("'args'는 문자열 목록이다")
+                launched = ctx.process.launch(
+                    _param(params, "path", str),
+                    list(cast(list[str], args)),
+                    _optional(params, "cwd"),
+                )
+                return {"process": encode(launched)}
+            case "ctx.process.close":
+                process = _decoded(params, "process", (ProcessRef,))
+                closed = ctx.process.close(process, _param(params, "force_after_ms", int))
+                return {"closed": closed}
+            case "ctx.process.find_window":
+                process = _decoded(params, "process", (ProcessRef,))
+                found = ctx.process.find_window(
+                    process, _optional(params, "title"), deadline=self._deadline(params)
+                )
+                return {"window": encode(found)}
+            case "ctx.set_window":
+                ctx.set_window(_window(params))
+                return {}
+            case "ctx.input.drag":
+                ctx.input.drag(
+                    _decoded(params, "start", (Point, Rect, Match)),
+                    _decoded(params, "end", (Point, Rect, Match)),
+                    duration_ms=_param(params, "duration_ms", int),
+                    button=_param(params, "button", str),
+                )
+                return {}
+            case "ctx.input.scroll":
+                ctx.input.scroll(
+                    _decoded(params, "at", (Point, Rect, Match)), _param(params, "amount", int)
+                )
+                return {}
+            case _:
+                return self._call_m0(method, params)
+
+    def _call_m0(self, method: str, params: Mapping[str, Any]) -> dict[str, Any]:
+        ctx = self.ctx
+        match method:
             case "ctx.log":
                 level = _param(params, "level", str)
                 if level not in _LOG_LEVELS:
@@ -623,10 +757,12 @@ class CtxServer:
                 return {"path": ctx.artifacts.save(image, _param(params, "name", str))}
             case "ctx.input.click":
                 at = _decoded(params, "at", (Point, Rect, Match))
-                ctx.input.click(at, button=_param(params, "button", str))
+                count = _param(params, "count", int) if "count" in params else 1
+                ctx.input.click(at, button=_param(params, "button", str), count=count)
                 return {}
             case "ctx.input.key":
-                ctx.input.key(_param(params, "key", str))
+                hold_ms = _param(params, "hold_ms", int) if "hold_ms" in params else 0
+                ctx.input.key(_param(params, "key", str), hold_ms=hold_ms)
                 return {}
             case "ctx.input.type_text":
                 ctx.input.type_text(_decoded(params, "text", (str, Secret)))
@@ -740,10 +876,13 @@ class WorkerInvoker:
                 raise cancelled from None
             if server.violations:
                 raise server.violations[0] from None
-            raise self._remote_error(exc, ctx) from None
+            raise self._remote_error(exc, ctx, server) from None
         if server.violations:
             # 노드가 runner의 거부를 삼키고 정상으로 끝냈어도 error다
             raise server.violations[0]
+        if server.stale is not None:
+            # 노드가 재검증 실패를 삼키고 끝냈어도 그 입력은 하지 않았다 (처리되지 않은 fail)
+            raise server.stale
         try:
             result = Result(
                 reply["exit"],
@@ -757,7 +896,9 @@ class WorkerInvoker:
             raise NodeContractError(f"{nodedef.type}: 워커 결과의 outputs가 객체가 아니다")
         return check_remote_result(nodedef, result, config)
 
-    def _remote_error(self, exc: RpcError, ctx: Context) -> BaseException:
+    def _remote_error(self, exc: RpcError, ctx: Context, server: CtxServer) -> BaseException:
+        if exc.code == STALE_OBSERVATION:
+            return server.stale or StaleObservation(exc.message)
         if exc.code == CANCELLED:
             ctx.check_cancel()  # runner 쪽 취소·기한이면 그 종류로 (DeadlineExceeded 포함)
             data = exc.data if isinstance(exc.data, dict) else {}
@@ -774,6 +915,11 @@ class WorkerInvoker:
             if isinstance(trace, str) and trace:
                 with contextlib.suppress(Exception):
                     ctx.log.error(trace)
+            code = data.get("code")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+            if data.get("type") == "RunnerError" and code in server.engine_codes:  # pyright: ignore[reportUnknownMemberType]
+                # 노드가 잡지 않은 runner 쪽 오류 (frame_expired 등): 그 코드 그대로
+                message = data.get("message")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+                return EngineError(str(code), str(message) if message else exc.message)  # pyright: ignore[reportUnknownArgumentType]
             return EngineError("node_error", exc.message)
         return EngineError("worker_protocol", f"워커가 알 수 없는 오류로 답했다: {exc}")
 

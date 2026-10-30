@@ -27,10 +27,12 @@ from kookabug_core.engine import (
     InProcessInvoker,
     MemoryArtifacts,
     NodeInvoker,
+    Platform,
     RoutingInvoker,
     RunResult,
 )
 from kookabug_core.loader import Program
+from kookabug_core.record.artifacts import FrameRegistry
 from kookabug_core.record.snapshot import take_snapshot
 from kookabug_core.registry import Registry, default_registry
 from kookabug_core.validate import validate
@@ -91,12 +93,19 @@ class WorkerHarness:
         cancel_grace_ms: int = 2_000,
         deadline_ms: int = 60_000,
         trace: Callable[[str, bytes], None] | None = None,
+        platform: Platform | None = None,
+        frames_store: FrameRegistry | None = None,
+        capture_timeout_ms: int = 2000,
     ) -> None:
         self.ws = ws
         self.rel = rel
         self.run_dir = tmp_path / "run"
         self.env = dict(env) if env is not None else worker_env(tmp_path)
         self.platform = FakePlatform(frames, on_capture=on_capture)
+        self.exec_platform: Platform = platform or self.platform
+        """실행기에 주는 플랫폼 (기본: `platform` 가짜 프레임)."""
+        self.frames_store = frames_store
+        self.capture_timeout_ms = capture_timeout_ms
         self.secrets = MemorySecrets(dict(secrets or {}))
         self.modules = tuple(modules)
         self.start_timeout_ms = start_timeout_ms
@@ -150,15 +159,21 @@ class WorkerHarness:
         assert self.program is not None
         executor = Executor(
             self.registry,
-            platform=self.platform,
+            platform=self.exec_platform,
             cancel=self.cancel,
             artifacts=self.artifacts,
             sink=self.events,
             invoker=RoutingInvoker(self.remote, local=self.local),
+            frames=self.frames_store,
         )
         return executor.run(
             self.program,
-            ExecOptions(deadline_ms=self.deadline_ms, run_id=RUN_ID, graph_prefix="snapshot/"),
+            ExecOptions(
+                deadline_ms=self.deadline_ms,
+                run_id=RUN_ID,
+                graph_prefix="snapshot/",
+                capture_timeout_ms=self.capture_timeout_ms,
+            ),
         )
 
     def shutdown(self) -> None:

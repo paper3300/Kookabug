@@ -61,6 +61,9 @@ from kookabug_core.record.runfolder import RunFolder, create_run_folder
 from kookabug_core.recovery import RecoverResult, recover, supervisor_backend
 from kookabug_core.runner.control import ControlState
 from kookabug_core.runner.spec import (
+    DEFAULT_CAPTURE_TIMEOUT_MS,
+    DEFAULT_FRAME_BUDGET_MIB,
+    DEFAULT_FRAME_OUTPUT_REFS,
     DEFAULT_SELF_KILL_MARGIN_MS,
     DEFAULT_SHUTDOWN_GRACE_MS,
     DEFAULT_WORKER_CANCEL_GRACE_MS,
@@ -114,6 +117,9 @@ class StartOptions:
     worker_start_timeout_ms: int = DEFAULT_WORKER_START_TIMEOUT_MS
     shutdown_grace_ms: int = DEFAULT_SHUTDOWN_GRACE_MS
     self_kill_margin_ms: int = DEFAULT_SELF_KILL_MARGIN_MS
+    capture_timeout_ms: int = DEFAULT_CAPTURE_TIMEOUT_MS
+    frame_budget_mib: int = DEFAULT_FRAME_BUDGET_MIB
+    frame_output_refs: int = DEFAULT_FRAME_OUTPUT_REFS
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,6 +209,9 @@ class Supervisor:
             worker_start_timeout_ms=opts.worker_start_timeout_ms,
             shutdown_grace_ms=opts.shutdown_grace_ms,
             self_kill_margin_ms=opts.self_kill_margin_ms,
+            capture_timeout_ms=opts.capture_timeout_ms,
+            frame_budget_mib=opts.frame_budget_mib,
+            frame_output_refs=opts.frame_output_refs,
         )
         handle = RunHandle(self, spec, folder, job, started_at)
         handle._launch(listener, key)

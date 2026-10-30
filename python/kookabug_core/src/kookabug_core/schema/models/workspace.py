@@ -5,6 +5,50 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, RootModel, StringConstraints
 
 
+class Det(BaseModel):
+    """
+    rapidocr 검출 크기 설정 (없는 값은 기본값)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    limit_side_len: Annotated[
+        int | None,
+        Field(description="짧은 변이 이보다 작을 때만 검출 입력을 늘린다. 기본 64", ge=32),
+    ] = None
+    max_side_len: Annotated[
+        int | None, Field(description="긴 변이 이보다 크면 줄인다. 기본 4096", ge=256)
+    ] = None
+    single_max_pixels: Annotated[
+        int | None,
+        Field(
+            description="픽셀 수가 이 이하면 한 번에 검출, 넘으면 타일로 나눈다. 기본 655360",
+            ge=65536,
+        ),
+    ] = None
+    tile_overlap: Annotated[
+        int | None, Field(description="이웃 타일이 겹치는 픽셀. 기본 128", ge=0)
+    ] = None
+    tile_side: Annotated[
+        int | None, Field(description="타일 한 변 (32의 배수). 기본 640", ge=256)
+    ] = None
+
+
+class OcrSettings(BaseModel):
+    """
+    OCR 엔진과 그 설정. engine이 없으면 rapidocr
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    det: Annotated[Det | None, Field(description="rapidocr 검출 크기 설정 (없는 값은 기본값)")] = (
+        None
+    )
+    engine: Literal["rapidocr"] | None = None
+
+
 class PermissionVerdict(RootModel[Literal["allow", "ask", "deny"]]):
     root: Annotated[Literal["allow", "ask", "deny"], Field(title="PermissionVerdict")]
 
@@ -36,15 +80,35 @@ class Retention(BaseModel):
 
 class RunConditions(BaseModel):
     """
-    실행 조건 기본값 (밀리초). CLI 옵션이 이 값보다 우선한다
+    실행 조건 기본값 (시간은 밀리초). CLI 옵션이 이 값보다 우선한다
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
+    capture_timeout_ms: Annotated[
+        int | None,
+        Field(
+            description="관측 호출(캡처·찾기·OCR) 하나의 설정 기한. 넘으면 capture_timeout. 없으면 2000",
+            ge=1,
+        ),
+    ] = None
     deadline_ms: Annotated[int | None, Field(description="실행 전체 기한. 없으면 30분", ge=1)] = (
         None
     )
+    frame_budget_mib: Annotated[
+        int | None,
+        Field(
+            description="프레임 저장소 바이트 예산 (MiB). 넘으면 스텝 출력으로 나간 프레임부터 버린다. 없으면 512",
+            ge=1,
+        ),
+    ] = None
+    frame_output_refs: Annotated[
+        int | None,
+        Field(
+            description="스텝 출력(이미지·찾기 결과)으로 나간 프레임을 남기는 개수. 없으면 32", ge=0
+        ),
+    ] = None
     shutdown_grace_ms: Annotated[
         int | None,
         Field(
@@ -128,6 +192,7 @@ class Workspace(BaseModel):
         extra="forbid",
     )
     format: Literal["kookabug.workspace/0"]
+    ocr: OcrSettings | None = None
     permissions: Permissions | None = None
     profiles: (
         dict[Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]+$")], Profile] | None

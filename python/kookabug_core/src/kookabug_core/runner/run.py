@@ -10,12 +10,16 @@
 5. `plugin_modules`가 있으면 워커를 띄우고 hello → 원격 노드 등록
 6. 스냅샷 프로그램의 의미 검증(코어 + 원격). 오류면 `run.end`(`error`/`graph_invalid`, 진단은
    `run.json`)
-7. `input` 효과 노드가 있고 플랫폼이 `fake`·`windows`면 입력 임대권(앞 소유자 복구 포함) → 입력
-   액터 시작. `windows`는 SendInput 백엔드 + 창 수명 추적기 + 입력 직전 확인
-8. `Executor.run` (주 스레드). 워커 노드의 `ctx` 요청도 주 스레드가 처리한다
+7. 플랫폼 (M1 T9): `windows`는 DPI 인식(PMv2) 확인 → `WindowsPlatform`(창 수명 추적기·WGC
+   캡처·프레임 저장소·비전·OCR·창·프로세스), 장면 `fake`(`platform.scenario`)는 `ScenarioPlatform`
+   (+ 저장소·엔진), 그 밖은 `RunnerPlatform`(프레임 파일). 모두 입력은 공용 입력 서비스를 거친다
+8. `input` 효과 노드가 있고 플랫폼이 `fake`·`windows`면 입력 임대권(앞 소유자 복구 포함) → 입력
+   액터 시작 → 플랫폼의 입력 서비스에 붙임. `windows`는 SendInput 백엔드 + 입력 직전 확인
+9. `Executor.run` (주 스레드). 워커 노드의 `ctx` 요청도 주 스레드가 처리한다
 
 **정상 마무리** (주 스레드만): 종료 단계 진입(감시자 무장, 감독자에 `runner.stopping`) → 워커
-`shutdown` → 액터 `STOP`·`join`(유예의 절반) → `run.end` → `run.json` 완료 → quiesced였으면 임대권
+`shutdown` → 액터 `STOP`·`join`(유예의 절반) → (quiesced면) 플랫폼 닫기(캡처 세션·추적기 스레드)
+→ `run.end` → `run.json` 완료 → quiesced였으면 임대권
 깨끗하게 놓기(아니면 놓지 않고 끝남 — 감독자 복구 경로·다음 획득자가 처리) → 저널 닫기 →
 종료 코드 0.
 runner의 저널 쓰기는 `run.end`가 마지막이다.
@@ -32,9 +36,9 @@ import platform as host
 import threading
 import time
 import traceback
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, cast
 
 import kookabug_core
 from kookabug_core.diagnostics import Diagnostic, has_errors
@@ -49,9 +53,10 @@ from kookabug_core.engine import (
     RoutingInvoker,
     RunResult,
 )
+from kookabug_core.engine.context import InputObserver, ObservationLimits
 from kookabug_core.engine.errors import EngineError
+from kookabug_core.engine.scenario import FakeScenario, ScenarioError, ScenarioPlatform
 from kookabug_core.inputs import (
-    ClientPoint,
     InputActor,
     InputGuard,
     InputLease,
@@ -60,23 +65,25 @@ from kookabug_core.inputs import (
     PlatformUnavailable,
     create_backend,
 )
+from kookabug_core.inputs.service import InputService, InputSink
 from kookabug_core.loader import Program
 from kookabug_core.record import FileArtifacts, Journal, write_run_json
+from kookabug_core.record.artifacts import FrameRegistry
 from kookabug_core.record.runfolder import RUN_FORMAT, RunFolder, finished_run_json
 from kookabug_core.record.snapshot import GRAPH_PREFIX, SnapshotError, take_snapshot
 from kookabug_core.registry import Registry, default_registry
 from kookabug_core.runner.control import Controller, PauseGate
-from kookabug_core.runner.spec import PROTOCOL, RunSpec, ident_to_json
+from kookabug_core.runner.spec import MIB, PROTOCOL, RunSpec, ident_to_json
 from kookabug_core.runner.watchdog import Watchdog
 from kookabug_core.validate import validate
-from kookabug_core.win import Job, ProcessId, current
+from kookabug_core.win import Job, ProcessId, current, dpi
 from kookabug_core.workerhost import WorkerInvoker, WorkerProcess, WorkerStartError
 from kookabug_core.workspace import RunOptions, SettingLookup, Workspace, WorkspaceError
 from kookabug_sdk import _faults
-from kookabug_sdk.context import InputApi, Where
+from kookabug_sdk.context import InputApi
 from kookabug_sdk.pipe import connect
 from kookabug_sdk.rpc import RpcPeer
-from kookabug_sdk.types import Image, Point, Rect, Secret, WindowRef
+from kookabug_sdk.types import Image, Match, OcrResult, Rect, Target, WindowRef
 
 if TYPE_CHECKING:
     from kookabug_platform.tracker import WindowTracker
@@ -106,82 +113,119 @@ def unix_micros(ident: ProcessId) -> int:
 # ---------------------------------------------------------------- 플랫폼
 
 
-class _ActorInput:
-    """`ctx.input` → 입력 액터 큐 (스텝 ID와 함께). 액터가 백엔드를 부르는 유일한 스레드다.
-
-    대상 창 없이 넣는다. 창 고정·`Match` 재검증을 하는 공용 입력 서비스(M1 T9)가 이 자리를
-    대신하기 전까지 `Match`는 클릭 지점, `Rect`는 중심점으로 줄이고, 누르고 있기(`hold_ms`)는
-    받지 않는다.
-    """
-
-    def __init__(self, actor: InputActor, step: str) -> None:
-        self._actor = actor
-        self._step = step
-
-    def click(self, at: Where, *, button: str = "left", count: int = 1) -> None:
-        self._actor.click(_client_point(at), button=button, count=count, step=self._step)
-
-    def drag(self, start: Where, end: Where, *, duration_ms: int = 0, button: str = "left") -> None:
-        self._actor.drag(
-            _client_point(start),
-            _client_point(end),
-            button=button,
-            duration_ms=duration_ms,
-            step=self._step,
-        )
-
-    def scroll(self, at: Where, amount: int) -> None:
-        self._actor.scroll(_client_point(at), amount, step=self._step)
-
-    def key(self, key: str, *, hold_ms: int = 0) -> None:
-        if hold_ms:
-            raise PlatformUnavailable("이 실행에서는 키를 누르고 있을(hold_ms) 수 없다")
-        self._actor.key(key, step=self._step)
-
-    def type_text(self, text: str | Secret) -> None:
-        self._actor.type_text(text, step=self._step)
-
-
-def _client_point(at: Where) -> ClientPoint:
-    point = at if isinstance(at, Point) else at.center if isinstance(at, Rect) else at.click_point
-    return ClientPoint(point.x, point.y)
-
-
 class _NoInput:
-    def click(self, at: Where, *, button: str = "left", count: int = 1) -> None:
-        raise PlatformUnavailable
+    """입력 액터가 없는 실행(`none`, 또는 `input` 효과 노드가 없음)의 입력 싱크."""
 
-    def drag(self, start: Where, end: Where, *, duration_ms: int = 0, button: str = "left") -> None:
-        raise PlatformUnavailable
+    def __init__(self, reason: str | None = None) -> None:
+        self._reason = reason
 
-    def scroll(self, at: Where, amount: int) -> None:
-        raise PlatformUnavailable
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("__"):
+            raise AttributeError(name)
+        if self._reason is None:
+            raise PlatformUnavailable
+        raise PlatformUnavailable(self._reason)
 
-    def key(self, key: str, *, hold_ms: int = 0) -> None:
-        raise PlatformUnavailable
 
-    def type_text(self, text: str | Secret) -> None:
-        raise PlatformUnavailable
+class _ActorSink:
+    """공용 입력 서비스의 싱크 → 입력 액터 큐 (`attach`로 액터가 붙기 전에는 입력 없음)."""
+
+    def __init__(self, reason: str | None = None) -> None:
+        self.actor: InputActor | None = None
+        self._reason = reason
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return getattr(_NoInput(self._reason) if self.actor is None else self.actor, name)
 
 
 class RunnerPlatform:
-    """runner의 플랫폼: 캡처는 사양의 `frames`(가짜) 또는 없음, 입력은 입력 액터 큐로."""
+    """runner의 M0b 플랫폼(`none`, 사양 `frames`의 `fake`): 캡처는 프레임 파일 차례(픽셀은 파일
+    그대로), 입력은 공용 입력 서비스 → 입력 액터 큐(창 없음 — 창 확인·재검증 없이 클릭 지점으로).
+    `engines`(`kookabug_platform.engines.RunEngines`)가 있으면 프레임 파일에서 실제로 찾고 읽는다.
+    창·프로세스는 없다(`platform_unavailable`).
 
-    def __init__(self, frames: Sequence[str], actor: InputActor | None) -> None:
+    `reason`을 주면 캡처·찾기·입력이 그 사유의 `platform_unavailable`이다 (`windows`인데 플랫폼
+    패키지가 없을 때 — 플랫폼 기능을 쓰지 않는 그래프는 그대로 돈다)."""
+
+    def __init__(
+        self, frames: Sequence[str], *, engines: Any = None, reason: str | None = None
+    ) -> None:
         self._frames = FakePlatform(frames) if frames else None
-        self._actor = actor
+        self.engines = engines
+        self._reason = reason
+        self._sink = _ActorSink(reason)
+        self.service = InputService(cast(InputSink, self._sink))
+
+    def attach_input(self, actor: InputActor) -> None:
+        self._sink.actor = actor
 
     @property
     def input(self) -> InputApi:
-        return _NoInput() if self._actor is None else _ActorInput(self._actor, "")
+        raise PlatformUnavailable("runner 입력은 스텝 ctx로만 보낸다")
 
-    def input_for(self, step: str) -> InputApi:
-        return _NoInput() if self._actor is None else _ActorInput(self._actor, step)
+    def input_for(
+        self,
+        step: str,
+        window: WindowRef | None,
+        observer: InputObserver,
+        sleep: Callable[[int], None],
+    ) -> InputApi:
+        return self.service.for_step(step, window, observer, sleep=sleep)
 
     def capture(self, window: WindowRef | None, region: Rect | None) -> Image:
         if self._frames is None:
-            raise PlatformUnavailable("이 플랫폼에서는 화면을 캡처할 수 없다")
+            raise PlatformUnavailable(self._reason or "이 플랫폼에서는 화면을 캡처할 수 없다")
         return self._frames.capture(window, region)
+
+    def _engines(self) -> Any:
+        if self.engines is None:
+            raise PlatformUnavailable(self._reason or "이 플랫폼에는 비전·OCR 엔진이 없다")
+        return self.engines
+
+    def find(
+        self, image: Image, target: Target, *, region: Rect | None, limits: ObservationLimits
+    ) -> Match | None:
+        return self._engines().find(image, target, region=region, limits=limits)
+
+    def diff(self, a: Image, b: Image, *, region: Rect | None) -> float:
+        return self._engines().diff(a, b, region=region)
+
+    def read_text(
+        self, image: Image, *, region: Rect | None, sensitive: bool, limits: ObservationLimits
+    ) -> OcrResult:
+        return self._engines().read_text(image, region=region, sensitive=sensitive, limits=limits)
+
+
+def _platform_engines(store: Any, workspace: Workspace) -> Any:
+    """`kookabug_platform`의 실행 엔진. 패키지가 없으면 None (`fake`·`none` 실행은 opencv 없이)."""
+    try:
+        from kookabug_platform.engines import RunEngines
+    except ImportError:
+        return None
+    engine, options = _ocr_settings(workspace)
+    return RunEngines(store, ocr_engine=engine, ocr_options=options)
+
+
+def _fake_store(budget_bytes: int, output_refs: int) -> tuple[Any, Any]:
+    """장면 가짜 실행의 프레임 저장소와 PNG 풀기. 플랫폼 패키지가 없으면 둘 다 None (프레임 파일
+    그대로 — M0b)."""
+    try:
+        from kookabug_platform.frames import FrameStore, decode_image
+    except ImportError:
+        return None, None
+    return FrameStore(budget_bytes=budget_bytes, output_refs=output_refs), decode_image
+
+
+def _ocr_settings(workspace: Workspace) -> tuple[str, dict[str, Any]]:
+    """`kookabug.json`의 `ocr`: 엔진 이름(`engine`, 기본 `rapidocr`)과 그 엔진 설정(나머지)."""
+    block = workspace.config.get("ocr")
+    options: dict[str, Any] = (
+        dict(cast(Mapping[str, Any], block)) if isinstance(block, dict) else {}
+    )
+    engine = options.pop("engine", "rapidocr")
+    return str(engine), options
 
 
 # ---------------------------------------------------------------- 결과
@@ -251,10 +295,20 @@ class Runner:
         self.worker: WorkerProcess | None = None
         self.actor: InputActor | None = None
         self.lease: InputLease | None = None
-        self.window_tracker: WindowTracker | None = None
-        """`kind: windows`의 창 수명 추적기."""
+        self.job: Job | None = None
+        self.platform: Any = None
+        """실행 플랫폼 (`RunnerPlatform`·`ScenarioPlatform`·`WindowsPlatform`)."""
+        self.frames: FrameRegistry | None = None
+        """프레임 저장소 (`windows`·장면 `fake`. M0b 프레임 파일 실행은 없음)."""
+        self.platform_missing: str | None = None
+        """`windows`인데 플랫폼 패키지가 없는 사유 (입력 노드가 있으면 시작 때 그 사유로 끝낸다)."""
         self.registry: Registry | None = None
         self._run_json: dict[str, Any] = {}
+
+    @property
+    def window_tracker(self) -> WindowTracker | None:
+        """`kind: windows`의 창 수명 추적기 (아직 쓰지 않았으면 None)."""
+        return getattr(self.platform, "started_tracker", None)
 
     # ------------------------------------------------------------ 진입
 
@@ -284,7 +338,7 @@ class Runner:
 
     def _connect(self) -> None:
         spec = self.spec
-        job = Job.open(spec.job_name).keep_until_exit()
+        job = self.job = Job.open(spec.job_name).keep_until_exit()
         job.assign_current()
         conn = connect(spec.control.pipe, spec.control.key)
         self.peer = RpcPeer(conn, name="runner-control").start()
@@ -436,19 +490,69 @@ class Runner:
                 diagnostics=diagnostics,
             )
 
-        # 7. 입력 임대권 → 입력 액터
+        # 7. 플랫폼 (windows: DPI 인식 확인 → 추적기·캡처·저장소·엔진)
+        # 엔진 설정(`ocr`)은 실행 정의의 복사본에서 읽는다 (원본은 스냅샷 뒤에 바뀌었을 수 있다)
+        refused = self._open_platform(snap.workspace)
+        if refused is not None:
+            return refused
+
+        # 8. 입력 임대권 → 입력 액터
         if _uses_input(program, registry) and spec.platform.kind in ("fake", "windows"):
             refused = self._start_input()
             if refused is not None:
                 return refused
         self._check()
 
-        # 8. 실행
+        # 9. 실행
         return self._run_program(program, registry)
+
+    def _open_platform(self, workspace: Workspace) -> _End | None:
+        spec = self.spec
+        kind = spec.platform.kind
+        budget = spec.frame_budget_mib * MIB
+        if kind == "windows":
+            reason = dpi.startup_error()
+            if reason is not None:
+                return _End.error(dpi.CODE, f"DPI 인식을 Per-Monitor V2로 둘 수 없다: {reason}")
+            try:
+                # 플랫폼 패키지는 이 종류일 때만 불러온다 (fake·none 실행은 opencv 등 없이 돈다)
+                from kookabug_platform.frames import FrameStore
+                from kookabug_platform.platform import WindowsPlatform
+            except ImportError as exc:
+                # 플랫폼 기능(캡처·창·입력)을 쓰는 노드만 그 사유로 끝난다
+                reason = f"Windows 플랫폼 패키지(kookabug-platform)를 쓸 수 없다: {exc}"
+                self.platform = RunnerPlatform((), reason=reason)
+                self.platform_missing = reason
+                return None
+            store = FrameStore(budget_bytes=budget, output_refs=spec.frame_output_refs)
+            self.frames = store
+            self.platform = WindowsPlatform(
+                run_id=spec.run_id,
+                job=self.job,
+                store=store,
+                engines=_platform_engines(store, workspace),
+            )
+            return None
+        if kind == "fake" and spec.platform.scenario is not None:
+            try:
+                scenario = FakeScenario.load(spec.platform.scenario)
+            except ScenarioError as exc:
+                return _End.error("platform_invalid", str(exc))
+            store, decode = _fake_store(budget, spec.frame_output_refs)
+            self.frames = store
+            self.platform = ScenarioPlatform(
+                scenario, decode=decode, engines=_platform_engines(store, workspace)
+            )
+            return None
+        engines = _platform_engines(None, workspace) if kind == "fake" else None
+        self.platform = RunnerPlatform(spec.platform.frames, engines=engines)
+        return None
 
     def _start_input(self) -> _End | None:
         spec = self.spec
         assert self.controller is not None
+        if self.platform_missing is not None:
+            return _End.error("platform_unavailable", self.platform_missing)
         gate = threading.Event()
         backend = create_backend(
             spec.platform.kind,
@@ -469,15 +573,13 @@ class Runner:
         self.lease = lease
         guard: InputGuard | None = None
         if spec.platform.kind == "windows":
-            # 플랫폼 패키지는 이 종류일 때만 불러온다 (fake·none 실행은 opencv 등 없이 돈다)
             from kookabug_platform.sendinput import WindowInputGuard
-            from kookabug_platform.tracker import WindowTracker
 
-            self.window_tracker = WindowTracker(run_id=spec.run_id).start()
-            guard = WindowInputGuard(self.window_tracker)
+            guard = WindowInputGuard(self.platform.tracker)
         # 액터의 기록 실패는 액터가 알아야 한다(입력을 막는다): 조용히 버리지 않는 쓰기를 준다
         self.actor = InputActor(backend, emit=self._emit, gate=gate, guard=guard).start()
         self.controller.attach_actor(self.actor)
+        self.platform.attach_input(self.actor)
         return None
 
     def _run_program(self, program: Program, registry: Registry) -> _End:
@@ -485,13 +587,14 @@ class Runner:
         remaining_ms = max(1, int((self.deadline_at - time.monotonic()) * 1000))
         executor = Executor(
             registry,
-            platform=RunnerPlatform(self.spec.platform.frames, self.actor),
+            platform=self.platform,
             cancel=self.token,
             artifacts=FileArtifacts(self.folder.path),
             sink=_JournalSink(self.journal),
             invoker=RoutingInvoker(None if self.worker is None else WorkerInvoker(self.worker)),
             before_step=lambda step: self.pause.at_boundary(step, self._emit),
             on_setting=self._record_setting,
+            frames=self.frames,
         )
         try:
             result = executor.run(
@@ -502,6 +605,7 @@ class Runner:
                     run_id=self.spec.run_id,
                     graph_prefix=GRAPH_PREFIX,
                     collect_events=False,
+                    capture_timeout_ms=self.spec.capture_timeout_ms,
                 ),
             )
         except GraphInvalid as exc:
@@ -564,10 +668,12 @@ class Runner:
         quiesced = True
         if self.actor is not None:
             quiesced = self.actor.stop(spec.shutdown_grace_ms / 2 / 1000)
-        if self.window_tracker is not None and quiesced:
-            # 액터가 멈춘 뒤에만 (멈춘 액터는 확인을 더 부르지 않는다)
+        close = getattr(self.platform, "close", None)
+        if close is not None and quiesced:
+            # 액터가 멈춘 뒤에만 (멈춘 액터는 입력 직전 확인으로 추적기를 더 부르지 않는다).
+            # 캡처 세션을 멈추고 추적기 스레드를 멈춘다
             with contextlib.suppress(Exception):
-                self.window_tracker.stop()
+                close()
 
         run_end: dict[str, Any] | None = None
         if end is not None and self.journal is not None:

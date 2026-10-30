@@ -34,6 +34,13 @@ DEFAULT_WORKER_CANCEL_GRACE_MS: Final = 2_000
 DEFAULT_WORKER_START_TIMEOUT_MS: Final = 30_000
 DEFAULT_SHUTDOWN_GRACE_MS: Final = 5_000
 DEFAULT_SELF_KILL_MARGIN_MS: Final = 10_000
+DEFAULT_CAPTURE_TIMEOUT_MS: Final = 2_000
+"""`run.capture_timeout_ms` 기본값: 관측 호출 하나의 설정 기한 (M1 2.6, 조율자 결정 Q2)."""
+DEFAULT_FRAME_BUDGET_MIB: Final = 512
+"""`run.frame_budget_mib` 기본값: 프레임 저장소 바이트 예산 (M1 2.7, Q15)."""
+DEFAULT_FRAME_OUTPUT_REFS: Final = 32
+"""`run.frame_output_refs` 기본값: 출력 참조로 남기는 캡처 수 (M1 2.7, Q15)."""
+MIB: Final = 1 << 20
 
 
 class SpecError(ValueError):
@@ -51,13 +58,16 @@ def ident_from_json(data: Mapping[str, Any]) -> ProcessId:
 
 @dataclass(frozen=True, slots=True)
 class PlatformSpec:
-    """`none`(캡처·입력 없음), `fake`(가짜 프레임·입력 기록), `windows`(SendInput 입력 — M1 T5,
-    캡처는 T9). `hooks`는 어느 종류에서나 입력 백엔드에 씌우는 숨은 테스트 기능이다."""
+    """`none`(캡처·입력 없음), `fake`(가짜 프레임·장면·입력 기록), `windows`(WGC 캡처·SendInput
+    입력·창·프로세스). `fake`에 `scenario`(장면 전이 표 JSON 파일, `FakeScenario`)가 있으면
+    `frames` 대신 그 장면을 쓴다. `hooks`는 어느 종류에서나 입력 백엔드에 씌우는 숨은 테스트
+    기능이다."""
 
     kind: Literal["none", "fake", "windows"] = "none"
     frames: tuple[str, ...] = ()
     input_log: str | None = None
     hooks: Mapping[str, Mapping[str, str]] = field(default_factory=dict[str, Mapping[str, str]])
+    scenario: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         data: dict[str, Any] = {"kind": self.kind}
@@ -67,6 +77,8 @@ class PlatformSpec:
             data["input_log"] = self.input_log
         if self.hooks:
             data["hooks"] = {hook: dict(names) for hook, names in self.hooks.items()}
+        if self.scenario is not None:
+            data["scenario"] = self.scenario
         return data
 
 
@@ -94,6 +106,9 @@ class RunSpec:
     worker_start_timeout_ms: int = DEFAULT_WORKER_START_TIMEOUT_MS
     shutdown_grace_ms: int = DEFAULT_SHUTDOWN_GRACE_MS
     self_kill_margin_ms: int = DEFAULT_SELF_KILL_MARGIN_MS
+    capture_timeout_ms: int = DEFAULT_CAPTURE_TIMEOUT_MS
+    frame_budget_mib: int = DEFAULT_FRAME_BUDGET_MIB
+    frame_output_refs: int = DEFAULT_FRAME_OUTPUT_REFS
 
     @classmethod
     def from_json(cls, data: Any) -> RunSpec:
@@ -113,6 +128,9 @@ class RunSpec:
                 "worker_start_timeout_ms",
                 "shutdown_grace_ms",
                 "self_kill_margin_ms",
+                "capture_timeout_ms",
+                "frame_budget_mib",
+                "frame_output_refs",
             )
             if name in spec
         }
@@ -133,6 +151,7 @@ class RunSpec:
                 frames=tuple(platform.get("frames", ())),
                 input_log=platform.get("input_log"),
                 hooks={h: dict(n) for h, n in platform.get("hooks", {}).items()},
+                scenario=platform.get("scenario"),
             ),
             **optional,
         )
@@ -163,4 +182,7 @@ class RunSpec:
             "worker_start_timeout_ms": self.worker_start_timeout_ms,
             "shutdown_grace_ms": self.shutdown_grace_ms,
             "self_kill_margin_ms": self.self_kill_margin_ms,
+            "capture_timeout_ms": self.capture_timeout_ms,
+            "frame_budget_mib": self.frame_budget_mib,
+            "frame_output_refs": self.frame_output_refs,
         }
