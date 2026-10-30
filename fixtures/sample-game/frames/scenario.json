@@ -1,0 +1,312 @@
+{
+  "format": "kookabug.fake-scenario/0",
+  "forms": {
+    "login": {
+      "erase_key": "backspace",
+      "expect": {
+        "account": "qa_tester_01",
+        "password": "sample-pass-01"
+      },
+      "fields": [
+        {
+          "name": "account",
+          "rect": [400, 205, 320, 50]
+        },
+        {
+          "name": "password",
+          "rect": [400, 285, 320, 50]
+        }
+      ],
+      "focus": "account",
+      "input_scene": "login",
+      "max_length": 24,
+      "next_key": "tab",
+      "scenes": ["login", "login_error"]
+    }
+  },
+  "launch": [
+    {
+      "args_contains": "--maintenance",
+      "variant": "maintenance"
+    },
+    {
+      "args_contains": "--login-fail",
+      "variant": "login_fail"
+    },
+    {
+      "variant": "default"
+    }
+  ],
+  "process": {
+    "name": "python.exe"
+  },
+  "scenes": {
+    "inventory": "inventory.png",
+    "loading": "loading.png",
+    "lobby": "lobby.png",
+    "lobby_server1": "lobby_server1.png",
+    "lobby_server2": "lobby_server2.png",
+    "login": "login.png",
+    "login_error": "login_error.png",
+    "maintenance": "maintenance.png",
+    "title": "title.png",
+    "world": "world.png"
+  },
+  "start": "title",
+  "transitions": [
+    {
+      "after_frames": 0,
+      "from": "title",
+      "on": {
+        "kind": "click",
+        "rect": [412, 380, 200, 64]
+      },
+      "to": "login",
+      "variants": ["default", "login_fail"]
+    },
+    {
+      "after_frames": 0,
+      "from": "title",
+      "on": {
+        "kind": "click",
+        "rect": [412, 380, 200, 64]
+      },
+      "to": "maintenance",
+      "variants": ["maintenance"]
+    },
+    {
+      "after_frames": 0,
+      "from": "maintenance",
+      "on": {
+        "kind": "click",
+        "rect": [442, 392, 140, 52]
+      },
+      "to": "title"
+    },
+    {
+      "after_frames": 0,
+      "from": "maintenance",
+      "on": {
+        "key": "enter",
+        "kind": "key"
+      },
+      "to": "title"
+    },
+    {
+      "after_frames": 0,
+      "from": "login",
+      "on": {
+        "kind": "click",
+        "rect": [432, 380, 160, 56]
+      },
+      "to": "lobby",
+      "variants": ["default"],
+      "when": {
+        "form": "login",
+        "valid": true
+      }
+    },
+    {
+      "after_frames": 0,
+      "effects": {
+        "clear": ["password"],
+        "focus": "password",
+        "form": "login"
+      },
+      "from": "login",
+      "on": {
+        "kind": "click",
+        "rect": [432, 380, 160, 56]
+      },
+      "to": "login_error",
+      "variants": ["default"],
+      "when": {
+        "form": "login",
+        "valid": false
+      }
+    },
+    {
+      "after_frames": 0,
+      "effects": {
+        "clear": ["password"],
+        "focus": "password",
+        "form": "login"
+      },
+      "from": "login",
+      "on": {
+        "kind": "click",
+        "rect": [432, 380, 160, 56]
+      },
+      "to": "login_error",
+      "variants": ["login_fail"]
+    },
+    {
+      "after_frames": 0,
+      "from": "login",
+      "on": {
+        "key": "enter",
+        "kind": "key"
+      },
+      "to": "lobby",
+      "variants": ["default"],
+      "when": {
+        "form": "login",
+        "valid": true
+      }
+    },
+    {
+      "after_frames": 0,
+      "effects": {
+        "clear": ["password"],
+        "focus": "password",
+        "form": "login"
+      },
+      "from": "login",
+      "on": {
+        "key": "enter",
+        "kind": "key"
+      },
+      "to": "login_error",
+      "variants": ["default"],
+      "when": {
+        "form": "login",
+        "valid": false
+      }
+    },
+    {
+      "after_frames": 0,
+      "effects": {
+        "clear": ["password"],
+        "focus": "password",
+        "form": "login"
+      },
+      "from": "login",
+      "on": {
+        "key": "enter",
+        "kind": "key"
+      },
+      "to": "login_error",
+      "variants": ["login_fail"]
+    },
+    {
+      "after_frames": 0,
+      "from": "login_error",
+      "on": {
+        "kind": "click",
+        "rect": [442, 392, 140, 52]
+      },
+      "to": "login"
+    },
+    {
+      "after_frames": 0,
+      "from": "login_error",
+      "on": {
+        "key": "enter",
+        "kind": "key"
+      },
+      "to": "login"
+    },
+    {
+      "after_frames": 0,
+      "from": "login_error",
+      "on": {
+        "key": "esc",
+        "kind": "key"
+      },
+      "to": "login"
+    },
+    {
+      "after_frames": 0,
+      "from": "lobby",
+      "on": {
+        "kind": "click",
+        "rect": [262, 200, 500, 64]
+      },
+      "to": "lobby_server1"
+    },
+    {
+      "after_frames": 0,
+      "from": "lobby",
+      "on": {
+        "kind": "click",
+        "rect": [262, 280, 500, 64]
+      },
+      "to": "lobby_server2"
+    },
+    {
+      "after_frames": 0,
+      "from": "lobby_server1",
+      "on": {
+        "kind": "click",
+        "rect": [262, 280, 500, 64]
+      },
+      "to": "lobby_server2"
+    },
+    {
+      "after_frames": 0,
+      "from": "lobby_server1",
+      "on": {
+        "kind": "click",
+        "rect": [412, 420, 200, 60]
+      },
+      "to": "loading"
+    },
+    {
+      "after_frames": 0,
+      "from": "lobby_server2",
+      "on": {
+        "kind": "click",
+        "rect": [262, 200, 500, 64]
+      },
+      "to": "lobby_server1"
+    },
+    {
+      "after_frames": 0,
+      "from": "lobby_server2",
+      "on": {
+        "kind": "click",
+        "rect": [412, 420, 200, 60]
+      },
+      "to": "loading"
+    },
+    {
+      "after_frames": 3,
+      "from": "loading",
+      "to": "world"
+    },
+    {
+      "after_frames": 0,
+      "from": "world",
+      "on": {
+        "key": "i",
+        "kind": "key"
+      },
+      "to": "inventory"
+    },
+    {
+      "after_frames": 0,
+      "from": "inventory",
+      "on": {
+        "key": "esc",
+        "kind": "key"
+      },
+      "to": "world"
+    },
+    {
+      "after_frames": 0,
+      "from": "inventory",
+      "on": {
+        "key": "i",
+        "kind": "key"
+      },
+      "to": "world"
+    }
+  ],
+  "variants": ["default", "login_fail", "maintenance"],
+  "window": {
+    "class": "TkTopLevel",
+    "client_size": [1024, 640],
+    "dpi": 96,
+    "title": "SampleRPG"
+  }
+}

@@ -23,6 +23,7 @@ src = [
     "python/kookabug_cli/src",
     "python/kookabug_platform/src",
     "tools",
+    "fixtures/sample-game",
 ]
 # Docs의 그림 생성 스크립트는 제품 코드가 아니다
 extend-exclude = ["Docs", "build", "node_modules"]
@@ -35,9 +36,9 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 "python/kookabug_core/src/kookabug_core/schema/models/*.py" = ["E501"]
 
 [tool.pyright]
-include = ["python", "tools"]
+include = ["python", "tools", "fixtures"]
 exclude = ["**/build", "**/node_modules", "**/.venv", "**/__pycache__"]
-extraPaths = ["tools", "python/kookabug_core/tests"]
+extraPaths = ["tools", "python/kookabug_core/tests", "fixtures/sample-game"]
 pythonVersion = "3.14"
 pythonPlatform = "Windows"
 typeCheckingMode = "standard"
@@ -45,10 +46,11 @@ venvPath = "."
 venv = ".venv"
 
 [tool.pytest.ini_options]
-testpaths = ["python", "tools/tests"]
+testpaths = ["python", "tools/tests", "fixtures/sample-game/tests"]
 addopts = ["--import-mode=importlib", "--strict-markers"]
-# core 테스트 공용 헬퍼(helpers·testkit)는 python/kookabug_core/tests에 있다
-pythonpath = ["tools", "python/kookabug_core/tests"]
+# core 테스트 공용 헬퍼(helpers·testkit)는 python/kookabug_core/tests에 있다.
+# 예제 게임 패키지(sample_game)는 설치하지 않고 fixtures/sample-game에서 읽는다
+pythonpath = ["tools", "python/kookabug_core/tests", "fixtures/sample-game"]
 markers = [
     "packaging: wheel·venv를 실제로 만드는 느린 검사 (uv 필요, 네트워크를 쓸 수 있음)",
     "process: 실제 프로세스·파이프·뮤텍스·Job을 쓰는 검사 (기본 timeout 60초, CI에서도 돈다)",
