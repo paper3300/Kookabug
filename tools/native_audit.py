@@ -12,7 +12,8 @@
   제거 목록과 무관하게 금지 라이선스 파일·제거 대상이 하나라도 남으면 실패한다
 - 최종 트리의 `*.dist-info/RECORD`와 실제 파일 대조
 - OCR 모델 표(`models.toml`)의 라이선스와, 모델 폴더가 있으면 크기·SHA256. 모델 경로는 모델
-  폴더 안의 상대 경로만 받는다
+  폴더 안의 상대 경로만 받는다. 모델의 라이선스 근거 원문(`[[text]]`, 모델과 같은 폴더에 받음)도
+  모델 폴더가 있으면 크기·SHA256을 확인하고 원문을 NOTICES에 싣는다
 
 단계는 둘이다. `audit_build_input`은 빌드 입력(감사 venv의 site-packages, 설치 전 스테이징 트리),
 `audit_final_tree`는 최종 설치 트리(설치본 폴더, CI에서는 무인 설치 결과)다.
@@ -126,6 +127,17 @@ class NativeTable:
 
 
 @dataclass(frozen=True)
+class ModelText:
+    """모델 라이선스 근거 원문 파일 (모델 폴더 안)."""
+
+    file: str
+    label: str
+    sha256: str
+    size: int
+    url: str = ""
+
+
+@dataclass(frozen=True)
 class ModelEntry:
     file: str
     sha256: str
@@ -133,6 +145,7 @@ class ModelEntry:
     license: str
     source: str
     url: str = ""
+    texts: tuple[ModelText, ...] = ()
 
 
 def _required(item: Mapping[str, Any], key: str, where: str) -> str:
@@ -230,22 +243,43 @@ def load_native_table_file(path: Path) -> NativeTable:
         raise AuditInputError(f"{path}: 네이티브 표를 읽을 수 없다 ({exc})") from exc
 
 
+def _model_file(item: Mapping[str, Any], where: str) -> tuple[str, str, int]:
+    """모델 폴더 안 파일의 (경로, sha256, 크기)."""
+    try:
+        size = int(item["size"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise AuditInputError(f"{where}: size는 정수여야 한다") from exc
+    sha256 = _required(item, "sha256", where).lower()
+    if len(sha256) != 64 or any(c not in "0123456789abcdef" for c in sha256):
+        raise AuditInputError(f"{where}: sha256은 16진수 64자다")
+    file = _required(item, "file", where)
+    # 모델은 모델 폴더 안에 있어야 한다: 절대 경로·드라이브·상위 폴더 이탈 금지
+    win = PureWindowsPath(file)
+    if win.drive or win.root or PurePosixPath(file).is_absolute() or ".." in win.parts:
+        raise AuditInputError(f"{where}: file은 모델 폴더 안의 상대 경로여야 한다 ({file!r})")
+    return file, sha256, size
+
+
 def load_model_table(data: Mapping[str, Any]) -> list[ModelEntry]:
+    """`[[model]]`과, 모델의 `license_texts`가 가리키는 `[[text]]`(근거 원문)."""
+    texts: dict[str, ModelText] = {}
+    for i, item in enumerate(data.get("text", [])):
+        where = f"text[{i}]"
+        file, sha256, size = _model_file(item, where)
+        texts[file] = ModelText(
+            file=file,
+            label=_required(item, "label", where),
+            sha256=sha256,
+            size=size,
+            url=str(item.get("url", "")),
+        )
     models: list[ModelEntry] = []
     for i, item in enumerate(data.get("model", [])):
         where = f"model[{i}]"
-        try:
-            size = int(item["size"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise AuditInputError(f"{where}: size는 정수여야 한다") from exc
-        sha256 = _required(item, "sha256", where).lower()
-        if len(sha256) != 64 or any(c not in "0123456789abcdef" for c in sha256):
-            raise AuditInputError(f"{where}: sha256은 16진수 64자다")
-        file = _required(item, "file", where)
-        # 모델은 모델 폴더 안에 있어야 한다: 절대 경로·드라이브·상위 폴더 이탈 금지
-        win = PureWindowsPath(file)
-        if win.drive or win.root or PurePosixPath(file).is_absolute() or ".." in win.parts:
-            raise AuditInputError(f"{where}: file은 모델 폴더 안의 상대 경로여야 한다 ({file!r})")
+        file, sha256, size = _model_file(item, where)
+        refs = item.get("license_texts", [])
+        if not isinstance(refs, list) or any(ref not in texts for ref in refs):
+            raise AuditInputError(f"{where}: license_texts는 [[text]]의 file 목록이다")
         models.append(
             ModelEntry(
                 file=file,
@@ -254,6 +288,7 @@ def load_model_table(data: Mapping[str, Any]) -> list[ModelEntry]:
                 license=_required(item, "license", where),
                 source=_required(item, "source", where),
                 url=str(item.get("url", "")),
+                texts=tuple(texts[ref] for ref in refs),
             )
         )
     return models
@@ -623,7 +658,9 @@ def audit_build_input(
 
     if models is not None:
         report.problems.extend(audit_models(models, models_dir, policy))
-    report.notice_sections = render_notice_sections(report.files, table, policy, evidence, models)
+    report.notice_sections = render_notice_sections(
+        report.files, table, policy, evidence, models, models_dir
+    )
     return report
 
 
@@ -659,13 +696,17 @@ def audit_final_tree(
     else:
         report.problems.append(f"[site-packages 없음] {SITE_PACKAGES_IN_INSTALL}")
 
+    models_dir: Path | None = None
     if models is not None:
         models_dir = root / MODELS_IN_INSTALL
         if not models_dir.is_dir():
             report.problems.append(f"[모델 폴더 없음] {MODELS_IN_INSTALL}")
+            models_dir = None
         else:
             report.problems.extend(audit_models(models, models_dir, policy))
-    report.notice_sections = render_notice_sections(report.files, table, policy, evidence, models)
+    report.notice_sections = render_notice_sections(
+        report.files, table, policy, evidence, models, models_dir
+    )
     return report
 
 
@@ -746,7 +787,23 @@ def audit_models(
         size = path.stat().st_size
         if size != m.size or _sha256(path) != m.sha256:
             problems.append(f"[모델 해시 불일치] {m.file}: 표와 크기·SHA256이 다르다")
+    if models_dir is not None:
+        for t in _model_texts(models):
+            path = models_dir / t.file
+            if not path.resolve().is_relative_to(models_dir.resolve()):
+                problems.append(f"[모델 경로 이탈] {t.file}: {models_dir} 밖을 가리킨다")
+            elif not path.is_file():
+                problems.append(f"[모델 근거 원문 없음] {t.file}: {models_dir}에 없다")
+            elif path.stat().st_size != t.size or _sha256(path) != t.sha256:
+                problems.append(f"[모델 근거 원문 해시 불일치] {t.file}: 표와 크기·SHA256이 다르다")
     return problems
+
+
+def _model_texts(models: Sequence[ModelEntry]) -> list[ModelText]:
+    out: list[ModelText] = []
+    for m in models:
+        out += [t for t in m.texts if t not in out]
+    return out
 
 
 # ---------------------------------------------------------------- NOTICES
@@ -762,8 +819,12 @@ def render_notice_sections(
     policy: Policy,
     evidence: Collected,
     models: Sequence[ModelEntry] | None,
+    models_dir: Path | None = None,
 ) -> list[str]:
-    """NOTICES 뒤에 붙일 절: 네이티브 파일, 패키지별 라이선스 예외, LicenseRef, 근거 원문, 모델."""
+    """NOTICES 뒤에 붙일 절: 네이티브 파일, 패키지별 라이선스 예외, LicenseRef, 근거 원문, 모델.
+
+    모델 근거 원문은 `models_dir`에서 읽어 싣는다(없으면 받을 주소만 적는다 — 감사는 그 경우
+    원문을 확인하지 않았으므로 배포용 NOTICES는 모델 폴더를 주고 만든다)."""
     sections: list[str] = []
     entries: dict[NativeEntry, list[NativeFile]] = {}
     for nf in files:
@@ -830,8 +891,18 @@ def render_notice_sections(
                 f"License: {m.license}",
                 f"출처: {m.source}",
                 f"SHA256: {m.sha256} ({m.size} bytes)",
-                "",
             ]
+            lines += [f"근거 원문: {t.label} ({t.file})" for t in m.texts]
+            lines.append("")
+        for t in _model_texts(models):
+            body: str | None = None
+            if models_dir is not None:
+                try:
+                    body = (models_dir / t.file).read_text(encoding="utf-8-sig")
+                except OSError, UnicodeDecodeError:
+                    body = None  # audit_models가 문제로 남긴다
+            lines += ["=" * 78, f"{t.label} ({t.file})", "-" * 78]
+            lines += [body if body is not None else f"원문: {t.url}", ""]
         sections.append("\n".join(lines))
     return sections
 

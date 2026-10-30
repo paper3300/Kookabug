@@ -31,6 +31,12 @@ jobs:
       - run: uv run ruff check
       - run: uv run ruff format --check
       - run: uv run pyright
+      # OCR 모델 (구현 계획 M1 2.6): 모델 표가 바뀌지 않으면 캐시. 받은 뒤에도 해시를 다시 확인한다
+      - uses: actions/cache@v4
+        with:
+          path: build/ocr-models
+          key: ocr-models-${{ hashFiles('python/kookabug_platform/src/kookabug_platform/ocr/models.toml') }}
+      - run: uv run python tools/fetch_ocr_models.py
       # packaging 표시 테스트(wheel 빌드·깨끗한 venv·라이선스 파이프라인)도 건너뛰지 않는다
       - run: uv run pytest
 
@@ -103,6 +109,13 @@ jobs:
           cache: pnpm
       # pnpm licenses가 node_modules의 패키지 정보를 읽는다
       - run: pnpm install --frozen-lockfile
+      # 모델 해시와 라이선스 근거 원문을 확인하고 원문을 NOTICES에 싣는다
+      - uses: actions/cache@v4
+        with:
+          path: build/ocr-models
+          key: ocr-models-${{ hashFiles('python/kookabug_platform/src/kookabug_platform/ocr/models.toml') }}
+      - run: uv sync --locked --all-packages
+      - run: uv run python tools/fetch_ocr_models.py
       - name: 라이선스 감사
         run: ./tools/license_audit.ps1
       - uses: actions/upload-artifact@v4

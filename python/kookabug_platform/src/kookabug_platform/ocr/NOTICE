@@ -1,0 +1,27 @@
+Kookabug OCR 파이프라인 고지
+
+det.py, rec.py 는 RapidOCR v3.10.0 (https://github.com/RapidAI/RapidOCR, 태그 v3.10.0)의
+다음 파일을 옮겨 고친 것이다. 원본과 같이 Apache License, Version 2.0 을 따른다.
+
+  rapidocr/ch_ppocr_det/main.py, rapidocr/ch_ppocr_det/utils.py
+  rapidocr/ch_ppocr_rec/main.py, rapidocr/ch_ppocr_rec/utils.py
+  rapidocr/utils/process_img.py
+
+  Copyright (c) 2021 RapidOCR Authors. All rights reserved.
+  그 바탕인 PaddleOCR 코드: Copyright (c) 2020 PaddlePaddle Authors. All Rights Reserved.
+
+바꾼 점
+  - Shapely 다각형 넓이·둘레를 OpenCV contourArea·arcLength 로 바꿨다 (Shapely 의존성 제거)
+  - 방향 분류·낱말 상자·오른쪽에서 왼쪽 글자 처리를 뺐다
+  - 설정 파일 대신 RapidOCR 기본값을 상수와 DetConfig 로 두었다. 검출 입력 짧은 변 한계는
+    736 대신 64 (PaddleOCR 3.x PP-OCRv5 검출 기본값), 긴 변 한계는 4096
+  - 큰 이미지는 원래 해상도 타일로 나눠 검출하고 경계 상자를 합친다 (큰 글자용 축소 검출 한 번)
+  - 크기 계산이 0이 되지 않게 했고, 낮고 긴 이미지의 세로 여백은 타일마다 붙인다
+  - 추론을 타일·묶음마다 따로 불러 직전·직후에, 후처리·타일 상자 합치기 중에도 취소·기한을
+    확인한다
+
+OCR 모델(PP-OCRv6_det_small.onnx, korean_PP-OCRv5_rec_mobile.onnx)은 이 패키지에 들어 있지
+않다. 출처·SHA256·라이선스는 models.toml, 라이선스 근거 원문은 모델과 함께 받는 파일
+(LICENSE-PaddleOCR.txt, MODEL_LICENSES-RapidOCR.md)과 설치본 THIRD_PARTY_NOTICES 에 있다.
+모델 가중치: Copyright Baidu and/or the applicable PaddleOCR rights holders, Apache-2.0.
+ONNX 변환: RapidOCR Authors, Apache-2.0.

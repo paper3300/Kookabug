@@ -32,8 +32,10 @@ BUILD_MARKER = ".kookabug-license-audit"
 PNPM_EMPTY_OUTPUT = "No licenses in packages found"
 # 프로젝트 루트 기준. 네이티브 표가 없는 프로젝트(테스트용 작은 프로젝트)는 네이티브 감사를 안 한다
 NATIVE_TABLE = "tools/native-licenses.toml"
-# OCR 모델 표 (T7이 만든다). 있으면 라이선스를 판정하고 NOTICES에 싣는다
+# OCR 모델 표. 있으면 라이선스를 판정하고 NOTICES에 싣는다. 받아 둔 모델 폴더
+# (`tools/fetch_ocr_models.py`)가 있으면 해시와 근거 원문까지 확인하고 원문을 싣는다
 MODELS_TABLE = "python/kookabug_platform/src/kookabug_platform/ocr/models.toml"
+MODELS_DIR = "build/ocr-models"
 
 
 class PipelineError(Exception):
@@ -202,6 +204,8 @@ def run_pipeline(
     models_table = models_table or project / MODELS_TABLE
     if models_table.is_file():
         audit_args += ["--models-table", str(models_table)]
+        if (project / MODELS_DIR).is_dir():
+            audit_args += ["--models-dir", str(project / MODELS_DIR)]
     if with_js:
         out = _run(
             [_tool("pnpm"), "licenses", "list", "--prod", "--json"], cwd=project, capture=True

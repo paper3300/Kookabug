@@ -17,6 +17,11 @@ Kookabug의 Windows 플랫폼 구현: 창·프로세스·DPI, WGC 캡처, SendIn
 | `deadline.py` | 관측 호출의 유효 기한(노드·설정·전체 기한 구분, `ObservationTimeout`) |
 | `capture.py` | WGC 창 세션·최신 프레임 재사용·장애 구분·클라이언트 자르기·`FrameInfo` |
 | `frames.py` | 프레임 저장소(픽셀 공유·보관 등급·바이트 예산·`frame_expired`)와 PNG 인코딩 |
+| `ocr/` | OCR: 모델 표·찾기·해시(`models.py`·`models.toml`), RapidOCR에서 옮긴 검출·인식(`det.py`·`rec.py`, `NOTICE`), 엔진·결과 묶기·숫자 파싱(`engine.py`) |
 
 배포물에 들어가는 네이티브 파일(DLL·pyd)의 구성요소별 라이선스는 `tools/native-licenses.toml`이
 단일 출처다.
+
+OCR 모델은 패키지에 들어 있지 않다. 레포에서는 `uv run python tools/fetch_ocr_models.py`로
+`build/ocr-models/`에 받는다(다른 폴더는 `KOOKABUG_OCR_MODELS`). 정확도·속도 측정은
+`uv run python tools/ocr_bench.py fixtures/sample-game/ocr-samples`.

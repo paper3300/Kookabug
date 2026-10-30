@@ -1,0 +1,28 @@
+{"id": "title-logo", "image": "../frames/title.png", "region": [300, 150, 424, 90], "text": "SampleRPG"}
+{"id": "title-subtitle", "image": "../frames/title.png", "region": [300, 240, 424, 44], "text": "샘플 RPG · 연습용 예제 게임"}
+{"id": "title-start", "image": "../frames/title.png", "region": [412, 380, 200, 64], "text": "게임 시작"}
+{"id": "title-version", "image": "../frames/title.png", "region": [380, 585, 264, 30], "text": "v0.1 Kookabug 예제"}
+{"id": "maintenance-title", "image": "../frames/maintenance.png", "region": [262, 170, 500, 56], "text": "점검 안내"}
+{"id": "maintenance-body", "image": "../frames/maintenance.png", "region": [262, 250, 500, 100], "text": "서버 점검 중입니다\n잠시 후 다시 접속해 주세요"}
+{"id": "maintenance-ok", "image": "../frames/maintenance.png", "region": [442, 392, 140, 52], "text": "확인"}
+{"id": "login-title", "image": "../frames/login.png", "region": [300, 95, 424, 50], "text": "로그인"}
+{"id": "login-account-label", "image": "../frames/login.png", "region": [280, 205, 110, 50], "text": "계정"}
+{"id": "login-password-label", "image": "../frames/login.png", "region": [230, 285, 160, 50], "text": "비밀번호"}
+{"id": "login-button", "image": "../frames/login.png", "region": [432, 380, 160, 56], "text": "로그인"}
+{"id": "login-help", "image": "../frames/login.png", "region": [300, 575, 424, 30], "text": "Tab: 다음 칸 Enter: 로그인"}
+{"id": "login-error-title", "image": "../frames/login_error.png", "region": [262, 170, 500, 56], "text": "로그인 실패"}
+{"id": "login-error-body", "image": "../frames/login_error.png", "region": [262, 250, 500, 100], "text": "계정 또는 비밀번호가\n올바르지 않습니다"}
+{"id": "lobby-title", "image": "../frames/lobby.png", "region": [300, 90, 424, 60], "text": "서버 선택"}
+{"id": "lobby-server1", "image": "../frames/lobby.png", "region": [262, 200, 500, 64], "text": "Server 1 원활"}
+{"id": "lobby-server2", "image": "../frames/lobby.png", "region": [262, 280, 500, 64], "text": "Server 2 혼잡"}
+{"id": "lobby-enter", "image": "../frames/lobby.png", "region": [412, 420, 200, 60], "text": "입장"}
+{"id": "loading", "image": "../frames/loading.png", "region": [300, 260, 424, 60], "text": "불러오는 중..."}
+{"id": "world-gold", "image": "../frames/world.png", "region": [20, 20, 240, 52], "text": "Gold 12,345"}
+{"id": "world-map", "image": "../frames/world.png", "region": [824, 170, 180, 30], "text": "MAP"}
+{"id": "world-hint", "image": "../frames/world.png", "region": [362, 590, 300, 36], "text": "I: 인벤토리"}
+{"id": "inventory-title", "image": "../frames/inventory.png", "region": [212, 90, 600, 56], "text": "인벤토리"}
+{"id": "inventory-row1", "image": "../frames/inventory.png", "region": [252, 170, 524, 92], "text": "포션 검 방패 Key 지도"}
+{"id": "inventory-row2", "image": "../frames/inventory.png", "region": [252, 278, 524, 92], "text": "Gem 활 빵"}
+{"id": "inventory-close", "image": "../frames/inventory.png", "region": [362, 505, 300, 36], "text": "I · Esc: 닫기"}
+{"id": "full-lobby", "image": "../frames/lobby.png", "text": "서버 선택\nServer 1 원활\nServer 2 혼잡\n입장", "tags": ["full"]}
+{"id": "full-login-error", "image": "../frames/login_error.png", "text": "로그인 실패\n계정 또는 비밀번호가\n올바르지 않습니다\n확인", "tags": ["full"]}

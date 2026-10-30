@@ -65,6 +65,12 @@ uv run python -m sample_game --event-log build/sample-game.jsonl
 
 로그인 칸은 표의 `forms`가 게임과 같은 규칙(칸 클릭·Tab·Backspace·글자 붙이기·최대 길이, 오류 뒤 비밀번호 비우기)으로 따라가고, 로그인 전이는 칸 값이 기본 계정(`qa_tester_01` / `sample-pass-01`)과 같을 때만 로비로 간다(`when.valid`). 글자를 안 넣거나 칸이 틀리면 헤드리스에서도 로그인 오류가 된다. `--account`·`--password`로 바꾼 값은 표에 반영되지 않는다. 표의 실행 가능한 기준 해석은 `sample_game.scenario.Simulator`이고, `tests/test_scenario.py`가 실제 상태 기계와 무작위 입력으로 대조한다.
 
+## OCR 표본 (`ocr-samples/`)
+
+`ocr-samples/truth.jsonl`: 위 화면 PNG(`../frames/`)의 영역과 정답 문자열. OCR 정확도·속도를
+`uv run python tools/ocr_bench.py fixtures/sample-game/ocr-samples`로 잰다(형식은 `tools/ocr_bench.py`
+맨 위 설명). 화면 그림이나 글자를 바꾸면 정답과 영역도 맞춘다.
+
 ## 테스트
 
 ```powershell

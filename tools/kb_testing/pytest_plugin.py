@@ -107,16 +107,25 @@ def spawned() -> Iterator[Spawned]:
 
 @pytest.fixture(scope="session")
 def ocr_models() -> Path:
-    """OCR 모델 폴더 (구현 계획 M1 2.13). 없으면 건너뛰지 않고 **실패**한다.
+    """OCR 모델 폴더 (구현 계획 M1 2.13). 없거나 모델 표(`models.toml`)와 크기·SHA256이 다르면
+    건너뛰지 않고 **실패**한다. 라이선스 근거 원문도 같이 확인한다.
 
-    찾는 순서: `KOOKABUG_OCR_MODELS` → 레포 `build/ocr-models`. 모델 표와의 해시 대조는 T7이 붙인다.
+    찾는 순서: `KOOKABUG_OCR_MODELS` → 레포 `build/ocr-models`.
     """
+    from kookabug_platform.ocr.models import load_manifest, verify_file
+
     env = os.environ.get(OCR_MODELS_ENV, "").strip()
     folder = Path(env) if env else REPO_ROOT / "build" / "ocr-models"
-    if folder.is_dir() and any(folder.glob("*.onnx")):
+    manifest = load_manifest()
+    bad = [
+        spec.file
+        for spec in (*manifest.models, *manifest.texts)
+        if not verify_file(folder / spec.file, spec.sha256, spec.size)
+    ]
+    if not bad:
         return folder
     pytest.fail(
-        f"OCR 모델이 없다: {folder}. `uv run python tools/fetch_ocr_models.py`로 받는다 "
-        f"(다른 폴더면 {OCR_MODELS_ENV})",
+        f"OCR 모델이 없거나 모델 표와 다르다: {folder} ({', '.join(bad)}). "
+        f"`uv run python tools/fetch_ocr_models.py`로 받는다 (다른 폴더면 {OCR_MODELS_ENV})",
         pytrace=False,
     )

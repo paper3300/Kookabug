@@ -75,9 +75,15 @@
 | `core.ocr.wait_text` | 문구가 나타날 때까지 대기 | `region`, `contains` / `regex` | `text`, `match` | **found**, timeout |
 | `core.ocr.click_text` | 문구를 찾아 클릭 | `region`, `text` | `match` | **done**, not_found |
 
-`confidence`는 엔진이 주지 않으면 `null`이다 (Windows OCR은 주지 않음). 엔진마다 척도가 달라서 엔진끼리 비교하지 않는다.
+`confidence`는 엔진이 주지 않으면 `null`이다 (Windows OCR은 주지 않음). 엔진마다 척도가 달라서 엔진끼리 비교하지 않는다. RapidOCR은 읽은 글자 상자들의 점수 평균(0~1)이고, 글자가 하나도 없으면 `null`이다.
 
-`region`은 찾기 대상(`$target`) 또는 정규화 사각형. 기준 요소 옆을 읽는 Anchor 방식은 target 파일의 옵션으로 둔다.
+`text`는 같은 높이에 있는 글자 상자들을 왼쪽부터 띄어 이은 줄을 위에서부터 줄바꿈(`\n`)으로 이은 것이다. 검출이 한글 낱말을 글자마다 나눈 경우(상자가 맞닿고 양쪽이 한글)만 띄우지 않는다. 글자가 없으면 빈 문자열이고 `read`는 `unreadable`로 간다.
+
+`parse: "number"`는 천 단위 구분(`,`·공백, 세 자리 묶음)을 빼고 처음 나오는 수(부호·소수점 포함)를 `number`로 낸다. 수가 없으면 `unreadable`.
+
+`sensitive: true` target으로 읽은 `text`는 `secret`이고, `number`는 `null`이다(숫자 비밀 타입이 없다). 그 OCR 텍스트는 기록에 남기지 않는다(`omitted.reason = "sensitive_target"`).
+
+`region`은 찾기 대상(`$target`) 또는 정규화 사각형. 기준 요소 옆을 읽는 Anchor 방식은 target 파일의 옵션으로 둔다. `region`이 없으면 화면 전체를 읽는데, 큰 화면은 작은 글자를 놓치지 않도록 원래 해상도 타일로 나눠 검출하므로 느리다(1920×1080 약 1.5초, 4K 약 5초). `wait_text`처럼 되풀이해 읽는 노드는 영역을 주는 것이 기본이다.
 
 ## 6. 입력
 
@@ -167,3 +173,9 @@
 - 파일·HTTP·DB 노드. 플러그인으로 만든다
 - try/catch, 병렬 실행
 - 게임을 직접 조작하는 Agent 노드
+
+## 반영 기록
+
+| 바뀐 것 | 이유 |
+|---|---|
+| M1 OCR: `confidence`(상자 점수 평균, 글자 없으면 `null`)·`text` 합치기(줄·띄어쓰기)·`parse: "number"` 규칙·`sensitive`의 `number = null`, 영역 없는 전체 읽기의 속도 (5장) | 노드 출력의 뜻을 엔진 구현(`kookabug_platform.ocr`)과 맞춘다. 숫자에는 비밀 타입이 없어 가린 값을 낼 수 없다. 큰 화면 전체 읽기는 타일 검출이라 수 초가 걸린다 |

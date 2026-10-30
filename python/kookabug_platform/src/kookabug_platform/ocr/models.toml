@@ -1,0 +1,53 @@
+# OCR 모델 고정 표 (구현 계획 M1 2.6). 모델 파일은 git에 넣지 않는다.
+# `tools/fetch_ocr_models.py`가 `build/ocr-models/`에 받아 크기·SHA256을 확인하고, 실행 중에는 내려받지 않는다.
+#
+# [[model]]  모델 하나 (감사 `tools/native_audit.py`도 이 표를 읽는다)
+#   role          det | rec
+#   file          모델 폴더 안 파일 이름
+#   sha256, size  RapidOCR v3.10.0 `default_models.yaml`의 SHA256과 같다
+#   license       SPDX 식
+#   license_texts 아래 [[text]] 중 이 모델의 라이선스 근거 원문
+#   source        출처 (원본 모델 → 변환본)
+#   url           받는 주소 (RapidOCR v3.10.0 태그), mirrors = 보조 주소 (같은 바이트여야 한다)
+#
+# [[text]]  라이선스 근거 원문. 모델과 함께 받고 NOTICES에 원문을 싣는다
+
+[[model]]
+role = "det"
+file = "PP-OCRv6_det_small.onnx"
+sha256 = "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f"
+size = 9929594
+license = "Apache-2.0"
+license_texts = ["LICENSE-PaddleOCR.txt", "MODEL_LICENSES-RapidOCR.md"]
+source = "PaddleOCR PP-OCRv6_small_det (Baidu/PaddleOCR, Apache-2.0) → RapidOCR v3.10.0 ONNX 변환본 (RapidAI/RapidOCR, python/MODEL_LICENSES.md)"
+url = "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx"
+mirrors = [
+    "https://modelscope.cn/api/v1/models/RapidAI/RapidOCR/repo?Revision=v3.10.0&FilePath=onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx",
+]
+
+[[model]]
+role = "rec"
+file = "korean_PP-OCRv5_rec_mobile.onnx"
+sha256 = "cd6e2ea50f6943ca7271eb8c56a877a5a90720b7047fe9c41a2e541a25773c9b"
+size = 13488748
+license = "Apache-2.0"
+license_texts = ["LICENSE-PaddleOCR.txt", "MODEL_LICENSES-RapidOCR.md"]
+source = "PaddleOCR korean_PP-OCRv5_mobile_rec (Baidu/PaddleOCR, Apache-2.0) → RapidOCR v3.10.0 ONNX 변환본 (RapidAI/RapidOCR, python/MODEL_LICENSES.md). 문자 사전은 ONNX 메타데이터 `character`"
+url = "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv5/rec/korean_PP-OCRv5_rec_mobile.onnx"
+mirrors = [
+    "https://modelscope.cn/api/v1/models/RapidAI/RapidOCR/repo?Revision=v3.10.0&FilePath=onnx/PP-OCRv5/rec/korean_PP-OCRv5_rec_mobile.onnx",
+]
+
+[[text]]
+file = "LICENSE-PaddleOCR.txt"
+label = "PaddleOCR LICENSE (Apache-2.0, 태그 v3.7.0) — 모델 가중치의 라이선스"
+sha256 = "3840c5c0c61c294264d2dd77b8777be6ddd90121ef4e0e64abcd22edea581d6e"
+size = 11376
+url = "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/v3.7.0/LICENSE"
+
+[[text]]
+file = "MODEL_LICENSES-RapidOCR.md"
+label = "RapidOCR MODEL_LICENSES.md (태그 v3.10.0) — ONNX 변환본의 출처·재배포 조건"
+sha256 = "c5fd0e8603d3df743355b546121e6fe0f4ef8ff455c5a85c1681fd3ae520e153"
+size = 8398
+url = "https://raw.githubusercontent.com/RapidAI/RapidOCR/v3.10.0/python/MODEL_LICENSES.md"
