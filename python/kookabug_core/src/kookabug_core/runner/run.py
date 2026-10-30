@@ -73,10 +73,10 @@ from kookabug_core.win import Job, ProcessId, current
 from kookabug_core.workerhost import WorkerInvoker, WorkerProcess, WorkerStartError
 from kookabug_core.workspace import RunOptions, SettingLookup, Workspace, WorkspaceError
 from kookabug_sdk import _faults
-from kookabug_sdk.context import InputApi
+from kookabug_sdk.context import InputApi, Where
 from kookabug_sdk.pipe import connect
 from kookabug_sdk.rpc import RpcPeer
-from kookabug_sdk.types import Image, Match, Point, Rect, Secret, WindowRef
+from kookabug_sdk.types import Image, Point, Rect, Secret, WindowRef
 
 if TYPE_CHECKING:
     from kookabug_platform.tracker import WindowTracker
@@ -110,31 +110,54 @@ class _ActorInput:
     """`ctx.input` → 입력 액터 큐 (스텝 ID와 함께). 액터가 백엔드를 부르는 유일한 스레드다.
 
     대상 창 없이 넣는다. 창 고정·`Match` 재검증을 하는 공용 입력 서비스(M1 T9)가 이 자리를
-    대신하기 전까지 `Match`·`Rect`는 중심점으로 줄인다.
+    대신하기 전까지 `Match`는 클릭 지점, `Rect`는 중심점으로 줄이고, 누르고 있기(`hold_ms`)는
+    받지 않는다.
     """
 
     def __init__(self, actor: InputActor, step: str) -> None:
         self._actor = actor
         self._step = step
 
-    def click(self, at: Point | Rect | Match, *, button: str = "left") -> None:
-        center = (
-            at if isinstance(at, Point) else at.center if isinstance(at, Rect) else at.rect.center
-        )
-        self._actor.click(ClientPoint(center.x, center.y), button=button, step=self._step)
+    def click(self, at: Where, *, button: str = "left", count: int = 1) -> None:
+        self._actor.click(_client_point(at), button=button, count=count, step=self._step)
 
-    def key(self, key: str) -> None:
+    def drag(self, start: Where, end: Where, *, duration_ms: int = 0, button: str = "left") -> None:
+        self._actor.drag(
+            _client_point(start),
+            _client_point(end),
+            button=button,
+            duration_ms=duration_ms,
+            step=self._step,
+        )
+
+    def scroll(self, at: Where, amount: int) -> None:
+        self._actor.scroll(_client_point(at), amount, step=self._step)
+
+    def key(self, key: str, *, hold_ms: int = 0) -> None:
+        if hold_ms:
+            raise PlatformUnavailable("이 실행에서는 키를 누르고 있을(hold_ms) 수 없다")
         self._actor.key(key, step=self._step)
 
     def type_text(self, text: str | Secret) -> None:
         self._actor.type_text(text, step=self._step)
 
 
+def _client_point(at: Where) -> ClientPoint:
+    point = at if isinstance(at, Point) else at.center if isinstance(at, Rect) else at.click_point
+    return ClientPoint(point.x, point.y)
+
+
 class _NoInput:
-    def click(self, at: Point | Rect | Match, *, button: str = "left") -> None:
+    def click(self, at: Where, *, button: str = "left", count: int = 1) -> None:
         raise PlatformUnavailable
 
-    def key(self, key: str) -> None:
+    def drag(self, start: Where, end: Where, *, duration_ms: int = 0, button: str = "left") -> None:
+        raise PlatformUnavailable
+
+    def scroll(self, at: Where, amount: int) -> None:
+        raise PlatformUnavailable
+
+    def key(self, key: str, *, hold_ms: int = 0) -> None:
         raise PlatformUnavailable
 
     def type_text(self, text: str | Secret) -> None:

@@ -23,14 +23,18 @@ from pathlib import Path
 from typing import Any, Final, final
 
 __all__ = [
+    "FrameRef",
     "Image",
     "Match",
+    "OcrLine",
+    "OcrResult",
     "PinTypeDeclError",
     "Point",
     "ProcessRef",
     "Rect",
     "Secret",
     "Target",
+    "WindowInfo",
     "WindowRef",
     "pin_type",
     "plugin_type",
@@ -92,8 +96,19 @@ class Point:
 
 @dataclass(frozen=True, slots=True)
 class WindowRef:
+    """창 하나. `handle`은 HWND.
+
+    `pid`·`process_created`(프로세스 생성 시각 FILETIME 10진 문자열)는 같은 HWND 값을 다시 쓴 다른
+    창을 가려낸다. `binding`은 runner가 창을 처음 정할 때 붙이는 바인딩 ID로, 그 실행 안에서만
+    뜻이 있다. 창이 닫히면 그 바인딩은 죽고, 같은 HWND로 새 창이 떠도 옛 값은 `window_gone`이다.
+    노드는 이 셋을 만들지 않고 받은 값을 그대로 넘긴다.
+    """
+
     handle: int
     title: str = ""
+    pid: int = 0
+    process_created: str = ""
+    binding: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +124,10 @@ class Image:
     `capture_id`는 러너가 `ctx.capture` 때 붙이는 실행 안 번호다. 노드는 만들지 않는다. 기록 정책이
     "얻을 때 스크린샷이 허용됐는가"를 이것으로 찾으므로, 복사·출력·워커 경계를 넘어도 유지된다.
     값 비교에는 들지 않는다.
+
+    실제 캡처는 **참조 이미지**다: `data`·`path` 없이 크기·`frame`·`capture_id`만 들고, 픽셀은
+    러너의 프레임 저장소에 있다. 찾기·비교·OCR(`ctx.vision`·`ctx.ocr`)과 `ctx.artifacts.save`는
+    러너가 그 픽셀로 한다. 저장소에서 버린 프레임을 쓰면 `frame_expired`다.
     """
 
     width: int = 0
@@ -120,13 +139,83 @@ class Image:
 
 
 @dataclass(frozen=True, slots=True)
+class FrameRef:
+    """`Match`를 찾은 관측: 캡처 방식, 그때 클라이언트 크기·DPI, 캡처 번호, 관측 시각(벽시계 초).
+
+    입력 직전 재검증이 지금 창과 비교한다 (크기·DPI·캡처 방식이 다르면 다시 찾는다).
+    """
+
+    backend: str
+    client_size: tuple[int, int]
+    dpi: int
+    capture_id: int | None = None
+    observed_at: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Match:
-    """찾기 결과: 위치, 점수, 창, 캡처 프레임 번호."""
+    """찾기 결과: 위치, 점수, 창, 캡처 프레임 번호.
+
+    `click`은 target의 클릭 지점(`click.anchor` + `offset * scale`). 없으면 `rect` 중심이다
+    (`click_point`). `scale`·`method`는 찾은 배율·방법, `target`은 찾은 target 파일(스냅샷 경로),
+    `frame_info`는 찾은 관측이다. 러너가 입력 직전에 `frame_info`·`target`으로 재검증한다.
+    `frame_info`는 값 비교에 들지 않는다.
+    """
 
     rect: Rect
     score: float
     window: WindowRef | None = None
     frame: int | None = None
+    scale: float = 1.0
+    method: str = ""
+    frame_info: FrameRef | None = field(default=None, compare=False)
+    target: str | None = None
+    click: Point | None = None
+
+    @property
+    def click_point(self) -> Point:
+        return self.rect.center if self.click is None else self.click
+
+
+@dataclass(frozen=True, slots=True)
+class WindowInfo:
+    """창 하나의 한 시점 정보 (`ctx.windows.info`). 좌표·크기는 물리 픽셀.
+
+    `client_origin`은 클라이언트 (0, 0)의 화면 좌표다.
+    """
+
+    window: WindowRef
+    title: str
+    process_name: str
+    class_name: str
+    client_size: tuple[int, int]
+    client_origin: tuple[int, int]
+    dpi: int
+    minimized: bool = False
+    visible: bool = True
+    fullscreen: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class OcrLine:
+    """글자 상자 하나. `box`는 클라이언트 좌표, `score`는 엔진 점수."""
+
+    text: str | Secret
+    box: Rect
+    score: float
+
+
+@dataclass(frozen=True, slots=True)
+class OcrResult:
+    """`ctx.ocr.read` 결과.
+
+    `text`는 줄을 위→아래·왼→오른 순서로 `\\n`으로 이은 것, `confidence`는 상자 점수 평균(엔진
+    척도, 글자가 없으면 None). `sensitive=True`로 읽으면 `text`와 줄 글자가 `Secret`이다.
+    """
+
+    text: str | Secret
+    lines: tuple[OcrLine, ...] = ()
+    confidence: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

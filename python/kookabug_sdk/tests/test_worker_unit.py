@@ -149,6 +149,7 @@ def test_ctx_requests_and_encoded_values() -> None:
         "invoke": 7,
         "at": {"$kb": "point", "x": 1, "y": 2},
         "button": "right",
+        "count": 1,
     }
     assert calls["ctx.input.type_text"]["text"] == {"$kb": "secret", "value": "타자"}
     assert calls["ctx.vars.set"] == {"invoke": 7, "name": "x", "value": [1, 2]}

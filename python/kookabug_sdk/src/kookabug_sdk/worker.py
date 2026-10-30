@@ -11,9 +11,11 @@ runner가 만든 파이프에 붙어 상호 인증한 뒤 JSON-RPC로 대화한�
   노드는 runner가 유예 뒤 프로세스를 끝낸다
 - `worker.shutdown`: 응답하고 끝난다
 
-`ctx`의 캡처·입력·기록·변수·설정은 runner에 요청한다(입력·캡처의 주체는 runner). `ctx.path()`는
-실행 스냅샷 루트(`files_root`) 기준이다. stdout·stderr는 runner가 로그 파일로 받으므로
-노드의 `print()`가 통신을 깨지 않는다. 연결을 잃으면(runner가 죽음) 곧바로 끝난다.
+`ctx`의 캡처·찾기·OCR·창·프로세스·입력·기록·변수·설정은 runner에 요청한다(입력·캡처의 주체는
+runner, 픽셀은 runner의 프레임 저장소에 있다). 관측 요청에는 노드 기한의 남은 시간(`deadline_ms`)을
+싣고, runner의 `observation_timeout`·`stale_observation` 오류는 SDK의 같은 예외로 되돌린다.
+`ctx.path()`는 실행 스냅샷 루트(`files_root`) 기준이다. stdout·stderr는 runner가 로그 파일로
+받으므로 노드의 `print()`가 통신을 깨지 않는다. 연결을 잃으면(runner가 죽음) 곧바로 끝난다.
 """
 
 from __future__ import annotations
@@ -43,9 +45,15 @@ from kookabug_sdk.context import (
     Deadline,
     InputApi,
     LogApi,
+    OcrApi,
+    ProcessApi,
     VarsApi,
+    VisionApi,
+    Where,
+    WindowsApi,
 )
 from kookabug_sdk.decorators import NodeFunction
+from kookabug_sdk.errors import ObservationTimeout, StaleObservation
 from kookabug_sdk.pipe import connect
 from kookabug_sdk.result import NodeContractError, Result
 from kookabug_sdk.rpc import (
@@ -55,14 +63,26 @@ from kookabug_sdk.rpc import (
     METHOD_NOT_FOUND,
     NODE_CONTRACT,
     NODE_ERROR,
+    OBSERVATION_TIMEOUT,
     PROTOCOL_VERSION,
+    STALE_OBSERVATION,
     Incoming,
     PeerLost,
     RpcError,
     RpcPeer,
 )
 from kookabug_sdk.schema import FORMAT
-from kookabug_sdk.types import Image, Match, Point, Rect, Secret, WindowRef
+from kookabug_sdk.types import (
+    Image,
+    Match,
+    OcrResult,
+    ProcessRef,
+    Rect,
+    Secret,
+    Target,
+    WindowInfo,
+    WindowRef,
+)
 
 __all__ = [
     "DEV_VERSION",
@@ -257,11 +277,42 @@ class WorkerContext:
     def input(self) -> InputApi:
         return _RemoteInput(self)
 
-    def capture(self, region: Rect | None = None) -> Image:
-        image = decode(self.call("ctx.capture", {"region": encode(region)})["image"])
-        if not isinstance(image, Image):
-            raise ContextViolation("runner가 캡처 결과로 이미지가 아닌 값을 줬다")
-        return image
+    @property
+    def vision(self) -> VisionApi:
+        return _RemoteVision(self)
+
+    @property
+    def ocr(self) -> OcrApi:
+        return _RemoteOcr(self)
+
+    @property
+    def windows(self) -> WindowsApi:
+        return _RemoteWindows(self)
+
+    @property
+    def process(self) -> ProcessApi:
+        return _RemoteProcess(self)
+
+    def returned[T](self, result: Any, key: str, kind: type[T]) -> T:
+        """runner 응답 `result[key]`를 값으로 되돌린다. 틀린 종류·None이면 `ContextViolation`."""
+        value = self.returned_or_none(result, key, kind)
+        if value is None:
+            raise ContextViolation(f"runner가 {key}(으)로 값을 주지 않았다")
+        return value
+
+    def returned_or_none[T](self, result: Any, key: str, kind: type[T]) -> T | None:
+        value = decode(result[key])
+        if value is not None and not isinstance(value, kind):
+            raise ContextViolation(f"runner가 {key}(으)로 {kind.__name__}이(가) 아닌 값을 줬다")
+        return value
+
+    def capture(self, region: Rect | None = None, *, deadline: Deadline | None = None) -> Image:
+        params = {"region": encode(region), **_deadline_param(deadline)}
+        return self.returned(self.call("ctx.capture", params), "image", Image)
+
+    def set_window(self, window: WindowRef) -> None:
+        # 이 노드의 ctx.window는 그대로다 (다음 스텝부터 바뀐다)
+        self.call("ctx.set_window", {"window": encode(window)})
 
     def deadline(self, ms: int) -> Deadline:
         return Deadline(self._clock, self._clock.now_ms() + ms)
@@ -291,6 +342,15 @@ class WorkerContext:
         return files_path(self._files_root, rel)
 
 
+def _deadline_param(deadline: Deadline | None) -> dict[str, Any]:
+    """관측 요청에 싣는 노드 기한의 남은 시간. 이미 지났으면 요청하지 않고 `ObservationTimeout`."""
+    if deadline is None:
+        return {}
+    if deadline.passed:
+        raise ObservationTimeout("노드 기한이 지나 관측을 시작하지 않았다")
+    return {"deadline_ms": deadline.remaining_ms}
+
+
 def _remote_error(exc: RpcError) -> BaseException:
     if exc.code == CANCELLED:
         return Cancelled(exc.message)
@@ -298,6 +358,10 @@ def _remote_error(exc: RpcError) -> BaseException:
         return ContextViolation(exc.message)
     if exc.code == NODE_CONTRACT:
         return NodeContractError(exc.message)
+    if exc.code == OBSERVATION_TIMEOUT:
+        return ObservationTimeout(exc.message)
+    if exc.code == STALE_OBSERVATION:
+        return StaleObservation(exc.message)
     data = exc.data if isinstance(exc.data, dict) else {}
     kind = _REMOTE_ERRORS.get(str(data.get("type")), RuntimeError)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
     return kind(exc.message)
@@ -360,14 +424,122 @@ class _RemoteInput:
     def __init__(self, ctx: WorkerContext) -> None:
         self._ctx = ctx
 
-    def click(self, at: Point | Rect | Match, *, button: str = "left") -> None:
-        self._ctx.call("ctx.input.click", {"at": encode(at), "button": button})
+    def click(self, at: Where, *, button: str = "left", count: int = 1) -> None:
+        self._ctx.call("ctx.input.click", {"at": encode(at), "button": button, "count": count})
 
-    def key(self, key: str) -> None:
-        self._ctx.call("ctx.input.key", {"key": key})
+    def drag(self, start: Where, end: Where, *, duration_ms: int = 0, button: str = "left") -> None:
+        params = {
+            "start": encode(start),
+            "end": encode(end),
+            "duration_ms": duration_ms,
+            "button": button,
+        }
+        self._ctx.call("ctx.input.drag", params)
+
+    def scroll(self, at: Where, amount: int) -> None:
+        self._ctx.call("ctx.input.scroll", {"at": encode(at), "amount": amount})
+
+    def key(self, key: str, *, hold_ms: int = 0) -> None:
+        self._ctx.call("ctx.input.key", {"key": key, "hold_ms": hold_ms})
 
     def type_text(self, text: str | Secret) -> None:
         self._ctx.call("ctx.input.type_text", {"text": encode(text)})
+
+
+class _RemoteVision:
+    def __init__(self, ctx: WorkerContext) -> None:
+        self._ctx = ctx
+
+    def find(
+        self,
+        image: Image,
+        target: Target,
+        *,
+        region: Rect | None = None,
+        deadline: Deadline | None = None,
+    ) -> Match | None:
+        params = {
+            "image": encode(image),
+            "target": encode(target),
+            "region": encode(region),
+            **_deadline_param(deadline),
+        }
+        result = self._ctx.call("ctx.vision.find", params)
+        return self._ctx.returned_or_none(result, "match", Match)
+
+    def diff(self, a: Image, b: Image, *, region: Rect | None = None) -> float:
+        params = {"a": encode(a), "b": encode(b), "region": encode(region)}
+        value = self._ctx.call("ctx.vision.diff", params)["value"]
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise ContextViolation("runner가 diff 결과로 수가 아닌 값을 줬다")
+        return float(value)
+
+
+class _RemoteOcr:
+    def __init__(self, ctx: WorkerContext) -> None:
+        self._ctx = ctx
+
+    def read(
+        self,
+        image: Image,
+        *,
+        region: Rect | None = None,
+        sensitive: bool = False,
+        deadline: Deadline | None = None,
+    ) -> OcrResult:
+        params = {
+            "image": encode(image),
+            "region": encode(region),
+            "sensitive": sensitive,
+            **_deadline_param(deadline),
+        }
+        return self._ctx.returned(self._ctx.call("ctx.ocr.read", params), "result", OcrResult)
+
+
+class _RemoteWindows:
+    def __init__(self, ctx: WorkerContext) -> None:
+        self._ctx = ctx
+
+    def find(
+        self, title: str | None = None, process_name: str | None = None, *, owned: bool = False
+    ) -> WindowRef | None:
+        params = {"title": title, "process_name": process_name, "owned": owned}
+        result = self._ctx.call("ctx.windows.find", params)
+        return self._ctx.returned_or_none(result, "window", WindowRef)
+
+    def info(self, window: WindowRef) -> WindowInfo:
+        result = self._ctx.call("ctx.windows.info", {"window": encode(window)})
+        return self._ctx.returned(result, "info", WindowInfo)
+
+    def set_client_size(self, window: WindowRef, width: int, height: int) -> bool:
+        params = {"window": encode(window), "width": width, "height": height}
+        result = self._ctx.call("ctx.windows.set_client_size", params)
+        return self._ctx.returned(result, "ok", bool)
+
+    def activate(self, window: WindowRef) -> None:
+        self._ctx.call("ctx.windows.activate", {"window": encode(window)})
+
+
+class _RemoteProcess:
+    def __init__(self, ctx: WorkerContext) -> None:
+        self._ctx = ctx
+
+    def launch(self, path: str, args: Sequence[str] = (), cwd: str | None = None) -> ProcessRef:
+        params = {"path": path, "args": list(args), "cwd": cwd}
+        return self._ctx.returned(
+            self._ctx.call("ctx.process.launch", params), "process", ProcessRef
+        )
+
+    def close(self, process: ProcessRef, force_after_ms: int) -> bool:
+        params = {"process": encode(process), "force_after_ms": force_after_ms}
+        return self._ctx.returned(self._ctx.call("ctx.process.close", params), "closed", bool)
+
+    def find_window(
+        self, process: ProcessRef, title: str | None = None, *, deadline: Deadline | None = None
+    ) -> WindowRef | None:
+        params = {"process": encode(process), "title": title, **_deadline_param(deadline)}
+        result = self._ctx.call("ctx.process.find_window", params)
+        return self._ctx.returned_or_none(result, "window", WindowRef)
 
 
 # ---------------------------------------------------------------- 오류 응답

@@ -47,9 +47,54 @@ class CtxArtifactsSaveResult(BaseModel):
     path: str | None
 
 
+class CtxProcessCloseResult(BaseModel):
+    """
+    closed: 강제 종료 없이 끝났는가
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    closed: bool
+
+
+class CtxVisionDiffResult(BaseModel):
+    """
+    채널 평균 절대 차이 / 255 (0 = 같음, 1 = 완전히 다름)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    value: Annotated[float, Field(ge=0.0, le=1.0)]
+
+
+class CtxWindowsSetClientSizeResult(BaseModel):
+    """
+    ok: 다시 읽은 크기가 요청과 같은가
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    ok: bool
+
+
+class DeadlineMs(RootModel[int]):
+    root: Annotated[
+        int,
+        Field(
+            description="관측 요청의 노드 기한 남은 시간 (밀리초, 0 이상). runner는 min(설정 기한, 이것, 전체 기한 남은 시간)으로 관측하고, 이것 때문에 끝나면 observation_timeout으로 답한다. 없으면 노드 기한 없음",
+            ge=0,
+            le=9007199254740991,
+            title="DeadlineMs",
+        ),
+    ]
+
+
 class EmptyResult(BaseModel):
     """
-    결과 없음 (ctx.log·ctx.vars.set·ctx.input.*·worker.shutdown)
+    결과 없음 (ctx.log·ctx.vars.set·ctx.input.*·ctx.windows.activate·ctx.set_window·worker.shutdown)
     """
 
     model_config = ConfigDict(
@@ -59,13 +104,39 @@ class EmptyResult(BaseModel):
 
 class ErrorCode(
     RootModel[
-        Literal[-32700, -32600, -32601, -32602, -32603, -32001, -32002, -32003, -32004, -32005]
+        Literal[
+            -32700,
+            -32600,
+            -32601,
+            -32602,
+            -32603,
+            -32001,
+            -32002,
+            -32003,
+            -32004,
+            -32005,
+            -32006,
+            -32007,
+        ]
     ]
 ):
     root: Annotated[
-        Literal[-32700, -32600, -32601, -32602, -32603, -32001, -32002, -32003, -32004, -32005],
+        Literal[
+            -32700,
+            -32600,
+            -32601,
+            -32602,
+            -32603,
+            -32001,
+            -32002,
+            -32003,
+            -32004,
+            -32005,
+            -32006,
+            -32007,
+        ],
         Field(
-            description="표준: -32700 parse_error, -32600 invalid_request, -32601 method_not_found, -32602 invalid_params, -32603 internal_error. Kookabug: -32001 cancelled, -32002 node_error, -32003 context_violation, -32004 node_contract, -32005 protocol_version",
+            description="표준: -32700 parse_error, -32600 invalid_request, -32601 method_not_found, -32602 invalid_params, -32603 internal_error. Kookabug: -32001 cancelled, -32002 node_error, -32003 context_violation, -32004 node_contract, -32005 protocol_version, -32006 observation_timeout(관측이 노드 기한 안에 끝나지 않음 — 워커에서 ObservationTimeout), -32007 stale_observation(입력 직전 재검증 실패 — 워커에서 StaleObservation, 처리되지 않은 fail)",
             title="ErrorCode",
         ),
     ]
@@ -106,6 +177,13 @@ class MethodName(RootModel[str]):
             pattern="^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
             title="MethodName",
         ),
+    ]
+
+
+class Millis(RootModel[int]):
+    root: Annotated[
+        int,
+        Field(description="시간 길이 (밀리초, 0 이상)", ge=0, le=9007199254740991, title="Millis"),
     ]
 
 
@@ -264,12 +342,13 @@ class CtxArtifactsSaveParams(BaseModel):
 
 class CtxCaptureParams(BaseModel):
     """
-    ctx.capture (워커 → runner)
+    ctx.capture (워커 → runner). region은 rect 또는 null
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
+    deadline_ms: DeadlineMs | None = None
     invoke: InvokeId
     region: WireValue
 
@@ -283,7 +362,7 @@ class CtxCaptureResult(BaseModel):
 
 class CtxInputClickParams(BaseModel):
     """
-    ctx.input.click (워커 → runner). at은 point·rect·match
+    ctx.input.click (워커 → runner). at은 point·rect·match, count는 클릭 횟수(생략하면 1)
     """
 
     model_config = ConfigDict(
@@ -291,19 +370,49 @@ class CtxInputClickParams(BaseModel):
     )
     at: WireValue
     button: str
+    count: Annotated[int | None, Field(ge=1, le=9007199254740991)] = None
     invoke: InvokeId
 
 
-class CtxInputKeyParams(BaseModel):
+class CtxInputDragParams(BaseModel):
     """
-    ctx.input.key (워커 → runner)
+    ctx.input.drag (워커 → runner). start·end는 point·rect·match
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
+    button: str
+    duration_ms: Millis
+    end: WireValue
+    invoke: InvokeId
+    start: WireValue
+
+
+class CtxInputKeyParams(BaseModel):
+    """
+    ctx.input.key (워커 → runner). hold_ms는 누르고 있는 시간(생략하면 0)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    hold_ms: Millis | None = None
     invoke: InvokeId
     key: str
+
+
+class CtxInputScrollParams(BaseModel):
+    """
+    ctx.input.scroll (워커 → runner). at은 point·rect·match, amount는 휠 칸 수(양수 = 위)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    amount: Annotated[int, Field(ge=-9007199254740991, le=9007199254740991)]
+    at: WireValue
+    invoke: InvokeId
 
 
 class CtxInputTypeTextParams(BaseModel):
@@ -329,6 +438,80 @@ class CtxLogParams(BaseModel):
     invoke: InvokeId
     level: Literal["debug", "info", "warn", "error"]
     message: str
+
+
+class CtxOcrReadParams(BaseModel):
+    """
+    ctx.ocr.read (워커 → runner). image는 참조 이미지나 파일·바이트 이미지, region은 rect 또는 null, sensitive면 글자가 비밀값으로 온다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    deadline_ms: DeadlineMs | None = None
+    image: WireValue
+    invoke: InvokeId
+    region: WireValue
+    sensitive: bool
+
+
+class CtxOcrReadResult(BaseModel):
+    """
+    result는 ocr_result 값
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    result: WireValue
+
+
+class CtxProcessCloseParams(BaseModel):
+    """
+    ctx.process.close (워커 → runner)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    force_after_ms: Millis
+    invoke: InvokeId
+    process: WireValue
+
+
+class CtxProcessFindWindowParams(BaseModel):
+    """
+    ctx.process.find_window (워커 → runner). deadline_ms가 있으면 창이 뜰 때까지 기다린다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    deadline_ms: DeadlineMs | None = None
+    invoke: InvokeId
+    process: WireValue
+    title: str | None
+
+
+class CtxProcessLaunchParams(BaseModel):
+    """
+    ctx.process.launch (워커 → runner)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    args: list[str]
+    cwd: str | None
+    invoke: InvokeId
+    path: str
+
+
+class CtxProcessLaunchResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    process: WireValue
 
 
 class CtxSettingParams(BaseModel):
@@ -381,6 +564,108 @@ class CtxVarsSetParams(BaseModel):
     invoke: InvokeId
     name: str
     value: WireValue
+
+
+class CtxVisionDiffParams(BaseModel):
+    """
+    ctx.vision.diff (워커 → runner). a·b는 이미지, region은 rect 또는 null
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    a: WireValue
+    b: WireValue
+    invoke: InvokeId
+    region: WireValue
+
+
+class CtxVisionFindParams(BaseModel):
+    """
+    ctx.vision.find (워커 → runner). image는 이미지, target은 target 값, region은 rect 또는 null
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    deadline_ms: DeadlineMs | None = None
+    image: WireValue
+    invoke: InvokeId
+    region: WireValue
+    target: WireValue
+
+
+class CtxVisionFindResult(BaseModel):
+    """
+    match는 match 값, 못 찾으면 null
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    match: WireValue
+
+
+class CtxWindowParams(BaseModel):
+    """
+    창 하나를 받는 요청 (워커 → runner): ctx.windows.info·activate, ctx.set_window
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    invoke: InvokeId
+    window: WireValue
+
+
+class CtxWindowResult(BaseModel):
+    """
+    ctx.windows.find·ctx.process.find_window의 결과. window는 window 값, 없으면 null
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    window: WireValue
+
+
+class CtxWindowsFindParams(BaseModel):
+    """
+    ctx.windows.find (워커 → runner). title은 부분 일치 또는 /정규식/
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    invoke: InvokeId
+    owned: bool
+    process_name: str | None
+    title: str | None
+
+
+class CtxWindowsInfoResult(BaseModel):
+    """
+    info는 window_info 값
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    info: WireValue
+
+
+class CtxWindowsSetClientSizeParams(BaseModel):
+    """
+    ctx.windows.set_client_size (워커 → runner)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    height: Annotated[int, Field(ge=1, le=9007199254740991)]
+    invoke: InvokeId
+    width: Annotated[int, Field(ge=1, le=9007199254740991)]
+    window: WireValue
 
 
 class ErrorResponse(BaseModel):

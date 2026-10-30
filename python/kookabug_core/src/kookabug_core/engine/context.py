@@ -10,9 +10,10 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, cast, runtime_checkable
 
 from kookabug_core.engine.cancel import CancelToken, DeadlineExceeded
+from kookabug_core.engine.errors import EngineError
 from kookabug_core.engine.frame import Frame
 from kookabug_core.engine.invoker import NodeInvoker
 from kookabug_core.ir import Node
@@ -20,8 +21,21 @@ from kookabug_core.loader import Program
 from kookabug_core.record.artifacts import ArtifactStore, Recorder, StagedFrame
 from kookabug_core.registry import Registry
 from kookabug_core.workspace import SettingLookup
-from kookabug_sdk.context import ArtifactsApi, Clock, Deadline, InputApi, LogApi, VarsApi
-from kookabug_sdk.types import Image, Match, Point, Rect, Secret, WindowRef
+from kookabug_sdk.context import (
+    ArtifactsApi,
+    Clock,
+    Deadline,
+    InputApi,
+    LogApi,
+    OcrApi,
+    ProcessApi,
+    VarsApi,
+    VisionApi,
+    Where,
+    WindowsApi,
+)
+from kookabug_sdk.errors import ObservationTimeout
+from kookabug_sdk.types import Image, Rect, Secret, WindowRef
 
 __all__ = [
     "ArtifactStore",
@@ -180,20 +194,47 @@ class CheckedInput:
             platform.input_for(step) if isinstance(platform, StepInputPlatform) else platform.input
         )
 
-    def click(self, at: Point | Rect | Match, *, button: str = "left") -> None:
+    def click(self, at: Where, *, button: str = "left", count: int = 1) -> None:
         self._runtime.check()
-        self._input.click(at, button=button)
+        self._input.click(at, button=button, count=count)
         self._runtime.check()
 
-    def key(self, key: str) -> None:
+    def drag(self, start: Where, end: Where, *, duration_ms: int = 0, button: str = "left") -> None:
         self._runtime.check()
-        self._input.key(key)
+        self._input.drag(start, end, duration_ms=duration_ms, button=button)
+        self._runtime.check()
+
+    def scroll(self, at: Where, amount: int) -> None:
+        self._runtime.check()
+        self._input.scroll(at, amount)
+        self._runtime.check()
+
+    def key(self, key: str, *, hold_ms: int = 0) -> None:
+        self._runtime.check()
+        self._input.key(key, hold_ms=hold_ms)
         self._runtime.check()
 
     def type_text(self, text: str | Secret) -> None:
         self._runtime.check()
         self._input.type_text(text)
         self._runtime.check()
+
+
+class Unconnected:
+    """아직 실행기에 연결하지 않은 ctx 기능 (`ctx.vision`·`ocr`·`windows`·`process`·`set_window`).
+
+    SDK 계약(M1 T8)이 먼저 들어오고 runner 연결(T9)이 붙인다. 부르면 `platform_unavailable`.
+    """
+
+    def __init__(self, api: str) -> None:
+        self._api = api
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("__"):
+            raise AttributeError(name)
+        raise EngineError(
+            "platform_unavailable", f"이 실행에서는 ctx.{self._api}.{name}을(를) 쓸 수 없다"
+        )
 
 
 class StepContext:
@@ -245,7 +286,29 @@ class StepContext:
     def input(self) -> InputApi:
         return CheckedInput(self._runtime, self._step)
 
-    def capture(self, region: Rect | None = None) -> Image:
+    @property
+    def vision(self) -> VisionApi:
+        return cast(VisionApi, Unconnected("vision"))
+
+    @property
+    def ocr(self) -> OcrApi:
+        return cast(OcrApi, Unconnected("ocr"))
+
+    @property
+    def windows(self) -> WindowsApi:
+        return cast(WindowsApi, Unconnected("windows"))
+
+    @property
+    def process(self) -> ProcessApi:
+        return cast(ProcessApi, Unconnected("process"))
+
+    def set_window(self, window: WindowRef) -> None:
+        raise EngineError("platform_unavailable", "이 실행에서는 ctx.set_window를 쓸 수 없다")
+
+    def capture(self, region: Rect | None = None, *, deadline: Deadline | None = None) -> Image:
+        # 노드 기한을 캡처 대기에 넣는 것은 플랫폼 연결(T9). 여기서는 지난 기한이면 시작하지 않는다
+        if deadline is not None and deadline.passed:
+            raise ObservationTimeout("노드 기한이 지나 캡처를 시작하지 않았다")
         self._runtime.check()
         platform = self._runtime.platform
         recorder = self._runtime.recorder

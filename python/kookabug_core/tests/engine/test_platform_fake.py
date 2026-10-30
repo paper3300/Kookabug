@@ -38,7 +38,9 @@ def test_fake_input_recorded(tmp_path: Path) -> None:
     )
     ran = run_graph(make_workspace(tmp_path), g)
     assert ran.result.verdict == "pass"
-    assert ran.platform.input.calls == [InputCall("click", (Point(3, 4),), {"button": "left"})]
+    assert ran.platform.input.calls == [
+        InputCall("click", (Point(3, 4),), {"button": "left", "count": 1})
+    ]
 
 
 def test_undeclared_effect_is_error(tmp_path: Path) -> None:

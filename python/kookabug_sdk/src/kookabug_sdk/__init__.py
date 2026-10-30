@@ -14,6 +14,7 @@ from kookabug_sdk.decorators import (
     Retry,
     node,
 )
+from kookabug_sdk.errors import ObservationTimeout, StaleObservation
 from kookabug_sdk.result import NodeContractError, Result
 from kookabug_sdk.types import Secret
 
@@ -30,9 +31,11 @@ __all__ = [
     "NodeContractError",
     "NodeDeclarationError",
     "NodeFunction",
+    "ObservationTimeout",
     "Output",
     "Result",
     "Retry",
     "Secret",
+    "StaleObservation",
     "node",
 ]

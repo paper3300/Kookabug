@@ -48,9 +48,11 @@ __all__ = [
     "METHOD_NOT_FOUND",
     "NODE_CONTRACT",
     "NODE_ERROR",
+    "OBSERVATION_TIMEOUT",
     "PARSE_ERROR",
     "PROTOCOL_VERSION",
     "SEND_QUEUE_SIZE",
+    "STALE_OBSERVATION",
     "Call",
     "Incoming",
     "InvalidResponse",
@@ -71,6 +73,10 @@ NODE_ERROR: Final = -32002
 CONTEXT_VIOLATION: Final = -32003
 NODE_CONTRACT: Final = -32004
 PROTOCOL_VERSION: Final = -32005
+# 관측 호출이 노드 기한 안에 끝나지 않음 (SDK ObservationTimeout), 입력 직전 재검증 실패
+# (SDK StaleObservation) — 워커 쪽에서 같은 예외로 되돌린다
+OBSERVATION_TIMEOUT: Final = -32006
+STALE_OBSERVATION: Final = -32007
 
 ERROR_CODES: Final[dict[int, str]] = {
     PARSE_ERROR: "parse_error",
@@ -83,6 +89,8 @@ ERROR_CODES: Final[dict[int, str]] = {
     CONTEXT_VIOLATION: "context_violation",
     NODE_CONTRACT: "node_contract",
     PROTOCOL_VERSION: "protocol_version",
+    OBSERVATION_TIMEOUT: "observation_timeout",
+    STALE_OBSERVATION: "stale_observation",
 }
 
 SEND_QUEUE_SIZE: Final = 256

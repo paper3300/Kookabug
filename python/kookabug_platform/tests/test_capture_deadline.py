@@ -10,6 +10,7 @@ from collections.abc import Iterator
 
 import pytest
 
+import kookabug_sdk as sdk
 from kb_testing.fake_capture import FakeCaptureBackend, FakeCaptureSession, FakeScreen
 from kb_testing.fake_win32 import FakeWindowApi
 from kookabug_core.engine.cancel import Cancelled, CancelToken, DeadlineExceeded
@@ -46,6 +47,8 @@ def test_node_deadline_100ms_without_frame_is_observation_timeout(
     assert 0.09 <= elapsed <= 0.1 + SLACK_S
     assert issubclass(ObservationTimeout, Exception)
     assert not issubclass(ObservationTimeout, PlatformError)
+    # 노드가 잡는 SDK 예외 그 자체다 (노드는 kookabug_platform을 모른다)
+    assert ObservationTimeout is sdk.ObservationTimeout
 
 
 def test_config_deadline_is_capture_timeout(

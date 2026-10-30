@@ -157,11 +157,17 @@ class _GateInput:
     def __init__(self, token: CancelToken) -> None:
         self.token = token
 
-    def click(self, at: Any, *, button: str = "left") -> None:
+    def click(self, at: Any, *, button: str = "left", count: int = 1) -> None:
         self.token.cancel("deadline_exceeded")
         raise Cancelled("입력이 막혔다")
 
-    def key(self, key: str) -> None:
+    def drag(self, start: Any, end: Any, *, duration_ms: int = 0, button: str = "left") -> None:
+        raise AssertionError
+
+    def scroll(self, at: Any, amount: int) -> None:
+        raise AssertionError
+
+    def key(self, key: str, *, hold_ms: int = 0) -> None:
         raise AssertionError
 
     def type_text(self, text: Any) -> None:

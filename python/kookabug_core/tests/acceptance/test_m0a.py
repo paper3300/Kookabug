@@ -311,7 +311,9 @@ def test_fake_platform_run(tmp_path: Path) -> None:
         make_workspace(tmp_path), g, frames=["loading.png", "title.png", "title.png", "lobby.png"]
     )
     assert (ran.result.verdict, ran.result.code) == ("pass", "assertion_passed")
-    assert ran.platform.input.calls == [InputCall("click", (Point(10, 20),), {"button": "left"})]
+    assert ran.platform.input.calls == [
+        InputCall("click", (Point(10, 20),), {"button": "left", "count": 1})
+    ]
     assert ran.platform.captured == 4
     assert ran.end("n_lobby")["outputs"]["match"]["frame"] == 3
     assert ran.clock.now_ms() == 200  # 실제 시간이 아니라 FakeClock

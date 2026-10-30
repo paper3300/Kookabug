@@ -14,10 +14,21 @@ export type JsonRpcVersion = "2.0";
  */
 export type MethodName = string;
 /**
- * 표준: -32700 parse_error, -32600 invalid_request, -32601 method_not_found, -32602 invalid_params, -32603 internal_error. Kookabug: -32001 cancelled, -32002 node_error, -32003 context_violation, -32004 node_contract, -32005 protocol_version
+ * 표준: -32700 parse_error, -32600 invalid_request, -32601 method_not_found, -32602 invalid_params, -32603 internal_error. Kookabug: -32001 cancelled, -32002 node_error, -32003 context_violation, -32004 node_contract, -32005 protocol_version, -32006 observation_timeout(관측이 노드 기한 안에 끝나지 않음 — 워커에서 ObservationTimeout), -32007 stale_observation(입력 직전 재검증 실패 — 워커에서 StaleObservation, 처리되지 않은 fail)
  */
 export type ErrorCode =
-  -32700 | -32600 | -32601 | -32602 | -32603 | -32001 | -32002 | -32003 | -32004 | -32005;
+  | -32700
+  | -32600
+  | -32601
+  | -32602
+  | -32603
+  | -32001
+  | -32002
+  | -32003
+  | -32004
+  | -32005
+  | -32006
+  | -32007;
 
 /**
  * 응답을 기다리는 요청

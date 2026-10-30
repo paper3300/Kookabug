@@ -9,13 +9,19 @@
 서브그래프 출력은 모든 출구가 준다 (G16: 모든 exit 노드가 nullable 아닌 출력을 주고, nullable은
 `null`로 채운다). `core.graph.exit` 입력은 여기서는 모두 생략 가능으로 두고 G16 검사는 `subgraph`가
 한다.
+
+공통 입력 `window`(MVP 노드 목록 "공통 입력"): 노드 스키마에 없어도 모든 exec 노드(실행기가 직접
+처리하는 `engine` 노드 포함)는 `in.window`(`window`, 생략 가능, `null` = 현재 대상 창)를 가진다.
+그 스텝의 ctx와 그 스텝의 입력 요청만 그 창을 대상으로 하고, `core.graph.call`이면 서브그래프가 그
+창을 현재 대상 창으로 이어받는다. 그 노드의 입력에 이미 `window`가 있으면(스키마가 직접 선언한
+`core.window.set_current`, `window`라는 서브그래프 입력) 그 입력을 쓴다.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
 
 from kookabug_core.ir import GRAPH_CALL, GRAPH_ENTRY, GRAPH_EXIT, Graph, Node
 from kookabug_core.loader import Program
@@ -28,7 +34,16 @@ from kookabug_core.registry import (
     OutputDecl,
 )
 
-__all__ = ["NodePins", "dynamic_exit_names", "node_pins"]
+__all__ = ["COMMON_WINDOW", "NodePins", "dynamic_exit_names", "has_common_window", "node_pins"]
+
+COMMON_WINDOW: Final = InputDecl("window", "window", nullable=True, optional=True)
+"""공통 입력 `window`의 선언."""
+
+
+def has_common_window(nodedef: NodeDef, inputs: Mapping[str, InputDecl]) -> bool:
+    """이 노드가 공통 입력 `window`를 받는가: exec 노드이고 그 노드의 입력(`inputs`, 선언·
+    interface에서 만든 것)에 `window`가 없다."""
+    return not nodedef.pure and COMMON_WINDOW.name not in inputs
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +98,8 @@ def node_pins(program: Program, graph: Graph, node: Node, nodedef: NodeDef) -> N
         inputs = None if section is None else _interface_inputs(section, all_optional=False)
     else:
         inputs = None
+    if inputs is not None and has_common_window(nodedef, inputs):
+        inputs = {**inputs, COMMON_WINDOW.name: COMMON_WINDOW}
 
     outputs: Mapping[str, OutputDecl] | None
     if isinstance(nodedef.outputs, tuple):

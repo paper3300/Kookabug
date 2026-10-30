@@ -126,6 +126,11 @@ def test_event_value_masks_secrets_and_flattens_types() -> None:
             "score": 0.5,
             "window": None,
             "frame": None,
+            "scale": 1.0,
+            "method": "",
+            "frame_info": None,
+            "target": None,
+            "click": None,
         },
         "xs": [1, ["***"]],
     }

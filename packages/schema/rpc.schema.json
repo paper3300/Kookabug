@@ -56,8 +56,11 @@
     },
     "CtxCaptureParams": {
       "additionalProperties": false,
-      "description": "ctx.capture (워커 → runner)",
+      "description": "ctx.capture (워커 → runner). region은 rect 또는 null",
       "properties": {
+        "deadline_ms": {
+          "$ref": "#/$defs/DeadlineMs"
+        },
         "invoke": {
           "$ref": "#/$defs/InvokeId"
         },
@@ -82,13 +85,18 @@
     },
     "CtxInputClickParams": {
       "additionalProperties": false,
-      "description": "ctx.input.click (워커 → runner). at은 point·rect·match",
+      "description": "ctx.input.click (워커 → runner). at은 point·rect·match, count는 클릭 횟수(생략하면 1)",
       "properties": {
         "at": {
           "$ref": "#/$defs/WireValue"
         },
         "button": {
           "type": "string"
+        },
+        "count": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
         },
         "invoke": {
           "$ref": "#/$defs/InvokeId"
@@ -98,10 +106,37 @@
       "title": "CtxInputClickParams",
       "type": "object"
     },
+    "CtxInputDragParams": {
+      "additionalProperties": false,
+      "description": "ctx.input.drag (워커 → runner). start·end는 point·rect·match",
+      "properties": {
+        "button": {
+          "type": "string"
+        },
+        "duration_ms": {
+          "$ref": "#/$defs/Millis"
+        },
+        "end": {
+          "$ref": "#/$defs/WireValue"
+        },
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "start": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["button", "duration_ms", "end", "invoke", "start"],
+      "title": "CtxInputDragParams",
+      "type": "object"
+    },
     "CtxInputKeyParams": {
       "additionalProperties": false,
-      "description": "ctx.input.key (워커 → runner)",
+      "description": "ctx.input.key (워커 → runner). hold_ms는 누르고 있는 시간(생략하면 0)",
       "properties": {
+        "hold_ms": {
+          "$ref": "#/$defs/Millis"
+        },
         "invoke": {
           "$ref": "#/$defs/InvokeId"
         },
@@ -111,6 +146,26 @@
       },
       "required": ["invoke", "key"],
       "title": "CtxInputKeyParams",
+      "type": "object"
+    },
+    "CtxInputScrollParams": {
+      "additionalProperties": false,
+      "description": "ctx.input.scroll (워커 → runner). at은 point·rect·match, amount는 휠 칸 수(양수 = 위)",
+      "properties": {
+        "amount": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "at": {
+          "$ref": "#/$defs/WireValue"
+        },
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        }
+      },
+      "required": ["amount", "at", "invoke"],
+      "title": "CtxInputScrollParams",
       "type": "object"
     },
     "CtxInputTypeTextParams": {
@@ -144,6 +199,128 @@
       },
       "required": ["invoke", "level", "message"],
       "title": "CtxLogParams",
+      "type": "object"
+    },
+    "CtxOcrReadParams": {
+      "additionalProperties": false,
+      "description": "ctx.ocr.read (워커 → runner). image는 참조 이미지나 파일·바이트 이미지, region은 rect 또는 null, sensitive면 글자가 비밀값으로 온다",
+      "properties": {
+        "deadline_ms": {
+          "$ref": "#/$defs/DeadlineMs"
+        },
+        "image": {
+          "$ref": "#/$defs/WireValue"
+        },
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "region": {
+          "$ref": "#/$defs/WireValue"
+        },
+        "sensitive": {
+          "type": "boolean"
+        }
+      },
+      "required": ["image", "invoke", "region", "sensitive"],
+      "title": "CtxOcrReadParams",
+      "type": "object"
+    },
+    "CtxOcrReadResult": {
+      "additionalProperties": false,
+      "description": "result는 ocr_result 값",
+      "properties": {
+        "result": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["result"],
+      "title": "CtxOcrReadResult",
+      "type": "object"
+    },
+    "CtxProcessCloseParams": {
+      "additionalProperties": false,
+      "description": "ctx.process.close (워커 → runner)",
+      "properties": {
+        "force_after_ms": {
+          "$ref": "#/$defs/Millis"
+        },
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "process": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["force_after_ms", "invoke", "process"],
+      "title": "CtxProcessCloseParams",
+      "type": "object"
+    },
+    "CtxProcessCloseResult": {
+      "additionalProperties": false,
+      "description": "closed: 강제 종료 없이 끝났는가",
+      "properties": {
+        "closed": {
+          "type": "boolean"
+        }
+      },
+      "required": ["closed"],
+      "title": "CtxProcessCloseResult",
+      "type": "object"
+    },
+    "CtxProcessFindWindowParams": {
+      "additionalProperties": false,
+      "description": "ctx.process.find_window (워커 → runner). deadline_ms가 있으면 창이 뜰 때까지 기다린다",
+      "properties": {
+        "deadline_ms": {
+          "$ref": "#/$defs/DeadlineMs"
+        },
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "process": {
+          "$ref": "#/$defs/WireValue"
+        },
+        "title": {
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["invoke", "process", "title"],
+      "title": "CtxProcessFindWindowParams",
+      "type": "object"
+    },
+    "CtxProcessLaunchParams": {
+      "additionalProperties": false,
+      "description": "ctx.process.launch (워커 → runner)",
+      "properties": {
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cwd": {
+          "type": ["string", "null"]
+        },
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": ["args", "cwd", "invoke", "path"],
+      "title": "CtxProcessLaunchParams",
+      "type": "object"
+    },
+    "CtxProcessLaunchResult": {
+      "additionalProperties": false,
+      "properties": {
+        "process": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["process"],
+      "title": "CtxProcessLaunchResult",
       "type": "object"
     },
     "CtxSettingParams": {
@@ -219,15 +396,203 @@
       "title": "CtxVarsSetParams",
       "type": "object"
     },
+    "CtxVisionDiffParams": {
+      "additionalProperties": false,
+      "description": "ctx.vision.diff (워커 → runner). a·b는 이미지, region은 rect 또는 null",
+      "properties": {
+        "a": {
+          "$ref": "#/$defs/WireValue"
+        },
+        "b": {
+          "$ref": "#/$defs/WireValue"
+        },
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "region": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["a", "b", "invoke", "region"],
+      "title": "CtxVisionDiffParams",
+      "type": "object"
+    },
+    "CtxVisionDiffResult": {
+      "additionalProperties": false,
+      "description": "채널 평균 절대 차이 / 255 (0 = 같음, 1 = 완전히 다름)",
+      "properties": {
+        "value": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": ["value"],
+      "title": "CtxVisionDiffResult",
+      "type": "object"
+    },
+    "CtxVisionFindParams": {
+      "additionalProperties": false,
+      "description": "ctx.vision.find (워커 → runner). image는 이미지, target은 target 값, region은 rect 또는 null",
+      "properties": {
+        "deadline_ms": {
+          "$ref": "#/$defs/DeadlineMs"
+        },
+        "image": {
+          "$ref": "#/$defs/WireValue"
+        },
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "region": {
+          "$ref": "#/$defs/WireValue"
+        },
+        "target": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["image", "invoke", "region", "target"],
+      "title": "CtxVisionFindParams",
+      "type": "object"
+    },
+    "CtxVisionFindResult": {
+      "additionalProperties": false,
+      "description": "match는 match 값, 못 찾으면 null",
+      "properties": {
+        "match": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["match"],
+      "title": "CtxVisionFindResult",
+      "type": "object"
+    },
+    "CtxWindowParams": {
+      "additionalProperties": false,
+      "description": "창 하나를 받는 요청 (워커 → runner): ctx.windows.info·activate, ctx.set_window",
+      "properties": {
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "window": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["invoke", "window"],
+      "title": "CtxWindowParams",
+      "type": "object"
+    },
+    "CtxWindowResult": {
+      "additionalProperties": false,
+      "description": "ctx.windows.find·ctx.process.find_window의 결과. window는 window 값, 없으면 null",
+      "properties": {
+        "window": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["window"],
+      "title": "CtxWindowResult",
+      "type": "object"
+    },
+    "CtxWindowsFindParams": {
+      "additionalProperties": false,
+      "description": "ctx.windows.find (워커 → runner). title은 부분 일치 또는 /정규식/",
+      "properties": {
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "owned": {
+          "type": "boolean"
+        },
+        "process_name": {
+          "type": ["string", "null"]
+        },
+        "title": {
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["invoke", "owned", "process_name", "title"],
+      "title": "CtxWindowsFindParams",
+      "type": "object"
+    },
+    "CtxWindowsInfoResult": {
+      "additionalProperties": false,
+      "description": "info는 window_info 값",
+      "properties": {
+        "info": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["info"],
+      "title": "CtxWindowsInfoResult",
+      "type": "object"
+    },
+    "CtxWindowsSetClientSizeParams": {
+      "additionalProperties": false,
+      "description": "ctx.windows.set_client_size (워커 → runner)",
+      "properties": {
+        "height": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "invoke": {
+          "$ref": "#/$defs/InvokeId"
+        },
+        "width": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "window": {
+          "$ref": "#/$defs/WireValue"
+        }
+      },
+      "required": ["height", "invoke", "width", "window"],
+      "title": "CtxWindowsSetClientSizeParams",
+      "type": "object"
+    },
+    "CtxWindowsSetClientSizeResult": {
+      "additionalProperties": false,
+      "description": "ok: 다시 읽은 크기가 요청과 같은가",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": ["ok"],
+      "title": "CtxWindowsSetClientSizeResult",
+      "type": "object"
+    },
+    "DeadlineMs": {
+      "description": "관측 요청의 노드 기한 남은 시간 (밀리초, 0 이상). runner는 min(설정 기한, 이것, 전체 기한 남은 시간)으로 관측하고, 이것 때문에 끝나면 observation_timeout으로 답한다. 없으면 노드 기한 없음",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "DeadlineMs",
+      "type": "integer"
+    },
     "EmptyResult": {
       "additionalProperties": false,
-      "description": "결과 없음 (ctx.log·ctx.vars.set·ctx.input.*·worker.shutdown)",
+      "description": "결과 없음 (ctx.log·ctx.vars.set·ctx.input.*·ctx.windows.activate·ctx.set_window·worker.shutdown)",
       "title": "EmptyResult",
       "type": "object"
     },
     "ErrorCode": {
-      "description": "표준: -32700 parse_error, -32600 invalid_request, -32601 method_not_found, -32602 invalid_params, -32603 internal_error. Kookabug: -32001 cancelled, -32002 node_error, -32003 context_violation, -32004 node_contract, -32005 protocol_version",
-      "enum": [-32700, -32600, -32601, -32602, -32603, -32001, -32002, -32003, -32004, -32005],
+      "description": "표준: -32700 parse_error, -32600 invalid_request, -32601 method_not_found, -32602 invalid_params, -32603 internal_error. Kookabug: -32001 cancelled, -32002 node_error, -32003 context_violation, -32004 node_contract, -32005 protocol_version, -32006 observation_timeout(관측이 노드 기한 안에 끝나지 않음 — 워커에서 ObservationTimeout), -32007 stale_observation(입력 직전 재검증 실패 — 워커에서 StaleObservation, 처리되지 않은 fail)",
+      "enum": [
+        -32700,
+        -32600,
+        -32601,
+        -32602,
+        -32603,
+        -32001,
+        -32002,
+        -32003,
+        -32004,
+        -32005,
+        -32006,
+        -32007
+      ],
       "title": "ErrorCode",
       "type": "integer"
     },
@@ -290,6 +655,13 @@
       "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$",
       "title": "MethodName",
       "type": "string"
+    },
+    "Millis": {
+      "description": "시간 길이 (밀리초, 0 이상)",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "Millis",
+      "type": "integer"
     },
     "NodeInvokeParams": {
       "additionalProperties": false,
