@@ -500,6 +500,11 @@ class Runner:
         spec = self.spec
         assert self.watchdog is not None and self.controller is not None
         self.watchdog.arm()
+        if end is not None and end.diagnostics:
+            # 진단은 run.end에 없다. run.end 뒤 하드 종료돼 감독자가 run.json을 다시 만들 때
+            # (실행 중 run.json이 바탕) 잃지 않게, 마무리를 시작하기 전에 먼저 남긴다
+            self._run_json["diagnostics"] = [d.to_dict() for d in end.diagnostics]
+            self._save_running()
         if end is not None and end.code == "deadline_exceeded":
             # 실행기가 제어 스레드보다 먼저 기한을 본 경우도 같은 취소 경로로 모은다
             # (cancel.requested·cancel_reason·runner.stopping이 남는다. 이미 시작됐으면 그대로)
@@ -535,8 +540,6 @@ class Runner:
         assert end is not None
         data = finished_run_json(self._run_json, run_end)
         data["pause_count"] = self.pause.count
-        if end.diagnostics:
-            data["diagnostics"] = [d.to_dict() for d in end.diagnostics]
         try:
             write_run_json(self.folder.run_json, data)
         except Exception:

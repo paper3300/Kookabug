@@ -132,6 +132,24 @@ def test_hang_in_finalize_hard_stopped_by_supervisor(
     assert_no_live(idents)
 
 
+@pytest.mark.parametrize("point", ["runner.after_run_end", "runner.before_run_json_final"])
+def test_graph_invalid_diagnostics_survive_hard_stop_after_run_end(
+    tmp_path: Path, spawned: Spawned, point: str
+) -> None:
+    # 검증 오류의 진단은 run.end에 없다. runner가 run.end 뒤 완료 run.json 전에 하드 종료돼도
+    # 감독자가 다시 만든 run.json에 남아야 한다 (CLI `--json`·`run.json`의 diagnostics)
+    graph = GraphBuilder().entry("n").node("n", "core.no_such_node")
+    faults = [{"point": point, "role": "runner", "action": "hang"}]
+    h = RunnerHarness.make(tmp_path, graph, faults=faults).start(spawned)
+    done = h.finish()
+    assert done.exit_code == 4 and h.hard_stopped, h.stderr()
+    assert done.run_end is not None and done.run_end["code"] == "graph_invalid"
+    assert done.run_end["finalized_by"] == "runner"
+    run_json = done.run_json
+    assert run_json is not None and run_json["run_json_repaired"] is True
+    assert any(d["code"] == "unknown_node_type" for d in run_json["diagnostics"]), run_json
+
+
 def test_channel_lost_supervisor_hard_stops_and_recovers(tmp_path: Path, spawned: Spawned) -> None:
     graph = tk().entry("n_block").node("n_block", "testkit.block")
     h = RunnerHarness.make(tmp_path, graph).start(spawned)

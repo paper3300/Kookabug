@@ -266,6 +266,7 @@ name = "kookabug-platform"
 version = "0.1.0.dev0"
 source = { editable = "python/kookabug_platform" }
 dependencies = [
+    { name = "kookabug-core" },
     { name = "numpy", marker = "sys_platform == 'win32'" },
     { name = "onnxruntime", marker = "sys_platform == 'win32'" },
     { name = "opencv-python", marker = "sys_platform == 'win32'" },
@@ -275,6 +276,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "kookabug-core", editable = "python/kookabug_core" },
     { name = "numpy", marker = "sys_platform == 'win32'", specifier = ">=2.5,<3" },
     { name = "onnxruntime", marker = "sys_platform == 'win32'", specifier = ">=1.31,<2" },
     { name = "opencv-python", marker = "sys_platform == 'win32'", specifier = ">=5.0,<6" },

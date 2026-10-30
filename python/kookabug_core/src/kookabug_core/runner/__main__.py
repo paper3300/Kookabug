@@ -13,12 +13,17 @@ import traceback
 
 from kookabug_core.runner.run import EXIT_START_FAILED, Runner
 from kookabug_core.runner.spec import RunSpec
+from kookabug_core.win import dpi
 from kookabug_sdk import _faults
 from kookabug_sdk.console import utf8_stdio
 
 
 def main() -> int:
+    # 어떤 창 API보다 먼저 (구현 계획 M1 2.2). 실패는 창을 쓰는 플랫폼이 시작 때 오류로 낸다
+    dpi_error = dpi.enable_at_startup()
     utf8_stdio()
+    if dpi_error is not None:
+        print(f"runner: {dpi.CODE}: {dpi_error}", file=sys.stderr)
     try:
         _faults.set_role("runner")
         spec = RunSpec.loads(sys.stdin.buffer.read())
