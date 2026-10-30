@@ -13,8 +13,9 @@ from helpers.run import tk
 from helpers.runner import RunnerHarness, step_of
 
 from kb_testing.proc import Spawned, barrier, direct_env, python_cmd
+from kookabug_core.inputs import FakeBackend
 from kookabug_core.record import create_run_folder, read_run
-from kookabug_core.recovery import RunnerStillAlive, recover
+from kookabug_core.recovery import RunnerStillAlive, recover, supervisor_backend
 from kookabug_core.win import Job, Process, run_job_name
 
 pytestmark = pytest.mark.process
@@ -145,3 +146,15 @@ def open_exclusive(path: Path) -> Iterator[None]:
         yield
     finally:
         close(raw)
+
+
+def test_supervisor_backend_per_platform(tmp_path: Path) -> None:
+    # 감독자는 실행과 같은 장치로 뗀다. windows = SendInput(훅·입력 직전 확인 없음)
+    from kookabug_platform.sendinput import SendInputBackend
+
+    log = str(tmp_path / "input.jsonl")
+    assert isinstance(supervisor_backend({"kind": "windows", "hooks": {}}, "r1"), SendInputBackend)
+    fake = supervisor_backend({"kind": "fake", "input_log": log}, "r1")
+    assert isinstance(fake, FakeBackend) and fake.by == "supervisor"
+    assert supervisor_backend({"kind": "none"}, "r1") is None
+    assert supervisor_backend({"kind": "fake"}, "r1") is None

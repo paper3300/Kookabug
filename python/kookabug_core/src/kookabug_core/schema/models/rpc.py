@@ -166,7 +166,7 @@ class Hooks(BaseModel):
 
 class RunSpecPlatform(BaseModel):
     """
-    플랫폼: none(캡처·입력 없음) 또는 fake(frames를 차례로 캡처, 입력은 input_log JSONL에 기록, hooks는 가짜 백엔드의 키별 훅)
+    플랫폼: none(캡처·입력 없음), fake(frames를 차례로 캡처, 입력은 input_log JSONL에 기록) 또는 windows(SendInput 입력). hooks는 어느 종류에서나 입력 백엔드에 씌우는 키별 훅(숨은 테스트 기능)
     """
 
     model_config = ConfigDict(
@@ -175,7 +175,7 @@ class RunSpecPlatform(BaseModel):
     frames: list[str] | None = None
     hooks: Hooks | None = None
     input_log: str | None = None
-    kind: Literal["fake", "none"]
+    kind: Literal["fake", "none", "windows"]
 
 
 class RunnerHelloParams(BaseModel):

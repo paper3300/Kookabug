@@ -1,16 +1,28 @@
 """입력 제어: 입력 액터(백엔드를 부르는 유일한 스레드), 입력 임대권과 임대권 안의 복구, 백엔드
-(`none`·`fake`) (구현 계획 M0b 2.4)."""
+(`none`·`fake`·`windows`)와 훅 래퍼, 키 이름표 (구현 계획 M0b 2.4, M1 2.4)."""
 
-from kookabug_core.inputs.actor import ACTOR_THREAD_NAME, Emit, InputActor
+from kookabug_core.inputs.actor import (
+    ACTOR_THREAD_NAME,
+    ClientPoint,
+    Emit,
+    GuardedOp,
+    InputActor,
+    InputGuard,
+)
 from kookabug_core.inputs.backends import (
     BackendKind,
     FakeBackend,
     HookAction,
+    HookedBackend,
     InputBackend,
+    InputDevice,
     NoneBackend,
     PlatformUnavailable,
+    backend_for_device,
     create_backend,
+    device_of,
 )
+from kookabug_core.inputs.keys import KEY_UNKNOWN, KeyUnknown, split_combo
 from kookabug_core.inputs.lease import (
     Acquired,
     InputLease,
@@ -26,23 +38,33 @@ from kookabug_core.inputs.lease import (
 
 __all__ = [
     "ACTOR_THREAD_NAME",
+    "KEY_UNKNOWN",
     "Acquired",
     "BackendKind",
+    "ClientPoint",
     "Emit",
     "FakeBackend",
+    "GuardedOp",
     "HookAction",
+    "HookedBackend",
     "InputActor",
     "InputBackend",
+    "InputDevice",
+    "InputGuard",
     "InputLease",
     "InputLeaseBusy",
+    "KeyUnknown",
     "LeaseOwner",
     "NoneBackend",
     "PlatformUnavailable",
     "Recovery",
+    "backend_for_device",
     "create_backend",
+    "device_of",
     "lease_file",
     "lease_name",
     "read_lease_file",
     "recover_run",
+    "split_combo",
     "state_dir",
 ]

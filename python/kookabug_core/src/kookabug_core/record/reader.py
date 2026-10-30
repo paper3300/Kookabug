@@ -221,21 +221,24 @@ def held_inputs(view: RunView) -> list[InputKey]:
 
     `input.down`은 백엔드 호출 전에, `input.up`은 후에 쓰므로 프로세스가 어디서 죽어도 빠지지
     않는다. 이 실행을 복구했다는 `input.recovered`(`from_run`이 이 실행)는 그 키들을 뗀 것으로 본다.
-    잘린 끝 줄은 읽기가 이미 버렸다.
+    잘린 끝 줄은 읽기가 이미 버렸다. **누른 차례**(마지막 `input.down` 차례)로 돌려준다 — 떼는 쪽은
+    거꾸로 뗀다(조합의 수식 키를 마지막에).
     """
-    held: dict[InputKey, bool] = {}
+    held: dict[InputKey, None] = {}
     for event in view.events:
         kind = event.get("event")
         if kind in ("input.down", "input.up"):
             key = _input_key(event)
             if key is not None:
-                held[key] = kind == "input.down"
+                held.pop(key, None)
+                if kind == "input.down":
+                    held[key] = None
         elif kind == "input.recovered" and event.get("from_run") == event.get("run"):
             for item in event.get("inputs") or []:
                 key = _input_key(item) if isinstance(item, Mapping) else None
                 if key is not None:
-                    held[key] = False
-    return sorted(k for k, down in held.items() if down)
+                    held.pop(key, None)
+    return list(held)
 
 
 def _input_key(event: Mapping[str, Any]) -> InputKey | None:

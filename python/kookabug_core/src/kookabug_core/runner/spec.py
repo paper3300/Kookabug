@@ -51,7 +51,10 @@ def ident_from_json(data: Mapping[str, Any]) -> ProcessId:
 
 @dataclass(frozen=True, slots=True)
 class PlatformSpec:
-    kind: Literal["none", "fake"] = "none"
+    """`none`(캡처·입력 없음), `fake`(가짜 프레임·입력 기록), `windows`(SendInput 입력 — M1 T5,
+    캡처는 T9). `hooks`는 어느 종류에서나 입력 백엔드에 씌우는 숨은 테스트 기능이다."""
+
+    kind: Literal["none", "fake", "windows"] = "none"
     frames: tuple[str, ...] = ()
     input_log: str | None = None
     hooks: Mapping[str, Mapping[str, str]] = field(default_factory=dict[str, Mapping[str, str]])

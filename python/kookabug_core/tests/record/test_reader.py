@@ -261,9 +261,15 @@ def button(name: str, kind: str = "input.down") -> dict[str, Any]:
             id="mouse-button",
         ),
         pytest.param(
+            # 누른 차례 (떼는 쪽이 거꾸로 뗀다, M1 T5)
             [key("ctrl"), key("shift"), button("right"), key("shift", "input.up"), key("a")],
-            [InputKey("keyboard", "a"), InputKey("keyboard", "ctrl"), InputKey("mouse", "right")],
+            [InputKey("keyboard", "ctrl"), InputKey("mouse", "right"), InputKey("keyboard", "a")],
             id="several",
+        ),
+        pytest.param(
+            [key("a"), key("ctrl"), key("a", "input.up"), key("a")],
+            [InputKey("keyboard", "ctrl"), InputKey("keyboard", "a")],
+            id="pressed-again-moves-to-end",
         ),
         pytest.param(
             [key("ctrl"), key("ctrl", "input.up"), key("ctrl")],

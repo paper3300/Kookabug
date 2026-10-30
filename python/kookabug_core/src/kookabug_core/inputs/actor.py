@@ -20,35 +20,77 @@
    버려, 실제로 누른 키가 복구 대상에서 빠진다
 
 `type_text`의 비밀값은 백엔드에만 가고 이벤트에는 남지 않는다.
+
+**M1 (2.4)**: 액터는 좌표로 대상 창 클라이언트 물리 픽셀 점(`ClientPoint`)만 받는다 — `Match`·
+`Rect`·SDK `Point`를 점으로 줄이는 것(재검증 포함)은 공용 입력 서비스의 일이다. 요청마다 대상
+창(`target`, 플랫폼의 바인딩)을 싣는다. 원시 동작은 `down`·`up`·`text`·`move`·`wheel`이고, `move`·
+`wheel`은 누르기 기록 대상이 아니다. **입력 직전 확인**(`InputGuard`)은 액터 스레드에서
+`down`·`text`·`move`·`wheel` 직전마다 돌고(대상 창·포그라운드·점 아래 창 등, 마우스면 화면 좌표를
+돌려줌) `up`·`RELEASE_ALL`·복구에는 돌지 않는다. 확인 실패는 그 요청의 오류이고 그 요청이 새로 누른
+키는 바로 뗀다(요청 단위 원자성). 앞 요청(`press`)이 쥐고 있던 키는 실패한 요청이 다시 눌렀어도
+남긴다.
+같은 키를 떼지 않고 다시 누르면 눌린 차례의 맨 뒤로 간다(떼기는 거꾸로) — 기록 읽기의
+`held_inputs`와 같은 규칙이라 정상 마무리와 복구의 떼는 차례가 같다.
 """
 
 from __future__ import annotations
 
-import re
+import math
 import threading
 from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, Protocol
 
 from kookabug_core.inputs.backends import InputBackend, PlatformUnavailable
+from kookabug_core.inputs.keys import canonical_button, canonical_key, split_combo
 from kookabug_core.record.reader import InputKey
 from kookabug_sdk import _faults
 from kookabug_sdk.context import Cancelled
-from kookabug_sdk.types import Match, Point, Rect, Secret
+from kookabug_sdk.types import Point, Secret
 
-__all__ = ["ACTOR_THREAD_NAME", "Emit", "InputActor"]
+__all__ = [
+    "ACTOR_THREAD_NAME",
+    "DRAG_INTERVAL_MS",
+    "ClientPoint",
+    "Emit",
+    "GuardedOp",
+    "InputActor",
+    "InputGuard",
+]
 
 ACTOR_THREAD_NAME: Final = "kookabug-input-actor"
+DRAG_INTERVAL_MS: Final = 16
+"""드래그 중 보간 이동 사이 간격."""
 
 # 저널 쓰기 (`Journal.emit`). None이면 이벤트를 남기지 않는다
 type Emit = Callable[[Mapping[str, Any]], object]
 
 type _State = Literal["new", "running", "stopped"]
 
-# "ctrl+shift+a" → ctrl, shift, a. 끝의 "+"는 키 이름이다 ("ctrl++" → ctrl, +)
-_COMBO_SPLIT: Final = re.compile(r"\+(?=.)")
+_NOT_HELD: Final = object()
+type GuardedOp = Literal["down", "text", "move", "wheel"]
+
+
+@dataclass(frozen=True, slots=True)
+class ClientPoint:
+    """대상 창 클라이언트 영역의 물리 픽셀 점 (좌표의 단일 기준, M1 2.2)."""
+
+    x: int
+    y: int
+
+
+class InputGuard(Protocol):
+    """입력 직전 확인. 액터 스레드가 `down`·`text`·`move`·`wheel` 직전마다 부른다.
+
+    `at`이 None이면 키보드·글자, 있으면 마우스다. 통과하면 마우스는 그 점의 화면 좌표를,
+    키보드·글자는 None을 돌려준다. 통과하지 못하면 그 사유의 오류를 던진다.
+    """
+
+    def check(
+        self, op: GuardedOp, target: object | None, at: ClientPoint | None
+    ) -> Point | None: ...
 
 
 class _Marker(Enum):
@@ -58,16 +100,20 @@ class _Marker(Enum):
 
 @dataclass(frozen=True, slots=True)
 class _Primitive:
-    op: Literal["down", "up", "text"]
+    op: Literal["down", "up", "text", "move", "wheel"]
     key: InputKey | None = None
-    at: Point | None = None
+    at: ClientPoint | None = None
     text: str | Secret | None = None
+    amount: int = 0
+    wait_ms: float = 0
+    """이 동작 전에 기다리는 시간 (드래그 보간). 게이트가 닫히면 바로 깬다."""
 
 
 @dataclass(slots=True)
 class _Request:
     primitives: list[_Primitive]
     step: str | None
+    target: object | None = None
     done: threading.Event = field(default_factory=threading.Event)
     error: BaseException | None = None
 
@@ -82,7 +128,8 @@ type _Item = _Request | _Marker
 class InputActor:
     """입력 요청 큐와 그것을 처리하는 스레드 하나.
 
-    `gate`를 주면 그 이벤트를 게이트로 쓴다 (가짜 백엔드의 `block` 훅과 같은 게이트를 나눈다).
+    `gate`를 주면 그 이벤트를 게이트로 쓴다 (훅 래퍼의 `block` 훅과 같은 게이트를 나눈다).
+    `guard`가 없으면 확인 없이 클라이언트 좌표를 그대로 화면 좌표로 넘긴다(가짜·없음 플랫폼).
     """
 
     def __init__(
@@ -91,8 +138,10 @@ class InputActor:
         *,
         emit: Emit | None = None,
         gate: threading.Event | None = None,
+        guard: InputGuard | None = None,
     ) -> None:
         self.backend = backend
+        self.guard = guard
         self._emit = emit
         self.gate = gate or threading.Event()
         self._queue: deque[_Item] = deque()
@@ -171,30 +220,116 @@ class InputActor:
     # ── 생산자 쪽 (주 스레드 등) ───────────────────────────
 
     def click(
-        self, at: Point | Rect | Match, *, button: str = "left", step: str | None = None
+        self,
+        at: ClientPoint,
+        *,
+        button: str = "left",
+        count: int = 1,
+        target: object | None = None,
+        step: str | None = None,
     ) -> None:
-        if not button:
-            raise ValueError("마우스 버튼 이름이 비었다")
-        key = InputKey("mouse", button)
-        self._submit([_Primitive("down", key, at=_point(at)), _Primitive("up", key)], step)
+        """`move` → (`down` → `up`)을 `count`번. 이중 클릭은 `count=2`."""
+        point = _client(at)
+        if count < 1:
+            raise ValueError(f"클릭 횟수는 1 이상이다: {count}")
+        key = _button(button)
+        presses = [_Primitive("down", key, at=point), _Primitive("up", key)] * count
+        self._submit([_Primitive("move", at=point), *presses], step, target)
 
-    def key(self, key: str, *, step: str | None = None) -> None:
+    def drag(
+        self,
+        start: ClientPoint,
+        end: ClientPoint,
+        *,
+        button: str = "left",
+        duration_ms: int = 0,
+        target: object | None = None,
+        step: str | None = None,
+    ) -> None:
+        """`move(start)` → `down` → `DRAG_INTERVAL_MS` 간격 보간 `move`(각각 확인) → `up`."""
+        a, b = _client(start), _client(end)
+        key = _button(button)
+        steps = max(1, math.ceil(max(0, duration_ms) / DRAG_INTERVAL_MS))
+        wait = max(0, duration_ms) / steps
+        moves = [
+            _Primitive(
+                "move",
+                at=ClientPoint(
+                    round(a.x + (b.x - a.x) * i / steps), round(a.y + (b.y - a.y) * i / steps)
+                ),
+                wait_ms=wait,
+            )
+            for i in range(1, steps + 1)
+        ]
+        primitives = [_Primitive("move", at=a), _Primitive("down", key, at=a), *moves]
+        self._submit([*primitives, _Primitive("up", key)], step, target)
+
+    def scroll(
+        self,
+        at: ClientPoint,
+        amount: int,
+        *,
+        target: object | None = None,
+        step: str | None = None,
+    ) -> None:
+        """`move` → 휠 `amount` 칸 (양수 = 위·앞으로)."""
+        point = _client(at)
+        if not amount:
+            raise ValueError("휠 칸 수가 0이다")
+        wheel = _Primitive("wheel", at=point, amount=amount)
+        self._submit([_Primitive("move", at=point), wheel], step, target)
+
+    def key(self, key: str, *, target: object | None = None, step: str | None = None) -> None:
         """키 하나 또는 조합(`ctrl+a`)을 누르고 뗀다. 조합은 차례로 누르고 거꾸로 뗀다."""
-        names = _COMBO_SPLIT.split(key)
-        if not key or any(not n for n in names):
-            raise ValueError(f"키 이름이 잘못됐다: {key!r}")
-        keys = [InputKey("keyboard", n) for n in names]
+        keys = _keys(key)
         downs = [_Primitive("down", k) for k in keys]
         ups = [_Primitive("up", k) for k in reversed(keys)]
-        self._submit(downs + ups, step)
+        self._submit(downs + ups, step, target)
 
-    def type_text(self, text: str | Secret, *, step: str | None = None) -> None:
-        self._submit([_Primitive("text", text=text)], step)
+    def press(self, key: str, *, target: object | None = None, step: str | None = None) -> None:
+        """키(조합)를 눌러 둔다 — 누르고 있기의 앞 요청. 떼기는 `release` 또는 `RELEASE_ALL`."""
+        self._submit([_Primitive("down", k) for k in _keys(key)], step, target)
 
-    def _submit(self, primitives: list[_Primitive], step: str | None) -> None:
+    def release(self, key: str, *, target: object | None = None, step: str | None = None) -> None:
+        """`press`로 누른 키(조합)를 거꾸로 뗀다 — 누르고 있기의 뒤 요청 (확인 없음)."""
+        self._submit([_Primitive("up", k) for k in reversed(_keys(key))], step, target)
+
+    def press_button(
+        self,
+        at: ClientPoint,
+        *,
+        button: str = "left",
+        target: object | None = None,
+        step: str | None = None,
+    ) -> None:
+        """`move` → 마우스 버튼 `down` (뗄 때까지 눌러 둔다)."""
+        point = _client(at)
+        key = _button(button)
+        self._submit(
+            [_Primitive("move", at=point), _Primitive("down", key, at=point)], step, target
+        )
+
+    def release_button(
+        self, button: str = "left", *, target: object | None = None, step: str | None = None
+    ) -> None:
+        self._submit([_Primitive("up", _button(button))], step, target)
+
+    def type_text(
+        self, text: str | Secret, *, target: object | None = None, step: str | None = None
+    ) -> None:
+        """글자(코드 포인트)마다 원시 동작 하나 — 입력 직전 확인이 글자마다 돈다. 보내는 도중
+        포커스를 잃으면 남은 글자는 다른 창에 가지 않고 그 요청이 오류로 끝난다."""
+        secret = isinstance(text, Secret)
+        raw = text.reveal() if isinstance(text, Secret) else text
+        chars = [Secret(ch) if secret else ch for ch in raw]
+        self._submit([_Primitive("text", text=ch) for ch in chars], step, target)
+
+    def _submit(
+        self, primitives: list[_Primitive], step: str | None, target: object | None
+    ) -> None:
         if not self.backend.available:
             raise PlatformUnavailable
-        request = _Request(primitives, step)
+        request = _Request(primitives, step, target)
         with self._cond:
             if self._state == "new":
                 raise RuntimeError("입력 액터를 시작하지 않았다")
@@ -258,7 +393,9 @@ class InputActor:
                 # 원시 동작 사이마다 게이트를 본다: 닫혔으면 이미 누른 키는 RELEASE_ALL이 뗀다
                 if self.gate.is_set():
                     raise Cancelled("입력이 막혔다 (실행 취소·마무리 중)")
-                self._do(primitive, request.step, pressed)
+                if primitive.wait_ms and self.gate.wait(primitive.wait_ms / 1000):
+                    raise Cancelled("입력이 막혔다 (실행 취소·마무리 중)")
+                self._do(primitive, request, pressed)
         except Cancelled as exc:
             request.finish(exc)
         except BaseException as exc:
@@ -270,23 +407,34 @@ class InputActor:
         else:
             request.finish()
 
-    def _do(self, primitive: _Primitive, step: str | None, pressed: list[InputKey]) -> None:
+    def _do(self, primitive: _Primitive, request: _Request, pressed: list[InputKey]) -> None:
+        step = request.step
         match primitive.op:
             case "down":
                 key = primitive.key
                 assert key is not None
+                screen = self._check("down", request, primitive.at)
                 self._record("input.down", key, step)
                 try:
                     _faults.fault_point("actor.before_backend", event="down")
                     if key.device == "keyboard":
                         self.backend.down(key.name)
                     else:
-                        self.backend.mouse_down(key.name, primitive.at)
+                        self.backend.mouse_down(key.name, screen)
                 finally:
-                    # 기록은 이미 "눌렸을 수 있음"이다: 백엔드가 실패해도 떼기 대상에 넣는다
+                    # 기록은 이미 "눌렸을 수 있음"이다: 백엔드가 실패해도 떼기 대상에 넣는다.
+                    # 다시 누른 키는 맨 뒤로 옮긴다 — 기록 읽기(`held_inputs`)의 차례와 같게
                     with self._held_lock:
+                        before = self._held.pop(key, _NOT_HELD)
                         self._held[key] = None
-                    pressed.append(key)
+                    # 실패 정리는 이 요청이 새로 누른 키만 뗀다. 앞 요청(누르고 있기)이 이미
+                    # 쥐고 있던 키는 그 요청의 것이다. 이 요청이 누른 키를 다시 누르면 정리
+                    # 목록에서도 맨 뒤로 — 실패 정리·정상 마무리·기록 복구가 같은 차례로 뗀다
+                    if key in pressed:
+                        pressed.remove(key)
+                        pressed.append(key)
+                    elif before is _NOT_HELD:
+                        pressed.append(key)
             case "up":
                 key = primitive.key
                 assert key is not None
@@ -294,8 +442,22 @@ class InputActor:
             case "text":
                 value = primitive.text
                 assert value is not None
+                self._check("text", request, None)
                 _faults.fault_point("actor.before_backend", event="text")
                 self.backend.text(value.reveal() if isinstance(value, Secret) else value)
+            case "move":
+                screen = self._check("move", request, primitive.at)
+                assert screen is not None
+                self.backend.move(screen)
+            case "wheel":
+                screen = self._check("wheel", request, primitive.at)
+                self.backend.wheel(primitive.amount, screen)
+
+    def _check(self, op: GuardedOp, request: _Request, at: ClientPoint | None) -> Point | None:
+        """입력 직전 확인 (이 스레드). 확인이 없으면 클라이언트 좌표를 그대로 넘긴다."""
+        if self.guard is not None:
+            return self.guard.check(op, request.target, at)
+        return None if at is None else Point(at.x, at.y)
 
     def _up(self, key: InputKey, step: str | None) -> None:
         _faults.fault_point("actor.before_backend", event="up")
@@ -341,9 +503,16 @@ def _cancel(requests: list[_Request], reason: BaseException) -> None:
         request.finish(reason)
 
 
-def _point(at: Point | Rect | Match) -> Point:
-    if isinstance(at, Point):
-        return at
-    if isinstance(at, Rect):
-        return at.center
-    return at.rect.center
+def _client(at: object) -> ClientPoint:
+    if not isinstance(at, ClientPoint):
+        # Match·Rect·SDK Point는 공용 입력 서비스가 재검증한 뒤 클라이언트 점으로 바꿔 넣는다
+        raise TypeError(f"입력 액터는 ClientPoint만 받는다 ({type(at).__name__})")
+    return at
+
+
+def _button(button: str) -> InputKey:
+    return InputKey("mouse", canonical_button(button))
+
+
+def _keys(combo: str) -> list[InputKey]:
+    return [InputKey("keyboard", canonical_key(n)) for n in split_combo(combo)]

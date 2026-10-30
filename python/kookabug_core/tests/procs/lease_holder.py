@@ -35,18 +35,19 @@ from pathlib import Path
 from typing import Any
 
 from kookabug_core.inputs import (
+    ClientPoint,
     FakeBackend,
     InputActor,
     InputLease,
     InputLeaseBusy,
     LeaseOwner,
+    create_backend,
     recover_run,
 )
 from kookabug_core.record import Journal
 from kookabug_core.record.runfolder import EVENTS_FILE
 from kookabug_sdk import _faults
 from kookabug_sdk.context import Cancelled
-from kookabug_sdk.types import Point
 
 
 def write_status(out: Path, name: str, data: Any) -> None:
@@ -91,8 +92,13 @@ def hold(spec: dict[str, Any], out: Path) -> None:
     journal = Journal(run_dir / EVENTS_FILE, run_id)
     gate = threading.Event()
     log = Path(spec["input_log"])
-    backend = FakeBackend(
-        log, run=run_id, by=spec.get("by", run_id), hooks=spec.get("hooks"), gate=gate
+    backend = create_backend(
+        "fake",
+        input_log=log,
+        run=run_id,
+        by=spec.get("by", run_id),
+        hooks=spec.get("hooks"),
+        gate=gate,
     )
     owner = LeaseOwner.current("runner", run_id=run_id, run_dir=run_dir)
     lease = InputLease(owner, backend, emit=journal.emit)
@@ -152,7 +158,7 @@ def hold(spec: dict[str, Any], out: Path) -> None:
                 case "go":
                     Path(f"{op['barrier']}.go").touch()
                 case "click":
-                    actor.click(Point(op["x"], op["y"]), button=op.get("button", "left"))
+                    actor.click(ClientPoint(op["x"], op["y"]), button=op.get("button", "left"))
                 case "wait":
                     _faults.perform(_faults.Action("wait", op["barrier"]))
                 case _:

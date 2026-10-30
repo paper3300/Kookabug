@@ -8,11 +8,14 @@
   열려 있을 때만이다(마지막 핸들이 닫히면 뮤텍스가 없어져 새로 얻는다). 그래서 복구할지는
   `ABANDONED`가 아니라 옆 파일의 `clean`으로 정한다
 - 옆 파일 `<상태 폴더>/input-lease.json`(`KOOKABUG_STATE_DIR`, 기본 `%LOCALAPPDATA%\\Kookabug`):
-  `{owner: {kind, workspace, run_id, run_dir, pid, created} | null, clean, last_owner?}`. 임대권을
+  `{owner: {kind, workspace, run_id, run_dir, pid, created, device} | null, clean, last_owner?}`.
+  `device`는 그 소유자의 입력 장치(`InputDevice`: `windows`·`fake`+기록 파일·`none`). 임대권을
   쥔 소유자만 쓴다(임시 파일 + `os.replace`)
 - **얻기**: 얻은 직후 옆 파일을 읽어 앞 소유자가 깨끗하게 놓지 않았으면(`clean: false`) 복구를
-  먼저 한다 — 앞 실행 기록의 `held_inputs()`를 자기 백엔드로 떼고, 앞 실행 폴더에
-  `input-recovery.json`을 배타적 생성으로 남긴다(이미 있으면 복구는 끝난 것). 그 뒤 자기 정보를
+  먼저 한다 — 앞 실행 기록의 `held_inputs()`를 **앞 소유자의 장치로** 떼고(자기 장치와 다르면 그
+  장치의 백엔드를 따로 만든다 — 실제 실행이 남긴 키를 가짜 실행이 "뗐다"고 표시하지 않게), 앞 실행
+  폴더에 `input-recovery.json`을 배타적 생성으로 남긴다(이미 있으면 복구는 끝난 것). 떼기가 실패하면
+  표시를 남기지 않는다. 그 뒤 자기 정보를
   `clean: false`로 쓴다. 복구는 액터를 띄우기 전, 얻는 스레드에서 하므로 단일 생산자가 깨지지 않는다
 - **깨끗한 놓기 = 액터가 멈춘 뒤**: `release(actor)`는 액터가 quiesced일 때만 옆 파일을
   `clean: true`로 쓰고 놓는다. 아니면 놓지 않는다 — 프로세스가 끝날 때 버려지고, 다음 획득자가
@@ -27,14 +30,19 @@ import os
 import tempfile
 import threading
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Literal
 
 from kookabug_core.inputs.actor import Emit
-from kookabug_core.inputs.backends import InputBackend
+from kookabug_core.inputs.backends import (
+    InputBackend,
+    InputDevice,
+    backend_for_device,
+    device_of,
+)
 from kookabug_core.record.finalize import InputRecoveryOutcome
 from kookabug_core.record.reader import InputKey, held_inputs, read_run
 from kookabug_core.record.runfolder import INPUT_RECOVERY_FILE, run_id_of_folder
@@ -180,9 +188,16 @@ class InputLease:
         name: str | None = None,
         directory: str | os.PathLike[str] | None = None,
         emit: Emit | None = None,
+        device_backend: Callable[[InputDevice], InputBackend] | None = None,
     ) -> None:
+        """`device_backend`: 앞 소유자의 장치가 자기 장치와 다를 때 그 장치로 뗄 백엔드를 만든다
+        (기본 `backend_for_device`, 검사가 바꿔 끼운다)."""
         self.owner = owner
         self.backend = backend
+        self.device = device_of(backend)
+        self._device_backend = device_backend or (
+            lambda device: backend_for_device(device, by=owner.kind)
+        )
         self.name = name or lease_name()
         self.file = lease_file(directory)
         self._emit = emit
@@ -226,7 +241,7 @@ class InputLease:
             _faults.fault_point("lease.before_recovery")
             previous = read_lease_file(self.file.parent)
             recovered = self._recover_previous(previous)
-            _write_json(self.file, {"owner": self.owner.to_json(), "clean": False})
+            _write_json(self.file, {"owner": self._owner_json(), "clean": False})
         except BaseException:
             self.abandon()
             raise
@@ -245,7 +260,7 @@ class InputLease:
             raise RuntimeError("쥐고 있지 않은 임대권이다")
         if actor is not None and not actor.quiesced:
             return False
-        _write_json(self.file, {"owner": None, "clean": True, "last_owner": self.owner.to_json()})
+        _write_json(self.file, {"owner": None, "clean": True, "last_owner": self._owner_json()})
         self._let_go()
         return True
 
@@ -287,6 +302,11 @@ class InputLease:
             self._release_signal.wait()
             mutex.release()
 
+    def _owner_json(self) -> dict[str, Any]:
+        """옆 파일의 소유자: 소유자 정보 + 입력 장치(다음 획득자가 그 장치로 뗀다)."""
+        device = None if self.device is None else self.device.to_json()
+        return {**self.owner.to_json(), "device": device}
+
     def _recover_previous(self, previous: Mapping[str, Any] | None) -> tuple[Recovery, ...]:
         if previous is None or previous.get("clean") is True:
             return ()
@@ -298,13 +318,35 @@ class InputLease:
         if not isinstance(run_dir, str) or not run_dir:
             return ()
         run_id = owner_map.get("run_id")
-        recovery = self.recover_run_dir(Path(run_dir), run_id if isinstance(run_id, str) else None)
+        recovery = self.recover_run_dir(
+            Path(run_dir),
+            run_id if isinstance(run_id, str) else None,
+            device=InputDevice.from_json(owner_map.get("device")),
+        )
         return () if recovery is None else (recovery,)
 
+    def _backend_for(self, device: InputDevice | None) -> InputBackend:
+        """앞 소유자의 장치로 떼는 백엔드. 자기 장치와 같거나 장치를 모르면(장치를 적지 않던 옆
+        파일) 자기 백엔드."""
+        if device is None or device == self.device:
+            return self.backend
+        return self._device_backend(device)
+
     def recover_run_dir(
-        self, run_dir: Path, run_id: str | None, held: Sequence[InputKey] | None = None
+        self,
+        run_dir: Path,
+        run_id: str | None,
+        held: Sequence[InputKey] | None = None,
+        *,
+        device: InputDevice | None = None,
     ) -> Recovery | None:
-        """그 실행의 눌렸을 수 있는 키를 뗀다 (임대권을 쥔 동안만). 복구 표시 파일이 있으면 None."""
+        """그 실행의 눌렸을 수 있는 키를 그 실행의 장치 `device`(모르면 자기 장치)로 뗀다
+        (임대권을 쥔 동안만). 복구 표시 파일이 있으면 None. 떼기가 실패하면 표시를 남기지 않고
+        예외를 그대로 던진다.
+
+        표시·실행 폴더·뗄 키를 먼저 보고, 뗄 키가 있을 때만 그 장치의 백엔드를 만든다 — 이미
+        복구됐거나 뗄 것이 없으면 다른 장치의 플랫폼(패키지·초기화)이 필요 없다.
+        """
         if not self._held:
             raise RuntimeError("키 복구는 임대권 안에서만 한다")
         marker = run_dir / INPUT_RECOVERY_FILE
@@ -313,11 +355,14 @@ class InputLease:
         view = read_run(run_dir)
         keys = tuple(held if held is not None else held_inputs(view))
         from_run = run_id or view.run_id or run_id_of_folder(run_dir)
-        for key in keys:
-            if key.device == "keyboard":
-                self.backend.up(key.name)
-            else:
-                self.backend.mouse_up(key.name)
+        if keys:
+            releaser = self._backend_for(device)
+            # 누른 차례의 거꾸로 뗀다 (액터의 조합 떼기와 같다). 떼기는 입력 직전 확인을 하지 않는다
+            for key in reversed(keys):
+                if key.device == "keyboard":
+                    releaser.up(key.name)
+                else:
+                    releaser.mouse_up(key.name)
         # 떼기를 다 한 뒤에 표시한다: 그 사이에 죽으면 다음 획득자가 다시 뗀다(떼기는 해가 없다)
         record = {
             "recovered_by": {"kind": self.owner.kind, "run_id": self.owner.run_id},

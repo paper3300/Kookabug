@@ -10,7 +10,8 @@
 5. `plugin_modules`가 있으면 워커를 띄우고 hello → 원격 노드 등록
 6. 스냅샷 프로그램의 의미 검증(코어 + 원격). 오류면 `run.end`(`error`/`graph_invalid`, 진단은
    `run.json`)
-7. `input` 효과 노드가 있으면 입력 임대권(앞 소유자 복구 포함) → 입력 액터 시작
+7. `input` 효과 노드가 있고 플랫폼이 `fake`·`windows`면 입력 임대권(앞 소유자 복구 포함) → 입력
+   액터 시작. `windows`는 SendInput 백엔드 + 창 수명 추적기 + 입력 직전 확인
 8. `Executor.run` (주 스레드). 워커 노드의 `ctx` 요청도 주 스레드가 처리한다
 
 **정상 마무리** (주 스레드만): 종료 단계 진입(감시자 무장, 감독자에 `runner.stopping`) → 워커
@@ -33,7 +34,7 @@ import time
 import traceback
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import kookabug_core
 from kookabug_core.diagnostics import Diagnostic, has_errors
@@ -50,7 +51,9 @@ from kookabug_core.engine import (
 )
 from kookabug_core.engine.errors import EngineError
 from kookabug_core.inputs import (
+    ClientPoint,
     InputActor,
+    InputGuard,
     InputLease,
     InputLeaseBusy,
     LeaseOwner,
@@ -74,6 +77,9 @@ from kookabug_sdk.context import InputApi
 from kookabug_sdk.pipe import connect
 from kookabug_sdk.rpc import RpcPeer
 from kookabug_sdk.types import Image, Match, Point, Rect, Secret, WindowRef
+
+if TYPE_CHECKING:
+    from kookabug_platform.tracker import WindowTracker
 
 __all__ = [
     "EXIT_OK",
@@ -101,14 +107,21 @@ def unix_micros(ident: ProcessId) -> int:
 
 
 class _ActorInput:
-    """`ctx.input` → 입력 액터 큐 (스텝 ID와 함께). 액터가 백엔드를 부르는 유일한 스레드다."""
+    """`ctx.input` → 입력 액터 큐 (스텝 ID와 함께). 액터가 백엔드를 부르는 유일한 스레드다.
+
+    대상 창 없이 넣는다. 창 고정·`Match` 재검증을 하는 공용 입력 서비스(M1 T9)가 이 자리를
+    대신하기 전까지 `Match`·`Rect`는 중심점으로 줄인다.
+    """
 
     def __init__(self, actor: InputActor, step: str) -> None:
         self._actor = actor
         self._step = step
 
     def click(self, at: Point | Rect | Match, *, button: str = "left") -> None:
-        self._actor.click(at, button=button, step=self._step)
+        center = (
+            at if isinstance(at, Point) else at.center if isinstance(at, Rect) else at.rect.center
+        )
+        self._actor.click(ClientPoint(center.x, center.y), button=button, step=self._step)
 
     def key(self, key: str) -> None:
         self._actor.key(key, step=self._step)
@@ -215,6 +228,8 @@ class Runner:
         self.worker: WorkerProcess | None = None
         self.actor: InputActor | None = None
         self.lease: InputLease | None = None
+        self.window_tracker: WindowTracker | None = None
+        """`kind: windows`의 창 수명 추적기."""
         self.registry: Registry | None = None
         self._run_json: dict[str, Any] = {}
 
@@ -399,7 +414,7 @@ class Runner:
             )
 
         # 7. 입력 임대권 → 입력 액터
-        if _uses_input(program, registry) and spec.platform.kind == "fake":
+        if _uses_input(program, registry) and spec.platform.kind in ("fake", "windows"):
             refused = self._start_input()
             if refused is not None:
                 return refused
@@ -413,7 +428,7 @@ class Runner:
         assert self.controller is not None
         gate = threading.Event()
         backend = create_backend(
-            "fake",
+            spec.platform.kind,
             input_log=spec.platform.input_log,
             hooks=spec.platform.hooks,
             run=spec.run_id,
@@ -429,8 +444,16 @@ class Runner:
         except InputLeaseBusy as exc:
             return _End.error(exc.code, str(exc))
         self.lease = lease
+        guard: InputGuard | None = None
+        if spec.platform.kind == "windows":
+            # 플랫폼 패키지는 이 종류일 때만 불러온다 (fake·none 실행은 opencv 등 없이 돈다)
+            from kookabug_platform.sendinput import WindowInputGuard
+            from kookabug_platform.tracker import WindowTracker
+
+            self.window_tracker = WindowTracker(run_id=spec.run_id).start()
+            guard = WindowInputGuard(self.window_tracker)
         # 액터의 기록 실패는 액터가 알아야 한다(입력을 막는다): 조용히 버리지 않는 쓰기를 준다
-        self.actor = InputActor(backend, emit=self._emit, gate=gate).start()
+        self.actor = InputActor(backend, emit=self._emit, gate=gate, guard=guard).start()
         self.controller.attach_actor(self.actor)
         return None
 
@@ -518,6 +541,10 @@ class Runner:
         quiesced = True
         if self.actor is not None:
             quiesced = self.actor.stop(spec.shutdown_grace_ms / 2 / 1000)
+        if self.window_tracker is not None and quiesced:
+            # 액터가 멈춘 뒤에만 (멈춘 액터는 확인을 더 부르지 않는다)
+            with contextlib.suppress(Exception):
+                self.window_tracker.stop()
 
         run_end: dict[str, Any] | None = None
         if end is not None and self.journal is not None:

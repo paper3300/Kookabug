@@ -49,8 +49,12 @@ class RecoverResult:
 
 
 def supervisor_backend(platform: Mapping[str, Any], run_id: str | None) -> InputBackend | None:
-    """감독자가 키를 뗄 백엔드: 실행 사양의 `platform`과 같은 장치(가짜면 같은 기록 파일)."""
-    if platform.get("kind") != "fake" or not platform.get("input_log"):
+    """감독자가 키를 뗄 백엔드: 실행 사양의 `platform`과 같은 장치(가짜면 같은 기록 파일,
+    `windows`면 SendInput). 감독자는 떼기만 하므로 입력 직전 확인도 훅도 없다."""
+    kind = platform.get("kind")
+    if kind == "windows":
+        return create_backend("windows")
+    if kind != "fake" or not platform.get("input_log"):
         return None
     return create_backend("fake", input_log=platform["input_log"], run=run_id, by="supervisor")
 

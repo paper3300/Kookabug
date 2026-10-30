@@ -46,6 +46,67 @@ PM_NOREMOVE: Final = 0x0000
 
 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2: Final = -4
 
+INPUT_MOUSE: Final = 0
+INPUT_KEYBOARD: Final = 1
+KEYEVENTF_EXTENDEDKEY: Final = 0x0001
+KEYEVENTF_KEYUP: Final = 0x0002
+KEYEVENTF_UNICODE: Final = 0x0004
+KEYEVENTF_SCANCODE: Final = 0x0008
+MOUSEEVENTF_MOVE: Final = 0x0001
+MOUSEEVENTF_LEFTDOWN: Final = 0x0002
+MOUSEEVENTF_LEFTUP: Final = 0x0004
+MOUSEEVENTF_RIGHTDOWN: Final = 0x0008
+MOUSEEVENTF_RIGHTUP: Final = 0x0010
+MOUSEEVENTF_MIDDLEDOWN: Final = 0x0020
+MOUSEEVENTF_MIDDLEUP: Final = 0x0040
+MOUSEEVENTF_XDOWN: Final = 0x0080
+MOUSEEVENTF_XUP: Final = 0x0100
+MOUSEEVENTF_WHEEL: Final = 0x0800
+MOUSEEVENTF_VIRTUALDESK: Final = 0x4000
+MOUSEEVENTF_ABSOLUTE: Final = 0x8000
+XBUTTON1: Final = 0x0001
+XBUTTON2: Final = 0x0002
+WHEEL_DELTA: Final = 120
+MAPVK_VK_TO_VSC_EX: Final = 4
+SM_XVIRTUALSCREEN: Final = 76
+SM_YVIRTUALSCREEN: Final = 77
+SM_CXVIRTUALSCREEN: Final = 78
+SM_CYVIRTUALSCREEN: Final = 79
+
+
+class MOUSEINPUT(ctypes.Structure):
+    _fields_ = (
+        ("dx", LONG),
+        ("dy", LONG),
+        ("mouseData", DWORD),
+        ("dwFlags", DWORD),
+        ("time", DWORD),
+        ("dwExtraInfo", ctypes.c_size_t),
+    )
+
+
+class KEYBDINPUT(ctypes.Structure):
+    _fields_ = (
+        ("wVk", wintypes.WORD),
+        ("wScan", wintypes.WORD),
+        ("dwFlags", DWORD),
+        ("time", DWORD),
+        ("dwExtraInfo", ctypes.c_size_t),
+    )
+
+
+class HARDWAREINPUT(ctypes.Structure):
+    _fields_ = (("uMsg", DWORD), ("wParamL", wintypes.WORD), ("wParamH", wintypes.WORD))
+
+
+class _INPUTUNION(ctypes.Union):
+    _fields_ = (("mi", MOUSEINPUT), ("ki", KEYBDINPUT), ("hi", HARDWAREINPUT))
+
+
+class INPUT(ctypes.Structure):
+    _anonymous_ = ("u",)
+    _fields_ = (("type", DWORD), ("u", _INPUTUNION))
+
 
 class MONITORINFO(ctypes.Structure):
     _fields_ = (
@@ -127,6 +188,9 @@ UnhookWinEvent = bind(_dll, "UnhookWinEvent", BOOL, wintypes.HANDLE)
 SetThreadDpiAwarenessContext = bind(
     _dll, "SetThreadDpiAwarenessContext", ctypes.c_void_p, ctypes.c_void_p
 )
+SendInput = bind(_dll, "SendInput", UINT, UINT, ctypes.POINTER(INPUT), ctypes.c_int)
+MapVirtualKeyW = bind(_dll, "MapVirtualKeyW", UINT, UINT, UINT)
+GetSystemMetrics = bind(_dll, "GetSystemMetrics", ctypes.c_int, ctypes.c_int)
 OpenInputDesktop = bind(_dll, "OpenInputDesktop", wintypes.HANDLE, DWORD, BOOL, DWORD)
 CloseDesktop = bind(_dll, "CloseDesktop", BOOL, wintypes.HANDLE)
 GetUserObjectInformationW = bind(

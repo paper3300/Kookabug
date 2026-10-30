@@ -26,7 +26,14 @@ from kb_testing.proc import (
     read_fake_input_log,
     wait_until,
 )
-from kookabug_core.inputs import FakeBackend, HookAction, InputActor, InputLease, LeaseOwner
+from kookabug_core.inputs import (
+    HookAction,
+    InputActor,
+    InputBackend,
+    InputLease,
+    LeaseOwner,
+    create_backend,
+)
 from kookabug_core.inputs.lease import LEASE_NAME_ENV, STATE_DIR_ENV
 from kookabug_core.record import Journal
 from kookabug_core.record.runfolder import EVENTS_FILE
@@ -41,7 +48,7 @@ class InProcess:
     run_id: str
     run_dir: Path
     journal: Journal
-    backend: FakeBackend
+    backend: InputBackend
     lease: InputLease
     gate: threading.Event
 
@@ -81,7 +88,9 @@ class LeaseEnv:
         run_dir.mkdir(parents=True, exist_ok=True)
         journal = Journal(run_dir / EVENTS_FILE, run_id)
         gate = threading.Event()
-        backend = FakeBackend(self.log, run=run_id, by=label, hooks=hooks, gate=gate)
+        backend = create_backend(
+            "fake", input_log=self.log, run=run_id, by=label, hooks=hooks, gate=gate
+        )
         owner = LeaseOwner.current("runner", run_id=run_id, run_dir=run_dir)
         lease = InputLease(
             owner, backend, name=self.name, directory=self.state_dir, emit=journal.emit

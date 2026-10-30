@@ -69,10 +69,12 @@ def start_run(
     env: Mapping[str, str] | None = None,
     env_direct: bool = True,
     hello_timeout: float = 30.0,
+    platform: PlatformSpec | None = None,
     **opts: Any,
 ) -> RunHandle:
     """이 프로세스의 `Supervisor`로 실행을 시작한다. 워크스페이스는 `tmp_path/ws`, 가짜 입력 기록은
-    `tmp_path/input.jsonl`. `env`를 주면 그 환경(임대권 이름 공유 등)을, 아니면 격리 환경을 쓴다."""
+    `tmp_path/input.jsonl`. `env`를 주면 그 환경(임대권 이름 공유 등)을, 아니면 격리 환경을 쓴다.
+    `platform`을 주면 가짜 플랫폼 대신 그것을 쓴다(`hooks`는 무시)."""
     ws_root = tmp_path / "ws"
     ws = make_workspace(ws_root) if not (ws_root / "kookabug.json").exists() else None
     if graph is not None:
@@ -82,14 +84,13 @@ def start_run(
     opts.setdefault("plugin_modules", PLUGIN_MODULES)
     opts.setdefault("worker_cancel_grace_ms", 1_000)
     opts.setdefault("runs_dir", tmp_path / "runs")
-    options = StartOptions(
-        platform=PlatformSpec(
+    if platform is None:
+        platform = PlatformSpec(
             "fake",
             input_log=str(tmp_path / "input.jsonl"),
             hooks={h: dict(n) for h, n in (hooks or {}).items()},
-        ),
-        **opts,
-    )
+        )
+    options = StartOptions(platform=platform, **opts)
     supervisor = Supervisor(
         runner_cmd=RUNNER_CMD if runner_cmd is None else runner_cmd,
         env=direct_env(base) if env_direct else base,
@@ -145,6 +146,9 @@ class SupervisorHost:
     shutdown_grace_ms: int = 2_000
     self_kill_margin_ms: int = 10_000
     env_extra: Mapping[str, str] = field(default_factory=dict[str, str])
+    runner_cmd: Sequence[str] = tuple(RUNNER_CMD)
+    platform: PlatformSpec | None = None
+    """주면 가짜 플랫폼(`input_log`·`hooks`) 대신 이것."""
     proc: subprocess.Popen[bytes] | None = None
     env: dict[str, str] = field(default_factory=dict[str, str])
 
@@ -168,19 +172,20 @@ class SupervisorHost:
         self.env = direct_env(
             worker_env(self.tmp_path, list(self.faults) or None, **dict(self.env_extra))
         )
+        platform = self.platform or PlatformSpec(
+            "fake",
+            input_log=str(self.input_log),
+            hooks={h: dict(n) for h, n in self.hooks.items()},
+        )
         spec = {
             "workspace_root": str(self.ws.root),
             "graph": self.graph,
-            "runner_cmd": RUNNER_CMD,
+            "runner_cmd": list(self.runner_cmd),
             "out": str(self.out),
             "options": {
                 "deadline_ms": 60_000,
                 "plugin_modules": list(self.plugin_modules),
-                "platform": {
-                    "kind": "fake",
-                    "input_log": str(self.input_log),
-                    "hooks": {h: dict(n) for h, n in self.hooks.items()},
-                },
+                "platform": platform.to_json(),
                 "runs_dir": str(self.tmp_path / "runs"),
                 "shutdown_grace_ms": self.shutdown_grace_ms,
                 "self_kill_margin_ms": self.self_kill_margin_ms,

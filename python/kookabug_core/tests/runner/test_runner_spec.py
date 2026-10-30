@@ -16,6 +16,7 @@ from kookabug_core.runner.run import EXIT_START_FAILED
 from kookabug_core.runner.spec import (
     DEFAULT_SELF_KILL_MARGIN_MS,
     DEFAULT_SHUTDOWN_GRACE_MS,
+    PlatformSpec,
     ident_from_json,
     ident_to_json,
 )
@@ -68,11 +69,20 @@ def test_ident_created_is_decimal_string_beyond_rpc_int_range() -> None:
     assert ident_from_json(data) == ident
 
 
+def test_windows_platform_with_hooks_roundtrip() -> None:
+    # M1 T5: 실제 입력 플랫폼. 훅은 어느 종류에서나 입력 백엔드에 씌우는 숨은 테스트 기능
+    hooks = {"after_down": {"mouse:left": "wait:C:/barrier"}}
+    spec = RunSpec.from_json(spec_json(platform={"kind": "windows", "hooks": hooks}))
+    assert spec.platform == PlatformSpec("windows", hooks=hooks)
+    assert RunSpec.from_json(spec.to_json()) == spec
+    assert check_shape(spec.to_json(), "rpc", ref="#/$defs/RunSpec") == []
+
+
 @pytest.mark.parametrize(
     "bad",
     [
         {"deadline_ms": 0},
-        {"platform": {"kind": "windows"}},
+        {"platform": {"kind": "linux"}},
         {"control": {"pipe": "x", "key": "short"}},
         {"unknown": 1},
     ],
