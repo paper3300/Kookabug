@@ -1,5 +1,7 @@
 """Rust 크레이트 라이선스 원문 모으기 (네트워크 없이, crates.io 응답을 바꿔 끼운다)."""
 
+from pathlib import Path
+
 import pytest
 
 import fetch_crate_licenses as fc
@@ -66,3 +68,59 @@ def test_apache_fallback_needs_apache_alone_to_satisfy_expression(
         [("seed", "1", "Apache-2.0"), ("compound", "1", "(MIT OR Apache-2.0) AND Apache-2.0")],
     )
     assert f"(라이선스 파일 없음. {fc.APACHE_CHOICE})" in ok
+
+
+def _crate(name: str, version: str) -> bytes:
+    import io
+    import tarfile
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        data = b"MIT\nCopyright X"
+        info = tarfile.TarInfo(f"{name}-{version}/LICENSE-MIT")
+        info.size = len(data)
+        tar.addfile(info, io.BytesIO(data))
+    return buf.getvalue()
+
+
+def test_repo_sbom_checksums_checked_against_downloaded_crate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """레포 SBOM(uv 실행기)으로 원문을 모을 때 Cargo.lock 체크섬과 받은 .crate가 다르면 멈춘다."""
+    import hashlib
+    import io
+    import json
+
+    crate = _crate("a", "1.0")
+
+    class Resp(io.BytesIO):
+        def __enter__(self) -> Resp:
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            pass
+
+    monkeypatch.setattr(fc.urllib.request, "urlopen", lambda url, timeout: Resp(crate))
+    sbom = {
+        "metadata": {"component": {"name": "tool-x", "version": "0.1.0"}},
+        "components": [
+            {
+                "name": "a",
+                "version": "1.0",
+                "licenses": [{"expression": "MIT"}],
+                "hashes": [{"alg": "SHA-256", "content": hashlib.sha256(crate).hexdigest()}],
+            }
+        ],
+    }
+    path = tmp_path / "tool-x-sbom.json"
+    path.write_text(json.dumps(sbom), encoding="utf-8")
+    out = fc.render_sbom_file(path, tmp_path)
+    assert out.name == "tool-x-crates.txt"
+    text = out.read_text(encoding="utf-8")
+    assert text.startswith("tool-x 0.1.0의 Rust 크레이트 라이선스 원문\n")
+    assert "\na 1.0\n" in text and "Copyright X" in text
+
+    sbom["components"][0]["hashes"][0]["content"] = "0" * 64
+    path.write_text(json.dumps(sbom), encoding="utf-8")
+    with pytest.raises(fc.FetchError, match=r"a 1\.0: 받은 \.crate의 SHA256이 SBOM과 다르다"):
+        fc.render_sbom_file(path, tmp_path)

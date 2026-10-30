@@ -17,6 +17,8 @@
 #   원문이 없거나 글귀가 없으면 감사 실패. 원문은 NOTICES에 그대로 싣는다
 # - sbom: Rust 확장의 동봉 SBOM glob. 크레이트마다 라이선스를 판정하고 texts에 그 크레이트의
 #   원문 절이 있어야 한다 (tools/fetch_crate_licenses.py가 third_party_licenses/에 모은다)
+# - sbom_file: 배포물에 SBOM이 없는 바이너리(uv 실행기)의 SBOM을 레포에 둔 것 (이 표 폴더 기준).
+#   판정은 sbom과 같다
 #
 # [[strip]] 설치본에서 빼는 파일·폴더. 빌드 입력에서는 반드시 무언가를 맞혀야 하고(빗나가면 실패),
 # 최종 트리에는 남아 있으면 안 된다. origin = wheel(감사 venv에도 있음) | pbs(Python 배포본)
@@ -24,8 +26,9 @@
 # [licenseref."LicenseRef-..."] SPDX 밖 배포 조건. 원문 위치(source)와 처리 근거(reason) 필수.
 # LicenseRef는 이 표의 항목에서만 허용된다 (패키지 메타데이터에서는 미상)
 #
-# install scope 항목은 설치본 구성(T13)이 실제 트리로 다시 확인한다. 원문이 아직 없는 구성요소
-# (OpenSSL·libffi·zlib 등)는 texts가 비어 있어 최종 트리 감사가 실패하므로 T13이 채운다.
+# install scope 항목은 설치 파일 빌드(tools/installer/build.py)가 스테이징 트리(빌드 입력 감사)와
+# 최종 트리에, CI installer 잡이 무인 설치 결과에 건다. python/LICENSE.txt에 없는 PBS 구성요소의
+# 원문은 third_party_licenses/python-build-standalone.txt에 모았다.
 
 # ---------------------------------------------------------------- numpy
 
@@ -232,39 +235,72 @@ scope = "install"
 glob = "python/DLLs/_lzma.pyd"
 package = "python-build-standalone"
 license = "PSF-2.0 AND 0BSD"
-components = "CPython (PSF-2.0), xz/liblzma (0BSD)"
-reason = "liblzma 5.6부터 0BSD. T13이 PBS 빌드의 xz 버전과 원문을 넣는다"
+components = "CPython (PSF-2.0), xz 5.8.4 liblzma (0BSD)"
+reason = "liblzma 5.6부터 0BSD. 버전은 PBS 20261026 downloads.json"
 
 [[native.texts]]
 path = "python/LICENSE.txt"
 covers = ["PSF-2.0"]
 expect = ["PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2"]
+
+[[native.texts]]
+file = "third_party_licenses/python-build-standalone.txt"
+covers = ["0BSD"]
+expect = ["xz 5.8.4 liblzma", "The XZ Utils authors and contributors"]
 
 [[native]]
 scope = "install"
 glob = "python/DLLs/_decimal.pyd"
 package = "python-build-standalone"
 license = "PSF-2.0 AND BSD-2-Clause"
-components = "CPython (PSF-2.0), mpdecimal (BSD-2-Clause)"
-reason = "libmpdec를 정적으로 포함. 원문은 T13"
+components = "CPython (PSF-2.0), mpdecimal 4.0.0 (BSD-2-Clause)"
+reason = "libmpdec를 정적으로 포함"
 
 [[native.texts]]
 path = "python/LICENSE.txt"
 covers = ["PSF-2.0"]
 expect = ["PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2"]
+
+[[native.texts]]
+file = "third_party_licenses/python-build-standalone.txt"
+covers = ["BSD-2-Clause"]
+expect = ["mpdecimal 4.0.0", "Stefan Krah"]
 
 [[native]]
 scope = "install"
 glob = "python/DLLs/{pyexpat,_elementtree}.pyd"
 package = "python-build-standalone"
 license = "PSF-2.0 AND MIT"
-components = "CPython (PSF-2.0), expat (MIT)"
-reason = "expat을 정적으로 포함. 원문은 T13"
+components = "CPython (PSF-2.0), expat 2.9.0 (MIT)"
+reason = "expat을 정적으로 포함"
 
 [[native.texts]]
 path = "python/LICENSE.txt"
 covers = ["PSF-2.0"]
 expect = ["PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2"]
+
+[[native.texts]]
+file = "third_party_licenses/python-build-standalone.txt"
+covers = ["MIT"]
+expect = ["expat 2.9.0", "Expat maintainers"]
+
+[[native]]
+scope = "install"
+glob = "python/DLLs/unicodedata.pyd"
+package = "python-build-standalone"
+license = "PSF-2.0 AND Unicode-3.0"
+components = "CPython (PSF-2.0), Unicode Character Database 표 (Unicode-3.0)"
+reason = "UCD를 내부 형식으로 바꿔 넣었다 (CPython Doc/license.rst의 Unicode Character Database 절)"
+
+[[native.texts]]
+path = "python/LICENSE.txt"
+covers = ["PSF-2.0"]
+expect = ["PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2"]
+
+[[native.texts]]
+file = "third_party_licenses/python-build-standalone.txt"
+covers = ["Unicode-3.0"]
+expect = ["Unicode Character Database", "UNICODE LICENSE V3"]
 
 [[native]]
 scope = "install"
@@ -283,14 +319,19 @@ expect = ["PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2"]
 scope = "install"
 glob = "python/{python.exe,pythonw.exe,python3.dll,python314.dll}"
 package = "python-build-standalone"
-license = "PSF-2.0 AND MIT"
-components = "CPython (PSF-2.0), HACL* 해시 구현 (MIT)"
-reason = "CPython 인터프리터. HACL* 원문은 T13"
+license = "PSF-2.0 AND MIT AND Unicode-3.0"
+components = "CPython (PSF-2.0), HACL* 해시 구현·mimalloc (MIT), str의 Unicode 표 (Unicode-3.0)"
+reason = "CPython 인터프리터. 정적으로 들어간 구성요소는 CPython Doc/license.rst의 Incorporated Software 절과 Modules/_hacl 고지"
 
 [[native.texts]]
 path = "python/LICENSE.txt"
 covers = ["PSF-2.0"]
 expect = ["PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2"]
+
+[[native.texts]]
+file = "third_party_licenses/python-build-standalone.txt"
+covers = ["MIT", "Unicode-3.0"]
+expect = ["HACL* Contributors", "mimalloc", "UNICODE LICENSE V3"]
 
 [[native]]
 scope = "install"
@@ -309,8 +350,13 @@ scope = "install"
 glob = "python/DLLs/lib{crypto,ssl}-3*.dll"
 package = "python-build-standalone"
 license = "Apache-2.0"
-components = "OpenSSL 3"
-reason = "OpenSSL 3.x는 Apache-2.0. 원문은 T13"
+components = "OpenSSL 3.5.9"
+reason = "OpenSSL 3.x는 Apache-2.0"
+
+[[native.texts]]
+file = "third_party_licenses/python-build-standalone.txt"
+covers = ["Apache-2.0"]
+expect = ["OpenSSL 3.5.9", "Apache License"]
 
 [[native]]
 scope = "install"
@@ -318,15 +364,25 @@ glob = "python/DLLs/libffi-*.dll"
 package = "python-build-standalone"
 license = "MIT"
 components = "libffi"
-reason = "libffi는 MIT. 원문은 T13"
+reason = "libffi는 MIT"
+
+[[native.texts]]
+file = "third_party_licenses/python-build-standalone.txt"
+covers = ["MIT"]
+expect = ["libffi - Copyright (c) 1996-2019 Anthony Green"]
 
 [[native]]
 scope = "install"
 glob = "python/DLLs/libtommath.dll"
 package = "python-build-standalone"
 license = "Unlicense"
-components = "libtommath (Tcl 9의 의존성)"
-reason = "libtommath는 Unlicense. 원문은 T13"
+components = "libtommath 1.3.0 (Tcl 9의 의존성)"
+reason = "libtommath는 Unlicense (The LibTom license)"
+
+[[native.texts]]
+file = "third_party_licenses/python-build-standalone.txt"
+covers = ["Unlicense"]
+expect = ["The LibTom license", "unencumbered software released into the public domain"]
 
 [[native]]
 scope = "install"
@@ -341,8 +397,13 @@ scope = "install"
 glob = "python/DLLs/zlib1.dll"
 package = "python-build-standalone"
 license = "Zlib"
-components = "zlib"
-reason = "zlib는 Zlib. 원문은 T13"
+components = "zlib-ng 2.2.4 (zlib 호환 빌드)"
+reason = "설치본 Python의 zlib.ZLIB_RUNTIME_VERSION이 1.3.1.zlib-ng. zlib-ng·zlib 모두 Zlib"
+
+[[native.texts]]
+file = "third_party_licenses/python-build-standalone.txt"
+covers = ["Zlib"]
+expect = ["zlib-ng 2.2.4", "Jean-loup Gailly and Mark Adler"]
 
 [[native]]
 scope = "install"
@@ -359,45 +420,45 @@ expect = ["Regents of the University of California"]
 
 [[native]]
 scope = "install"
-glob = "python/vcruntime140*.dll"
-package = "python-build-standalone"
-license = "LicenseRef-MS-VC-Redist"
-components = "Microsoft Visual C++ 런타임"
-reason = "PBS가 넣은 Visual C++ 재배포 가능 파일"
-
-[[native]]
-scope = "install"
-glob = "python/{msvcp140*.dll,concrt140.dll}"
+glob = "python/{vcruntime140*.dll,msvcp140*.dll,concrt140.dll}"
 package = "vc-redist"
 license = "LicenseRef-MS-VC-Redist"
 components = "Microsoft Visual C++ 런타임 (앱 로컬 복사)"
-reason = "빌드 머신 Visual Studio의 VC\\Redist에서 앱 로컬로 복사한다 (2.12)"
+reason = "빌드 머신 Visual Studio의 VC\\Redist에서 python.exe 옆에 복사한다(PBS가 넣은 vcruntime140*도 같은 판으로 덮는다, 2.12)"
 
-# ---------------------------------------------------------------- 실행기·도구 (설치본, T13)
+# ---------------------------------------------------------------- 실행기·제거기 (설치본)
 
 [[native]]
 scope = "install"
 glob = "{bin,python/Scripts}/*.exe"
 package = "uv"
 license = "Apache-2.0 OR MIT"
-components = "uv 실행기(trampoline)"
-reason = "uv가 만든 콘솔 실행기. 원문은 T13"
+components = "uv 0.13.6의 콘솔 실행기: uv-trampoline 0.1.0·uv-windows 0.0.98 (uv 워크스페이스, MIT OR Apache-2.0), dunce 1.0.5 (CC0-1.0 OR MIT-0 OR Apache-2.0), ufmt·ufmt-write (MIT OR Apache-2.0), windows 0.61.3과 windows-* (MIT OR Apache-2.0)"
+sbom_file = "third_party_licenses/uv-trampoline-sbom.json"
+reason = "uv pip install이 만든 실행기. 빌드가 그 안의 Python 경로 자원을 상대 경로로 바꾼다(tools/installer/build.py). uv 판은 pbs.toml [uv]로 고정하고 빌드가 확인한다. 크레이트 목록은 uv 0.13.6 crates/uv-trampoline/Cargo.lock의 실행 시 의존성(proc-macro·빌드 의존성 제외)"
 
-[[native]]
-scope = "install"
-glob = "uv/uv*.exe"
-package = "uv"
-license = "Apache-2.0 OR MIT"
-components = "uv"
-reason = "동봉 uv. 원문은 T13"
+[[native.texts]]
+file = "third_party_licenses/uv-trampoline.txt"
+covers = ["Apache-2.0", "MIT"]
+expect = ["uv 0.13.6의 실행기(trampoline) 라이선스 원문", "uv-trampoline 0.1.0", "uv-windows 0.0.98", "Apache License", "Permission is hereby granted"]
+
+[[native.texts]]
+file = "third_party_licenses/uv-trampoline-crates.txt"
+covers = ["Apache-2.0", "MIT"]
+expect = ["uv-trampoline 0.1.0의 Rust 크레이트 라이선스 원문", "Jorge Aparicio", "CC0 1.0 Universal"]
 
 [[native]]
 scope = "install"
 glob = "unins*.exe"
 package = "inno-setup"
 license = "LicenseRef-InnoSetup"
-components = "Inno Setup 제거기"
-reason = "Inno Setup이 설치 폴더에 넣는 제거 프로그램. 원문(license.txt)은 T13"
+components = "Inno Setup 6.7 제거 프로그램"
+reason = "Inno Setup이 설치 폴더에 넣는 제거 프로그램"
+
+[[native.texts]]
+file = "third_party_licenses/inno-setup.txt"
+covers = ["LicenseRef-InnoSetup"]
+expect = ["Inno Setup License", "Jordan Russell"]
 
 # ---------------------------------------------------------------- 제거 목록
 
@@ -416,6 +477,12 @@ scope = "site-packages"
 origin = "pbs"
 glob = "pip-*.dist-info"
 reason = "PBS에 든 pip"
+
+[[strip]]
+scope = "site-packages"
+origin = "pbs"
+glob = "README.txt"
+reason = "PBS site-packages 안내 파일. 어느 RECORD에도 없다"
 
 [[strip]]
 scope = "install"

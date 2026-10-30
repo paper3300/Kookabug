@@ -89,6 +89,9 @@ class NativeEntry:
     # Rust 확장의 동봉 SBOM glob (항목 scope 기준). 주면 SBOM의 크레이트마다 라이선스를 판정하고
     # texts에 그 크레이트의 원문 절(`이름 버전` 줄)이 있어야 한다
     sbom: str = ""
+    # 배포물에 SBOM이 없을 때 레포에 둔 SBOM (표 폴더 기준, 예: uv 실행기의 Cargo.lock에서 만든 것).
+    # 판정은 sbom과 같다
+    sbom_file: str = ""
 
 
 @dataclass(frozen=True)
@@ -191,6 +194,8 @@ def load_native_table(data: Mapping[str, Any], base_dir: Path = TOOLS_DIR) -> Na
         where = f"native[{i}]"
         if "evidence" in item or "notice" in item:
             raise AuditInputError(f"{where}: evidence·notice 대신 texts를 쓴다")
+        if item.get("sbom") and item.get("sbom_file"):
+            raise AuditInputError(f"{where}: sbom(배포물 안)과 sbom_file(레포) 중 하나만 쓴다")
         entries.append(
             NativeEntry(
                 glob=_required(item, "glob", where),
@@ -204,6 +209,7 @@ def load_native_table(data: Mapping[str, Any], base_dir: Path = TOOLS_DIR) -> Na
                     for j, t in enumerate(item.get("texts", []))
                 ),
                 sbom=str(item.get("sbom", "")).strip(),
+                sbom_file=str(item.get("sbom_file", "")).strip(),
             )
         )
     strip: list[StripRule] = []
@@ -521,17 +527,28 @@ def check_texts(
         joined_all.append(joined)
         collected.extend(found)
 
+    sboms: list[tuple[str, Path]] = []
     if entry.sbom:
-        sboms = [r for r in rels if glob_match(r, entry.sbom)]
+        sboms = [
+            (_where(entry.scope, r), layout.roots[entry.scope] / r)
+            for r in rels
+            if glob_match(r, entry.sbom)
+        ]
         if not sboms:
             problems.append(f"[SBOM 없음] {head}: {entry.scope}:{entry.sbom}")
+    elif entry.sbom_file:
+        sboms = [(f"tools:{entry.sbom_file}", table.base_dir / entry.sbom_file)]
+        if not sboms[0][1].is_file():
+            problems.append(f"[SBOM 없음] {head}: tools:{entry.sbom_file}")
+            sboms = []
+    if sboms:
         corpus = "\n" + "\n".join(joined_all) + "\n"
-        for rel in sboms:
+        for label, sbom_path in sboms:
             try:
-                data = json.loads((layout.roots[entry.scope] / rel).read_text(encoding="utf-8"))
+                data = json.loads(sbom_path.read_text(encoding="utf-8"))
                 comps = sbom_components(data)
             except (OSError, ValueError, KeyError, TypeError) as exc:
-                problems.append(f"[SBOM 읽기 실패] {_where(entry.scope, rel)}: {exc}")
+                problems.append(f"[SBOM 읽기 실패] {label}: {exc}")
                 continue
             for name, version, lic in comps:
                 status, expr = classify_license(lic, policy)
@@ -589,6 +606,13 @@ def _judge_natives(
     by_entry: dict[NativeEntry, list[NativeFile]] = {}
     for nf in report.files:
         if nf.entry is None:
+            # 빌드 입력에서 제거 목록 안의 파일(PBS pip의 distlib 실행기 등)은 판정 대신 뺀다
+            if allow_stripped_denied and find_strip(table, nf.scope, nf.rel) is not None:
+                report.notes.append(
+                    f"[제거 대상] {_where(nf.scope, nf.rel)} (표 없음): 제거 목록에 있어 "
+                    "설치본에서 뺀다"
+                )
+                continue
             report.problems.append(
                 f"[네이티브 표 없음] {_where(nf.scope, nf.rel)}: tools/native-licenses.toml에 "
                 "구성요소별 라이선스를 적어야 한다"
@@ -670,13 +694,22 @@ def audit_final_tree(
     policy: Policy,
     *,
     models: Sequence[ModelEntry] | None = None,
+    installer_files: Sequence[str] = (),
 ) -> NativeReport:
-    """최종 설치 트리 감사. 제거 목록에 있어도 남아 있으면 실패다."""
+    """최종 설치 트리 감사. 제거 목록에 있어도 남아 있으면 실패다.
+
+    `installer_files`는 설치 프로그램이 설치 때 더하는 네이티브 파일(설치 폴더 기준, 예: Inno
+    Setup 제거 프로그램)이다. 설치 전 스테이징 트리에는 없으므로 있는 것으로 보고 판정·NOTICES에
+    넣는다(설치된 트리에 실제로 있으면 그 파일을 그대로 본다)."""
     layout = Layout.install(root)
     report = NativeReport()
     if not root.is_dir():
         report.problems.append(f"[설치 폴더 없음] {root}")
     natives, files_by_scope, all_files = _scan(layout, table, report.problems)
+    present = {nf.rel.casefold() for nf in natives if nf.scope == INSTALL}
+    for rel in installer_files:
+        if rel.casefold() not in present:
+            natives.append(NativeFile(INSTALL, rel, root / rel, find_entry(table, INSTALL, rel)))
     report.files = natives
 
     for scope, rel in all_files:

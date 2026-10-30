@@ -1,0 +1,252 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "uv-trampoline",
+      "version": "0.1.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ]
+    },
+    "properties": [
+      {
+        "name": "kookabug:uv_version",
+        "value": "0.13.6"
+      },
+      {
+        "name": "kookabug:source",
+        "value": "https://github.com/astral-sh/uv/blob/0.13.6/crates/uv-trampoline/Cargo.lock"
+      },
+      {
+        "name": "kookabug:rule",
+        "value": "uv-trampoline [dependencies]부터 Cargo.lock 의존을 따라감. proc-macro 크레이트·[build-dependencies]는 바이너리에 들어가지 않아 뺀다. 체크섬은 crates.io .crate와 대조함. uv 워크스페이스 경로 크레이트(uv-trampoline·uv-windows)는 uv의 LICENSE(third_party_licenses/uv-trampoline.txt)로 덮는다"
+      },
+      {
+        "name": "kookabug:path_crates",
+        "value": "uv-windows 0.0.98"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "dunce",
+      "version": "1.0.5",
+      "scope": "required",
+      "licenses": [
+        {
+          "expression": "CC0-1.0 OR MIT-0 OR Apache-2.0"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
+        }
+      ],
+      "purl": "pkg:cargo/dunce@1.0.5"
+    },
+    {
+      "type": "library",
+      "name": "ufmt",
+      "version": "0.2.0",
+      "scope": "required",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "1a64846ec02b57e9108d6469d98d1648782ad6bb150a95a9baac26900bbeab9d"
+        }
+      ],
+      "purl": "pkg:cargo/ufmt@0.2.0"
+    },
+    {
+      "type": "library",
+      "name": "ufmt-write",
+      "version": "0.1.0",
+      "scope": "required",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "e87a2ed6b42ec5e28cc3b94c09982969e9227600b2e3dcbc1db927a84c06bd69"
+        }
+      ],
+      "purl": "pkg:cargo/ufmt-write@0.1.0"
+    },
+    {
+      "type": "library",
+      "name": "windows",
+      "version": "0.61.3",
+      "scope": "required",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "9babd3a767a4c1aef6900409f85f5d53ce2544ccdfaa86dad48c91782c6d6893"
+        }
+      ],
+      "purl": "pkg:cargo/windows@0.61.3"
+    },
+    {
+      "type": "library",
+      "name": "windows-collections",
+      "version": "0.2.0",
+      "scope": "required",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "3beeceb5e5cfd9eb1d76b381630e82c4241ccd0d27f1a39ed41b2760b255c5e8"
+        }
+      ],
+      "purl": "pkg:cargo/windows-collections@0.2.0"
+    },
+    {
+      "type": "library",
+      "name": "windows-core",
+      "version": "0.61.2",
+      "scope": "required",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "c0fdd3ddb90610c7638aa2b3a3ab2904fb9e5cdbecc643ddb3647212781c4ae3"
+        }
+      ],
+      "purl": "pkg:cargo/windows-core@0.61.2"
+    },
+    {
+      "type": "library",
+      "name": "windows-future",
+      "version": "0.2.1",
+      "scope": "required",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "fc6a41e98427b19fe4b73c550f060b59fa592d7d686537eebf9385621bfbad8e"
+        }
+      ],
+      "purl": "pkg:cargo/windows-future@0.2.1"
+    },
+    {
+      "type": "library",
+      "name": "windows-link",
+      "version": "0.1.3",
+      "scope": "required",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "5e6ad25900d524eaabdbbb96d20b4311e1e7ae1699af4fb28c17ae66c80d798a"
+        }
+      ],
+      "purl": "pkg:cargo/windows-link@0.1.3"
+    },
+    {
+      "type": "library",
+      "name": "windows-numerics",
+      "version": "0.2.0",
+      "scope": "required",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "9150af68066c4c5c07ddc0ce30421554771e528bde427614c61038bc2c92c2b1"
+        }
+      ],
+      "purl": "pkg:cargo/windows-numerics@0.2.0"
+    },
+    {
+      "type": "library",
+      "name": "windows-result",
+      "version": "0.3.4",
+      "scope": "required",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "56f42bd332cc6c8eac5af113fc0c1fd6a8fd2aa08a0119358686e5160d0586c6"
+        }
+      ],
+      "purl": "pkg:cargo/windows-result@0.3.4"
+    },
+    {
+      "type": "library",
+      "name": "windows-strings",
+      "version": "0.4.2",
+      "scope": "required",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "56e6c93f3a0c3b36176cb1327a4958a0353d5d166c2a35cb268ace15e91d3b57"
+        }
+      ],
+      "purl": "pkg:cargo/windows-strings@0.4.2"
+    },
+    {
+      "type": "library",
+      "name": "windows-threading",
+      "version": "0.1.0",
+      "scope": "required",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "b66463ad2e0ea3bbf808b7f1d371311c80e115c0b71d60efc142cafbcfb057a6"
+        }
+      ],
+      "purl": "pkg:cargo/windows-threading@0.1.0"
+    }
+  ]
+}

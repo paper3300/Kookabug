@@ -100,6 +100,62 @@ def site_packages(venv: Path) -> Path:
     return next((venv / "lib").glob("python*/site-packages"))
 
 
+def export_runtime(uv: str, project: Path, out: Path, *, hashes: bool = False) -> None:
+    """잠금 파일의 제품 런타임 집합 (dev 그룹·워크스페이스 자신 제외). 설치 파일 빌드
+    (`tools/installer/build.py`)도 이 함수로 같은 집합을 뽑는다 — `hashes`는 설치용 해시 고정."""
+    cmd: list[str | Path] = [
+        uv,
+        "export",
+        "--locked",
+        "--all-packages",
+        "--no-dev",
+        "--no-emit-workspace",
+        "--format",
+        "requirements-txt",
+        "--quiet",
+        "-o",
+        out,
+    ]
+    if not hashes:
+        cmd.insert(cmd.index("--format"), "--no-hashes")
+    _run(cmd, cwd=project)
+
+
+def write_marker_env(python: Path, out: Path, *, cwd: Path) -> None:
+    """대상 Python의 PEP 508 마커 환경."""
+    out.write_text(
+        _run([python, "-I", TOOLS_DIR / "marker_env.py"], cwd=cwd, capture=True),
+        encoding="utf-8",
+    )
+
+
+def scan_python(uv: str, python: Path, out: Path, *, cwd: Path) -> None:
+    """대상 Python에 설치된 배포를 빠짐없이 읽는다. pip-licenses는 uvx의 별도 환경에서 돌리고
+    `--with-system`으로 기본 제외 목록을 끈다."""
+    _run(
+        [
+            uv,
+            "tool",
+            "run",
+            "--quiet",
+            "--isolated",
+            "--from",
+            f"pip-licenses=={PIP_LICENSES_VERSION}",
+            "pip-licenses",
+            "--python",
+            python,
+            "--with-system",
+            "--from=mixed",
+            "--format=json",
+            "--with-license-file",
+            "--with-notice-file",
+            "--output-file",
+            out,
+        ],
+        cwd=cwd,
+    )
+
+
 def has_requirements(runtime_txt: Path) -> bool:
     return any(
         line.split("#", 1)[0].strip() for line in runtime_txt.read_text("utf-8").splitlines()
@@ -128,23 +184,7 @@ def run_pipeline(
     notices = build_dir / "THIRD_PARTY_NOTICES.txt"
 
     # 1. 제품 런타임 집합
-    _run(
-        [
-            uv,
-            "export",
-            "--locked",
-            "--all-packages",
-            "--no-dev",
-            "--no-emit-workspace",
-            "--no-hashes",
-            "--format",
-            "requirements-txt",
-            "--quiet",
-            "-o",
-            runtime_txt,
-        ],
-        cwd=project,
-    )
+    export_runtime(uv, project, runtime_txt)
 
     # 2. 대상 venv: 제품 의존성만, 의존성 해석 없이 설치. 마커는 uv가 대상 Python으로 평가한다
     _run([uv, "venv", venv, "--python", python_version, "--quiet"], cwd=build_dir)
@@ -154,34 +194,10 @@ def run_pipeline(
             [uv, "pip", "install", "--python", py, "--no-deps", "--quiet", "-r", runtime_txt],
             cwd=build_dir,
         )
-    marker_env.write_text(
-        _run([py, "-I", TOOLS_DIR / "marker_env.py"], cwd=build_dir, capture=True),
-        encoding="utf-8",
-    )
+    write_marker_env(py, marker_env, cwd=build_dir)
 
-    # 3. 감사 도구는 uvx의 별도 환경에서. --with-system으로 기본 제외 목록을 끈다
-    _run(
-        [
-            uv,
-            "tool",
-            "run",
-            "--quiet",
-            "--isolated",
-            "--from",
-            f"pip-licenses=={PIP_LICENSES_VERSION}",
-            "pip-licenses",
-            "--python",
-            py,
-            "--with-system",
-            "--from=mixed",
-            "--format=json",
-            "--with-license-file",
-            "--with-notice-file",
-            "--output-file",
-            py_json,
-        ],
-        cwd=build_dir,
-    )
+    # 3. 감사 도구는 uvx의 별도 환경에서
+    scan_python(uv, py, py_json, cwd=build_dir)
 
     # 4. JS prod 의존성
     audit_args = [

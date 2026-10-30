@@ -6,6 +6,7 @@
     kookabug target test <target.json> (--window 제목 | --hwnd N | --image PNG) ...  (target_cmd)
     kookabug screen test <ID|파일> (--window 제목 | --hwnd N | --image PNG) ...       (screen_cmd)
     kookabug doctor [--profile headless|desktop] [--json]                            (doctor_cmd)
+    kookabug --version
 
 이 프로세스가 감독자다: `WorkspaceService.start_run`(권한 판정 → 감독자 시작) → 진행 출력(`follow`로
 `step.end` 한 줄씩) → `RunHandle.wait()`(runner 종료 → 복구 경로) → 판정에 맞는 종료 코드.
@@ -35,6 +36,7 @@ from pathlib import Path
 from types import FrameType
 from typing import Any, Final, NoReturn, Protocol, TextIO
 
+from kookabug_cli import __version__
 from kookabug_core.canonical import loads_strict
 from kookabug_core.permissions import Decision, Principal
 from kookabug_core.record import follow
@@ -131,6 +133,7 @@ def _positive_int(text: str) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = _Parser(prog="kookabug", description="Kookabug 명령줄 도구")
+    parser.add_argument("--version", action="version", version=f"kookabug {__version__}")
     commands = parser.add_subparsers(dest="command", required=True, metavar="명령")
     run = commands.add_parser(
         "run",

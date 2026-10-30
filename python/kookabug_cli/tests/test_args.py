@@ -177,6 +177,15 @@ def test_usage_error_after_parse_exit_6(
     assert not list(tmp_path.glob("**/runs"))
 
 
+def test_version_exit_0(capsys: pytest.CaptureFixture[str]) -> None:
+    from kookabug_cli import __version__
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--version"])
+    assert exc.value.code == 0
+    assert capsys.readouterr().out.strip() == f"kookabug {__version__}"
+
+
 def test_dev_options_marked_in_help() -> None:
     parser = cli.build_parser()
     run = parser._subparsers._group_actions[0].choices["run"]  # type: ignore[union-attr]

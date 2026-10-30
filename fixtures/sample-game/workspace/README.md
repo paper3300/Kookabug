@@ -32,6 +32,9 @@ workspace/
 }
 ```
 
+설치본의 예제(`<설치 폴더>\examples\sample-game\workspace`)에는 설치 파일이 동봉 Python과 그 예제 게임
+폴더로 이 파일을 써 둔다.
+
 비밀번호(`accounts.qa_tester_01`)는 환경 변수로 넣는다. 예제 게임의 기본 비밀번호는 `sample-pass-01`이다.
 
 ```powershell

@@ -1,0 +1,28 @@
+# 설치 파일 빌드 입력 고정 표 (tools/installer/build.py, 구현 계획 M1 2.12)
+#
+# [python]  python-build-standalone 배포본. 받은 파일은 크기·SHA256을 확인한 **뒤에만** 푼다.
+#   tag, file, url, sha256, size
+#   version  안에 든 CPython 버전 (빌드가 풀고 나서 python.exe로 다시 확인한다)
+#
+# [vc_redist]  앱 로컬로 복사하는 Visual C++ 런타임 (빌드 머신 Visual Studio의 VC\Redist)
+#   crt_folder  VC\Redist\MSVC\<버전>\x64 아래 폴더 이름
+#   files       python.exe 옆에 복사할 파일 glob
+#
+# [uv]  빌드에 쓰는 uv 판. 설치본의 콘솔 실행기(bin\kookabug.exe 등)는 이 uv에 든 실행기 스텁이고, 그
+#   구성요소 목록·원문(third_party_licenses/uv-trampoline-*)이 이 판 기준이다. 빌드는 `uv --version`이
+#   다르면 멈춘다. CI의 UV_VERSION과 같아야 한다
+
+[uv]
+version = "0.13.6"
+
+[python]
+tag = "20261026"
+version = "3.14.10"
+file = "cpython-3.14.10+20261026-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.14.10%2B20261026-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
+sha256 = "c1876a9795d3a94ee49a1499a69cd91e26ca3e2829593f93fa6e4db90d05402b"
+size = 23294761
+
+[vc_redist]
+crt_folder = "Microsoft.VC143.CRT"
+files = ["msvcp140*.dll", "vcruntime140*.dll", "concrt140.dll"]
