@@ -1,0 +1,4 @@
+{
+  "input_log": "runs/fake-input.jsonl",
+  "scenario": "../frames/scenario.json"
+}

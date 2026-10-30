@@ -67,7 +67,7 @@ from kookabug_core.engine.platform_fake import FakePlatform, MemoryArtifacts
 from kookabug_core.engine.pure import nodedef_of, resolve_inputs
 from kookabug_core.engine.retry import retry_policy
 from kookabug_core.engine.verdict import Cause, Facts, Judgement, Terminal, Verdict, judge
-from kookabug_core.ir import GRAPH_ENTRY, Node
+from kookabug_core.ir import GRAPH_CALL, GRAPH_ENTRY, Node
 from kookabug_core.loader import MAX_CALL_DEPTH, Program
 from kookabug_core.record.artifacts import FrameRegistry, Recorder
 from kookabug_core.record.policy import (
@@ -419,7 +419,9 @@ class _Run:
                 raise _Error(_cause_of(None, frame.path, _with_reason(rt.cancel, exc))) from exc
         rt.emit(start)
         rt.recorder.open_step(
-            step, frame.record_policy.layer(node.record, node_source(frame.graph.path, node.id))
+            step,
+            frame.record_policy.layer(node.record, node_source(frame.graph.path, node.id)),
+            call=node.type == GRAPH_CALL,
         )
         began = rt.clock.now_ms()
 

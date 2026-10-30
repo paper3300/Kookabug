@@ -9,7 +9,7 @@ fail 출구로 나간 스텝(서브그래프 호출이면 그 호출 스텝)과 
 from pathlib import Path
 from typing import Any
 
-from helpers.graphs import make_workspace, subgraph_interface
+from helpers.graphs import link, make_workspace, secret, subgraph_interface
 from helpers.run import Ran, run_graph, tk
 
 from kookabug_core.workspace import Workspace
@@ -190,3 +190,73 @@ def test_handled_fail_branch_still_keeps_its_evidence(tmp_path: Path) -> None:
     ran = run_graph(ws, g, frames=FRAMES)
     assert ran.result.verdict == "skipped"
     assert fails(ran) == [f"steps/{ran.step_of('n_wait')}_fail"]
+
+
+# ---------------------------------------------------------------- 비밀값을 넘기는 호출 (M1 T12)
+
+SECRETS = {"acc.pw": "hunter2"}
+
+
+def write_login_sub(ws: Workspace, *, secret_last: bool) -> None:
+    """비밀값 `pw`를 받아 쓰는 스텝(`n_type`, 프레임에 획득 당시 표시)과 받지 않는 스텝(`n_look`)이
+    한 번씩 캡처하고 공개 fail 출구 `bad`로 나가는 서브그래프. `secret_last`면 `n_type`이 나중."""
+    interface = subgraph_interface(
+        exits={"ok": "ok", "bad": "fail"}, inputs={"pw": {"type": "secret"}}
+    )
+    sub = tk("subgraph", interface=interface)
+    order = ["n_look", "n_type"] if secret_last else ["n_type", "n_look"]
+    sub.entry(order[0])
+    inputs = {"n_type": {"value": link("n_entry.pw")}, "n_look": {}}
+    sub.node(order[0], "testkit.shot", inputs=inputs[order[0]], next={"done": order[1]})
+    sub.node(order[1], "testkit.shot", inputs=inputs[order[1]], next={"done": "n_bad"})
+    sub.exit("n_bad", "bad").exit("n_ok", "ok").write(ws, SUB)
+
+
+def test_call_with_secret_input_keeps_fail_evidence_from_inner_frame(tmp_path: Path) -> None:
+    """호출 노드가 비밀값을 넘겨도 호출 스텝의 실패 증거는 막지 않는다 (스키마 6장). 그 프레임은
+    비밀값을 받지 않은 안쪽 스텝이 얻은 것이다. 호출 스텝 구간의 영상 생략은 그대로다."""
+    ws = make_workspace(tmp_path)
+    write_login_sub(ws, secret_last=False)
+    g = tk().entry("n_call").call("n_call", SUB, inputs={"pw": secret("acc.pw")})
+    ran = run_graph(ws, g, frames=FRAMES, secrets=SECRETS)
+    step = ran.step_of("n_call")
+    assert ran.result.verdict == "fail" and ran.result.failure_step == step
+    assert ran.end("n_call")["artifacts"] == [f"steps/{step}_fail"]
+    assert "omitted" not in ran.end("n_call")
+    assert saved_frame(ran, f"steps/{step}_fail") == "b"  # n_look의 프레임
+    recorder = ran.result.recorder
+    assert recorder is not None and recorder.video_policy(step) == "off"
+    # 비밀값을 받은 안쪽 스텝 자신은 여전히 남기지 않는다
+    assert recorder.policy(ran.step_of("n_type")).screenshot_block() is not None
+
+
+def test_call_with_secret_input_inner_secret_frame_still_blocked(tmp_path: Path) -> None:
+    """마지막 프레임을 비밀값을 받은 안쪽 스텝이 얻었으면 획득 당시 표시가 막는다 — 안쪽 스텝이
+    스스로 남길 수 있는 것보다 넓게 남기지 않는다."""
+    ws = make_workspace(tmp_path)
+    write_login_sub(ws, secret_last=True)
+    g = tk().entry("n_call").call("n_call", SUB, inputs={"pw": secret("acc.pw")})
+    ran = run_graph(ws, g, frames=FRAMES, secrets=SECRETS)
+    assert fails(ran) == []
+    assert ran.end("n_call")["omitted"] == [
+        {
+            "kind": "screenshot",
+            "name": "fail",
+            "reason": "capture_policy",
+            "source": f"{SUB}#/nodes/n_type/in/value",
+        }
+    ]
+
+
+def test_call_with_secret_input_policy_off_still_blocks(tmp_path: Path) -> None:
+    ws = make_workspace(tmp_path)
+    write_login_sub(ws, secret_last=False)
+    g = (
+        tk()
+        .entry("n_call")
+        .call("n_call", SUB, inputs={"pw": secret("acc.pw")}, record={"screenshots": "off"})
+    )
+    ran = run_graph(ws, g, frames=FRAMES, secrets=SECRETS)
+    assert fails(ran) == []
+    (omitted,) = ran.end("n_call")["omitted"]
+    assert (omitted["name"], omitted["reason"]) == ("fail", "policy_off")

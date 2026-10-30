@@ -4,7 +4,8 @@
   항목마다 한 번이라도 `off`면 `off`이고 아래에서 다시 켤 수 없다. `video`는
   `on` < `failed_only` < `off`로 센 쪽이 이긴다
 - 정책을 끈 곳(`source`)은 그 항목을 처음 가장 세게 만든 층이다 (위가 아래를 이긴다)
-- 스텝의 입력(재귀)에 비밀값이 있으면 그 스텝의 스크린샷·영상을 남기지 않는다 (`secret_input`)
+- 스텝의 입력(재귀)에 비밀값이 있으면 그 스텝의 스크린샷·영상을 남기지 않는다 (`secret_input`).
+  단 서브그래프 호출 스텝의 실패·예외 증거는 비밀값 입력으로 막지 않는다 (`Recorder`, M1 T12)
 
     policy = RecordPolicy().layer(ws.config.get("record"), "kookabug.json#/record")
     policy.screenshots  # "on" | "off"
@@ -88,11 +89,13 @@ class StepPolicy:
     policy: RecordPolicy
     secret: str | None = None
 
-    def screenshot_block(self) -> tuple[OmitReason, str | None] | None:
-        """스크린샷을 막는 이유와 그 위치. 남겨도 되면 None."""
+    def screenshot_block(self, *, secret: bool = True) -> tuple[OmitReason, str | None] | None:
+        """스크린샷을 막는 이유와 그 위치. 남겨도 되면 None. `secret=False`면 비밀값 입력은 보지
+        않는다 (서브그래프 호출 스텝의 실패·예외 증거 — 안쪽 스텝 프레임이고 획득 당시 표시가
+        본다)."""
         if self.policy.screenshots == "off":
             return "policy_off", self.policy.sources.get("screenshots")
-        if self.secret is not None:
+        if secret and self.secret is not None:
             return "secret_input", self.secret
         return None
 

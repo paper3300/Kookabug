@@ -1,0 +1,28 @@
+{
+  "format": "kookabug.workspace/0",
+  "profiles": {
+    "login_fail": {
+      "settings": {
+        "game.args": ["-m", "sample_game", "--login-fail"]
+      }
+    },
+    "maintenance": {
+      "settings": {
+        "game.args": ["-m", "sample_game", "--maintenance"]
+      }
+    }
+  },
+  "record": {
+    "screenshots": "on",
+    "video": "off"
+  },
+  "run": {
+    "deadline_ms": 300000
+  },
+  "settings": {
+    "game.args": ["-m", "sample_game"],
+    "game.cwd": null,
+    "game.executable": null,
+    "game.title": "SampleRPG"
+  }
+}

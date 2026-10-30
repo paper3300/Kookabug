@@ -27,5 +27,6 @@ kookabug doctor [--profile headless|desktop] [--json]
 ```
 
 `doctor`는 설치와 기능을 점검한다. `headless`: Python 위치, 의존성 import, DLL을 읽은 곳, OCR 모델
-해시, DPI 인식, 가짜 플랫폼 스모크 그래프(매칭·OCR). `desktop`(기본): 그에 더해 입력 데스크톱, 임시 창
+해시, DPI 인식, 가짜 플랫폼 스모크 그래프(매칭·OCR — 예제 워크스페이스의 `tests/smoke_headless.graph.json`을
+장면 표로. 설치본은 `<설치>/examples/sample-game/workspace`, 개발 레포는 `fixtures/sample-game/workspace`). `desktop`(기본): 그에 더해 입력 데스크톱, 임시 창
 WGC 캡처, 정지 화면 재사용, 포그라운드(입력은 보내지 않는다). `0` 전부 통과, `1` 실패 있음.

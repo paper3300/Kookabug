@@ -71,6 +71,13 @@ uv run python -m sample_game --event-log build/sample-game.jsonl
 `uv run python tools/ocr_bench.py fixtures/sample-game/ocr-samples`로 잰다(형식은 `tools/ocr_bench.py`
 맨 위 설명). 화면 그림이나 글자를 바꾸면 정답과 영역도 맞춘다.
 
+## 예제 워크스페이스 (`workspace/`)
+
+이 게임을 대상으로 한 Kookabug 워크스페이스다: `enter_world`(월드 접속) 서브그래프, `inventory_open`
+테스트, 깨뜨린 변형(`--profile login_fail`, target 바꿔치기), 헤드리스 스모크 그래프, target·화면 판정.
+실행법은 `workspace/README.md`. target 이미지는 `frames/*.png`에서 `tools/cut_targets.py`가 자른다
+(화면을 다시 찍었으면 다시 돌리고, `tests/test_workspace.py`가 어긋남을 검사한다).
+
 ## 테스트
 
 ```powershell

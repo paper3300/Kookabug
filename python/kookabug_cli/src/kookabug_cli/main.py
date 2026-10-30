@@ -281,16 +281,17 @@ def read_platform_fake(path: str) -> PlatformSpec:
     if not isinstance(data, dict):
         raise UsageError(f"--platform-fake {path}은(는) JSON 객체여야 한다")
     spec: dict[str, Any] = data
-    scenario = spec.get("scenario")
-    if scenario is not None:
-        # 장면 표 경로는 이 사양 파일 기준 (runner는 다른 작업 폴더에서 돈다)
-        scenario = str((Path(path).parent / str(scenario)).resolve())
+
+    def beside(value: Any) -> str | None:
+        # 장면 표·입력 기록 경로는 이 사양 파일 기준 (runner는 다른 작업 폴더에서 돈다)
+        return None if value is None else str((Path(path).parent / str(value)).resolve())
+
     return PlatformSpec(
         "fake",
         frames=tuple(spec.get("frames", ())),
-        input_log=spec.get("input_log"),
+        input_log=beside(spec.get("input_log")),
         hooks=spec.get("hooks", {}),
-        scenario=scenario,
+        scenario=beside(spec.get("scenario")),
     )
 
 

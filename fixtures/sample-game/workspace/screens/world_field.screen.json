@@ -1,0 +1,16 @@
+{
+  "detect": {
+    "all": [
+      {
+        "$target": "targets/world/minimap.target.json"
+      }
+    ],
+    "none": [
+      {
+        "$target": "targets/inventory/window_title.target.json"
+      }
+    ]
+  },
+  "format": "kookabug.screen/0",
+  "title": "월드 필드"
+}

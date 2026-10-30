@@ -1,0 +1,114 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "layout": {
+    "nodes": {
+      "n_check_login": {
+        "x": 1120,
+        "y": 0
+      },
+      "n_check_title": {
+        "x": 560,
+        "y": 0
+      },
+      "n_click_start": {
+        "x": 840,
+        "y": 0
+      },
+      "n_entry": {
+        "x": -280,
+        "y": 0
+      },
+      "n_launch": {
+        "x": 0,
+        "y": 0
+      },
+      "n_wait_title": {
+        "x": 280,
+        "y": 0
+      }
+    }
+  },
+  "meta": {
+    "description": "가짜 플랫폼(장면 표) 전용 스모크: 매칭·OCR·입력·장면 전이를 한 번씩 본다. 설치 스모크와 kookabug doctor가 쓴다. 띄우는 경로는 장면 표가 보지 않으므로 상수다",
+    "tags": ["smoke", "headless"],
+    "title": "헤드리스 스모크"
+  },
+  "nodes": {
+    "n_check_login": {
+      "in": {
+        "target": {
+          "$target": "targets/login/account_field.target.json"
+        },
+        "timeout_ms": 5000
+      },
+      "title": "로그인 화면 확인",
+      "type": "core.assert.visible",
+      "version": 1
+    },
+    "n_check_title": {
+      "in": {
+        "equals": "SampleRPG",
+        "region": [312, 150, 400, 80],
+        "timeout_ms": 5000
+      },
+      "next": {
+        "ok": "n_click_start"
+      },
+      "title": "게임 이름 확인",
+      "type": "core.assert.text",
+      "version": 1
+    },
+    "n_click_start": {
+      "in": {
+        "match": {
+          "$link": "n_wait_title.match"
+        }
+      },
+      "next": {
+        "done": "n_check_login"
+      },
+      "title": "시작 버튼 클릭",
+      "type": "core.input.click",
+      "version": 1
+    },
+    "n_entry": {
+      "next": {
+        "start": "n_launch"
+      },
+      "title": "시작",
+      "type": "core.graph.entry",
+      "version": 1
+    },
+    "n_launch": {
+      "in": {
+        "path": "SampleRPG",
+        "timeout_ms": 5000,
+        "window_title": "SampleRPG"
+      },
+      "next": {
+        "attached": "n_wait_title"
+      },
+      "title": "게임 실행 (가짜)",
+      "type": "core.app.launch",
+      "version": 1
+    },
+    "n_wait_title": {
+      "in": {
+        "target": {
+          "$target": "targets/title/start_button.target.json"
+        },
+        "timeout_ms": 5000
+      },
+      "next": {
+        "found": "n_check_title"
+      },
+      "title": "타이틀 대기",
+      "type": "core.image.wait",
+      "version": 1
+    }
+  },
+  "plugins": {
+    "core": "0.1.0"
+  }
+}

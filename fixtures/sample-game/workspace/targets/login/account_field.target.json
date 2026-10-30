@@ -1,0 +1,12 @@
+{
+  "click": {
+    "anchor": "center",
+    "offset": [210, 0]
+  },
+  "format": "kookabug.target/0",
+  "image": "account_field.png",
+  "recorded": {
+    "client_size": [1024, 640],
+    "dpi": 96
+  }
+}

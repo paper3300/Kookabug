@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import shutil
 import subprocess
 import sys
 import threading
@@ -33,11 +34,16 @@ from kb_testing.proc import direct_env, python_cmd, wait_until
 from kookabug_core.win import Job
 
 __all__ = [
+    "EXAMPLE_LOCAL",
+    "EXAMPLE_SECRETS",
+    "EXAMPLE_SECRET_ENV",
     "FRAMES_DIR",
     "GAME_DIR",
+    "WORKSPACE_DIR",
     "SampleGame",
     "capture_client",
     "client_rect",
+    "copy_example_workspace",
     "game_command",
     "game_env",
     "is_window",
@@ -56,6 +62,14 @@ __all__ = [
 REPO_ROOT: Final = Path(__file__).resolve().parents[2]
 GAME_DIR: Final = REPO_ROOT / "fixtures" / "sample-game"
 FRAMES_DIR: Final = GAME_DIR / "frames"
+WORKSPACE_DIR: Final = GAME_DIR / "workspace"
+"""예제 워크스페이스 (구현 계획 M1 T12)."""
+EXAMPLE_SECRETS: Final = {"accounts.qa_tester_01": "sample-pass-01"}
+EXAMPLE_SECRET_ENV: Final = {"KOOKABUG_SECRET_ACCOUNTS_QA_TESTER_01": "sample-pass-01"}
+"""예제 워크스페이스의 비밀값을 환경 변수로 (CI·무인 실행 방식)."""
+EXAMPLE_LOCAL: Final = {"game.cwd": str(GAME_DIR), "game.executable": python_cmd()[0]}
+"""사람마다 다른 설정(`.kookabug/local.json`): 게임을 띄울 인터프리터와 `-m sample_game`을 찾는
+폴더."""
 READY_TIMEOUT_S: Final = 20.0
 CLOSE_TIMEOUT_S: Final = 10.0
 CAPTURE_TIMEOUT_S: Final = 5.0
@@ -479,3 +493,23 @@ def snap_scene(scene: str, *, workdir: Path) -> Any:
     if pixels.shape[:2] != (SNAP_SIZE[1], SNAP_SIZE[0]):
         raise AssertionError(f"{scene} 캡처 크기가 다르다: {pixels.shape}")
     return pixels
+
+
+def copy_example_workspace(dest: Path, local: Mapping[str, Any] | None = None) -> Path:
+    """예제 워크스페이스를 `dest/sample-game/workspace`로(화면 PNG는 옆 `frames`로) 복사하고
+    `.kookabug/local.json`(기본 `EXAMPLE_LOCAL`)을 쓴다. 복사한 워크스페이스 루트를 돌려준다.
+
+    실행 기록(`runs/`)이 레포에 생기지 않게 복사해서 돌린다. 가짜 플랫폼 사양
+    (`fake-platform.json`)의 장면 표 경로 `../frames/scenario.json`이 복사본에서도 맞는다.
+    """
+    root = dest / "sample-game"
+    ignore = shutil.ignore_patterns("runs", ".kookabug")
+    shutil.copytree(WORKSPACE_DIR, root / "workspace", ignore=ignore)
+    shutil.copytree(FRAMES_DIR, root / "frames")
+    ws = root / "workspace"
+    path = ws / ".kookabug" / "local.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    settings = dict(EXAMPLE_LOCAL if local is None else local)
+    body = {"format": "kookabug.local/0", "settings": settings}
+    path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+    return ws

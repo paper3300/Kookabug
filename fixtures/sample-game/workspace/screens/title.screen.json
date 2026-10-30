@@ -1,0 +1,16 @@
+{
+  "detect": {
+    "all": [
+      {
+        "$target": "targets/title/start_button.target.json"
+      }
+    ],
+    "none": [
+      {
+        "$target": "targets/title/maintenance_popup.target.json"
+      }
+    ]
+  },
+  "format": "kookabug.screen/0",
+  "title": "타이틀"
+}

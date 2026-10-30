@@ -101,11 +101,19 @@ def test_deadline_precedence(tmp_path: Path) -> None:
 def test_default_platform_windows(tmp_path: Path) -> None:
     ws = Workspace.open(workspace(tmp_path / "ws"))
     assert cli.start_options(parse("a.graph.json"), ws).platform.kind == "windows"
-    # 숨은 테스트 옵션 --platform-fake: 가짜 플랫폼, 장면 표 경로는 사양 파일 기준
-    spec = write(tmp_path / "fake" / "platform.json", {"scenario": "frames/scenario.json"})
+    # 숨은 테스트 옵션 --platform-fake: 가짜 플랫폼, 장면 표·입력 기록 경로는 사양 파일 기준
+    spec = write(
+        tmp_path / "fake" / "platform.json",
+        {"input_log": "runs/input.jsonl", "scenario": "frames/scenario.json"},
+    )
     platform = cli.start_options(parse("a.graph.json", "--platform-fake", str(spec)), ws).platform
     assert platform.kind == "fake"
     assert platform.scenario == str((tmp_path / "fake" / "frames" / "scenario.json").resolve())
+    assert platform.input_log == str((tmp_path / "fake" / "runs" / "input.jsonl").resolve())
+    absolute = tmp_path / "elsewhere" / "input.jsonl"
+    spec = write(tmp_path / "fake" / "abs.json", {"input_log": str(absolute)})
+    platform = cli.start_options(parse("a.graph.json", "--platform-fake", str(spec)), ws).platform
+    assert platform.input_log == str(absolute.resolve()) and platform.scenario is None
 
 
 def test_capture_timeout_precedence(tmp_path: Path) -> None:

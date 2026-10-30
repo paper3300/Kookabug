@@ -27,6 +27,7 @@ HEADLESS_IDS = [
     "dpi",
     "smoke.fake",
 ]
+EXAMPLE_WORKSPACE = Path(__file__).resolve().parents[3] / "fixtures" / "sample-game" / "workspace"
 
 
 @pytest.fixture(autouse=True)
@@ -143,12 +144,41 @@ def test_exit_1_when_model_corrupt(
 
 
 def test_headless_runs_fake_smoke_graph(capsys: pytest.CaptureFixture[str]) -> None:
-    """가짜 플랫폼 스모크: 그린 화면에서 표식을 찾고(실제 매칭) 수를 읽어(실제 OCR) 비교한다.
-    T11은 독립 최소 그래프, 예제 게임 스모크 그래프는 T12가 `smoke=`로 잇는다."""
+    """가짜 플랫폼 스모크: `kookabug doctor`는 예제 게임 워크스페이스의 헤드리스 스모크 그래프를
+    장면 표로 돌린다 (타이틀 버튼 찾기·게임 이름 OCR·클릭·로그인 화면 확인)."""
     _, body = run_json(["doctor", "--profile", "headless"], capsys)
     smoke = by_id(body)["smoke.fake"]
     assert smoke["ok"], smoke["detail"]
-    assert "pass" in smoke["detail"] and "SCORE 12345" in smoke["detail"]
+    expected = EXAMPLE_WORKSPACE / "tests" / "smoke_headless.graph.json"
+    assert smoke["detail"].startswith(f"{expected}: pass ("), smoke["detail"]
+    assert "OCR 'SampleRPG'" in smoke["detail"]
+
+
+def test_builtin_smoke_graph_without_example() -> None:
+    """예제 워크스페이스가 없는 개발 환경(wheel만 설치)의 내장 최소 그래프: 그린 화면에서 표식을
+    찾고(실제 매칭) 수를 읽어(실제 OCR) 비교한다."""
+    check = doctor._guard("smoke.fake", "headless", doctor._smoke(None))
+    assert check.ok, check.detail
+    assert "(내장)" in check.detail and "SCORE 12345" in check.detail
+
+
+def test_example_smoke_found_in_repo_and_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    found = doctor.example_smoke()
+    assert found is not None
+    assert (found.workspace, found.graph) == (EXAMPLE_WORKSPACE, "tests/smoke_headless.graph.json")
+    assert found.scenario == (EXAMPLE_WORKSPACE.parent / "frames" / "scenario.json").resolve()
+    # 설치본은 <설치>/examples/sample-game/workspace. 없으면 스모크가 실패로 알린다
+    # (내장으로 대신하지 않는다)
+    install = tmp_path / "Kookabug"
+    monkeypatch.setattr(doctor, "installed", lambda: True)
+    monkeypatch.setattr(doctor, "_install_root", lambda: install)
+    missing = doctor.example_smoke()
+    assert missing is not None
+    assert missing.workspace == install / "examples" / "sample-game" / "workspace"
+    check = doctor._guard("smoke.fake", "headless", doctor._smoke(missing))
+    assert not check.ok and "workspace" in check.detail.lower(), check.detail
 
 
 def test_smoke_failure_reports_reason(tmp_path: Path) -> None:

@@ -1,0 +1,366 @@
+{
+  "format": "kookabug.graph/0",
+  "interface": {
+    "exits": {
+      "login_failed": {
+        "kind": "fail",
+        "screen": "login_error"
+      },
+      "maintenance": {
+        "kind": "fail",
+        "screen": "maintenance"
+      },
+      "success": {
+        "kind": "ok",
+        "screen": "world_field"
+      }
+    },
+    "inputs": {
+      "account": {
+        "type": "string"
+      },
+      "password": {
+        "type": "secret"
+      },
+      "server": {
+        "default": "Server 1",
+        "type": "string"
+      }
+    },
+    "outputs": {
+      "message": {
+        "nullable": true,
+        "type": "string|secret"
+      }
+    }
+  },
+  "kind": "subgraph",
+  "layout": {
+    "collapsed": {
+      "grp_login": {
+        "nodes": ["n_click_login", "n_type_account", "n_type_password"],
+        "title": "계정 입력",
+        "x": 560,
+        "y": 0
+      }
+    },
+    "comments": {
+      "c_maint": {
+        "rect": [560, 220, 320, 120],
+        "text": "점검 중이면 테스트 실패가 아니라 호출한 쪽이 처리하도록 출구를 따로 뺀다"
+      }
+    },
+    "nodes": {
+      "n_click_enter": {
+        "x": 1680,
+        "y": 0
+      },
+      "n_click_login": {
+        "x": 840,
+        "y": 0
+      },
+      "n_click_start": {
+        "x": 280,
+        "y": 0
+      },
+      "n_entry": {
+        "x": -560,
+        "y": 0
+      },
+      "n_exit_login_failed": {
+        "x": 1400,
+        "y": 200
+      },
+      "n_exit_maintenance": {
+        "x": 840,
+        "y": 240
+      },
+      "n_exit_success": {
+        "x": 2240,
+        "y": 0
+      },
+      "n_launch": {
+        "x": -280,
+        "y": 0
+      },
+      "n_read_error": {
+        "x": 1120,
+        "y": 200
+      },
+      "n_select_server": {
+        "x": 1400,
+        "y": 0
+      },
+      "n_type_account": {
+        "x": 560,
+        "y": -120
+      },
+      "n_type_password": {
+        "x": 700,
+        "y": -120
+      },
+      "n_wait_lobby": {
+        "x": 1120,
+        "y": 0
+      },
+      "n_wait_login": {
+        "x": 560,
+        "y": 120
+      },
+      "n_wait_title": {
+        "x": 0,
+        "y": 0
+      },
+      "n_wait_world": {
+        "x": 1960,
+        "y": 0
+      }
+    }
+  },
+  "meta": {
+    "description": "게임을 실행해 로그인하고 지정한 서버의 월드 필드까지 들어간다",
+    "tags": ["login", "setup"],
+    "title": "월드 접속"
+  },
+  "nodes": {
+    "n_click_enter": {
+      "in": {
+        "target": {
+          "$target": "targets/lobby/enter_world_button.target.json"
+        }
+      },
+      "next": {
+        "done": "n_wait_world"
+      },
+      "title": "월드 입장 클릭",
+      "type": "core.image.click",
+      "version": 1
+    },
+    "n_click_login": {
+      "in": {
+        "target": {
+          "$target": "targets/login/login_button.target.json"
+        }
+      },
+      "next": {
+        "done": "n_wait_lobby"
+      },
+      "title": "로그인 버튼 클릭",
+      "type": "core.image.click",
+      "version": 1
+    },
+    "n_click_start": {
+      "in": {
+        "match": {
+          "$link": "n_wait_title.match"
+        }
+      },
+      "next": {
+        "done": "n_wait_login"
+      },
+      "title": "시작 버튼 클릭",
+      "type": "core.input.click",
+      "version": 1
+    },
+    "n_entry": {
+      "next": {
+        "start": "n_launch"
+      },
+      "title": "입력",
+      "type": "core.graph.entry",
+      "version": 1
+    },
+    "n_exit_login_failed": {
+      "config": {
+        "exit": "login_failed"
+      },
+      "in": {
+        "message": {
+          "$link": "n_read_error.text"
+        }
+      },
+      "title": "로그인 실패",
+      "type": "core.graph.exit",
+      "version": 1
+    },
+    "n_exit_maintenance": {
+      "config": {
+        "exit": "maintenance"
+      },
+      "title": "점검 중",
+      "type": "core.graph.exit",
+      "version": 1
+    },
+    "n_exit_success": {
+      "config": {
+        "exit": "success"
+      },
+      "title": "성공",
+      "type": "core.graph.exit",
+      "version": 1
+    },
+    "n_launch": {
+      "in": {
+        "args": {
+          "$setting": "game.args"
+        },
+        "cwd": {
+          "$setting": "game.cwd"
+        },
+        "path": {
+          "$setting": "game.executable"
+        },
+        "timeout_ms": 30000,
+        "window_title": {
+          "$setting": "game.title"
+        }
+      },
+      "next": {
+        "attached": "n_wait_title"
+      },
+      "title": "게임 실행",
+      "type": "core.app.launch",
+      "version": 1
+    },
+    "n_read_error": {
+      "in": {
+        "region": {
+          "$target": "targets/login/error_text.target.json"
+        }
+      },
+      "next": {
+        "done": "n_exit_login_failed"
+      },
+      "title": "오류 문구 읽기",
+      "type": "core.ocr.read",
+      "version": 1
+    },
+    "n_select_server": {
+      "in": {
+        "region": {
+          "$target": "targets/lobby/server_list.target.json"
+        },
+        "text": {
+          "$link": "n_entry.server"
+        }
+      },
+      "next": {
+        "done": "n_click_enter"
+      },
+      "title": "서버 선택",
+      "type": "core.ocr.click_text",
+      "version": 1
+    },
+    "n_type_account": {
+      "in": {
+        "clear": true,
+        "target": {
+          "$target": "targets/login/account_field.target.json"
+        },
+        "text": {
+          "$link": "n_entry.account"
+        }
+      },
+      "next": {
+        "done": "n_type_password"
+      },
+      "title": "계정 입력",
+      "type": "core.input.type_text",
+      "version": 1
+    },
+    "n_type_password": {
+      "in": {
+        "clear": true,
+        "target": {
+          "$target": "targets/login/password_field.target.json"
+        },
+        "text": {
+          "$link": "n_entry.password"
+        }
+      },
+      "next": {
+        "done": "n_click_login"
+      },
+      "title": "비밀번호 입력",
+      "type": "core.input.type_text",
+      "version": 1
+    },
+    "n_wait_lobby": {
+      "config": {
+        "exits": ["error", "lobby"]
+      },
+      "in": {
+        "targets": {
+          "error": {
+            "$target": "targets/login/error_popup.target.json"
+          },
+          "lobby": {
+            "$target": "targets/lobby/server_list.target.json"
+          }
+        },
+        "timeout_ms": 20000
+      },
+      "next": {
+        "error": "n_read_error",
+        "lobby": "n_select_server"
+      },
+      "title": "로그인 오류 또는 로비 대기",
+      "type": "core.image.wait_any",
+      "version": 1
+    },
+    "n_wait_login": {
+      "config": {
+        "exits": ["maintenance", "login"]
+      },
+      "in": {
+        "targets": {
+          "login": {
+            "$target": "targets/login/account_field.target.json"
+          },
+          "maintenance": {
+            "$target": "targets/title/maintenance_popup.target.json"
+          }
+        },
+        "timeout_ms": 15000
+      },
+      "next": {
+        "login": "n_type_account",
+        "maintenance": "n_exit_maintenance"
+      },
+      "title": "점검 또는 로그인 창 대기",
+      "type": "core.image.wait_any",
+      "version": 1
+    },
+    "n_wait_title": {
+      "in": {
+        "target": {
+          "$target": "targets/title/start_button.target.json"
+        },
+        "timeout_ms": 60000
+      },
+      "next": {
+        "found": "n_click_start"
+      },
+      "title": "타이틀 대기",
+      "type": "core.image.wait",
+      "version": 1
+    },
+    "n_wait_world": {
+      "in": {
+        "target": {
+          "$target": "targets/world/minimap.target.json"
+        },
+        "timeout_ms": 120000
+      },
+      "next": {
+        "found": "n_exit_success"
+      },
+      "title": "월드 진입 대기",
+      "type": "core.image.wait",
+      "version": 1
+    }
+  },
+  "plugins": {
+    "core": "0.1.0"
+  }
+}

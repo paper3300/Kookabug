@@ -14,7 +14,7 @@ import json
 from typing import Final, TextIO
 
 from kookabug_core.win import dpi
-from kookabug_platform.doctor import Profile, run_checks
+from kookabug_platform.doctor import Profile, example_smoke, run_checks
 
 __all__ = ["EXIT_FAILED", "EXIT_OK", "run"]
 
@@ -25,7 +25,8 @@ EXIT_FAILED: Final = 1
 def run(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     dpi.enable_at_startup()  # 좌표를 쓰는 CLI 진입점 (결과는 `dpi` 항목이 본다)
     profile: Profile = args.profile
-    checks = run_checks(profile)
+    # 스모크는 예제 게임 워크스페이스의 헤드리스 그래프 (없는 개발 환경이면 내장 최소 그래프)
+    checks = run_checks(profile, smoke=example_smoke())
     ok = all(c.ok for c in checks)
     if args.json:
         body = {"checks": [c.to_json() for c in checks], "ok": ok, "profile": profile}

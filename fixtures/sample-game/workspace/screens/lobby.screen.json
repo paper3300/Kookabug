@@ -1,0 +1,16 @@
+{
+  "detect": {
+    "all": [
+      {
+        "$target": "targets/lobby/server_list.target.json"
+      }
+    ],
+    "none": [
+      {
+        "$target": "targets/common/loading.target.json"
+      }
+    ]
+  },
+  "format": "kookabug.screen/0",
+  "title": "로비"
+}

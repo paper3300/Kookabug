@@ -1,0 +1,11 @@
+{
+  "detect": {
+    "all": [
+      {
+        "$target": "targets/inventory/window_title.target.json"
+      }
+    ]
+  },
+  "format": "kookabug.screen/0",
+  "title": "인벤토리"
+}

@@ -1,0 +1,11 @@
+{
+  "detect": {
+    "all": [
+      {
+        "$target": "targets/login/error_popup.target.json"
+      }
+    ]
+  },
+  "format": "kookabug.screen/0",
+  "title": "로그인 오류 팝업"
+}

@@ -9,9 +9,12 @@
 - `desktop`(= headless + 데스크톱 증거): 입력 데스크톱(잠금 화면 아님), 임시 창 WGC 한 프레임,
   정지 화면 재사용(같은 화면의 두 번째 캡처), 포그라운드 가져오기. 입력은 보내지 않는다
 
-스모크 그래프는 기본으로 이 모듈이 임시 폴더에 만드는 최소 워크스페이스다(그린 화면 한 장에서
-표식을 찾고 수를 읽어 비교). 예제 게임 워크스페이스의 스모크 그래프는 `smoke=`로 넘긴다 (M1 T12가
-잇는다). 무거운 의존성은 검사 안에서 import한다 — 없으면 그 항목이 실패로 나오게.
+스모크 그래프는 `smoke=`로 넘긴다. `kookabug doctor`는 예제 게임 워크스페이스의 헤드리스 스모크
+그래프(`example_smoke()`: 설치본 `<설치>/examples/sample-game/workspace`, 개발 레포
+`fixtures/sample-game/workspace`)를 쓰고, 그것이 없는 개발 환경(wheel만 설치)에서는 이 모듈이 임시
+폴더에 만드는 최소 워크스페이스(그린 화면 한 장에서 표식을 찾고 수를 읽어 비교)를 쓴다. 설치본에서
+예제가 없으면 스모크 실패다. 무거운 의존성은 검사 안에서 import한다 — 없으면 그 항목이 실패로
+나오게.
 """
 
 from __future__ import annotations
@@ -40,6 +43,7 @@ __all__ = [
     "Check",
     "Profile",
     "SmokeGraph",
+    "example_smoke",
     "loaded_dll",
     "run_checks",
     "smoke_workspace",
@@ -52,6 +56,10 @@ DLLS: Final = ("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll", "onnxru
 """어디서 읽었는지 보고하는 DLL. 설치본이면 `msvcp140.dll`은 설치 폴더여야 한다 (2.12)."""
 SMOKE_NUMBER: Final = 12345
 WINDOW_TITLE: Final = "Kookabug doctor"
+EXAMPLE_SMOKE: Final = "tests/smoke_headless.graph.json"
+EXAMPLE_PLATFORM: Final = "fake-platform.json"
+"""예제 워크스페이스의 헤드리스 스모크 그래프와 가짜 플랫폼 사양(`scenario` = 장면 표, 사양 파일
+기준)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,6 +261,32 @@ def smoke_workspace(root: Path) -> SmokeGraph:
     return SmokeGraph(root, "tests/smoke.graph.json", frames=(screen,))
 
 
+def _example_workspace() -> Path | None:
+    """예제 게임 워크스페이스: 설치본이면 `<설치>/examples/sample-game/workspace`(없어도 그 경로 —
+    스모크가 실패로 알린다), 아니면 개발 레포의 `fixtures/sample-game/workspace`(없으면 None)."""
+    if installed():
+        return _install_root() / "examples" / "sample-game" / "workspace"
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "fixtures" / "sample-game" / "workspace"
+        if (candidate / "kookabug.json").is_file():
+            return candidate
+    return None
+
+
+def example_smoke(workspace: Path | None = None) -> SmokeGraph | None:
+    """예제 워크스페이스의 헤드리스 스모크 그래프 (장면 표는 `fake-platform.json`의 `scenario`).
+    `workspace`를 안 주면 `_example_workspace()`. 찾을 곳이 없으면 None(최소 스모크를 쓴다)."""
+    root = _example_workspace() if workspace is None else workspace
+    if root is None:
+        return None
+    scenario: Path | None = None
+    with contextlib.suppress(OSError, ValueError):
+        spec = json.loads((root / EXAMPLE_PLATFORM).read_text(encoding="utf-8"))
+        if isinstance(spec, dict) and isinstance(spec.get("scenario"), str):
+            scenario = (root / spec["scenario"]).resolve()
+    return SmokeGraph(root, EXAMPLE_SMOKE, scenario=scenario)
+
+
 def run_smoke(smoke: SmokeGraph) -> RunResult:
     """스모크 그래프를 가짜 플랫폼(프레임 PNG 또는 장면 표) + 실제 매칭·OCR + 프레임 저장소로
     실행한다."""
@@ -314,9 +348,10 @@ def _smoke(smoke: SmokeGraph | None) -> Callable[[], tuple[bool, str]]:
             started = time.perf_counter()
             result = run_smoke(graph)
             elapsed = int((time.perf_counter() - started) * 1000)
-        read = _node_outputs(result, "n_read")
-        seen = f", OCR {read['text']!r}" if "text" in read else ""
-        detail = f"{graph.graph}: {result.verdict} ({elapsed} ms{seen})"
+        text = _last_text(result)
+        seen = f", OCR {text!r}" if text is not None else ""
+        where = graph.workspace / graph.graph if smoke is not None else f"{graph.graph} (내장)"
+        detail = f"{where}: {result.verdict} ({elapsed} ms{seen})"
         if result.verdict != "pass":
             detail += f" — {result.code}: {result.reason}"
         return result.verdict == "pass", detail
@@ -324,11 +359,14 @@ def _smoke(smoke: SmokeGraph | None) -> Callable[[], tuple[bool, str]]:
     return body
 
 
-def _node_outputs(result: RunResult, node: str) -> dict[str, Any]:
-    """그 노드의 마지막 `step.end` 출력 (없으면 빈 dict — 그래프에 그 노드가 없을 때)."""
-    steps = {e["step"]: e["node"] for e in result.events if e["event"] == "step.start"}
-    ends = [e for e in result.events if e["event"] == "step.end" and steps.get(e["step"]) == node]
-    return dict(ends[-1].get("outputs", {})) if ends else {}
+def _last_text(result: RunResult) -> str | None:
+    """마지막으로 글자를 내보낸 스텝의 `text` 출력 (OCR 노드·문구 검증). 없으면 None."""
+    for event in reversed(result.events):
+        if event["event"] == "step.end":
+            text = event.get("outputs", {}).get("text")
+            if isinstance(text, str):
+                return text
+    return None
 
 
 # ---------------------------------------------------------------- desktop

@@ -15,6 +15,9 @@
 - 실패 증거(M1 2.15): 처리되지 않은 fail이 확정된 스텝은 **그 스텝 아래(자기와 안쪽 스텝)에서
   얻은 마지막 캡처**를 `steps/<스텝>_fail`로 남긴다. 안쪽 스텝이 닫힐 때 그 마지막 캡처를 부른
   스텝으로 올린다(부른 스텝의 것보다 나중일 때만). 그 아래에서 캡처가 없으면 남기지 않는다
+- 서브그래프 호출 스텝의 실패·예외 증거는 호출 노드의 비밀값 입력으로 막지 않는다(구간 끄기와 획득
+  당시 표시는 본다). 그 프레임은 안쪽 스텝이 얻은 것이고, 비밀값을 받은 안쪽 스텝의 프레임은 획득
+  당시 표시로 막히므로 안쪽 스텝 각각이 남길 수 있는 것보다 넓게 남기지 않는다 (M1 T12)
 - OCR 글자: 스텝 안에서 마지막으로 읽은 글자를 스텝을 닫을 때 `steps/<스텝>_ocr.txt`로 남긴다.
   `sensitive` target으로 읽은 적이 있으면 남기지 않고 `sensitive_target`, 그 밖에는 스크린샷과
   같은 정책(구간 끄기·비밀값 입력·획득 당시 표시)을 따른다 — 화면에서 읽은 글자도 화면이다
@@ -216,6 +219,8 @@ class _StepRecord:
     """마지막으로 읽은 OCR 글자."""
     ocr_sensitive: bool = False
     """`sensitive` target으로 읽은 적이 있다."""
+    call: bool = False
+    """서브그래프 호출 스텝 (실패·예외 증거는 비밀값 입력으로 막지 않는다)."""
 
 
 class Recorder:
@@ -233,8 +238,11 @@ class Recorder:
 
     # ------------------------------------------------------------ 스텝 수명
 
-    def open_step(self, step: str, policy: RecordPolicy) -> None:
-        record = _StepRecord(StepPolicy(policy))
+    def open_step(self, step: str, policy: RecordPolicy, *, call: bool = False) -> None:
+        """`call`이면 서브그래프 호출 스텝이다: 그 스텝의 실패·예외 증거(안쪽 스텝이 얻은 프레임)는
+        호출 노드의 비밀값 입력으로 막지 않는다. 비밀값을 받은 안쪽 스텝의 프레임은 획득 당시
+        표시가 막으므로, 남는 것은 안쪽 스텝이 스스로 남길 수 있던 프레임뿐이다."""
+        record = _StepRecord(StepPolicy(policy), call=call)
         self._open[step] = record
         self._policies[step] = record.policy
 
@@ -308,10 +316,13 @@ class Recorder:
             self._blocked[self._captures] = _CaptureMark(step, block)
         return tagged
 
-    def screenshot(self, step: str, image: Image, name: str) -> str | None:
-        """정책을 통과하면 저장하고 경로를, 막히면 `omitted`에 남기고 None을 준다."""
+    def screenshot(
+        self, step: str, image: Image, name: str, *, evidence: bool = False
+    ) -> str | None:
+        """정책을 통과하면 저장하고 경로를, 막히면 `omitted`에 남기고 None을 준다. `evidence`는
+        실행기가 남기는 실패·예외 증거다(호출 스텝이면 비밀값 입력을 보지 않는다)."""
         record = self._open[step]
-        block = self._block(record, image)
+        block = self._block(record, image, secret=not (evidence and record.call))
         if block is not None:
             reason, source = block
             entry: dict[str, Any] = {"kind": "screenshot", "name": name, "reason": reason}
@@ -333,7 +344,7 @@ class Recorder:
         record = self._open.get(step)
         if record is None or record.last_capture is None:
             return None
-        return self.screenshot(step, record.last_capture, ERROR_SCREENSHOT)
+        return self.screenshot(step, record.last_capture, ERROR_SCREENSHOT, evidence=True)
 
     def fail_screenshot(self, step: str) -> str | None:
         """처리되지 않은 fail이 그 스텝에서 확정됐을 때: 그 스텝 아래(자기와 안쪽 스텝)의 마지막
@@ -341,7 +352,7 @@ class Recorder:
         record = self._open.get(step)
         if record is None or record.last_under is None:
             return None
-        return self.screenshot(step, record.last_under, FAIL_SCREENSHOT)
+        return self.screenshot(step, record.last_under, FAIL_SCREENSHOT, evidence=True)
 
     def ocr_read(self, step: str, image: Image, text: str, *, sensitive: bool) -> None:
         """그 스텝에서 읽은 OCR 글자 (스텝을 닫을 때 마지막 것을 남긴다)."""
@@ -376,9 +387,11 @@ class Recorder:
         record.artifacts.append(path)
         return path
 
-    def _block(self, record: _StepRecord, image: Image) -> tuple[OmitReason, str | None] | None:
+    def _block(
+        self, record: _StepRecord, image: Image, *, secret: bool = True
+    ) -> tuple[OmitReason, str | None] | None:
         # 저장하는 스텝의 정책이 먼저 (더 구체적인 이유), 그다음 획득 당시 표시
-        block = record.policy.screenshot_block()
+        block = record.policy.screenshot_block(secret=secret)
         if block is not None:
             return block
         mark = self._blocked.get(image.capture_id) if image.capture_id is not None else None

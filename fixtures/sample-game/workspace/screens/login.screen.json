@@ -1,0 +1,19 @@
+{
+  "detect": {
+    "all": [
+      {
+        "$target": "targets/login/account_field.target.json"
+      },
+      {
+        "$target": "targets/login/login_button.target.json"
+      }
+    ],
+    "none": [
+      {
+        "$target": "targets/login/error_popup.target.json"
+      }
+    ]
+  },
+  "format": "kookabug.screen/0",
+  "title": "로그인"
+}

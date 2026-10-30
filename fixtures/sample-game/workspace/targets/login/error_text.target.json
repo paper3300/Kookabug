@@ -1,0 +1,12 @@
+{
+  "click": {
+    "anchor": "center",
+    "offset": [0, 0]
+  },
+  "format": "kookabug.target/0",
+  "image": "error_text.png",
+  "recorded": {
+    "client_size": [1024, 640],
+    "dpi": 96
+  }
+}
