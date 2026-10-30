@@ -21,7 +21,8 @@
       "input_scene": "login",
       "max_length": 24,
       "next_key": "tab",
-      "scenes": ["login", "login_error"]
+      "scenes": ["login", "login_error"],
+      "select_key": "ctrl+a"
     }
   },
   "launch": [

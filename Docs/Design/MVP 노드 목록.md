@@ -57,11 +57,17 @@
 
 | 타입 | 하는 일 | 주요 입력 | 출력 | 출구 |
 |---|---|---|---|---|
-| `core.app.launch` | 실행 파일을 띄우고 창을 잡아 현재 대상 창으로 정함 | `path`, `args`, `window_title` | `window`, `process` | **attached**, timeout |
+| `core.app.launch` | 실행 파일을 띄우고 창을 잡아 현재 대상 창으로 정함 | `path`, `args`, `window_title`, `cwd` | `window`, `process` | **attached**, timeout |
 | `core.app.close` | 프로세스 종료 (정상 종료 후 시간 초과면 강제) | `process`, `force_after_ms` | | **closed**, timeout |
-| `core.window.attach` | 이미 떠 있는 창을 찾아 현재 대상 창으로 정함 | `title` / `process_name` | `window` | **found**, not_found |
+| `core.window.attach` | 이미 떠 있는 창을 찾아 현재 대상 창으로 정함 | `title` / `process_name`, `owned` | `window` | **found**, not_found |
 | `core.window.set_current` | 현재 대상 창을 바꿈 (호출 프레임 단위) | `window` | | **done** |
 | `core.window.set_size` | 클라이언트 영역 크기 맞춤. 녹화 해상도와 맞출 때 | `client_size` | | **done**, fail |
+
+- `launch`는 런처가 띄운 아래 프로세스의 창까지 `timeout_ms`(기본 30초) 기다린다. `timeout`으로 나가도 `process`는 준다(그래프가 닫을 수 있게). 띄운 게임은 실행 Job 안이라 실행이 끝나면 같이 정리된다
+- `close`는 창에 닫기를 보내고 `force_after_ms`(기본 5초) 안에 끝나지 않으면 강제로 끝내고 `timeout`으로 나간다
+- `attach`는 기본으로 소유자 없는 창만 찾는다. 대화 상자 같은 소유 팝업을 대상 창으로 삼으려면 `owned: true`
+- `launch`·`attach`·`set_current`는 창을 정한 직후 한 번 앞으로 가져온다(최선 노력). 입력 노드는 가져오지 않는다
+- `set_size`의 `client_size`는 `[너비, 높이]`(물리 픽셀)이고 대상은 그 스텝의 창이다
 
 ## 4. 화면·이미지
 
@@ -97,12 +103,17 @@
 | 타입 | 하는 일 | 주요 입력 | 출력 | 출구 |
 |---|---|---|---|---|
 | `core.input.click` | 매칭 결과나 좌표를 클릭 | `match` / `point`, `button`, `count` | | **done** |
-| `core.input.drag` | 끌기 | `from`, `to`, `duration_ms` | | **done** |
+| `core.input.drag` | 끌기 | `start`, `end`, `duration_ms` | | **done** |
 | `core.input.scroll` | 휠 | `point`, `amount` | | **done** |
 | `core.input.key` | 키 입력·조합·누르고 있기 | `keys`, `hold_ms` | | **done** |
 | `core.input.type_text` | 글자 입력 | `target`, `text`, `clear` | | **done** |
 
 입력 노드는 입력 직전에 대상 창이 유효한지, 포그라운드인지 확인한다. 실패하면 `error`다.
+
+- 위치: `match`는 target의 클릭 지점, 점은 클라이언트 픽셀이고 그래프 상수로는 `[x, y]`로 쓴다. `drag`의 `start`·`end`는 둘 다 받는다
+- `button`은 `left`·`right`·`middle`·`x1`·`x2`, `count` 2면 이중 클릭. `drag`의 `duration_ms` 기본은 300
+- `keys`는 키 하나나 `+`로 이은 조합(`ctrl+a`). `hold_ms`만큼 누르고 있다가 뗀다
+- `type_text`의 `target`(생략 가능)은 지금 화면에서 한 번 찾아 그 칸을 먼저 클릭한다. 못 찾으면 `error`다 — 칸이 뜰 때까지는 대기 노드로 기다린다. `clear`는 입력 전에 `ctrl+a` → `backspace`로 칸을 비운다(전체 선택이 없는 칸은 끝 글자 하나만 지워진다). `text`가 비밀값이면 기록에 남지 않는다
 
 ## 7. 흐름
 
@@ -185,5 +196,6 @@
 
 | 바뀐 것 | 이유 |
 |---|---|
+| M1 앱·창·입력 노드: `launch`의 `cwd` 입력·`timeout` 출구의 `process`, `attach`의 `owned`, 창을 정한 노드의 활성화, `drag` 입력 이름 `from`·`to` → `start`·`end`, 점 상수 `[x, y]`, `type_text`의 칸 찾기·`clear` 방법 (3·6장) | 게임은 작업 폴더가 맞아야 뜨는 것이 많다. `from`은 Python 예약어라 노드 함수 인자가 될 수 없다(SDK `ctx.input.drag(start, end)`와 같게). 실행기가 구조 타입 상수를 바꾸지 않아 점 상수의 모양을 정해야 한다. `clear`는 게임 입력 칸이 공통으로 아는 키 조합이 필요하다 |
 | M1 OCR: `confidence`(상자 점수 평균, 글자 없으면 `null`)·`text` 합치기(줄·띄어쓰기)·`parse: "number"` 규칙·`sensitive`의 `number = null`, 영역 없는 전체 읽기의 속도 (5장) | 노드 출력의 뜻을 엔진 구현(`kookabug_platform.ocr`)과 맞춘다. 숫자에는 비밀 타입이 없어 가린 값을 낼 수 없다. 큰 화면 전체 읽기는 타일 검출이라 수 초가 걸린다 |
 | M1 공통 입력 `window`의 규칙: 받는 노드(exec 노드 전부, 같은 이름 입력이 있으면 그 입력), 타입·`null`, 바뀌는 범위, `core.graph.call`이면 서브그래프가 이어받는 창 (공통 입력) | "모든 exec 노드"만으로는 같은 이름 입력을 가진 노드와 서브그래프 호출에서 뜻이 정해지지 않는다 |

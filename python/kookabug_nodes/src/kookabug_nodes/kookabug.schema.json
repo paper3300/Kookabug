@@ -2,6 +2,99 @@
   "format": "kookabug.nodes/0",
   "nodes": [
     {
+      "category": "app",
+      "description": "창에 닫기를 보내고 기다린다. `force_after_ms` 안에 끝나지 않으면 강제로 끝내고 `timeout`.",
+      "effects": [
+        "process"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "closed",
+          "outputs": []
+        },
+        {
+          "kind": "fail",
+          "name": "timeout",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "force_after_ms": {
+          "default": 5000,
+          "minimum": 0,
+          "type": "int"
+        },
+        "process": {
+          "type": "process"
+        }
+      },
+      "outputs": {},
+      "title": "게임 종료",
+      "type": "core.app.close",
+      "version": 1
+    },
+    {
+      "category": "app",
+      "description": "실행 파일을 띄우고 그 창(`window_title`을 주면 제목이 맞는 창)이 뜨기를 기다려 현재 대상\n창으로 정한다. 런처가 띄운 아래 프로세스의 창도 찾는다. `timeout_ms` 안에 창이 안 뜨면\n`timeout`.",
+      "effects": [
+        "process"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "attached",
+          "outputs": [
+            "process",
+            "window"
+          ]
+        },
+        {
+          "kind": "fail",
+          "name": "timeout",
+          "outputs": [
+            "process"
+          ]
+        }
+      ],
+      "inputs": {
+        "args": {
+          "default": null,
+          "nullable": true,
+          "type": "list[string]"
+        },
+        "cwd": {
+          "default": null,
+          "nullable": true,
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "timeout_ms": {
+          "default": 30000,
+          "minimum": 0,
+          "type": "int"
+        },
+        "window_title": {
+          "default": null,
+          "nullable": true,
+          "type": "string"
+        }
+      },
+      "outputs": {
+        "process": {
+          "type": "process"
+        },
+        "window": {
+          "type": "window"
+        }
+      },
+      "title": "게임 실행",
+      "type": "core.app.launch",
+      "version": 1
+    },
+    {
       "assertion": true,
       "category": "test",
       "description": "`a op b`가 참인지 검증한다. 예: 구매 후 골드가 줄었는지.",
@@ -224,6 +317,181 @@
       "version": 1
     },
     {
+      "category": "input",
+      "description": "매칭 결과(`match`, target의 클릭 지점)나 좌표(`point`, 클라이언트 픽셀 `[x, y]`)를 클릭한다.\n둘 중 하나만 준다. `count` 2면 이중 클릭.",
+      "effects": [
+        "input"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "button": {
+          "default": "left",
+          "enum": [
+            "left",
+            "right",
+            "middle",
+            "x1",
+            "x2"
+          ],
+          "type": "string"
+        },
+        "count": {
+          "default": 1,
+          "minimum": 1,
+          "type": "int"
+        },
+        "match": {
+          "default": null,
+          "nullable": true,
+          "type": "match"
+        },
+        "point": {
+          "default": null,
+          "nullable": true,
+          "type": "point"
+        }
+      },
+      "outputs": {},
+      "title": "클릭",
+      "type": "core.input.click",
+      "version": 1
+    },
+    {
+      "category": "input",
+      "description": "`start`에서 눌러 `duration_ms` 동안 `end`까지 옮긴 뒤 뗀다. 매칭 결과는 클릭 지점, 점은\n클라이언트 픽셀 `[x, y]`.",
+      "effects": [
+        "input"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "button": {
+          "default": "left",
+          "enum": [
+            "left",
+            "right",
+            "middle",
+            "x1",
+            "x2"
+          ],
+          "type": "string"
+        },
+        "duration_ms": {
+          "default": 300,
+          "minimum": 0,
+          "type": "int"
+        },
+        "end": {
+          "type": "match|point"
+        },
+        "start": {
+          "type": "match|point"
+        }
+      },
+      "outputs": {},
+      "title": "끌기",
+      "type": "core.input.drag",
+      "version": 1
+    },
+    {
+      "category": "input",
+      "description": "키 하나나 조합(`ctrl+a`)을 누른다. `hold_ms`만큼 누르고 있다가 뗀다 (기다리는 중 취소돼도\n뗀다). 모르는 키 이름은 `key_unknown`.",
+      "effects": [
+        "input"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "hold_ms": {
+          "default": 0,
+          "minimum": 0,
+          "type": "int"
+        },
+        "keys": {
+          "type": "string"
+        }
+      },
+      "outputs": {},
+      "title": "키 입력",
+      "type": "core.input.key",
+      "version": 1
+    },
+    {
+      "category": "input",
+      "description": "`point`(클라이언트 픽셀 `[x, y]`)에서 휠을 `amount` 칸 굴린다. 양수 = 위.",
+      "effects": [
+        "input"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "amount": {
+          "type": "int"
+        },
+        "point": {
+          "type": "point"
+        }
+      },
+      "outputs": {},
+      "title": "휠",
+      "type": "core.input.scroll",
+      "version": 1
+    },
+    {
+      "category": "input",
+      "description": "글자를 입력한다. `target`을 주면 지금 화면에서 그 칸을 찾아 먼저 클릭한다(없으면 `error` —\n칸이 보일 때까지는 대기 노드로 기다린다). `clear`면 입력 전에 칸을 비운다(`ctrl+a` →\n`backspace`, 재시도 때 덧붙여 입력하지 않게). 비밀값은 기록에 남기지 않는다.",
+      "effects": [
+        "capture",
+        "input"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "clear": {
+          "default": false,
+          "type": "bool"
+        },
+        "target": {
+          "default": null,
+          "nullable": true,
+          "type": "target"
+        },
+        "text": {
+          "type": "string|secret"
+        }
+      },
+      "outputs": {},
+      "title": "글자 입력",
+      "type": "core.input.type_text",
+      "version": 1
+    },
+    {
       "category": "log",
       "description": "실행 기록에 메시지를 남긴다. 비밀값은 가려서 남긴다.",
       "exits": [
@@ -401,6 +669,103 @@
       "outputs": {},
       "title": "변수 저장",
       "type": "core.var.set",
+      "version": 1
+    },
+    {
+      "category": "window",
+      "description": "이미 떠 있는 창을 찾아 현재 대상 창으로 정한다. `title`은 부분 일치(대소문자 무시) 또는\n`/정규식/`, `process_name`은 실행 파일 이름. 기본은 소유자 없는 창만 찾고, 소유 팝업(대화\n상자 등)은 `owned`를 켜야 찾는다.",
+      "effects": [
+        "process"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "found",
+          "outputs": [
+            "window"
+          ]
+        },
+        {
+          "kind": "fail",
+          "name": "not_found",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "owned": {
+          "default": false,
+          "type": "bool"
+        },
+        "process_name": {
+          "default": null,
+          "nullable": true,
+          "type": "string"
+        },
+        "title": {
+          "default": null,
+          "nullable": true,
+          "type": "string"
+        }
+      },
+      "outputs": {
+        "window": {
+          "type": "window"
+        }
+      },
+      "title": "창에 붙기",
+      "type": "core.window.attach",
+      "version": 1
+    },
+    {
+      "category": "window",
+      "description": "호출 프레임의 현재 대상 창을 다음 노드부터 바꾼다. 서브그래프 안에서 바꾼 것은 부른 쪽에\n나오지 않는다.",
+      "effects": [
+        "process"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "window": {
+          "type": "window"
+        }
+      },
+      "outputs": {},
+      "title": "현재 창 바꾸기",
+      "type": "core.window.set_current",
+      "version": 1
+    },
+    {
+      "category": "window",
+      "description": "대상 창의 클라이언트 영역을 `[너비, 높이]`(물리 픽셀)로 맞춘다. 녹화 해상도와 맞출 때 쓴다.\n다시 읽은 크기가 다르면 `fail`.",
+      "effects": [
+        "process"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": []
+        },
+        {
+          "kind": "fail",
+          "name": "fail",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "client_size": {
+          "min_items": 2,
+          "type": "list[int]"
+        }
+      },
+      "outputs": {},
+      "title": "창 크기 맞춤",
+      "type": "core.window.set_size",
       "version": 1
     }
   ],

@@ -1,4 +1,4 @@
-"""M0a 코어 노드 기대 집합 (구현 계획 M0a 1장 표). 노드 패키지·레지스트리 테스트가 같이 쓴다."""
+"""코어 노드 기대 집합 (구현 계획 M0a 1장 표 + M1 노드). 노드 패키지·레지스트리 테스트가 쓴다."""
 
 from typing import Final
 
@@ -15,7 +15,7 @@ ENGINE_NODE_TYPES: Final = frozenset(
     }
 )
 
-SDK_NODE_TYPES: Final = frozenset(
+M0A_SDK_NODE_TYPES: Final = frozenset(
     {
         "core.assert.compare",
         "core.flow.branch",
@@ -28,6 +28,24 @@ SDK_NODE_TYPES: Final = frozenset(
     }
 )
 
+# M1 T10: 앱·창·입력 (MVP 노드 목록 3·6장)
+M1_APP_WINDOW_INPUT_NODE_TYPES: Final = frozenset(
+    {
+        "core.app.launch",
+        "core.app.close",
+        "core.window.attach",
+        "core.window.set_current",
+        "core.window.set_size",
+        "core.input.click",
+        "core.input.drag",
+        "core.input.scroll",
+        "core.input.key",
+        "core.input.type_text",
+    }
+)
+
+SDK_NODE_TYPES: Final = M0A_SDK_NODE_TYPES | M1_APP_WINDOW_INPUT_NODE_TYPES
+
 CORE_NODE_TYPES: Final = ENGINE_NODE_TYPES | SDK_NODE_TYPES
 
 # kookabug_nodes의 [tool.kookabug].modules와 같아야 한다 (설치된 wheel에는 pyproject가 없어서
@@ -38,4 +56,7 @@ CORE_NODE_MODULES: Final = (
     "kookabug_nodes.flow",
     "kookabug_nodes.values",
     "kookabug_nodes.log",
+    "kookabug_nodes.app",
+    "kookabug_nodes.window",
+    "kookabug_nodes.input",
 )

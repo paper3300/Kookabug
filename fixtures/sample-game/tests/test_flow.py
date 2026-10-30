@@ -102,6 +102,33 @@ def test_wrong_account_and_text_editing() -> None:
     assert game.scene is Scene.LOBBY
 
 
+def test_select_all_clears_or_replaces_field() -> None:
+    game = Game(GameConfig(account="user", password="pw"))
+    game.press("start")
+    game.text("old-name")
+    game.key("ctrl+a")
+    assert game.selected and game.account == "old-name"  # 고르기만 하고 지우지 않는다
+    game.key("backspace")
+    assert (game.account, game.selected) == ("", False)
+    game.text("old")
+    game.key("ctrl+a")
+    game.text("user")  # 골라 둔 칸은 갈아 끼운다
+    assert game.account == "user"
+    game.text("x")  # 고르기는 한 번만: 다음 글자는 붙는다
+    game.key("backspace")
+    game.key("tab")
+    game.text("pw")
+    game.key("ctrl+a")
+    game.press("password_field")  # 칸 클릭은 고르기를 푼다
+    game.key("backspace")
+    assert (game.account, game.password) == ("user", "p")
+    game.text("w")
+    game.key("enter")
+    assert game.scene is Scene.LOBBY and not game.selected
+    game.key("ctrl+a")  # 로그인 화면 밖에서는 아무 일도 없다
+    assert not game.selected
+
+
 def test_inventory_toggles_with_i_and_esc() -> None:
     game = Game()
     to_lobby(game)

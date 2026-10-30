@@ -8,9 +8,9 @@
   규칙(인수 하나가 `args_contains`와 같은 첫 규칙, 조건 없는 규칙이 기본)으로 고른다. 경로는 보지
   않는다
 - **캡처**: 그 창 게임의 지금 장면 PNG. 캡처 한 번이 `after_frames`의 한 프레임이다
-- **입력**: 왼쪽 클릭 = 그 점의 클릭 전이(없으면 입력 칸 선택), 키 = 키 전이(없으면 칸 조작),
-  글자 = 지금 칸에 붙임. 누르고 있기는 누를 때 키 하나로 본다. 드래그·휠·떼기는 장면을 바꾸지
-  않는다
+- **입력**: 왼쪽 클릭 = 그 점의 클릭 전이(없으면 입력 칸 선택), 키 = 키 전이(없으면 칸 조작:
+  다음 칸·끝 글자 지움·전부 고름), 글자 = 지금 칸에 붙임(골라 뒀으면 갈아 끼움). 누르고 있기는
+  누를 때 키 하나로 본다. 드래그·휠·떼기는 장면을 바꾸지 않는다
 - **창**: 제목·클래스·클라이언트 크기·DPI는 표의 `window`, 프로세스 이름은 `process.name`.
   닫으면(`close`) 그 창은 `window_gone`. 크기는 바꿀 수 없다(장면 PNG가 한 크기) — 같은 크기로
   맞추기만 참
@@ -173,6 +173,8 @@ def _check(data: Any, folder: Path) -> dict[str, Any]:
         _int(form.get("max_length"), f"{where}/max_length", minimum=1)
         _str(form.get("next_key"), f"{where}/next_key")
         _str(form.get("erase_key"), f"{where}/erase_key")
+        if "select_key" in form:
+            _str(form["select_key"], f"{where}/select_key")
         expect = _obj(form.get("expect"), f"{where}/expect")
         if sorted(expect) != sorted(names):
             raise _fail(f"{where}/expect", "칸 이름이 fields와 다르다")
@@ -242,6 +244,7 @@ class ScenarioState:
         self.forms[name] = {
             "values": {f["name"]: "" for f in spec["fields"]},
             "focus": spec["focus"],
+            "selected": False,
         }
 
     def _candidates(self, match: Callable[[Any], bool]) -> list[_Edge]:
@@ -265,6 +268,8 @@ class ScenarioState:
         new_form = self._form_of(scene)
         if new_form is not None and new_form != old_form:
             self._reset_form(new_form)
+        if new_form is not None:
+            self.forms[new_form]["selected"] = False
         effects = (edge or {}).get("effects")
         if effects:
             form = self.forms[effects["form"]]
@@ -274,6 +279,9 @@ class ScenarioState:
                 form["focus"] = effects["focus"]
 
     def _take(self, edge: _Edge) -> None:
+        form = self._form_of(self.scene)
+        if form is not None:
+            self.forms[form]["selected"] = False  # 입력이 전이를 타면 늦게 넘어가도 바로 풀린다
         if edge.get("after_frames", 0) > 0 and "on" in edge:
             self._pending = (edge, edge["after_frames"])
         else:
@@ -296,6 +304,7 @@ class ScenarioState:
             for f in spec["fields"]:
                 if inside(f["rect"]):
                     self.forms[name]["focus"] = f["name"]
+                    self.forms[name]["selected"] = False
 
     def key(self, key: str) -> None:
         key = key.lower()
@@ -311,8 +320,13 @@ class ScenarioState:
         order = [f["name"] for f in spec["fields"]]
         if key == spec["next_key"]:
             state["focus"] = order[(order.index(state["focus"]) + 1) % len(order)]
+            state["selected"] = False
         elif key == spec["erase_key"]:
-            state["values"][state["focus"]] = state["values"][state["focus"]][:-1]
+            value = state["values"][state["focus"]]
+            state["values"][state["focus"]] = "" if state["selected"] else value[:-1]
+            state["selected"] = False
+        elif key == spec.get("select_key"):
+            state["selected"] = True
 
     def text(self, chars: str) -> None:
         form = self._input_form()
@@ -321,8 +335,13 @@ class ScenarioState:
         name, spec = form
         state = self.forms[name]
         for ch in chars:
+            if not ch.isprintable():
+                continue
+            if state["selected"]:
+                state["values"][state["focus"]] = ""
+                state["selected"] = False
             value = state["values"][state["focus"]]
-            if ch.isprintable() and len(value) < spec["max_length"]:
+            if len(value) < spec["max_length"]:
                 state["values"][state["focus"]] = value + ch
 
     def capture(self) -> str:

@@ -10,12 +10,14 @@
 - `variants`: 실행 옵션이 만드는 갈래 이름. `launch`: 띄우는 인수에 따라 갈래를 고르는 규칙 —
   앞에서부터 `args_contains`(인수 하나가 그 값과 같음)가 맞는 첫 규칙, 조건 없는 규칙이 기본
 - `forms`: 입력 칸 상태. 이름 → `{scenes, input_scene, fields, focus, max_length, next_key,
-  erase_key, expect}`
-  - 상태(칸 값·지금 칸)는 `scenes` 안에서 이어지고, 밖에서 `scenes`로 들어오면 빈 칸·`focus`로
-    초기화된다
+  erase_key, select_key?, expect}`
+  - 상태(칸 값·지금 칸·고르기)는 `scenes` 안에서 이어지고, 밖에서 `scenes`로 들어오면 빈 칸·
+    `focus`로 초기화된다. 전이를 탈 때마다 고르기는 풀린다
   - `input_scene`에서만: `fields`의 `rect`(클라이언트 픽셀) 왼쪽 클릭 = 그 칸 선택, 글자 입력 = 지금
     칸 끝에 출력 가능한 글자를 붙임(`max_length`까지), `next_key` = 다음 칸(끝이면 처음),
-    `erase_key` = 지금 칸 끝 글자 지움. 전이가 맞는 입력이면 전이가 먼저다
+    `erase_key` = 지금 칸 끝 글자 지움, `select_key` = 지금 칸 글자 전부 고름. 골라 둔 채
+    `erase_key`는 칸을 비우고 글자 입력은 칸을 갈아 끼운다. 칸 클릭·`next_key`는 고르기를 푼다.
+    전이가 맞는 입력이면 전이가 먼저다
   - `expect`: 모든 칸이 이 값과 같으면 "맞음"(`when.valid`)
 - `transitions`: `{from, on, to, after_frames, when?, effects?, variants?}`
   - `on`: `{kind: "click", rect: [x, y, w, h]}`(사각형 안 왼쪽 클릭) 또는 `{kind: "key", key}`
@@ -34,7 +36,15 @@ from dataclasses import replace
 from typing import Any, Final
 
 from sample_game import BASE_SIZE, DEFAULT_TITLE
-from sample_game.flow import FIELD_MAX, FORM_FIELDS, Game, GameConfig, Scene, keys_for
+from sample_game.flow import (
+    FIELD_MAX,
+    FORM_FIELDS,
+    SELECT_ALL_KEY,
+    Game,
+    GameConfig,
+    Scene,
+    keys_for,
+)
 from sample_game.layout import Viewport, buttons_for
 
 __all__ = ["FORMAT", "LOADING_FRAMES", "VARIANTS", "Simulator", "generate"]
@@ -55,6 +65,7 @@ FORM_SCENES: Final = (Scene.LOGIN, Scene.LOGIN_ERROR)
 # 로그인 화면의 칸 조작 키 (flow의 _KEYS와 같다 — 대조 검사가 확인)
 NEXT_KEY: Final = "tab"
 ERASE_KEY: Final = "backspace"
+SELECT_KEY: Final = SELECT_ALL_KEY
 
 type _On = dict[str, Any] | None
 type _Edge = dict[str, Any]
@@ -109,7 +120,7 @@ def _actions(state: Game, viewport: Viewport) -> list[tuple[_On, Callable[[Game]
         on = {"kind": "click", "rect": list(viewport.rect(button.rect))}
         actions.append((on, lambda g, b=button.id: g.press(b)))
     for name in keys_for(state.scene):
-        if form_inputs and name in (NEXT_KEY, ERASE_KEY):
+        if form_inputs and name in (NEXT_KEY, ERASE_KEY, SELECT_KEY):
             continue
         actions.append(({"kind": "key", "key": name}, lambda g, k=name: g.key(k)))
     if state.timer is not None:
@@ -222,6 +233,7 @@ def generate(size: tuple[int, int] = BASE_SIZE, title: str = DEFAULT_TITLE) -> d
                 "max_length": FIELD_MAX,
                 "next_key": NEXT_KEY,
                 "scenes": [s.value for s in FORM_SCENES],
+                "select_key": SELECT_KEY,
             }
         },
         "launch": launch,
@@ -278,6 +290,7 @@ class Simulator:
         self.forms[name] = {
             "values": {f["name"]: "" for f in spec["fields"]},
             "focus": spec["focus"],
+            "selected": False,
         }
 
     # ---- 전이
@@ -303,6 +316,8 @@ class Simulator:
         new_form = self._form_of(scene)
         if new_form is not None and new_form != old_form:
             self._reset_form(new_form)
+        if new_form is not None:
+            self.forms[new_form]["selected"] = False
         effects = (edge or {}).get("effects")
         if effects:
             form = self.forms[effects["form"]]
@@ -312,6 +327,9 @@ class Simulator:
                 form["focus"] = effects["focus"]
 
     def _take(self, edge: _Edge) -> None:
+        form = self._form_of(self.scene)
+        if form is not None:
+            self.forms[form]["selected"] = False  # 입력이 전이를 타면 늦게 넘어가도 바로 풀린다
         if edge["after_frames"] > 0 and "on" in edge:
             self._pending = (edge, edge["after_frames"])
         else:
@@ -336,6 +354,7 @@ class Simulator:
             for f in spec["fields"]:
                 if inside(f["rect"]):
                     self.forms[name]["focus"] = f["name"]
+                    self.forms[name]["selected"] = False
 
     def key(self, key: str) -> None:
         found = self._candidates(lambda on: on == {"kind": "key", "key": key})
@@ -350,8 +369,13 @@ class Simulator:
         order = [f["name"] for f in spec["fields"]]
         if key == spec["next_key"]:
             state["focus"] = order[(order.index(state["focus"]) + 1) % len(order)]
+            state["selected"] = False
         elif key == spec["erase_key"]:
-            state["values"][state["focus"]] = state["values"][state["focus"]][:-1]
+            value = state["values"][state["focus"]]
+            state["values"][state["focus"]] = "" if state["selected"] else value[:-1]
+            state["selected"] = False
+        elif key == spec.get("select_key"):
+            state["selected"] = True
 
     def text(self, chars: str) -> None:
         form = self._input_form()
@@ -360,8 +384,13 @@ class Simulator:
         name, spec = form
         state = self.forms[name]
         for ch in chars:
+            if not ch.isprintable():
+                continue
+            if state["selected"]:
+                state["values"][state["focus"]] = ""
+                state["selected"] = False
             value = state["values"][state["focus"]]
-            if ch.isprintable() and len(value) < spec["max_length"]:
+            if len(value) < spec["max_length"]:
                 state["values"][state["focus"]] = value + ch
 
     def capture(self) -> str:

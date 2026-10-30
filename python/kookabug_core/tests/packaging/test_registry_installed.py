@@ -69,7 +69,7 @@ def test_default_registry_from_installed_wheels(tmp_path: Path) -> None:
     venv = (tmp_path / "venv").resolve()
     assert Path(out["core"]).resolve().is_relative_to(venv)
     assert Path(out["nodes"]).resolve().is_relative_to(venv)
-    assert len(out["types"]) == 16
+    assert len(out["types"]) == len(CORE_NODE_TYPES)
     assert set(out["types"]) == CORE_NODE_TYPES
     assert out["plugins"] == {"core": "0.1.0.dev0"}
     # 설치본에서도 검증이 노드 스키마를 쓴다 (repeat.times는 int)

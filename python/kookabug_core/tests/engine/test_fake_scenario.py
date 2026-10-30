@@ -131,7 +131,7 @@ def test_matches_reference_simulator_on_random_inputs(seed: int) -> None:
     keys = sorted(
         {t["on"]["key"] for t in data["transitions"] if t.get("on", {}).get("kind") == "key"}
     )
-    keys += ["tab", "backspace", "a"]
+    keys += ["tab", "backspace", "a", "ctrl+a", "ctrl+a"]
     args = rng.choice([[], ["--login-fail"], ["--maintenance"]])
     ours = ScenarioState(data, args)
     ref = Simulator(data, args)

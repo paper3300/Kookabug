@@ -67,7 +67,7 @@ def test_installed_schema_loads_outside_repo(dists: tuple[pk.Dists, pk.Dists, Pa
     out = json.loads(pk.run_isolated(py, LOAD, cwd=root).stdout)
 
     assert Path(out["module"]).resolve().is_relative_to((root / "venv").resolve())
-    assert len(out["types"]) == 16
+    assert len(out["types"]) == len(CORE_NODE_TYPES)
     assert set(out["types"]) == CORE_NODE_TYPES
     assert out["functions"] == sorted(CORE_NODE_TYPES)
     committed = json.loads((PYTHON / "kookabug_nodes" / "src" / SCHEMA).read_text("utf-8"))

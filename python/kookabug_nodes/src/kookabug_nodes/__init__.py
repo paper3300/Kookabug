@@ -9,4 +9,7 @@ MODULES = (
     "kookabug_nodes.flow",
     "kookabug_nodes.values",
     "kookabug_nodes.log",
+    "kookabug_nodes.app",
+    "kookabug_nodes.window",
+    "kookabug_nodes.input",
 )

@@ -2,6 +2,10 @@
 
 입력은 세 가지다: 버튼 누름(`press`, 클릭 좌표는 `layout`이 버튼으로 바꾼다), 이름 붙은 키(`key`),
 글자(`text`). 시간은 `timer`(지금 걸린 타이머)와 `fire`(그 타이머가 끝남)로만 흐른다.
+
+로그인 칸은 보통 입력 칸처럼 `ctrl+a`로 지금 칸 글자를 전부 고른다(`selected`). 고른 채로
+`backspace`는 칸을 비우고, 글자는 칸을 갈아 끼운다. 버튼 누름·다른 처리되는 키는 고르기를
+푼다. 고르기는 화면에 그리지 않는다(화면 PNG는 그대로).
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ __all__ = [
     "CANONICAL_STEPS",
     "FIELD_MAX",
     "FORM_FIELDS",
+    "SELECT_ALL_KEY",
     "Game",
     "GameConfig",
     "Scene",
@@ -30,6 +35,8 @@ __all__ = [
 FIELD_MAX: Final = 24
 # 로그인 칸 (Tab 순서). `Game`의 같은 이름 속성에 값이 있고, 버튼 ID는 `<이름>_field`
 FORM_FIELDS: Final = ("account", "password")
+# 지금 칸 글자를 전부 고르는 키 (창 껍데기가 Ctrl을 누른 채 A를 이 이름으로 넘긴다)
+SELECT_ALL_KEY: Final = "ctrl+a"
 
 
 class Scene(StrEnum):
@@ -76,6 +83,7 @@ class Game:
     account: str = ""
     password: str = ""
     focus: str = "account"  # account | password
+    selected: bool = False  # 지금 칸 글자를 전부 골랐다 (ctrl+a)
     server: int | None = None
     timer: Timer | None = None
     _tokens: int = 0
@@ -98,20 +106,26 @@ class Game:
         """버튼 누름. 지금 장면에 없는 버튼이면 아무 일도 없다."""
         handler = _BUTTONS.get((self.scene, button))
         if handler is not None:
+            self.selected = False
             handler(self)
 
     def key(self, name: str) -> None:
         handler = _KEYS.get((self.scene, name))
         if handler is not None:
             handler(self)
+            if name != SELECT_ALL_KEY:
+                self.selected = False
 
     def text(self, chars: str) -> None:
-        """글자 입력. 로그인 화면(팝업 없음)의 지금 칸에만 들어간다."""
+        """글자 입력. 로그인 화면(팝업 없음)의 지금 칸에만 들어간다. 골라 둔 칸은 갈아 끼운다."""
         if self.scene is not Scene.LOGIN:
             return
         for ch in chars:
             if not ch.isprintable():
                 continue
+            if self.selected:
+                setattr(self, self.focus, "")
+                self.selected = False
             value = getattr(self, self.focus)
             if len(value) < FIELD_MAX:
                 setattr(self, self.focus, value + ch)
@@ -144,7 +158,11 @@ class Game:
         self.focus = FORM_FIELDS[(FORM_FIELDS.index(self.focus) + 1) % len(FORM_FIELDS)]
 
     def _backspace(self) -> None:
-        setattr(self, self.focus, getattr(self, self.focus)[:-1])
+        value = getattr(self, self.focus)
+        setattr(self, self.focus, "" if self.selected else value[:-1])
+
+    def _select_all(self) -> None:
+        self.selected = True
 
     def _login(self) -> None:
         ok = (
@@ -194,6 +212,7 @@ _KEYS: Final[dict[tuple[Scene, str], _Handler]] = {
     (Scene.MAINTENANCE, "enter"): Game._close_popup,
     (Scene.LOGIN, "tab"): Game._next_field,
     (Scene.LOGIN, "backspace"): Game._backspace,
+    (Scene.LOGIN, SELECT_ALL_KEY): Game._select_all,
     (Scene.LOGIN, "enter"): Game._login,
     (Scene.LOGIN_ERROR, "enter"): Game._close_popup,
     (Scene.LOGIN_ERROR, "esc"): Game._close_popup,

@@ -103,6 +103,7 @@ def test_scenario_transitions_cover_happy_and_fail_paths() -> None:
     assert fail.forms[FORM] == {
         "values": {"account": DEFAULT_ACCOUNT, "password": ""},
         "focus": "password",
+        "selected": False,
     }
     click(fail, "error_ok")
     assert fail.scene == "login"
@@ -152,6 +153,38 @@ def test_login_without_correct_input_does_not_succeed(
     assert sim.scene == game.scene.value == "login_error", case
 
 
+def test_select_all_then_erase_or_type_replaces_whole_field() -> None:
+    """`select_key`(ctrl+a) 뒤 `erase_key`는 칸 전체를 지우고 글자는 칸을 갈아 끼운다."""
+    sim, game = Simulator(committed(), []), Game()
+    click(sim, "start")
+    game.press("start")
+    steps: list[tuple[str, str]] = [
+        ("text", "old-account"),
+        ("key", "ctrl+a"),
+        ("key", "backspace"),
+        ("text", DEFAULT_ACCOUNT),
+        ("key", "tab"),
+        ("text", "old-password"),
+        ("key", "ctrl+a"),
+        ("text", DEFAULT_PASSWORD),
+    ]
+    for kind, value in steps:
+        getattr(sim, kind)(value)
+        getattr(game, kind)(value)
+        _check_same(sim, game, f"{kind} {value!r}")
+    assert sim.forms[FORM]["values"] == {"account": DEFAULT_ACCOUNT, "password": DEFAULT_PASSWORD}
+    # 고르기는 다음 칸으로 가면 풀린다: 그 뒤 backspace는 끝 글자 하나만
+    for sm in (sim.key, game.key):
+        sm("ctrl+a")
+        sm("tab")
+        sm("backspace")
+    _check_same(sim, game, "tab 뒤 backspace")
+    assert sim.forms[FORM]["values"]["account"] == DEFAULT_ACCOUNT[:-1]
+    click(sim, "login")
+    game.press("login")
+    assert sim.scene == game.scene.value == "login_error"
+
+
 def test_click_outside_buttons_does_nothing() -> None:
     sim = Simulator(committed(), [])
     sim.click(5, 5)
@@ -160,7 +193,7 @@ def test_click_outside_buttons_does_nothing() -> None:
 
 def _random_steps(rng: random.Random, n: int) -> list[tuple[str, Any]]:
     texts = [DEFAULT_ACCOUNT, DEFAULT_PASSWORD, "x", "가나", "a" * (FIELD_MAX + 3), "\t", ""]
-    keys = ["enter", "esc", "tab", "backspace", "i", "a"]
+    keys = ["enter", "esc", "tab", "backspace", "i", "a", "ctrl+a", "ctrl+a"]
     steps: list[tuple[str, Any]] = []
     for _ in range(n):
         r = rng.random()
@@ -183,7 +216,8 @@ def _check_same(sim: Simulator, game: Game, where: str) -> None:
     assert sim.scene == game.scene.value, where
     if game.scene in (Scene.LOGIN, Scene.LOGIN_ERROR):
         values = {name: getattr(game, name) for name in FORM_FIELDS}
-        assert sim.forms[FORM] == {"values": values, "focus": game.focus}, where
+        state = {"values": values, "focus": game.focus, "selected": game.selected}
+        assert sim.forms[FORM] == state, where
 
 
 @pytest.mark.parametrize("variant", list(VARIANT_RUNS))

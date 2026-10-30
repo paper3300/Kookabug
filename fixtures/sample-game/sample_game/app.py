@@ -126,6 +126,24 @@ def key_name(keysym: str) -> str:
     return keysym.lower()
 
 
+_MODIFIERS: Final = frozenset(
+    {"lctrl", "rctrl", "lshift", "rshift", "lalt", "ralt", "lwin", "rwin"}
+)
+# Tk 이벤트 `state`의 Ctrl 비트 (ControlMask)
+CONTROL_MASK: Final = 0x4
+
+
+def game_key(name: str, state: int) -> str:
+    """게임 상태 기계에 넘길 키 이름: Ctrl을 누른 채 누른 키는 `ctrl+<이름>`.
+
+    이 이벤트의 modifier 상태(`state`)로 정한다. 창마다 모은 누른 키 기록은 포커스가 옮겨 가면
+    맞지 않는다(다른 창에서 뗀 Ctrl이 남거나, 다른 창에서 누른 채 들어온 Ctrl이 없다).
+    """
+    if name not in _MODIFIERS and state & CONTROL_MASK:
+        return f"ctrl+{name}"
+    return name
+
+
 class EventLog:
     """입력 수신 기록. 경로가 없으면 아무것도 쓰지 않는다."""
 
@@ -327,7 +345,9 @@ class App:
         for ch in chars:
             self.log.write("char", window=window, text=ch)
         if window == "main":
-            self.game.key(name)  # 키 동작은 이벤트 하나에 한 번
+            # 키 동작은 이벤트 하나에 한 번. Tk가 state를 수로 못 바꾸면 문자열로 준다(조합 없음)
+            state = event.state if isinstance(event.state, int) else 0
+            self.game.key(game_key(name, state))
             if chars:
                 self.game.text(chars)
             self._after_change()
