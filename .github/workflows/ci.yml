@@ -64,6 +64,29 @@ jobs:
           test -z "$(git status --porcelain)"
       - run: pnpm -r run typecheck
 
+  # 호스트 러너에서 WGC·포그라운드(SendInput 전제)가 되는지 실측한다 (구현 계획 M1 2.13 Q1).
+  # 탐지 실패는 잡 실패가 아니다: 결과 JSON·잡 요약으로 CI 방침 (a)/(b)를 고른다
+  desktop-probe:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync --locked --all-packages
+      - name: 데스크톱 탐지
+        env:
+          PYTHONPATH: tools
+        run: uv run python -m kb_testing.desktop --json build/desktop-probe.json --summary "$env:GITHUB_STEP_SUMMARY" --no-fail
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-probe
+          path: build/desktop-probe.json
+          if-no-files-found: warn
+
   licenses:
     runs-on: windows-2025
     steps:

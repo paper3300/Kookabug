@@ -1,0 +1,457 @@
+# 네이티브 파일 라이선스 표 (tools/native_audit.py, 구현 계획 M1 2.12)
+#
+# 배포물의 DLL·pyd·exe는 전부 여기 항목에 맞아야 한다. 맞는 항목이 없으면 감사 실패다.
+#
+# [[native]]
+# - glob: scope 기준 상대 경로 glob (대소문자 무시, `**`·`{a,b}` 가능). 먼저 적은 항목이 이긴다
+# - scope: site-packages (기본, site-packages 기준) | install (설치 폴더 기준)
+# - package: 그 파일을 가져온 배포물 (PyPI 이름 또는 python-build-standalone 등)
+# - license: 그 파일에 들어 있는 **구성요소 전부**의 SPDX 식. AND의 모든 부분이 허용이어야 한다.
+#   조건부 라이선스(MPL-2.0)는 이 항목의 reason을 예외 근거로 삼는다 (패키지 이름별 예외 대신)
+# - components: 구성요소와 라이선스 (사람이 읽는 설명, NOTICES에 싣는다)
+# - reason: 이 판정의 근거 (필수)
+# - [[native.texts]]: 구성요소 라이선스 원문. 식의 모든 잎(OR는 하나)이 어떤 원문의 covers에
+#   들어 있어야 한다(고지문 있는 LicenseRef는 그 고지문으로 덮임). 원문마다
+#     path(배포물 안, 같은 scope 기준 glob) 또는 file(레포, 이 표 폴더 기준) 하나,
+#     covers(덮는 잎: `ID` 또는 `ID WITH 예외`), expect(원문에 반드시 있어야 하는 글귀)
+#   원문이 없거나 글귀가 없으면 감사 실패. 원문은 NOTICES에 그대로 싣는다
+# - sbom: Rust 확장의 동봉 SBOM glob. 크레이트마다 라이선스를 판정하고 texts에 그 크레이트의
+#   원문 절이 있어야 한다 (tools/fetch_crate_licenses.py가 third_party_licenses/에 모은다)
+#
+# [[strip]] 설치본에서 빼는 파일·폴더. 빌드 입력에서는 반드시 무언가를 맞혀야 하고(빗나가면 실패),
+# 최종 트리에는 남아 있으면 안 된다. origin = wheel(감사 venv에도 있음) | pbs(Python 배포본)
+#
+# [licenseref."LicenseRef-..."] SPDX 밖 배포 조건. 원문 위치(source)와 처리 근거(reason) 필수.
+# LicenseRef는 이 표의 항목에서만 허용된다 (패키지 메타데이터에서는 미상)
+#
+# install scope 항목은 설치본 구성(T13)이 실제 트리로 다시 확인한다. 원문이 아직 없는 구성요소
+# (OpenSSL·libffi·zlib 등)는 texts가 비어 있어 최종 트리 감사가 실패하므로 T13이 채운다.
+
+# ---------------------------------------------------------------- numpy
+
+[[native]]
+glob = "numpy.libs/libscipy_openblas*.dll"
+package = "numpy"
+license = "BSD-3-Clause AND BSD-3-Clause-Open-MPI AND GPL-3.0-or-later WITH GCC-exception-3.1"
+components = "OpenBLAS (BSD-3-Clause), LAPACK (BSD-3-Clause-Open-MPI), GCC 런타임 라이브러리 libgfortran 등 (GPL-3.0-or-later WITH GCC-exception-3.1)"
+reason = "numpy LICENSE.txt의 Name/Files/License 절이 이 DLL의 세 구성요소를 적는다. GCC 런타임은 numpy 한정 패키지 예외(license-allowlist.toml package_with)"
+
+[[native.texts]]
+path = "numpy-*.dist-info/licenses/LICENSE.txt"
+covers = ["BSD-3-Clause", "BSD-3-Clause-Open-MPI", "GPL-3.0-or-later WITH GCC-exception-3.1"]
+expect = ["Name: OpenBLAS", "Name: LAPACK", "GCC RUNTIME LIBRARY EXCEPTION"]
+
+[[native]]
+glob = "numpy.libs/msvcp140-*.dll"
+package = "numpy"
+license = "LicenseRef-MS-VC-Redist"
+components = "Microsoft Visual C++ 런타임 (wheel 빌드 도구 delvewheel이 이름을 바꿔 넣음)"
+reason = "Visual C++ 재배포 가능 파일. 수정하지 않고 numpy가 넣은 그대로 배포한다. 고지는 LicenseRef 정의"
+
+[[native]]
+glob = "numpy/**/*.pyd"
+package = "numpy"
+license = "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0"
+components = "NumPy (BSD-3-Clause), pythoncapi-compat (0BSD), dragon4·pcg64·sfc64 (MIT), libdivide (Zlib), splitmix64 (CC0-1.0), pocketfft·highway·SVML·x86-simd-sort 등 (BSD-3-Clause)"
+reason = "numpy 메타데이터 License-Expression이 확장 모듈에 들어간 구성요소 전체를 적고, 각 원문이 dist-info/licenses 아래에 있다"
+
+[[native.texts]]
+path = "numpy-*.dist-info/licenses/**/*"
+covers = ["BSD-3-Clause", "0BSD", "MIT", "Zlib", "CC0-1.0"]
+expect = ["NumPy Developers", "BSD Zero Clause License", "Ryan Juckett", "zlib License", "To the extent possible under law"]
+
+# ---------------------------------------------------------------- opencv-python
+
+[[native]]
+glob = "cv2/opencv_videoio_ffmpeg*.dll"
+package = "opencv-python"
+license = "LGPL-2.1-or-later"
+components = "FFmpeg (영상 입출력 플러그인)"
+reason = "Kookabug는 영상 입출력을 쓰지 않는다. 금지 라이선스이므로 설치본에서 제거한다 ([[strip]])"
+
+[[native]]
+glob = "cv2/cv2.pyd"
+package = "opencv-python"
+license = "Apache-2.0 AND MIT AND BSD-3-Clause AND BSD-2-Clause AND ISC AND Zlib AND IJG AND libtiff AND BSD-3-Clause-Open-MPI AND LicenseRef-Intel-ISSL"
+components = "OpenCV (Apache-2.0), opencv-python 패키징 (MIT), Vulkan 헤더·flatbuffers (Apache-2.0), libwebp·protobuf·KAZE/AKAZE·libyuv (BSD-3-Clause), libspng·OpenJPEG·libavif·dav1d·aom (BSD-2-Clause), MLAS (MIT), quirc (ISC), libjpeg-turbo (IJG AND BSD-3-Clause AND Zlib), libtiff (libtiff), CLapack (BSD-3-Clause-Open-MPI), Intel IPP ICV (Intel Simplified Software License)"
+reason = "LICENSE-3RD-PARTY.txt에서 Windows x64 패키지에 들어간다고 적힌 절만 골랐다(Linux·macOS 전용 절 제외). FFmpeg는 별도 DLL"
+
+[[native.texts]]
+path = "cv2/LICENSE.txt"
+covers = ["MIT"]
+expect = ["Olli-Pekka Heinisuo"]
+
+[[native.texts]]
+path = "cv2/LICENSE-3RD-PARTY.txt"
+covers = ["Apache-2.0", "BSD-3-Clause", "BSD-2-Clause", "ISC", "Zlib", "IJG", "libtiff", "BSD-3-Clause-Open-MPI", "LicenseRef-Intel-ISSL"]
+expect = ["This license applies to OpenCV binary", "libjpeg-turbo", "TIFF library", "OpenJPEG", "QUIRC", "CLapack", "MLAS", "Intel Simplified Software License"]
+
+# ---------------------------------------------------------------- onnxruntime
+
+[[native]]
+glob = "onnxruntime/capi/*.{dll,pyd}"
+package = "onnxruntime"
+license = "MIT AND Apache-2.0 AND BSD-3-Clause AND BSD-2-Clause AND BSL-1.0 AND MPL-2.0"
+components = "ONNX Runtime·MLAS·SafeInt·GSL·nlohmann/json·date (MIT), onnx·abseil·flatbuffers·dlpack (Apache-2.0), protobuf·re2·pybind11 (BSD-3-Clause), cpuinfo (BSD-2-Clause), Boost mp11 (BSL-1.0), Eigen (MPL-2.0, 수정 없는 헤더 라이브러리)"
+reason = "ThirdPartyNotices.txt는 모든 빌드 구성(GPU·모바일 포함)의 합집합이라 CPU 빌드에 들어가는 구성요소의 라이선스를 식으로 적고 원문은 ThirdPartyNotices.txt 전체를 싣는다. Eigen(MPL-2.0)은 수정 없이 컴파일된 헤더이고 소스는 공개 저장소에 있다"
+
+[[native.texts]]
+path = "onnxruntime/LICENSE"
+covers = ["MIT"]
+expect = ["Microsoft Corporation"]
+
+[[native.texts]]
+path = "onnxruntime/ThirdPartyNotices.txt"
+covers = ["Apache-2.0", "BSD-3-Clause", "BSD-2-Clause", "BSL-1.0", "MPL-2.0"]
+expect = ["abseil-cpp", "google/re2", "pytorch/cpuinfo", "Boost Software License", "Mozilla Public License Version 2.0"]
+
+# ---------------------------------------------------------------- Rust 확장
+
+[[native]]
+glob = "windows_capture/*.pyd"
+package = "windows-capture"
+license = "MIT AND (MIT OR Apache-2.0)"
+components = "windows-capture (MIT), Rust 크레이트 pyo3·windows·rayon·parking_lot 등 (MIT OR Apache-2.0 등, SBOM)"
+sbom = "windows_capture-*.dist-info/sboms/*.json"
+reason = "동봉 SBOM의 excluded 밖 크레이트 전부의 원문을 third_party_licenses에 모았다. 여러 라이선스 중 고를 수 있는 크레이트는 MIT 또는 Apache-2.0을 고른다"
+
+[[native.texts]]
+path = "windows_capture-*.dist-info/licenses/LICENCE"
+covers = ["MIT"]
+expect = ["NiiightmareXD"]
+
+[[native.texts]]
+file = "third_party_licenses/windows-capture-crates.txt"
+covers = ["MIT", "Apache-2.0"]
+expect = ["windows-capture 2.0.1의 Rust 크레이트 라이선스 원문", "Apache License"]
+
+[[native]]
+glob = "pydantic_core/*.pyd"
+package = "pydantic-core"
+license = "MIT AND (MIT OR Apache-2.0) AND Unicode-3.0 AND Zlib"
+components = "pydantic-core (MIT), Rust 크레이트 pyo3·serde·regex·url 등 (MIT OR Apache-2.0), ICU4X idna 의존성 icu_*·zerovec·yoke 등 (Unicode-3.0), foldhash (Zlib)"
+sbom = "pydantic_core-*.dist-info/sboms/*.json"
+reason = "동봉 SBOM의 excluded 밖 크레이트 전부의 원문을 third_party_licenses에 모았다. 여러 라이선스 중 고를 수 있는 크레이트는 MIT 또는 Apache-2.0을 고른다"
+
+[[native.texts]]
+path = "pydantic_core-*.dist-info/licenses/LICENSE"
+covers = ["MIT"]
+expect = ["Samuel Colvin"]
+
+[[native.texts]]
+file = "third_party_licenses/pydantic-core-crates.txt"
+covers = ["MIT", "Apache-2.0", "Unicode-3.0", "Zlib"]
+expect = ["pydantic-core 2.50.1의 Rust 크레이트 라이선스 원문", "UNICODE LICENSE V3", "Unicode, Inc.", "Orson Peters"]
+
+[[native]]
+glob = "rpds/*.pyd"
+package = "rpds-py"
+license = "MIT AND (MIT OR Apache-2.0)"
+components = "rpds-py (MIT), Rust 크레이트 pyo3·rpds·archery 등 (MIT OR Apache-2.0)"
+sbom = "rpds_py-*.dist-info/sboms/*.json"
+reason = "동봉 SBOM의 excluded 밖 크레이트 전부의 원문을 third_party_licenses에 모았다"
+
+[[native.texts]]
+path = "rpds_py-*.dist-info/licenses/LICENSE"
+covers = ["MIT"]
+expect = ["Julian Berman"]
+
+[[native.texts]]
+file = "third_party_licenses/rpds-py-crates.txt"
+covers = ["MIT", "Apache-2.0"]
+expect = ["rpds-py 2026.9.1의 Rust 크레이트 라이선스 원문", "Apache License"]
+
+# ---------------------------------------------------------------- pyclipper
+
+[[native]]
+glob = "pyclipper/*.pyd"
+package = "pyclipper"
+license = "MIT AND BSL-1.0"
+components = "pyclipper 래퍼 (MIT), Clipper 6.4.2 (BSL-1.0)"
+reason = "메타데이터는 래퍼의 MIT만 적는다. 안의 Clipper 라이브러리는 Boost Software License 1.0"
+
+[[native.texts]]
+path = "pyclipper-*.dist-info/licenses/LICENSE"
+covers = ["MIT"]
+expect = ["Gregor Ratajc"]
+
+[[native.texts]]
+file = "third_party_licenses/clipper-BSL-1.0.txt"
+covers = ["BSL-1.0"]
+expect = ["Angus Johnson", "Boost Software License - Version 1.0"]
+
+# ---------------------------------------------------------------- protobuf (onnxruntime 의존성)
+
+[[native]]
+glob = "google/_upb/*.pyd"
+package = "protobuf"
+license = "BSD-3-Clause AND MIT"
+components = "protobuf·upb (BSD-3-Clause), utf8_range (MIT)"
+reason = "protobuf의 upb 기반 C 확장"
+
+[[native.texts]]
+path = "protobuf-*.dist-info/LICENSE"
+covers = ["BSD-3-Clause"]
+expect = ["Google Inc."]
+
+[[native.texts]]
+file = "third_party_licenses/protobuf-utf8_range.txt"
+covers = ["MIT"]
+expect = ["Yibo Cai"]
+
+# ---------------------------------------------------------------- python-build-standalone (설치본, T13)
+
+[[native]]
+scope = "install"
+glob = "python/DLLs/_bz2.pyd"
+package = "python-build-standalone"
+license = "PSF-2.0 AND bzip2-1.0.6"
+components = "CPython (PSF-2.0), bzip2 (bzip2-1.0.6)"
+reason = "python/LICENSE.txt에 bzip2 고지가 있다"
+
+[[native.texts]]
+path = "python/LICENSE.txt"
+covers = ["PSF-2.0", "bzip2-1.0.6"]
+expect = ["PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2", "libbzip2"]
+
+[[native]]
+scope = "install"
+glob = "python/DLLs/_zstd.pyd"
+package = "python-build-standalone"
+license = "PSF-2.0 AND (BSD-3-Clause OR GPL-2.0-only)"
+components = "CPython (PSF-2.0), Zstandard (BSD-3-Clause 선택)"
+reason = "python/LICENSE.txt에 Zstandard BSD 고지가 있다"
+
+[[native.texts]]
+path = "python/LICENSE.txt"
+covers = ["PSF-2.0", "BSD-3-Clause"]
+expect = ["PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2", "For Zstandard software"]
+
+[[native]]
+scope = "install"
+glob = "python/DLLs/_lzma.pyd"
+package = "python-build-standalone"
+license = "PSF-2.0 AND 0BSD"
+components = "CPython (PSF-2.0), xz/liblzma (0BSD)"
+reason = "liblzma 5.6부터 0BSD. T13이 PBS 빌드의 xz 버전과 원문을 넣는다"
+
+[[native.texts]]
+path = "python/LICENSE.txt"
+covers = ["PSF-2.0"]
+expect = ["PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2"]
+
+[[native]]
+scope = "install"
+glob = "python/DLLs/_decimal.pyd"
+package = "python-build-standalone"
+license = "PSF-2.0 AND BSD-2-Clause"
+components = "CPython (PSF-2.0), mpdecimal (BSD-2-Clause)"
+reason = "libmpdec를 정적으로 포함. 원문은 T13"
+
+[[native.texts]]
+path = "python/LICENSE.txt"
+covers = ["PSF-2.0"]
+expect = ["PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2"]
+
+[[native]]
+scope = "install"
+glob = "python/DLLs/{pyexpat,_elementtree}.pyd"
+package = "python-build-standalone"
+license = "PSF-2.0 AND MIT"
+components = "CPython (PSF-2.0), expat (MIT)"
+reason = "expat을 정적으로 포함. 원문은 T13"
+
+[[native.texts]]
+path = "python/LICENSE.txt"
+covers = ["PSF-2.0"]
+expect = ["PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2"]
+
+[[native]]
+scope = "install"
+glob = "python/DLLs/*.pyd"
+package = "python-build-standalone"
+license = "PSF-2.0"
+components = "CPython 표준 확장 모듈 (_ssl·_hashlib는 libssl·libcrypto DLL, _ctypes는 libffi DLL, _sqlite3는 sqlite3 DLL, _tkinter는 Tcl/Tk DLL에 동적 링크)"
+reason = "위에서 따로 적은 모듈 밖의 표준 확장 모듈"
+
+[[native.texts]]
+path = "python/LICENSE.txt"
+covers = ["PSF-2.0"]
+expect = ["PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2"]
+
+[[native]]
+scope = "install"
+glob = "python/{python.exe,pythonw.exe,python3.dll,python314.dll}"
+package = "python-build-standalone"
+license = "PSF-2.0 AND MIT"
+components = "CPython (PSF-2.0), HACL* 해시 구현 (MIT)"
+reason = "CPython 인터프리터. HACL* 원문은 T13"
+
+[[native.texts]]
+path = "python/LICENSE.txt"
+covers = ["PSF-2.0"]
+expect = ["PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2"]
+
+[[native]]
+scope = "install"
+glob = "python/Lib/venv/scripts/nt/*.exe"
+package = "python-build-standalone"
+license = "PSF-2.0"
+reason = "venv 실행기 (CPython 소스)"
+
+[[native.texts]]
+path = "python/LICENSE.txt"
+covers = ["PSF-2.0"]
+expect = ["PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2"]
+
+[[native]]
+scope = "install"
+glob = "python/DLLs/lib{crypto,ssl}-3*.dll"
+package = "python-build-standalone"
+license = "Apache-2.0"
+components = "OpenSSL 3"
+reason = "OpenSSL 3.x는 Apache-2.0. 원문은 T13"
+
+[[native]]
+scope = "install"
+glob = "python/DLLs/libffi-*.dll"
+package = "python-build-standalone"
+license = "MIT"
+components = "libffi"
+reason = "libffi는 MIT. 원문은 T13"
+
+[[native]]
+scope = "install"
+glob = "python/DLLs/libtommath.dll"
+package = "python-build-standalone"
+license = "Unlicense"
+components = "libtommath (Tcl 9의 의존성)"
+reason = "libtommath는 Unlicense. 원문은 T13"
+
+[[native]]
+scope = "install"
+glob = "python/DLLs/sqlite3.dll"
+package = "python-build-standalone"
+license = "LicenseRef-sqlite-blessing"
+components = "SQLite"
+reason = "SQLite는 저작권을 포기한 공개 도메인 (blessing). 고지는 LicenseRef 정의"
+
+[[native]]
+scope = "install"
+glob = "python/DLLs/zlib1.dll"
+package = "python-build-standalone"
+license = "Zlib"
+components = "zlib"
+reason = "zlib는 Zlib. 원문은 T13"
+
+[[native]]
+scope = "install"
+glob = "python/{DLLs/tcl9*.dll,tcl/**/*.dll}"
+package = "python-build-standalone"
+license = "TCL"
+components = "Tcl/Tk 9"
+reason = "python/LICENSE.txt에 Tcl·Tk license.terms가 있다. 재배포 시 고지 보존"
+
+[[native.texts]]
+path = "python/LICENSE.txt"
+covers = ["TCL"]
+expect = ["Regents of the University of California"]
+
+[[native]]
+scope = "install"
+glob = "python/vcruntime140*.dll"
+package = "python-build-standalone"
+license = "LicenseRef-MS-VC-Redist"
+components = "Microsoft Visual C++ 런타임"
+reason = "PBS가 넣은 Visual C++ 재배포 가능 파일"
+
+[[native]]
+scope = "install"
+glob = "python/{msvcp140*.dll,concrt140.dll}"
+package = "vc-redist"
+license = "LicenseRef-MS-VC-Redist"
+components = "Microsoft Visual C++ 런타임 (앱 로컬 복사)"
+reason = "빌드 머신 Visual Studio의 VC\\Redist에서 앱 로컬로 복사한다 (2.12)"
+
+# ---------------------------------------------------------------- 실행기·도구 (설치본, T13)
+
+[[native]]
+scope = "install"
+glob = "{bin,python/Scripts}/*.exe"
+package = "uv"
+license = "Apache-2.0 OR MIT"
+components = "uv 실행기(trampoline)"
+reason = "uv가 만든 콘솔 실행기. 원문은 T13"
+
+[[native]]
+scope = "install"
+glob = "uv/uv*.exe"
+package = "uv"
+license = "Apache-2.0 OR MIT"
+components = "uv"
+reason = "동봉 uv. 원문은 T13"
+
+[[native]]
+scope = "install"
+glob = "unins*.exe"
+package = "inno-setup"
+license = "LicenseRef-InnoSetup"
+components = "Inno Setup 제거기"
+reason = "Inno Setup이 설치 폴더에 넣는 제거 프로그램. 원문(license.txt)은 T13"
+
+# ---------------------------------------------------------------- 제거 목록
+
+[[strip]]
+glob = "cv2/opencv_videoio_ffmpeg*.dll"
+reason = "FFmpeg (LGPL). 영상 입출력을 쓰지 않는다"
+
+[[strip]]
+scope = "site-packages"
+origin = "pbs"
+glob = "pip"
+reason = "PBS에 든 pip. 설치본은 uv를 쓴다"
+
+[[strip]]
+scope = "site-packages"
+origin = "pbs"
+glob = "pip-*.dist-info"
+reason = "PBS에 든 pip"
+
+[[strip]]
+scope = "install"
+origin = "pbs"
+glob = "python/Lib/ensurepip"
+reason = "pip 설치기 (pip wheel 동봉)"
+
+[[strip]]
+scope = "install"
+origin = "pbs"
+glob = "python/Lib/idlelib"
+reason = "IDLE (쓰지 않음)"
+
+# ---------------------------------------------------------------- LicenseRef
+
+[licenseref."LicenseRef-MS-VC-Redist"]
+name = "Microsoft Visual C++ Redistributable (Visual Studio 사용 조건의 Distributable Code)"
+source = "https://visualstudio.microsoft.com/license-terms/ (Visual Studio 2022 License Terms, DISTRIBUTABLE CODE)"
+reason = "수정 없이, 그 런타임을 쓰는 프로그램과 함께 Windows에서 실행하도록 배포한다. Microsoft 상표·고지를 바꾸지 않는다"
+notice = "이 배포물에는 Microsoft Visual C++ 런타임 파일(vcruntime140*.dll, msvcp140*.dll, concrt140.dll)이 수정 없이 들어 있다. Copyright (c) Microsoft Corporation."
+
+[licenseref."LicenseRef-Intel-ISSL"]
+name = "Intel Simplified Software License (Intel IPP ICV, opencv-python의 cv2.pyd에 정적 링크)"
+source = "opencv-python LICENSE-3RD-PARTY.txt의 'Intel(R) IPP ICV' 절"
+reason = "바이너리를 수정 없이 재배포하는 것은 허용된다. 저작권 표시와 조건을 배포물에 함께 싣는다(LICENSE-3RD-PARTY.txt 전체를 NOTICES에 포함). Kookabug는 이 라이브러리를 고치거나 분석하지 않는다"
+
+[licenseref."LicenseRef-sqlite-blessing"]
+name = "SQLite 공개 도메인 선언 (blessing)"
+source = "https://sqlite.org/copyright.html"
+reason = "저작권을 주장하지 않는 공개 도메인. 조건 없음"
+notice = """The author disclaims copyright to this source code. In place of a legal notice, here is a blessing:
+    May you do good and not evil.
+    May you find forgiveness for yourself and forgive others.
+    May you share freely, never taking more than you give."""
+
+[licenseref."LicenseRef-InnoSetup"]
+name = "Inno Setup License"
+source = "Inno Setup 설치 폴더의 license.txt (https://jrsoftware.org/files/is/license.txt)"
+reason = "Inno Setup으로 만든 설치 파일·제거기의 재배포를 허용한다. 저작권 표시를 보존한다"

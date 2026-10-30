@@ -57,6 +57,31 @@ def test_audit_pipeline_on_workspace(tmp_path: Path) -> None:
     for req in baseline.active.values():
         assert f"{req.display_name} {req.version}" in notices
 
+    # M1 플랫폼 의존성 (구현 계획 M1 2.1): opencv는 windows-capture가 요구하는 GUI판 하나,
+    # OCR은 rapidocr 패키지 없이 onnxruntime + pyclipper
+    for name in ("opencv-python", "windows-capture", "onnxruntime", "pyclipper", "numpy"):
+        assert name in expected, name
+    # onnxruntime의 전이 의존성
+    for name in ("flatbuffers", "protobuf", "packaging"):
+        assert name in expected, name
+    for name in ("opencv-python-headless", "shapely", "rapidocr", "rapidocr-onnxruntime"):
+        assert name not in expected, name
+    runtime_txt = (build / "runtime.txt").read_text("utf-8")
+    assert "opencv-python-headless" not in runtime_txt
+
+    # 빌드 입력 감사: wheel의 네이티브 파일이 표로 판정되고 NOTICES에 실린다
+    assert "# 네이티브 파일 (DLL·pyd·exe)과 그 안의 구성요소" in notices
+    assert "numpy: numpy.libs/libscipy_openblas*.dll" in notices
+    assert "numpy: GPL-3.0-or-later WITH GCC-exception-3.1" in notices
+    assert "LicenseRef-Intel-ISSL" in notices
+    assert "# 네이티브 파일 근거 원문" in notices
+    # 정적으로 들어간 구성요소의 원문까지 실린다 (Rust 크레이트 ICU4X·foldhash, Clipper, utf8_range)
+    assert "UNICODE LICENSE V3" in notices
+    assert "Unicode, Inc." in notices
+    assert "Orson Peters" in notices
+    assert "tools:third_party_licenses/clipper-BSL-1.0.txt" in notices
+    assert "Yibo Cai" in notices
+
 
 FIXTURE_PYPROJECT = """\
 [project]

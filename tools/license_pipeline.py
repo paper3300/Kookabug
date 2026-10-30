@@ -5,7 +5,8 @@
 3. 감사 도구(pip-licenses)는 `uvx`로 다른 환경에서 돌려 대상 venv를 `--with-system`으로 스캔한다.
    기본 제외 목록(prettytable·wcwidth 등)이 제품의 공통 의존성을 빼지 않게 하려는 것이다
 4. JS prod 의존성 목록 (`pnpm licenses list --prod --json`)
-5. `license_audit.py`로 판정하고 THIRD_PARTY_NOTICES 초안을 쓴다
+5. `license_audit.py`로 판정하고 THIRD_PARTY_NOTICES 초안을 쓴다. 대상 venv의 site-packages에 있는
+   네이티브 파일(DLL·pyd)도 `native-licenses.toml`로 판정한다 (빌드 입력 감사, `native_audit.py`)
 
 CI와 `tools/license_audit.ps1`, 테스트가 모두 이 스크립트를 부른다.
 """
@@ -29,6 +30,10 @@ REPO_ROOT = TOOLS_DIR.parent
 PIP_LICENSES_VERSION = "5.5.5"
 BUILD_MARKER = ".kookabug-license-audit"
 PNPM_EMPTY_OUTPUT = "No licenses in packages found"
+# 프로젝트 루트 기준. 네이티브 표가 없는 프로젝트(테스트용 작은 프로젝트)는 네이티브 감사를 안 한다
+NATIVE_TABLE = "tools/native-licenses.toml"
+# OCR 모델 표 (T7이 만든다). 있으면 라이선스를 판정하고 NOTICES에 싣는다
+MODELS_TABLE = "python/kookabug_platform/src/kookabug_platform/ocr/models.toml"
 
 
 class PipelineError(Exception):
@@ -87,6 +92,12 @@ def venv_python(venv: Path) -> Path:
     return venv / "Scripts" / "python.exe" if os.name == "nt" else venv / "bin" / "python"
 
 
+def site_packages(venv: Path) -> Path:
+    if os.name == "nt":
+        return venv / "Lib" / "site-packages"
+    return next((venv / "lib").glob("python*/site-packages"))
+
+
 def has_requirements(runtime_txt: Path) -> bool:
     return any(
         line.split("#", 1)[0].strip() for line in runtime_txt.read_text("utf-8").splitlines()
@@ -100,6 +111,8 @@ def run_pipeline(
     python_version: str = "3.14",
     with_js: bool = True,
     allowlist: Path = TOOLS_DIR / "license-allowlist.toml",
+    native_table: Path | None = None,
+    models_table: Path | None = None,
 ) -> int:
     uv = _tool("uv")
     project = project.resolve()
@@ -181,6 +194,14 @@ def run_pipeline(
         "--notices-out",
         str(notices),
     ]
+    # 빌드 입력 감사: 대상 venv에 설치된 wheel의 네이티브 파일
+    native_table = native_table or project / NATIVE_TABLE
+    if native_table.is_file():
+        audit_args += ["--native-table", str(native_table), "--site-packages"]
+        audit_args.append(str(site_packages(venv)))
+    models_table = models_table or project / MODELS_TABLE
+    if models_table.is_file():
+        audit_args += ["--models-table", str(models_table)]
     if with_js:
         out = _run(
             [_tool("pnpm"), "licenses", "list", "--prod", "--json"], cwd=project, capture=True

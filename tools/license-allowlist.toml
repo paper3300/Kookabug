@@ -1,20 +1,41 @@
 # 라이선스 감사 허용 목록 (tools/license_audit.py)
 #
 # - 라이선스는 SPDX 식으로 판정한다. OR은 하나만 허용돼도 되고, AND는 전부 허용돼야 한다
-# - conditional은 [exceptions]에 패키지 이름별 예외(이유 포함)가 있을 때만 허용한다
+# - conditional은 [exceptions]에 패키지 이름별 예외(이유 포함)가 있을 때만 허용한다.
+#   DLL 안 구성요소(native-licenses.toml 항목)일 때는 그 항목의 reason이 예외 근거다
 # - denied_patterns에 걸리는 라이선스는 예외로도 허용하지 않는다
 # - 라이선스 미상은 [exceptions]에 직접 확인한 라이선스와 이유를 적어야 허용한다
+# - LicenseRef-*는 패키지 메타데이터에서는 허용하지 않는다. 네이티브 표(native-licenses.toml)에
+#   원문 위치·처리 근거를 적은 [licenseref]가 있을 때 그 표의 항목에서만 허용한다
 
 allowed = [
     "0BSD",
     "Apache-2.0",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    # LAPACK (numpy의 OpenBLAS, opencv의 CLapack)
+    "BSD-3-Clause-Open-MPI",
+    # Clipper (pyclipper)
+    "BSL-1.0",
+    # bzip2 (Python의 _bz2)
+    "bzip2-1.0.6",
+    "CC0-1.0",
+    # libjpeg (opencv)
+    "IJG",
     "ISC",
+    # libtiff (opencv)
+    "libtiff",
     "MIT",
     "PSF-2.0",
     "Python-2.0",
+    # Tcl/Tk (Python의 tkinter)
+    "TCL",
+    # ICU4X 크레이트 (pydantic-core의 Rust 바이너리)
+    "Unicode-3.0",
+    # unicode-ident (Rust 확장 SBOM의 크레이트, 구판 Unicode 라이선스)
+    "Unicode-DFS-2016",
     "Unlicense",
+    "Zlib",
 ]
 
 conditional = ["MPL-2.0"]
@@ -50,6 +71,14 @@ denied_patterns = [
 "Python Software Foundation License" = "PSF-2.0"
 "The Unlicense (Unlicense)" = "Unlicense"
 "Mozilla Public License 2.0 (MPL 2.0)" = "MPL-2.0"
+"3-Clause BSD License" = "BSD-3-Clause"
+
+# 패키지별 "라이선스 WITH 예외" (이유 필수). 그 패키지의 메타데이터와 네이티브 파일에서만 허용하고,
+# denied_patterns보다 먼저 본다. 다른 패키지에서 같은 식이 나오면 금지 그대로다
+[package_with.numpy]
+"GPL-3.0-or-later WITH GCC-exception-3.1" = """numpy.libs의 OpenBLAS DLL에 정적으로 들어간 GCC 런타임 \
+라이브러리(libgfortran 등). GCC Runtime Library Exception 3.1에 따라 GCC로 컴파일한 결과물에 결합된 \
+런타임 라이브러리에는 GPL 조건이 걸리지 않는다. 원문은 numpy의 LICENSE.txt에 있고 NOTICES에 싣는다"""
 
 # 패키지 이름별 예외. 예:
 # "some-package" = { license = "MPL-2.0", reason = "수정 없이 동적으로만 쓴다. 소스 위치를 NOTICES에 적는다" }

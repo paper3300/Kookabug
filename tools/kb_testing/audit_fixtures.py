@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import tomllib
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 import license_audit as la
+import native_audit as na
 
 ALLOWLIST = Path(__file__).resolve().parents[1] / "license-allowlist.toml"
 POLICY_BASE: dict[str, Any] = tomllib.loads(ALLOWLIST.read_text(encoding="utf-8"))
@@ -48,6 +50,42 @@ def scan_item(name: str, version: str, license: str = "MIT", text: str = "") -> 
         "NoticeFile": "UNKNOWN",
         "NoticeText": "UNKNOWN",
     }
+
+
+def write_tree(root: Path, files: Mapping[str, str | bytes]) -> Path:
+    """상대 경로 → 내용으로 가짜 트리를 만든다."""
+    for rel, content in files.items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(content, bytes):
+            path.write_bytes(content)
+        else:
+            path.write_text(content, encoding="utf-8")
+    return root
+
+
+def write_record(site: Path, dist: str, tops: Sequence[str], extra: Sequence[str] = ()) -> None:
+    """`tops` 폴더와 `<dist>.dist-info`(예: pkg-1.0) 아래 파일 전부와 `extra`로 RECORD를 쓴다."""
+    info = f"{dist}.dist-info"
+    rels = sorted(
+        p.relative_to(site).as_posix()
+        for p in site.rglob("*")
+        if p.is_file() and p.relative_to(site).parts[0] in (*tops, info) and p.name != "RECORD"
+    )
+    lines = [f"{r},sha256=x,1" for r in [*rels, *extra]] + [f"{info}/RECORD,,"]
+    record = site / info / "RECORD"
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def native_table(
+    native: Sequence[Mapping[str, Any]] = (),
+    strip: Sequence[Mapping[str, Any]] = (),
+    refs: Mapping[str, Mapping[str, str]] | None = None,
+) -> na.NativeTable:
+    return na.load_native_table(
+        {"native": list(native), "strip": list(strip), "licenseref": dict(refs or {})}
+    )
 
 
 def run_audit(

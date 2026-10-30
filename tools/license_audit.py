@@ -17,7 +17,7 @@ import json
 import re
 import sys
 import tomllib
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
@@ -237,6 +237,8 @@ class Policy:
     exceptions: dict[NormalizedName, PackageException] = field(default_factory=dict)
     # 검토한 "라이선스 WITH 예외" 조합. 목록 밖 조합은 미상으로 본다
     allowed_with: frozenset[str] = frozenset()
+    # 패키지별 "라이선스 WITH 예외" → 이유. 그 패키지에서만, 거부 패턴보다 먼저 본다
+    package_with: dict[NormalizedName, dict[str, str]] = field(default_factory=dict)
 
 
 def load_policy(data: Mapping[str, Any]) -> Policy:
@@ -262,7 +264,28 @@ def load_policy(data: Mapping[str, Any]) -> Policy:
                 f"allowed_with 항목은 '<라이선스> WITH <예외>' 형식이다: {entry!r}"
             )
         allowed_with.add(f"{m[1]} WITH {m[2]}")
-    return Policy(allowed, conditional, patterns, aliases, exceptions, frozenset(allowed_with))
+    package_with: dict[NormalizedName, dict[str, str]] = {}
+    for name, combos in data.get("package_with", {}).items():
+        table: dict[str, str] = {}
+        for combo, reason in combos.items():
+            m = _WITH_ENTRY.match(str(combo).strip())
+            if m is None:
+                raise AuditInputError(
+                    f"package_with.{name} 항목은 '<라이선스> WITH <예외>' 형식이다: {combo!r}"
+                )
+            if not str(reason).strip():
+                raise AuditInputError(f"package_with.{name} {combo!r}: 이유가 있어야 한다")
+            table[f"{m[1]} WITH {m[2]}"] = str(reason).strip()
+        package_with[canonicalize_name(name)] = table
+    return Policy(
+        allowed,
+        conditional,
+        patterns,
+        aliases,
+        exceptions,
+        frozenset(allowed_with),
+        package_with,
+    )
 
 
 def load_policy_file(path: Path) -> Policy:
@@ -276,10 +299,16 @@ _SPDX_ID = re.compile(r"^[A-Za-z0-9.\-]+\+?$")
 _WITH_ENTRY = re.compile(r"^([A-Za-z0-9.\-]+) WITH ([A-Za-z0-9.\-]+)$")
 
 
-def _classify_id(lic_id: str, policy: Policy) -> Status:
+LICENSE_REF_PREFIX = "LicenseRef-"
+
+
+def _classify_id(lic_id: str, policy: Policy, license_refs: frozenset[str]) -> Status:
     lic_id = lic_id.removesuffix("+")
     if any(p.search(lic_id) for p in policy.denied_patterns):
         return Status.DENIED
+    # 비 SPDX 배포물은 네이티브 표에 원문·이유를 적은 LicenseRef로만 허용한다
+    if lic_id.startswith(LICENSE_REF_PREFIX):
+        return Status.ALLOWED if lic_id in license_refs else Status.UNKNOWN
     if lic_id in policy.allowed:
         return Status.ALLOWED
     if lic_id in policy.conditional:
@@ -287,8 +316,14 @@ def _classify_id(lic_id: str, policy: Policy) -> Status:
     return Status.UNKNOWN
 
 
-def _eval_expression(expr: str, policy: Policy) -> Status:
+def _eval_expression(
+    expr: str,
+    policy: Policy,
+    package: NormalizedName | None = None,
+    license_refs: frozenset[str] = frozenset(),
+) -> Status:
     """SPDX 식(AND·OR·WITH·괄호)을 판정한다. OR은 가장 나은 쪽, AND는 가장 나쁜 쪽."""
+    package_with = policy.package_with.get(package, {}) if package else {}
     tokens = [t for t in _TOKEN.findall(expr) if t.strip()]
     if not tokens:
         return Status.UNKNOWN
@@ -334,15 +369,19 @@ def _eval_expression(expr: str, policy: Policy) -> Status:
             take()
             return result
         lic_id = take_id()
-        status = _classify_id(lic_id, policy)
+        status = _classify_id(lic_id, policy, license_refs)
         if peek() != "WITH":
             return status
         take()
         exception_id = take_id()
+        combo = f"{lic_id.removesuffix('+')} WITH {exception_id}"
+        # 그 패키지에 한정해 검토한 조합은 거부 패턴보다 먼저 본다 (예: numpy의 GCC 런타임)
+        if combo in package_with:
+            return Status.ALLOWED
         # 예외가 붙으면 다른 조건이 된다. 금지 계열은 그대로 금지, 그 외는 검토한 조합만 허용
         if status is Status.DENIED:
             return Status.DENIED
-        if f"{lic_id.removesuffix('+')} WITH {exception_id}" in policy.allowed_with:
+        if combo in policy.allowed_with:
             return Status.ALLOWED
         return Status.UNKNOWN
 
@@ -353,8 +392,79 @@ def _eval_expression(expr: str, policy: Policy) -> Status:
     return result if pos == len(tokens) else Status.UNKNOWN
 
 
-def classify_license(text: str, policy: Policy) -> tuple[Status, str]:
-    """스캐너가 준 라이선스 문자열을 판정한다. 돌려주는 문자열은 별칭을 푼 SPDX 식."""
+def expression_satisfied(expr: str, leaf_ok: Callable[[str], bool]) -> tuple[bool, list[str]]:
+    """SPDX 식이 `leaf_ok`로 채워지는가. 잎은 `ID` 또는 `ID WITH 예외`. OR는 하나, AND는 전부.
+
+    (채워짐, 못 채운 잎들). 식을 읽을 수 없으면 (False, [식]).
+    """
+    tokens = [t for t in _TOKEN.findall(expr) if t.strip()]
+    pos = 0
+
+    def peek() -> str | None:
+        return tokens[pos].upper() if pos < len(tokens) else None
+
+    def take() -> str:
+        nonlocal pos
+        pos += 1
+        return tokens[pos - 1]
+
+    def parse_or() -> tuple[bool, list[str]]:
+        ok, missing = parse_and()
+        while peek() == "OR":
+            take()
+            ok2, missing2 = parse_and()
+            if ok2 and not ok:
+                ok, missing = True, []
+            elif not ok and not ok2:
+                missing = missing + missing2
+        return ok, missing
+
+    def parse_and() -> tuple[bool, list[str]]:
+        ok, missing = parse_term()
+        while peek() == "AND":
+            take()
+            ok2, missing2 = parse_term()
+            ok, missing = ok and ok2, missing + missing2
+        return ok, missing
+
+    def parse_term() -> tuple[bool, list[str]]:
+        if peek() == "(":
+            take()
+            result = parse_or()
+            if peek() != ")":
+                raise ValueError("괄호가 닫히지 않았다")
+            take()
+            return result
+        tok = peek()
+        if tok is None or tok in _OPERATORS:
+            raise ValueError("식이 잘렸다")
+        leaf = take().removesuffix("+")
+        if peek() == "WITH":
+            take()
+            leaf = f"{leaf} WITH {take()}"
+        return (True, []) if leaf_ok(leaf) else (False, [leaf])
+
+    try:
+        ok, missing = parse_or()
+    except ValueError, IndexError:
+        return False, [expr]
+    if pos != len(tokens):
+        return False, [expr]
+    return ok, missing
+
+
+def classify_license(
+    text: str,
+    policy: Policy,
+    *,
+    package: NormalizedName | None = None,
+    license_refs: frozenset[str] = frozenset(),
+) -> tuple[Status, str]:
+    """스캐너가 준 라이선스 문자열을 판정한다. 돌려주는 문자열은 별칭을 푼 SPDX 식.
+
+    `package`를 주면 그 패키지의 `package_with` 예외를 쓴다. `license_refs`는 네이티브 표에
+    정의된 LicenseRef 이름들이다 (패키지 메타데이터 판정에는 주지 않는다).
+    """
     text = text.strip()
     if not text or text == UNKNOWN:
         return Status.UNKNOWN, UNKNOWN
@@ -363,7 +473,7 @@ def classify_license(text: str, policy: Policy) -> tuple[Status, str]:
     resolved = [policy.aliases.get(p.casefold(), p) for p in parts]
     statuses: list[Status] = []
     for orig, res in zip(parts, resolved, strict=True):
-        status = _eval_expression(res, policy)
+        status = _eval_expression(res, policy, package, license_refs)
         # SPDX 식이 아닌 긴 이름("GNU General Public License v3 ...")도 금지 계열이면 금지로 본다
         if status is Status.UNKNOWN and any(p.search(orig) for p in policy.denied_patterns):
             status = Status.DENIED
@@ -380,7 +490,7 @@ class LicenseVerdict:
 
 
 def judge_package(name: NormalizedName, license_text: str, policy: Policy) -> LicenseVerdict:
-    status, expr = classify_license(license_text, policy)
+    status, expr = classify_license(license_text, policy, package=name)
     exc = policy.exceptions.get(name)
     if status is Status.ALLOWED:
         return LicenseVerdict(True, expr, "허용")
@@ -391,7 +501,7 @@ def judge_package(name: NormalizedName, license_text: str, policy: Policy) -> Li
         if status is Status.NEEDS_EXCEPTION:
             return LicenseVerdict(False, expr, "패키지 이름별 예외(이유 포함)가 있어야 허용")
         return LicenseVerdict(False, expr, "라이선스 미상 또는 허용 목록 밖")
-    exc_status, exc_expr = classify_license(exc.license, policy)
+    exc_status, exc_expr = classify_license(exc.license, policy, package=name)
     if exc_status in (Status.ALLOWED, Status.NEEDS_EXCEPTION):
         return LicenseVerdict(True, exc_expr, f"예외: {exc.reason}")
     return LicenseVerdict(False, exc_expr, "예외에 적은 라이선스도 허용 목록 밖")
@@ -454,7 +564,9 @@ def compare_sets(
 def render_notices(
     py: Sequence[tuple[ScannedPackage | None, RuntimeRequirement, str]],
     js: Sequence[tuple[ScannedPackage, str]],
+    extra_sections: Sequence[str] = (),
 ) -> str:
+    """패키지별 절 뒤에 `extra_sections`(네이티브 파일·예외·모델 절, native_audit)를 붙인다."""
     lines = [
         "THIRD-PARTY SOFTWARE NOTICES (초안)",
         "",
@@ -481,6 +593,8 @@ def render_notices(
         )
     for pkg, lic in js:
         section("JavaScript", pkg.display_name, pkg.version, lic, pkg.license_text, "")
+    for extra in extra_sections:
+        lines.extend([extra.rstrip(), ""])
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -490,6 +604,7 @@ def audit(
     py_scan: Mapping[NormalizedName, ScannedPackage],
     js_scan: Sequence[ScannedPackage],
     policy: Policy,
+    extra_notices: Sequence[str] = (),
 ) -> AuditResult:
     baseline = select_active(runtime, marker_env)
     problems, notes = compare_sets(baseline, py_scan)
@@ -528,7 +643,7 @@ def audit(
     return AuditResult(
         problems=problems,
         notes=notes,
-        notices=render_notices(py_entries, js_entries),
+        notices=render_notices(py_entries, js_entries, extra_notices),
         python_rows=py_rows,
         js_rows=js_rows,
     )
@@ -553,7 +668,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--js", type=Path, help="pnpm licenses JSON (없으면 JS 감사 생략)")
     parser.add_argument("--allowlist", type=Path, required=True)
     parser.add_argument("--notices-out", type=Path, required=True)
+    parser.add_argument(
+        "--native-table", type=Path, help="네이티브 파일 표 (주면 --site-packages도 감사)"
+    )
+    parser.add_argument("--site-packages", type=Path, help="대상 venv의 site-packages")
+    parser.add_argument("--models-table", type=Path, help="OCR 모델 표 (models.toml)")
+    parser.add_argument("--models-dir", type=Path, help="받아 둔 모델 폴더 (주면 해시 확인)")
     args = parser.parse_args(argv)
+
+    # native_audit가 이 모듈을 import하므로 여기서 부른다
+    import native_audit as na
 
     try:
         runtime = parse_runtime(args.runtime.read_text(encoding="utf-8"))
@@ -561,7 +685,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         py_scan = parse_pip_licenses(_read_json(args.python))
         js_scan = parse_pnpm_licenses(_read_json(args.js)) if args.js else []
         policy = load_policy_file(args.allowlist)
-        result = audit(runtime, marker_env, py_scan, js_scan, policy)
+        native: na.InputAudit | None = None
+        if args.native_table is not None:
+            if args.site_packages is None:
+                raise AuditInputError("--native-table에는 --site-packages가 있어야 한다")
+            native = na.audit_build_input(
+                na.Layout.site_packages(args.site_packages),
+                na.load_native_table_file(args.native_table),
+                policy,
+                models=na.load_model_table_file(args.models_table) if args.models_table else None,
+                models_dir=args.models_dir,
+            )
+        result = audit(
+            runtime,
+            marker_env,
+            py_scan,
+            js_scan,
+            policy,
+            extra_notices=native.notice_sections if native else (),
+        )
+        if native is not None:
+            result.problems.extend(native.problems)
+            result.notes.extend(native.notes)
     except AuditInputError as exc:
         print(f"라이선스 감사 입력 오류: {exc}", file=sys.stderr)
         return 2
@@ -574,6 +719,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"  {name}=={version}  {lic}")
     for name, version, lic in result.js_rows:
         print(f"  (JS) {name}@{version}  {lic}")
+    if native is not None:
+        print(f"네이티브 파일 {len(native.files)}개")
+        for nf in native.files:
+            print(f"  {nf.rel}  {nf.entry.license if nf.entry else '(표에 없음)'}")
     for note in result.notes:
         print(f"참고: {note}")
     if result.problems:
