@@ -5,6 +5,7 @@
                  [--plugin-module 모듈]...
     kookabug target test <target.json> (--window 제목 | --hwnd N | --image PNG) ...  (target_cmd)
     kookabug screen test <ID|파일> (--window 제목 | --hwnd N | --image PNG) ...       (screen_cmd)
+    kookabug doctor [--profile headless|desktop] [--json]                            (doctor_cmd)
 
 이 프로세스가 감독자다: `WorkspaceService.start_run`(권한 판정 → 감독자 시작) → 진행 출력(`follow`로
 `step.end` 한 줄씩) → `RunHandle.wait()`(runner 종료 → 복구 경로) → 판정에 맞는 종료 코드.
@@ -209,6 +210,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--workspace", metavar="DIR", help="워크스페이스 루트 (기본: 현재 폴더에서 위로 찾는다)"
     )
     screen_test.add_argument("--json", action="store_true", help="결과 JSON 한 개만 출력한다")
+
+    doctor = commands.add_parser(
+        "doctor",
+        help="설치·캡처·OCR 기능 점검",
+        description="설치와 기능을 점검한다 (0 전부 통과, 1 실패 있음). headless: 의존성·DLL·"
+        "OCR 모델·DPI·가짜 플랫폼 스모크, desktop: 그에 더해 입력 데스크톱·WGC 캡처·포그라운드",
+    )
+    doctor.add_argument(
+        "--profile",
+        choices=("headless", "desktop"),
+        default="desktop",
+        help="검사 프로필 (기본 desktop. 설치 스모크·CI는 headless)",
+    )
+    doctor.add_argument("--json", action="store_true", help="결과 JSON 한 개만 출력한다")
     return parser
 
 
@@ -606,12 +621,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             from kookabug_cli import screen_cmd
 
             return screen_cmd.run(args, sys.stdout, sys.stderr)
+        if args.command == "doctor":
+            from kookabug_cli import doctor_cmd
+
+            return doctor_cmd.run(args, sys.stdout, sys.stderr)
     except ModuleNotFoundError as exc:
         if exc.name is None or exc.name.split(".")[0] not in _PLATFORM_MODULES:
             raise
+        command = " ".join(filter(None, [args.command, getattr(args, "action", None)]))
         print(
-            f"오류: {args.command} {args.action}에는 Windows 플랫폼 패키지(kookabug-platform)가 "
-            f"필요하다 ({exc.name} 없음)",
+            f"오류: {command}에는 Windows 플랫폼 패키지(kookabug-platform)가 필요하다 "
+            f"({exc.name} 없음)",
             file=sys.stderr,
         )
         return EXIT_USAGE

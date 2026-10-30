@@ -11,6 +11,8 @@ from kb_testing.core_nodes import (
     ENGINE_NODE_TYPES,
     M0A_SDK_NODE_TYPES,
     M1_APP_WINDOW_INPUT_NODE_TYPES,
+    M1_NODE_TYPES,
+    M1_OBSERVE_NODE_TYPES,
     SDK_NODE_TYPES,
 )
 from kb_testing.packaging import REPO_ROOT
@@ -43,7 +45,7 @@ def node_functions() -> dict[str, NodeFunction]:
 
 def test_core_node_types_exact(schema: dict[str, Any]) -> None:
     types = [n["type"] for n in schema["nodes"]]
-    assert len(types) == 26
+    assert len(types) == 38
     assert set(types) == CORE_NODE_TYPES
     assert schema["plugin"]["id"] == "core"
 
@@ -55,7 +57,7 @@ def test_engine_nodes_exact(nodes: dict[str, dict[str, Any]]) -> None:
 
 def test_sdk_nodes_exact(nodes: dict[str, dict[str, Any]]) -> None:
     assert {t for t, n in nodes.items() if "engine" not in n} == SDK_NODE_TYPES
-    assert len(SDK_NODE_TYPES) == 18
+    assert len(SDK_NODE_TYPES) == 30
 
 
 def test_schema_matches_node_schema_metaschema(schema: dict[str, Any]) -> None:
@@ -91,7 +93,12 @@ def test_node_kinds(nodes: dict[str, dict[str, Any]]) -> None:
         "core.logic.compare",
         "core.text.format",
     }
-    assert {t for t, n in nodes.items() if n.get("assertion")} == {"core.assert.compare"}
+    assert {t for t, n in nodes.items() if n.get("assertion")} == {
+        "core.assert.compare",
+        "core.assert.visible",
+        "core.assert.not_visible",
+        "core.assert.text",
+    }
     # 종료 노드: 출구 없는 exec 노드
     assert {t for t, n in nodes.items() if n.get("exits") == []} == {
         "core.graph.exit",
@@ -261,3 +268,133 @@ def test_input_node_pins(nodes: dict[str, dict[str, Any]]) -> None:
     }
     for node_type in M1_APP_WINDOW_INPUT_NODE_TYPES - {"core.app.launch", "core.window.attach"}:
         assert nodes[node_type]["outputs"] == {}, node_type
+
+
+# ---------------------------------------------------------------- 화면·이미지·검증·OCR (M1 T11)
+
+# 노드 타입 → (effects, 출구 (이름, 종류, 출력), retry (mode, on) 또는 None = never)
+OBSERVE: dict[
+    str, tuple[list[str], list[tuple[str, str, list[str]]], tuple[str, list[str]] | None]
+] = {
+    "core.image.wait": (
+        ["capture"],
+        [("found", "ok", ["match"]), ("timeout", "fail", [])],
+        ("observation", ["timeout"]),
+    ),
+    "core.image.wait_gone": (
+        ["capture"],
+        [("gone", "ok", []), ("timeout", "fail", [])],
+        ("observation", ["timeout"]),
+    ),
+    "core.image.click": (
+        ["capture", "input"],
+        [("done", "ok", ["match"]), ("not_found", "fail", [])],
+        None,
+    ),
+    "core.screen.wait_stable": (
+        ["capture"],
+        [("stable", "ok", []), ("timeout", "fail", [])],
+        ("observation", ["timeout"]),
+    ),
+    "core.screen.capture": (["capture"], [("done", "ok", ["image"])], None),
+    "core.assert.visible": (
+        ["capture"],
+        [("ok", "ok", ["match"]), ("fail", "fail", [])],
+        ("observation", ["fail"]),
+    ),
+    "core.assert.not_visible": (
+        ["capture"],
+        [("ok", "ok", []), ("fail", "fail", [])],
+        ("observation", ["fail"]),
+    ),
+    "core.assert.text": (
+        ["capture"],
+        [("ok", "ok", ["text"]), ("fail", "fail", ["text"])],
+        ("observation", ["fail"]),
+    ),
+    "core.ocr.read": (
+        ["capture"],
+        [("done", "ok", ["confidence", "number", "text"]), ("unreadable", "fail", [])],
+        ("observation", ["unreadable"]),
+    ),
+    "core.ocr.wait_text": (
+        ["capture"],
+        [("found", "ok", ["match", "text"]), ("timeout", "fail", [])],
+        ("observation", ["timeout"]),
+    ),
+    "core.ocr.click_text": (
+        ["capture", "input"],
+        [("done", "ok", ["match"]), ("not_found", "fail", [])],
+        None,
+    ),
+}
+
+
+def test_m1_nodes_are_22() -> None:
+    assert set(OBSERVE) | {"core.image.wait_any"} == M1_OBSERVE_NODE_TYPES
+    assert M1_NODE_TYPES == M1_APP_WINDOW_INPUT_NODE_TYPES | M1_OBSERVE_NODE_TYPES
+    assert len(M1_NODE_TYPES) == 22
+
+
+@pytest.mark.parametrize("node_type", sorted(OBSERVE))
+def test_observe_effects_exits_retry(nodes: dict[str, dict[str, Any]], node_type: str) -> None:
+    effects, exits, retry = OBSERVE[node_type]
+    n = nodes[node_type]
+    assert n["effects"] == effects
+    assert [(e["name"], e["kind"], sorted(e["outputs"])) for e in n["exits"]] == exits
+    assert (None if "retry" not in n else (n["retry"]["mode"], n["retry"]["on"])) == retry
+    assert not n.get("pure") and "engine" not in n
+
+
+def test_retry_modes_match_mvp_list(nodes: dict[str, dict[str, Any]]) -> None:
+    """MVP 노드 목록 7장: 대기·OCR·화면 검증은 observation, 입력·실행과 image.click·
+    ocr.click_text는 never."""
+    observation = {t for t, n in nodes.items() if n.get("retry", {}).get("mode") == "observation"}
+    assert observation == {
+        "core.image.wait",
+        "core.image.wait_any",
+        "core.image.wait_gone",
+        "core.screen.wait_stable",
+        "core.ocr.read",
+        "core.ocr.wait_text",
+        "core.assert.visible",
+        "core.assert.not_visible",
+        "core.assert.text",
+    }
+    for node_type in M1_APP_WINDOW_INPUT_NODE_TYPES | {"core.image.click", "core.ocr.click_text"}:
+        assert "retry" not in nodes[node_type], node_type
+
+
+def test_wait_any_dynamic_exits(nodes: dict[str, dict[str, Any]]) -> None:
+    n = nodes["core.image.wait_any"]
+    assert n["exits"] == {
+        "extra": [{"kind": "fail", "name": "timeout", "outputs": []}],
+        "from_config": "exits",
+        "kind": "ok",
+        "outputs": ["match"],
+    }
+    assert n["config"]["exits"] == {"min_items": 2, "type": "list[string]"}
+    assert n["inputs"]["targets"] == {"type": "dict[str,target]"}
+    assert n["retry"] == {"mode": "observation", "on": ["timeout"]}
+
+
+def test_observe_node_pins(nodes: dict[str, dict[str, Any]]) -> None:
+    region = {"default": None, "nullable": True, "type": "target|rect"}
+    assert nodes["core.ocr.read"]["inputs"] == {
+        "parse": {"default": "text", "enum": ["text", "number"], "type": "string"},
+        "region": region,
+    }
+    assert nodes["core.ocr.read"]["outputs"] == {
+        "confidence": {"nullable": True, "type": "float"},
+        "number": {"nullable": True, "type": "float"},
+        "text": {"type": "string|secret"},
+    }
+    assert nodes["core.ocr.wait_text"]["inputs"]["region"] == region
+    assert nodes["core.assert.text"]["outputs"] == {"text": {"type": "string|secret"}}
+    stable = nodes["core.screen.wait_stable"]["inputs"]
+    assert stable["region"] == {"default": None, "nullable": True, "type": "rect"}
+    assert stable["tolerance"] == {"default": 0.001, "maximum": 1, "minimum": 0, "type": "float"}
+    assert nodes["core.screen.capture"]["outputs"] == {"image": {"type": "image"}}
+    # 기다리는 노드만 timeout_ms를 선언한다 (G13): 글자 읽기·스크린샷은 기다리지 않는다
+    waits = {t for t in M1_OBSERVE_NODE_TYPES if "timeout_ms" in nodes[t]["inputs"]}
+    assert waits == M1_OBSERVE_NODE_TYPES - {"core.ocr.read", "core.screen.capture"}

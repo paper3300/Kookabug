@@ -8,15 +8,20 @@
 - `list[A]` → `list[B]`, `dict[str,A]` → `dict[str,B]`는 원소 타입 규칙을 그대로 따른다
 - `secret`은 `secret`을 포함한 핀(`secret`, `string|secret`, `any`)에만 연결된다 (G9)
 
-상수: `null`은 nullable 핀이나 `any`만, `$secret`은 `secret`, `$target`은 `target`. 구조 타입
-(`match`·`rect`·`image` 등)과 플러그인 타입의 상수 모양은 아직 보지 않는다 (M1).
+상수: `null`은 nullable 핀이나 `any`만, `$secret`은 `secret`, `$target`은 `target`. 점·사각형은
+배열 상수로 쓴다 — `point` = `[x, y]`, `rect` = `[x, y, w, h]`(정수 클라이언트 픽셀, 너비·높이 1
+이상). 원소는 `$link`(정수에 연결할 수 있는 출력)여도 된다 — 실행 전에는 모양·연결 타입만 보고,
+연결로 온 값의 정수 여부·너비·높이는 실행기가 입력을 계산한 뒤 같은 함수로 다시 본다. 실행기는
+핀 타입대로 `Point`·`Rect`로 바꿔 노드에 준다(`coerce`, 유니온은 실제로 맞는 항). `match`는
+상수로 쓸 수 없다(찾기 결과는 연결로만 온다). 그 밖의 구조 타입(`image`·`window` 등)과 플러그인
+타입은 상수 모양을 보지 않는다.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from functools import cache
-from typing import Any
+from typing import Any, cast
 
 from kookabug_core.diagnostics import json_pointer
 from kookabug_core.ir import LinkRef, Unresolved
@@ -24,11 +29,15 @@ from kookabug_core.registry import InputDecl
 from kookabug_core.schema.pintype import DictOf, ListOf, Named, PinType, Union, parse_pin_type
 from kookabug_core.validate.context import ValidationContext
 from kookabug_sdk import Secret
-from kookabug_sdk.types import Target
+from kookabug_sdk.types import Match, Point, Rect, Target
 
-__all__ = ["assignable", "check", "pin_type", "value_problems"]
+__all__ = ["assignable", "check", "coerce", "pin_type", "value_problems"]
+
+_SHAPES: dict[str, str] = {"point": "[x, y]", "rect": "[x, y, w, h]"}
+"""배열 상수로 쓰는 구조 타입과 그 모양 (정수 클라이언트 픽셀)."""
 
 ANY = Named("any")
+_INT = Named("int")
 type LinkType = Callable[[LinkRef], PinType | None]
 type Problem = tuple[tuple[str | int, ...], str, str]
 
@@ -55,8 +64,90 @@ def assignable(src: PinType, dst: PinType) -> bool:
     return False
 
 
-def _named_fits(value: Any, name: str) -> bool:
+def _ints(value: Any, count: int) -> list[int] | None:
+    """정수(bool 제외) `count`개 배열이면 그 값들."""
+    if not isinstance(value, list | tuple):
+        return None
+    items = cast(Sequence[object], value)
+    if len(items) != count or not all(type(v) is int for v in items):
+        return None
+    return [cast(int, v) for v in items]
+
+
+def _point_constant(value: Any) -> Point | None:
+    xy = _ints(value, 2)
+    return None if xy is None else Point(xy[0], xy[1])
+
+
+def _rect_constant(value: Any) -> Rect | None:
+    box = _ints(value, 4)
+    if box is None or box[2] < 1 or box[3] < 1:
+        return None
+    return Rect(box[0], box[1], box[2], box[3])
+
+
+def _coordinates_fit(value: Any, count: int, link_type: LinkType) -> bool:
+    """좌표 배열의 정적 모양: 원소 `count`개, 각각 정수 상수이거나 정수에 연결할 수 있는 `$link`
+    (아직 해석하지 않은 특수 값 포함). 연결로 올 값의 정수 여부·크기는 실행 때 다시 본다."""
+    if not isinstance(value, list | tuple):
+        return False
+    items = cast(Sequence[object], value)
+    if len(items) != count:
+        return False
+    for item in items:
+        if isinstance(item, Unresolved):
+            continue
+        if isinstance(item, LinkRef):
+            src = link_type(item)
+            if src is not None and not assignable(src, _INT):
+                return False
+        elif type(item) is not int:
+            return False
+    if count == 4:
+        # 상수로 적힌 너비·높이만 여기서 본다 (연결이면 실행 때)
+        return all(type(v) is not int or cast(int, v) >= 1 for v in items[2:])
+    return True
+
+
+def _no_link(ref: LinkRef) -> PinType | None:
+    return None
+
+
+def coerce(value: Any, t: PinType) -> Any:
+    """핀 타입대로 배열 상수를 구조 값으로 바꾼다: `point` `[x, y]` → `Point`, `rect`
+    `[x, y, w, h]` → `Rect` (목록·사전 안쪽, 유니온의 그 항 포함). 다른 값은 그대로.
+
+    유니온이면 값이 실제로 맞는 첫 항을 골라 그 항으로 바꾼다(`list[string]|list[point]`에
+    `[[1, 2]]`면 `list[point]`)."""
+    if isinstance(value, Point | Rect | LinkRef | Unresolved) or value is None:
+        return value
+    if isinstance(t, Union):
+        for option in t.options:
+            if _fits(value, option, _no_link):
+                return coerce(value, option)
+        return value
+    if isinstance(t, ListOf) and isinstance(value, list):
+        return [coerce(v, t.item) for v in cast(list[Any], value)]
+    if isinstance(t, DictOf) and isinstance(value, dict):
+        return {k: coerce(v, t.value) for k, v in cast(dict[str, Any], value).items()}
+    if isinstance(t, Named):
+        if t.name == "point":
+            return _point_constant(value) or value
+        if t.name == "rect":
+            return _rect_constant(value) or value
+    return value
+
+
+def _named_fits(value: Any, name: str, link_type: LinkType = _no_link) -> bool:
     match name:
+        case "point":
+            return isinstance(value, Point) or _coordinates_fit(value, 2, link_type)
+        case "rect":
+            return isinstance(value, Rect) or _coordinates_fit(value, 4, link_type)
+        case "match":
+            # 찾기 결과는 연결로만 온다 (상수로 쓸 모양이 없다 — `match|point`에 틀린 점 상수가
+            # 이 항으로 새지 않게)
+            return isinstance(value, Match)
         case "any":
             return True
         case "bool":
@@ -89,7 +180,7 @@ def _fits(value: Any, t: PinType, link_type: LinkType) -> bool:
         return isinstance(value, list) and all(_fits(v, t.item, link_type) for v in value)
     if isinstance(t, DictOf):
         return isinstance(value, dict) and all(_fits(v, t.value, link_type) for v in value.values())
-    return _named_fits(value, t.name)
+    return _named_fits(value, t.name, link_type)
 
 
 def _show(value: Any) -> str:
@@ -120,7 +211,13 @@ def _type_problems(
         return
     if isinstance(t, Union) or t == ANY:
         if not _fits(value, t, link_type):
-            yield path, "type_mismatch", f"{_show(value)}은(는) {t} 타입이 아니다"
+            shapes = [
+                f"{o.name} 상수는 {_SHAPES[o.name]}"
+                for o in (t.options if isinstance(t, Union) else ())
+                if isinstance(o, Named) and o.name in _SHAPES
+            ]
+            why = f" ({', '.join(shapes)} 정수 클라이언트 픽셀)" if shapes else ""
+            yield path, "type_mismatch", f"{_show(value)}은(는) {t} 타입이 아니다{why}"
         return
     if isinstance(t, ListOf):
         if not isinstance(value, list):
@@ -136,8 +233,11 @@ def _type_problems(
         for k, v in value.items():
             yield from _type_problems(v, t.value, (*path, k), link_type)
         return
-    if not _named_fits(value, t.name):
+    if not _named_fits(value, t.name, link_type):
         why = " (비밀값은 secret을 포함한 핀에만 넣는다)" if isinstance(value, Secret) else ""
+        if t.name in _SHAPES:
+            why = f" (상수는 {_SHAPES[t.name]} 정수 클라이언트 픽셀"
+            why += ", 너비·높이 1 이상)" if t.name == "rect" else ")"
         yield path, "type_mismatch", f"{_show(value)}은(는) {t} 타입이 아니다{why}"
 
 

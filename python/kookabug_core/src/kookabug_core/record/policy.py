@@ -33,7 +33,8 @@ __all__ = [
 
 type ScreenshotMode = Literal["on", "off"]
 type VideoMode = Literal["on", "failed_only", "off"]
-type OmitReason = Literal["secret_input", "policy_off", "capture_policy"]
+type OmitReason = Literal["secret_input", "policy_off", "capture_policy", "sensitive_target"]
+"""`sensitive_target`: `sensitive: true` target 영역에서 읽은 OCR 글자 (M1)."""
 
 _VIDEO_STRENGTH: Final[dict[str, int]] = {"on": 0, "failed_only": 1, "off": 2}
 _VIDEO_MODES: Final[dict[Any, VideoMode]] = {"on": "on", "failed_only": "failed_only", "off": "off"}

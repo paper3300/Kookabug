@@ -136,6 +136,157 @@
       "version": 1
     },
     {
+      "assertion": true,
+      "category": "test",
+      "description": "대상이 안 보이는지 검증한다 (`timeout_ms` 안에 한 번이라도 안 보이면 `ok`).",
+      "effects": [
+        "capture"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "ok",
+          "outputs": []
+        },
+        {
+          "kind": "fail",
+          "name": "fail",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "target": {
+          "type": "target"
+        },
+        "timeout_ms": {
+          "default": 5000,
+          "minimum": 0,
+          "type": "int"
+        }
+      },
+      "outputs": {},
+      "retry": {
+        "mode": "observation",
+        "on": [
+          "fail"
+        ]
+      },
+      "title": "안 보이는지 검증",
+      "type": "core.assert.not_visible",
+      "version": 1
+    },
+    {
+      "assertion": true,
+      "category": "test",
+      "description": "영역에서 읽은 글자를 검증한다: `equals`(앞뒤 공백 무시 같음)·`contains`(부분 일치)·\n`regex`(검색) 중 하나. `timeout_ms` 안에 한 번이라도 맞으면 `ok`. `text`는 마지막으로 읽은\n글자(민감 target이면 비밀값).",
+      "effects": [
+        "capture"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "ok",
+          "outputs": [
+            "text"
+          ]
+        },
+        {
+          "kind": "fail",
+          "name": "fail",
+          "outputs": [
+            "text"
+          ]
+        }
+      ],
+      "inputs": {
+        "contains": {
+          "default": null,
+          "nullable": true,
+          "type": "string"
+        },
+        "equals": {
+          "default": null,
+          "nullable": true,
+          "type": "string"
+        },
+        "regex": {
+          "default": null,
+          "nullable": true,
+          "type": "string"
+        },
+        "region": {
+          "default": null,
+          "nullable": true,
+          "type": "target|rect"
+        },
+        "timeout_ms": {
+          "default": 5000,
+          "minimum": 0,
+          "type": "int"
+        }
+      },
+      "outputs": {
+        "text": {
+          "type": "string|secret"
+        }
+      },
+      "retry": {
+        "mode": "observation",
+        "on": [
+          "fail"
+        ]
+      },
+      "title": "문구 검증",
+      "type": "core.assert.text",
+      "version": 1
+    },
+    {
+      "assertion": true,
+      "category": "test",
+      "description": "대상이 보이는지 검증한다 (`timeout_ms` 안에 한 번이라도 보이면 `ok`).",
+      "effects": [
+        "capture"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "ok",
+          "outputs": [
+            "match"
+          ]
+        },
+        {
+          "kind": "fail",
+          "name": "fail",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "target": {
+          "type": "target"
+        },
+        "timeout_ms": {
+          "default": 5000,
+          "minimum": 0,
+          "type": "int"
+        }
+      },
+      "outputs": {
+        "match": {
+          "type": "match"
+        }
+      },
+      "retry": {
+        "mode": "observation",
+        "on": [
+          "fail"
+        ]
+      },
+      "title": "보이는지 검증",
+      "type": "core.assert.visible",
+      "version": 1
+    },
+    {
       "category": "flow",
       "description": "`condition`이 참이면 `true`, 거짓이면 `false`로 나간다.",
       "exits": [
@@ -314,6 +465,197 @@
       "outputs": {},
       "title": "공개 출구",
       "type": "core.graph.exit",
+      "version": 1
+    },
+    {
+      "category": "image",
+      "description": "대상이 보일 때까지 기다렸다가 그 클릭 지점을 클릭한다. 못 찾으면 입력하지 않고\n`not_found`. 입력 직전 재검증은 공용 입력 서비스가 한다.",
+      "effects": [
+        "capture",
+        "input"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": [
+            "match"
+          ]
+        },
+        {
+          "kind": "fail",
+          "name": "not_found",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "button": {
+          "default": "left",
+          "enum": [
+            "left",
+            "right",
+            "middle",
+            "x1",
+            "x2"
+          ],
+          "type": "string"
+        },
+        "count": {
+          "default": 1,
+          "minimum": 1,
+          "type": "int"
+        },
+        "target": {
+          "type": "target"
+        },
+        "timeout_ms": {
+          "default": 10000,
+          "minimum": 0,
+          "type": "int"
+        }
+      },
+      "outputs": {
+        "match": {
+          "type": "match"
+        }
+      },
+      "title": "이미지 클릭",
+      "type": "core.image.click",
+      "version": 1
+    },
+    {
+      "category": "image",
+      "description": "대상이 나타날 때까지 기다린다.",
+      "effects": [
+        "capture"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "found",
+          "outputs": [
+            "match"
+          ]
+        },
+        {
+          "kind": "fail",
+          "name": "timeout",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "target": {
+          "type": "target"
+        },
+        "timeout_ms": {
+          "default": 10000,
+          "minimum": 0,
+          "type": "int"
+        }
+      },
+      "outputs": {
+        "match": {
+          "type": "match"
+        }
+      },
+      "retry": {
+        "mode": "observation",
+        "on": [
+          "timeout"
+        ]
+      },
+      "title": "이미지 대기",
+      "type": "core.image.wait",
+      "version": 1
+    },
+    {
+      "category": "image",
+      "config": {
+        "exits": {
+          "min_items": 2,
+          "type": "list[string]"
+        }
+      },
+      "description": "`targets`(출구 이름 → 대상) 중 먼저 보이는 것의 출구로 나간다. 같은 프레임에 여럿이\n보이면 `config.exits`의 앞쪽이다.",
+      "effects": [
+        "capture"
+      ],
+      "exits": {
+        "extra": [
+          {
+            "kind": "fail",
+            "name": "timeout",
+            "outputs": []
+          }
+        ],
+        "from_config": "exits",
+        "kind": "ok",
+        "outputs": [
+          "match"
+        ]
+      },
+      "inputs": {
+        "targets": {
+          "type": "dict[str,target]"
+        },
+        "timeout_ms": {
+          "default": 10000,
+          "minimum": 0,
+          "type": "int"
+        }
+      },
+      "outputs": {
+        "match": {
+          "type": "match"
+        }
+      },
+      "retry": {
+        "mode": "observation",
+        "on": [
+          "timeout"
+        ]
+      },
+      "title": "여러 대상 중 먼저 보이는 것",
+      "type": "core.image.wait_any",
+      "version": 1
+    },
+    {
+      "category": "image",
+      "description": "대상이 사라질 때까지 기다린다 (로딩 표시 등). 처음부터 없으면 바로 `gone`.",
+      "effects": [
+        "capture"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "gone",
+          "outputs": []
+        },
+        {
+          "kind": "fail",
+          "name": "timeout",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "target": {
+          "type": "target"
+        },
+        "timeout_ms": {
+          "default": 10000,
+          "minimum": 0,
+          "type": "int"
+        }
+      },
+      "outputs": {},
+      "retry": {
+        "mode": "observation",
+        "on": [
+          "timeout"
+        ]
+      },
+      "title": "이미지 사라질 때까지 대기",
+      "type": "core.image.wait_gone",
       "version": 1
     },
     {
@@ -551,6 +893,270 @@
       "pure": true,
       "title": "비교",
       "type": "core.logic.compare",
+      "version": 1
+    },
+    {
+      "category": "ocr",
+      "description": "영역에서 `text`가 들어 있는 줄을 찾아(보일 때까지 기다림) 그 줄 가운데를 클릭한다. 못 찾으면\n입력하지 않고 `not_found`.",
+      "effects": [
+        "capture",
+        "input"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": [
+            "match"
+          ]
+        },
+        {
+          "kind": "fail",
+          "name": "not_found",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "button": {
+          "default": "left",
+          "enum": [
+            "left",
+            "right",
+            "middle",
+            "x1",
+            "x2"
+          ],
+          "type": "string"
+        },
+        "region": {
+          "default": null,
+          "nullable": true,
+          "type": "target|rect"
+        },
+        "text": {
+          "type": "string"
+        },
+        "timeout_ms": {
+          "default": 10000,
+          "minimum": 0,
+          "type": "int"
+        }
+      },
+      "outputs": {
+        "match": {
+          "type": "match"
+        }
+      },
+      "title": "문구 클릭",
+      "type": "core.ocr.click_text",
+      "version": 1
+    },
+    {
+      "category": "ocr",
+      "description": "영역의 글자를 읽는다. 글자가 없거나(`parse: \"number\"`면 수가 없거나) 영역 target이 지금\n화면에 없으면 `unreadable`.",
+      "effects": [
+        "capture"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": [
+            "confidence",
+            "number",
+            "text"
+          ]
+        },
+        {
+          "kind": "fail",
+          "name": "unreadable",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "parse": {
+          "default": "text",
+          "enum": [
+            "text",
+            "number"
+          ],
+          "type": "string"
+        },
+        "region": {
+          "default": null,
+          "nullable": true,
+          "type": "target|rect"
+        }
+      },
+      "outputs": {
+        "confidence": {
+          "nullable": true,
+          "type": "float"
+        },
+        "number": {
+          "nullable": true,
+          "type": "float"
+        },
+        "text": {
+          "type": "string|secret"
+        }
+      },
+      "retry": {
+        "mode": "observation",
+        "on": [
+          "unreadable"
+        ]
+      },
+      "title": "글자 읽기",
+      "type": "core.ocr.read",
+      "version": 1
+    },
+    {
+      "category": "ocr",
+      "description": "영역에 문구(`contains` 부분 일치 또는 `regex` 검색, 하나만)가 나타날 때까지 기다린다.\n`match`는 그 문구가 있는 줄 상자다. 되풀이해 읽으므로 영역을 주는 것이 기본이다.",
+      "effects": [
+        "capture"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "found",
+          "outputs": [
+            "match",
+            "text"
+          ]
+        },
+        {
+          "kind": "fail",
+          "name": "timeout",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "contains": {
+          "default": null,
+          "nullable": true,
+          "type": "string"
+        },
+        "regex": {
+          "default": null,
+          "nullable": true,
+          "type": "string"
+        },
+        "region": {
+          "default": null,
+          "nullable": true,
+          "type": "target|rect"
+        },
+        "timeout_ms": {
+          "default": 10000,
+          "minimum": 0,
+          "type": "int"
+        }
+      },
+      "outputs": {
+        "match": {
+          "type": "match"
+        },
+        "text": {
+          "type": "string|secret"
+        }
+      },
+      "retry": {
+        "mode": "observation",
+        "on": [
+          "timeout"
+        ]
+      },
+      "title": "문구 대기",
+      "type": "core.ocr.wait_text",
+      "version": 1
+    },
+    {
+      "category": "screen",
+      "description": "지금 화면(`region`이 있으면 그 사각형, 클라이언트 픽셀)을 찍어 `steps/<스텝>_<name>.png`로\n남기고 이미지로 내보낸다. 기록 정책(구간 끄기·비밀값 입력)이 막으면 남기지 않는다.",
+      "effects": [
+        "capture"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": [
+            "image"
+          ]
+        }
+      ],
+      "inputs": {
+        "name": {
+          "default": "capture",
+          "type": "string"
+        },
+        "region": {
+          "default": null,
+          "nullable": true,
+          "type": "rect"
+        }
+      },
+      "outputs": {
+        "image": {
+          "type": "image"
+        }
+      },
+      "title": "스크린샷",
+      "type": "core.screen.capture",
+      "version": 1
+    },
+    {
+      "category": "screen",
+      "description": "화면(`region`이 있으면 그 사각형, 클라이언트 픽셀)이 `stable_ms` 동안 멈출 때까지 기다린다\n(애니메이션 끝). 연속한 두 관측의 차이가 `tolerance`(0~1) 이하면 멈춘 것으로 본다. `region`이\n지금 화면과 겹치지 않으면(창 크기가 바뀐 뒤 포함) 멈춘 것으로 보지 않고 `error`(진단)다.",
+      "effects": [
+        "capture"
+      ],
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "stable",
+          "outputs": []
+        },
+        {
+          "kind": "fail",
+          "name": "timeout",
+          "outputs": []
+        }
+      ],
+      "inputs": {
+        "region": {
+          "default": null,
+          "nullable": true,
+          "type": "rect"
+        },
+        "stable_ms": {
+          "default": 500,
+          "minimum": 0,
+          "type": "int"
+        },
+        "timeout_ms": {
+          "default": 10000,
+          "minimum": 0,
+          "type": "int"
+        },
+        "tolerance": {
+          "default": 0.001,
+          "maximum": 1,
+          "minimum": 0,
+          "type": "float"
+        }
+      },
+      "outputs": {},
+      "retry": {
+        "mode": "observation",
+        "on": [
+          "timeout"
+        ]
+      },
+      "title": "화면 멈춤 대기",
+      "type": "core.screen.wait_stable",
       "version": 1
     },
     {

@@ -100,9 +100,9 @@ def test_region_diff() -> None:
     assert inside > whole > 0.0
     # 바뀐 곳 밖(위쪽 제목줄)은 0
     assert vision.diff(a, b, region=(0, 0, 1024, int(y0))) == 0.0
-    # 이미지 밖으로 나간 부분은 잘라 본다, 전부 밖이면 비교할 것이 없어 0
+    # 이미지 밖으로 나간 부분은 잘라 본다, 전부 밖이면 비교할 픽셀이 없어 1 (같다고 보지 않는다)
     assert vision.diff(a, b, region=(-100, -100, 2000, 2000)) == pytest.approx(whole)
-    assert vision.diff(a, b, region=(5000, 0, 10, 10)) == 0.0
+    assert vision.diff(a, b, region=(5000, 0, 10, 10)) == 1.0
 
 
 def test_expired_frame_error() -> None:

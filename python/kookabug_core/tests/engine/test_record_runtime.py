@@ -7,16 +7,25 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from helpers.graphs import link, literal, make_workspace, secret, subgraph_interface
+from helpers.graphs import (
+    check,
+    link,
+    literal,
+    make_workspace,
+    secret,
+    subgraph_interface,
+    write_json,
+)
 from helpers.run import Ran, run_graph, tk
 from testkit import registry_with_testkit
 
-from kookabug_core.engine import ExecOptions, Executor, FakeClock, FakePlatform
+from kookabug_core.engine import ExecOptions, Executor, FakeClock, FakePlatform, MemoryArtifacts
 from kookabug_core.loader import load_program
 from kookabug_core.record import FileArtifacts
 from kookabug_core.schema import check_shape
 from kookabug_core.workspace import MemorySecrets, Workspace
-from kookabug_sdk.types import Image
+from kookabug_sdk import Secret
+from kookabug_sdk.types import Image, Match, OcrLine, OcrResult, Rect
 
 SUB = "subgraphs/s.graph.json"
 INNER = "subgraphs/inner.graph.json"
@@ -591,3 +600,133 @@ def test_error_screenshot_store_failure_keeps_original_error(tmp_path: Path) -> 
     assert warn["level"] == "warn" and "디스크가 가득 찼다" in warn["message"]
     (end,) = [e for e in result.events if e["event"] == "step.end" and e["status"] == "error"]
     assert "artifacts" not in end
+
+
+# ---------------------------------------------------------------- OCR 글자 기록·민감 target (M1)
+
+GOLD_TEXT = "Gold 12,345"
+
+
+class _OcrPlatform(FakePlatform):
+    """가짜 프레임 + 정해 둔 답의 찾기·OCR (`core.ocr.read`를 실행기에서 돌린다). 민감하게
+    읽으면 글자를 비밀값으로 준다 (플랫폼 엔진과 같다)."""
+
+    def find(self, image: Image, target: Any, *, region: Any, limits: Any) -> Match | None:
+        return Match(Rect(20, 20, 240, 52), 0.99, frame=image.frame, target=target.name)
+
+    def diff(self, a: Image, b: Image, *, region: Any) -> float:
+        return 0.0
+
+    def read_text(self, image: Image, *, region: Any, sensitive: bool, limits: Any) -> OcrResult:
+        text: str | Secret = Secret(GOLD_TEXT) if sensitive else GOLD_TEXT
+        line = OcrLine(text, Rect(20, 20, 240, 52), 0.9)
+        return OcrResult(text, (line,), 0.9)
+
+
+def _gold_target(ws: Workspace, *, sensitive: bool) -> str:
+    rel = "targets/world/gold.target.json"
+    body: dict[str, Any] = {"format": "kookabug.target/0", "image": "gold.png"}
+    if sensitive:
+        body["sensitive"] = True
+    path = write_json(ws, rel, body)
+    (path.parent / "gold.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    return rel
+
+
+def _run_ocr(ws: Workspace, g: Any) -> Ran:
+    g.write(ws, TEST_FILE)
+    program = load_program(ws, TEST_FILE, secrets=MemorySecrets({}))
+    platform = _OcrPlatform(FRAMES)
+    clock = FakeClock()
+    artifacts = MemoryArtifacts()
+    executor = Executor(
+        registry_with_testkit(), platform=platform, clock=clock, artifacts=artifacts
+    )
+    result = executor.run(program, ExecOptions(run_id="r1"))
+    return Ran(result, platform, clock, program, artifacts)
+
+
+def _read_graph(rel: str, then: str | None = None) -> Any:
+    g = tk().entry("n_read")
+    g.node(
+        "n_read",
+        "core.ocr.read",
+        inputs={"region": {"$target": rel}, "parse": "number"},
+        next={"done": then or "n_ok"},
+    )
+    if then is None:
+        g.node("n_ok", "core.assert.compare", inputs={"a": 1, "op": "==", "b": 1})
+    return g
+
+
+def test_ocr_text_artifact_is_last_read(tmp_path: Path) -> None:
+    ws = make_workspace(tmp_path)
+    ran = _run_ocr(ws, _read_graph(_gold_target(ws, sensitive=False)))
+    assert ran.result.verdict == "pass", ran.result.reason
+    step = ran.step_of("n_read")
+    assert ran.end("n_read")["artifacts"] == [f"steps/{step}_ocr.txt"]
+    assert ran.artifacts.texts[f"steps/{step}_ocr.txt"] == GOLD_TEXT
+    assert ran.end("n_read")["outputs"]["number"] == 12345
+
+
+def test_sensitive_ocr_text_artifact_omitted_with_reason(tmp_path: Path) -> None:
+    ws = make_workspace(tmp_path)
+    ran = _run_ocr(ws, _read_graph(_gold_target(ws, sensitive=True)))
+    assert ran.result.verdict == "pass", ran.result.reason
+    end = ran.end("n_read")
+    assert "artifacts" not in end and ran.artifacts.texts == {}
+    assert end["omitted"] == [{"kind": "text", "name": "ocr", "reason": "sensitive_target"}]
+    # 출력도 가린 값, 숫자는 null
+    assert end["outputs"]["text"] == "***" and end["outputs"]["number"] is None
+    assert "12,345" not in repr(ran.events)
+    journaled = {**end, "run": "r8k2x7qm", "seq": 1, "t": "2026-10-30T00:00:00.000Z"}
+    assert check_shape(journaled, "events") == []
+
+
+def test_ocr_text_artifact_follows_screenshot_policy(tmp_path: Path) -> None:
+    ws = make_workspace(tmp_path)
+    g = _read_graph(_gold_target(ws, sensitive=False))
+    g.nodes["n_read"]["record"] = {"screenshots": "off"}
+    ran = _run_ocr(ws, g)
+    (omitted,) = ran.end("n_read")["omitted"]
+    assert (omitted["kind"], omitted["reason"]) == ("text", "policy_off")
+    assert ran.artifacts.texts == {}
+
+
+def test_secret_derived_from_sensitive_flows_as_secret(tmp_path: Path) -> None:
+    ws = make_workspace(tmp_path)
+    rel = _gold_target(ws, sensitive=True)
+    g = _read_graph(rel, then="n_log")
+    g.node(
+        "n_fmt",
+        "core.text.format",
+        inputs={"template": "읽음: {t}", "values": {"t": link("n_read.text")}},
+    )
+    g.node(
+        "n_log", "core.log.message", inputs={"text": link("n_fmt.text")}, next={"done": "n_shot"}
+    )
+    g.node(
+        "n_shot",
+        "testkit.shot",
+        inputs={"value": link("n_read.text"), "save": True},
+        next={"done": "n_ok"},
+    )
+    g.node("n_ok", "core.assert.compare", inputs={"a": 1, "op": "==", "b": 1})
+    ran = _run_ocr(ws, g)
+    assert ran.result.verdict == "pass", ran.result.reason
+    (log,) = [e for e in ran.of("log") if e["node"] == "n_log"]
+    assert log["message"] == "***"  # 비밀값에서 만든 글자도 비밀값
+    # 민감 글자를 받은 스텝은 스크린샷을 남기지 않는다 (비밀값 입력)
+    (omitted,) = ran.end("n_shot")["omitted"]
+    assert omitted["reason"] == "secret_input"
+    assert "12,345" not in repr(ran.events)
+
+
+def test_sensitive_text_cannot_reach_string_only_pin(tmp_path: Path) -> None:
+    ws = make_workspace(tmp_path)
+    rel = _gold_target(ws, sensitive=True)
+    g = _read_graph(rel, then="n_set")
+    g.node("n_set", "core.input.key", inputs={"keys": link("n_read.text")})
+    g.write(ws, TEST_FILE)
+    diags = [d for d in check(ws, TEST_FILE) if d.severity == "error"]
+    assert [(d.code, d.node) for d in diags] == [("type_mismatch", "n_set")]

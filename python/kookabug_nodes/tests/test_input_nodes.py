@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from helpers.graphs import make_workspace, secret, target
+from helpers.graphs import check, make_workspace, secret, target
 from helpers.m1 import ScenePlatform, clicks, kinds
 from helpers.run import tk
 from testkit import registry_with_testkit
@@ -65,8 +65,8 @@ def test_click_match_uses_click_point() -> None:
 
 def test_click_point_input() -> None:
     ctx = fake_context()
-    # 그래프 상수 [x, y]와 연결로 온 Point 둘 다 Point로 넘긴다
-    assert click(ctx, point=[512, 412]).exit == "done"
+    # 그래프 상수 [x, y]는 실행기가 Point로 바꿔 준다 (test_point_constant_coerced_by_executor)
+    assert click(ctx, point=Point(512, 412)).exit == "done"
     assert click(ctx, point=Point(5, 6), button="right").exit == "done"
     assert [(c.args, c.kwargs) for c in ctx.input.calls] == [
         ((Point(512, 412),), {"button": "left", "count": 1}),
@@ -76,7 +76,7 @@ def test_click_point_input() -> None:
 
 def test_click_count_double() -> None:
     ctx, scenario = scene_ctx()
-    assert click(ctx, point=[100, 100], count=2).exit == "done"
+    assert click(ctx, point=Point(100, 100), count=2).exit == "done"
     assert ctx.input.calls[-1].kwargs == {"button": "left", "count": 2}
     assert [k for _, k, _ in scenario.inputs] == ["click", "click"]
 
@@ -85,7 +85,7 @@ def test_click_count_double() -> None:
     "inputs",
     [
         {},
-        {"match": Match(Rect(0, 0, 4, 4), 1.0), "point": [1, 2]},
+        {"match": Match(Rect(0, 0, 4, 4), 1.0), "point": Point(1, 2)},
     ],
 )
 def test_click_needs_exactly_one_of_match_or_point(inputs: dict[str, Any]) -> None:
@@ -96,11 +96,19 @@ def test_click_needs_exactly_one_of_match_or_point(inputs: dict[str, Any]) -> No
 
 
 @pytest.mark.parametrize("bad", [[1], [1, 2, 3], [1.5, 2], ["1", "2"], [True, 2], {"x": 1}])
-def test_click_bad_point_constant_is_error(bad: Any) -> None:
-    ctx = fake_context()
-    with pytest.raises(TypeError, match=r"\[x, y\]"):
-        click(ctx, point=bad)
-    assert ctx.input.calls == []
+def test_click_bad_point_constant_is_validation_error(tmp_path: Path, bad: Any) -> None:
+    """점 상수 모양은 노드가 아니라 실행 전 검증이 본다 (검증기의 일반 규칙)."""
+    ws = make_workspace(tmp_path)
+    g = (
+        tk()
+        .entry("n_click")
+        .node("n_click", "core.input.click", inputs={"point": bad}, next={"done": "n_pass"})
+        .node("n_pass", "core.test.pass")
+    )
+    g.write(ws, "tests/t.graph.json")
+    (problem,) = [d for d in check(ws, "tests/t.graph.json") if d.severity == "error"]
+    assert problem.code == "type_mismatch" and problem.pointer == "/nodes/n_click/in/point"
+    assert "[x, y]" in problem.message
 
 
 # ---------------------------------------------------------------- core.input.drag·scroll
@@ -109,8 +117,8 @@ def test_click_bad_point_constant_is_error(bad: Any) -> None:
 def test_drag_duration_moves() -> None:
     ctx = fake_context()
     start = Match(Rect(10, 10, 20, 20), 0.95)
-    assert drag(ctx, start=start, end=[300, 40], duration_ms=500).exit == "done"
-    assert drag(ctx, start=[1, 2], end=Point(3, 4)).exit == "done"
+    assert drag(ctx, start=start, end=Point(300, 40), duration_ms=500).exit == "done"
+    assert drag(ctx, start=Point(1, 2), end=Point(3, 4)).exit == "done"
     assert ctx.input.calls == [
         InputCall("drag", (start, Point(300, 40)), {"duration_ms": 500, "button": "left"}),
         InputCall("drag", (Point(1, 2), Point(3, 4)), {"duration_ms": 300, "button": "left"}),
@@ -119,14 +127,12 @@ def test_drag_duration_moves() -> None:
 
 def test_scroll_amount() -> None:
     ctx = fake_context()
-    assert scroll(ctx, point=[200, 300], amount=-3).exit == "done"
+    assert scroll(ctx, point=Point(200, 300), amount=-3).exit == "done"
     assert scroll(ctx, point=Point(1, 1), amount=2).exit == "done"
     assert ctx.input.calls == [
         InputCall("scroll", (Point(200, 300), -3)),
         InputCall("scroll", (Point(1, 1), 2)),
     ]
-    with pytest.raises(TypeError, match="point"):
-        scroll(ctx, point=Match(Rect(0, 0, 2, 2), 1.0), amount=1)
 
 
 # ---------------------------------------------------------------- core.input.key
@@ -168,7 +174,7 @@ def test_type_text_secret_not_logged() -> None:
 def test_type_text_target_clicks_first_and_clear(targets: Any, tmp_path: Path) -> None:
     targets.login(tmp_path)
     ctx, scenario = scene_ctx()
-    click(ctx, point=[START.x, START.y])
+    click(ctx, point=START)
     account = load_target(tmp_path / targets.ACCOUNT)
     password = load_target(tmp_path / targets.PASSWORD)
     # 두 칸에 여러 글자가 이미 있다 (재시도 흉내)
@@ -203,7 +209,7 @@ def test_type_text_without_clear_appends_to_existing_text(targets: Any, tmp_path
     """대조군: `clear` 없이 같은 칸에 다시 입력하면 덧붙는다 (clear 검사가 공짜로 통과하지 않게)."""
     targets.login(tmp_path)
     ctx, scenario = scene_ctx()
-    click(ctx, point=[START.x, START.y])
+    click(ctx, point=START)
     password = load_target(tmp_path / targets.PASSWORD)
     type_text(ctx, text="old-password", target=password)
     type_text(ctx, text="new", target=password)

@@ -44,7 +44,28 @@ M1_APP_WINDOW_INPUT_NODE_TYPES: Final = frozenset(
     }
 )
 
-SDK_NODE_TYPES: Final = M0A_SDK_NODE_TYPES | M1_APP_WINDOW_INPUT_NODE_TYPES
+# M1 T11: 화면·이미지·검증·OCR (MVP 노드 목록 2·4·5장)
+M1_OBSERVE_NODE_TYPES: Final = frozenset(
+    {
+        "core.image.wait",
+        "core.image.wait_any",
+        "core.image.wait_gone",
+        "core.image.click",
+        "core.screen.wait_stable",
+        "core.screen.capture",
+        "core.assert.visible",
+        "core.assert.not_visible",
+        "core.assert.text",
+        "core.ocr.read",
+        "core.ocr.wait_text",
+        "core.ocr.click_text",
+    }
+)
+
+M1_NODE_TYPES: Final = M1_APP_WINDOW_INPUT_NODE_TYPES | M1_OBSERVE_NODE_TYPES
+"""M1 노드 22개 (구현 계획 M1 1장)."""
+
+SDK_NODE_TYPES: Final = M0A_SDK_NODE_TYPES | M1_NODE_TYPES
 
 CORE_NODE_TYPES: Final = ENGINE_NODE_TYPES | SDK_NODE_TYPES
 
@@ -59,4 +80,8 @@ CORE_NODE_MODULES: Final = (
     "kookabug_nodes.app",
     "kookabug_nodes.window",
     "kookabug_nodes.input",
+    "kookabug_nodes.image",
+    "kookabug_nodes.screen",
+    "kookabug_nodes.assert_",
+    "kookabug_nodes.ocr",
 )

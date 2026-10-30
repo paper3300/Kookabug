@@ -9,12 +9,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fixtures.doc_examples.stub_nodes import registry_with_stubs
 from helpers.graphs import GraphBuilder, check, check_program, link, make_workspace, write_json
 from helpers.run import Ran, run_graph, tk
 from testkit import registry_with_testkit
 
 from kb_testing.doc_examples import json_blocks
+from kookabug_core.registry import default_registry
 from kookabug_core.schema import check_shape
 from kookabug_core.workspace import LOCAL_FILE, WORKSPACE_FILE, Workspace
 from kookabug_sdk.testing import InputCall
@@ -277,7 +277,7 @@ def test_doc_examples_validate(tmp_path: Path) -> None:
     program, diags = check_program(
         Workspace.open(tmp_path),
         INVENTORY_OPEN,
-        registry=registry_with_stubs(),
+        registry=default_registry(),
         secrets={"accounts.qa_tester_01": "hunter2"},
     )
     assert sorted(program.graphs) == [ENTER_WORLD, INVENTORY_OPEN]

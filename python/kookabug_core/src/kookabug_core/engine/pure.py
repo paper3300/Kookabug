@@ -9,6 +9,8 @@
 - 값은 복사해서 넘긴다. 노드가 받은 list·dict를 고쳐도 그래프 상수·출력 표·변수는 그대로다
 - 계산한 값은 핀 선언과 다시 대조한다. `any` 출력을 거쳐 온 값(비밀값이 `string` 핀으로 가는 것
   포함)은 실행 전 검증이 못 막기 때문이다
+- 점·사각형 배열 상수(`[x, y]`, `[x, y, w, h]`)는 대조한 뒤 핀 타입대로 `Point`·`Rect`로 바꿔
+  준다. 노드는 상수 모양을 따로 바꾸지 않는다
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from kookabug_core.engine.frame import Frame
 from kookabug_core.ir import LinkRef, Node, Unresolved
 from kookabug_core.registry import NodeDef
 from kookabug_core.validate.pins import node_pins
-from kookabug_core.validate.types import value_problems
+from kookabug_core.validate.types import coerce, pin_type, value_problems
 
 __all__ = ["check_inputs", "nodedef_of", "resolve_inputs"]
 
@@ -57,12 +59,16 @@ def _no_link(ref: LinkRef) -> None:
     return None
 
 
-def check_inputs(runtime: Runtime, frame: Frame, node: Node, values: Mapping[str, Any]) -> None:
-    """계산한 입력 값을 핀 선언(타입·선택지·범위)과 대조한다."""
+def check_inputs(
+    runtime: Runtime, frame: Frame, node: Node, values: Mapping[str, Any]
+) -> dict[str, Any]:
+    """계산한 입력 값을 핀 선언(타입·선택지·범위)과 대조하고, 점·사각형 배열 상수를 핀 타입대로
+    `Point`·`Rect`로 바꾼 값을 돌려준다 (`validate.types.coerce`)."""
     nodedef = nodedef_of(runtime, node)
     pins = node_pins(runtime.program, frame.graph, node, nodedef).inputs
     if pins is None:
-        return
+        return dict(values)
+    checked: dict[str, Any] = {}
     for pin, value in values.items():
         decl = pins.get(pin)
         if decl is None:
@@ -71,6 +77,8 @@ def check_inputs(runtime: Runtime, frame: Frame, node: Node, values: Mapping[str
         if problems:
             _, code, message = problems[0]
             raise EngineError(code, f"'{node.id}' 입력 '{pin}': {message}")
+        checked[pin] = coerce(value, pin_type(decl.type))
+    return checked
 
 
 class _Evaluation:
@@ -85,8 +93,7 @@ class _Evaluation:
         values = {
             pin: self.value(v) for pin, v in node.inputs.items() if only is None or pin in only
         }
-        check_inputs(self.runtime, self.frame, node, values)
-        return values
+        return check_inputs(self.runtime, self.frame, node, values)
 
     def value(self, value: Any) -> Any:
         if isinstance(value, LinkRef):

@@ -223,3 +223,12 @@ def test_ocr_result_secret_text_stays_secret() -> None:
     back = wire(SAMPLES["ocr_secret"])
     assert isinstance(back.text, Secret) and isinstance(back.lines[0].text, Secret)
     assert back.lines[0].text.reveal() == "pw"
+
+
+def test_ocr_result_observation_roundtrip_and_excluded_from_eq() -> None:
+    """OCR 결과의 캡처 시점 관측(창·`frame_info`)이 경계를 넘어도 남는다 (줄 `Match` 재검증용)."""
+    seen = FrameRef("wgc", (1024, 640), 96, capture_id=7, observed_at=12.5)
+    result = OcrResult("a", (OcrLine("a", Rect(0, 0, 9, 9), 0.8),), 0.8, BOUND, seen)
+    back = wire(result)
+    assert back.window == BOUND and back.frame_info == seen
+    assert back == OcrResult("a", (OcrLine("a", Rect(0, 0, 9, 9), 0.8),), 0.8, BOUND)

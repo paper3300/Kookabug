@@ -51,6 +51,9 @@
 | `core.assert.text` | OCR 문구 검증 | `region`, `equals` / `contains` / `regex` | `text` | **ok**, fail |
 | `core.assert.compare` | 값 비교 검증 (예: 구매 후 골드가 줄었는지). `op`는 `core.logic.compare`와 같다 (8장) | `a`, `op`, `b` | | **ok**, fail |
 
+- 화면 검증(`visible`·`not_visible`·`text`)은 바로 바뀌지 않는 화면을 위해 `timeout_ms`(기본 5초) 동안 다시 보고, 그 안에 한 번이라도 맞으면 `ok`, 아니면 `fail`이다. `timeout_ms: 0`이면 지금 화면을 한 번만 본다
+- `assert.text`는 `equals`(앞뒤 공백 무시 같음)·`contains`·`regex` 중 하나. `text`(마지막으로 읽은 글자)는 `fail`에서도 준다. 민감 target 영역이면 `text`는 비밀값이고 실패 메시지에 가린 값만 쓴다
+
 `core.test.*`의 `reason`은 `string|secret`이다 (생략 가능). 비밀값이 든 사유(`core.text.format` 결과 등)도 받고, 판정 사유와 실행 기록에는 가린 값(`***`)만 남는다. 받는 값만 넓힌 것이라 노드 `version`은 1 그대로다.
 
 ## 3. 앱·창
@@ -77,8 +80,15 @@
 | `core.image.wait_any` | 여러 대상 중 먼저 보이는 것으로 분기. 동시에 보이면 `config.exits` 앞쪽 | `config.exits`, `targets` | `match` | 각 출구, timeout |
 | `core.image.wait_gone` | 대상이 사라질 때까지 대기 (로딩 표시 등) | `target` | | **gone**, timeout |
 | `core.image.click` | 대기 + 클릭을 한 번에. 녹화 결과 대부분이 이 노드 | `target`, `button`, `count` | `match` | **done**, not_found |
-| `core.screen.wait_stable` | 화면이 멈출 때까지 대기 (애니메이션 끝) | `region`, `stable_ms` | | **stable**, timeout |
+| `core.screen.wait_stable` | 화면이 멈출 때까지 대기 (애니메이션 끝) | `region`, `stable_ms`, `tolerance` | | **stable**, timeout |
 | `core.screen.capture` | 스크린샷을 기록에 남김 | `region`, `name` | `image` | **done** |
+
+- 기다리는 노드는 `timeout_ms` 동안 100 ms 간격으로 캡처해 보고, 그 안에 못 찾으면 마지막으로 본 프레임을 `steps/<스텝>_timeout`(`click`은 `_not_found`)으로 남긴다. 화면이 멈춰 있으면 같은 프레임을 다시 보는 것이라 오류가 아니다 — `timeout_ms` 안에 `timeout`으로 끝난다. `timeout_ms: 0`이면 기다리지 않고 지금 화면을 한 번 본다
+- `wait_any`의 `targets`는 `config.exits`와 같은 이름들이다(다르면 `error`). 한 프레임에 여럿이 보이면 `config.exits` 앞쪽
+- `wait_gone`은 처음부터 없으면 바로 `gone`
+- `image.click`은 `timeout_ms`(기본 10초) 동안 기다렸다가 target의 클릭 지점을 누른다. `button`·`count`는 `core.input.click`과 같다. 못 찾으면 입력하지 않고 `not_found`
+- `wait_stable`: 연속한 두 관측의 차이(채널 평균 절대 차이 / 255)가 `tolerance`(기본 0.001) 이하인 상태가 `stable_ms`(기본 500) 동안 이어지면 `stable`. 1024x640 화면에서 버튼 한 줄의 강조가 바뀌는 정도가 약 0.006이다. 작은 깜박임까지 무시하려면 `region`을 좁힌다
+- `region`(`wait_stable`·`capture`)은 사각형 `[x, y, w, h]`(클라이언트 픽셀 — 창 크기·DPI에 따라 바뀌지 않는다. [[그래프 JSON 스키마 v0]] 1장 "상수"). `wait_stable`은 영역이 지금 화면과 겹치지 않으면(창이 작아진 뒤 포함) 멈춘 것으로 보지 않고 `error`(지금 클라이언트 크기와 영역을 메시지에)다. `capture`는 `steps/<스텝>_<name>.png`로 남기고(기록 정책이 막으면 생략) 이미지를 낸다
 
 ## 5. OCR
 
@@ -86,7 +96,11 @@
 |---|---|---|---|---|
 | `core.ocr.read` | 영역의 글자 읽기. `parse: number`면 숫자로 | `region`, `parse` | `text`, `number`, `confidence` | **done**, unreadable |
 | `core.ocr.wait_text` | 문구가 나타날 때까지 대기 | `region`, `contains` / `regex` | `text`, `match` | **found**, timeout |
-| `core.ocr.click_text` | 문구를 찾아 클릭 | `region`, `text` | `match` | **done**, not_found |
+| `core.ocr.click_text` | 문구를 찾아 클릭 | `region`, `text`, `button` | `match` | **done**, not_found |
+
+- `wait_text`는 `contains`(부분 일치)·`regex`(검색) 중 하나. `match`는 그 문구가 있는 글자 상자(한 줄에 걸치면 그 줄, 여러 줄이면 전부를 덮는 상자)다
+- `click_text`는 `timeout_ms`(기본 10초) 동안 `text`가 든 글자 상자를 기다렸다가 그 가운데를 누른다. 못 찾으면 입력하지 않고 `not_found`. OCR이 낸 `match`(`wait_text`·`click_text`)는 영역 종류(target·사각형·전체)와 무관하게 읽은 캡처의 관측(창·캡처 방식·클라이언트 크기·DPI)을 실어, 입력 직전 재검증이 그 뒤의 창 크기·DPI 변화를 알아본다. 다시 찾을 target이 없으므로 바뀌었으면 옛 좌표를 누르지 않고 `stale_observation`이다. 사각형 영역이 지금 화면과 겹치지 않으면 OCR 노드도 `error`다
+- `read`는 기다리지 않는다(관측 한 번). 스텝의 마지막 OCR 글자는 실행 기록에 `steps/<스텝>_ocr.txt`로 남는다
 
 `confidence`는 엔진이 주지 않으면 `null`이다 (Windows OCR은 주지 않음). 엔진마다 척도가 달라서 엔진끼리 비교하지 않는다. RapidOCR은 읽은 글자 상자들의 점수 평균(0~1)이고, 글자가 하나도 없으면 `null`이다.
 
@@ -96,7 +110,7 @@
 
 `sensitive: true` target으로 읽은 `text`는 `secret`이고, `number`는 `null`이다(숫자 비밀 타입이 없다). 그 OCR 텍스트는 기록에 남기지 않는다(`omitted.reason = "sensitive_target"`).
 
-`region`은 찾기 대상(`$target`) 또는 정규화 사각형. 기준 요소 옆을 읽는 Anchor 방식은 target 파일의 옵션으로 둔다. `region`이 없으면 화면 전체를 읽는데, 큰 화면은 작은 글자를 놓치지 않도록 원래 해상도 타일로 나눠 검출하므로 느리다(1920×1080 약 1.5초, 4K 약 5초). `wait_text`처럼 되풀이해 읽는 노드는 영역을 주는 것이 기본이다.
+`region`은 찾기 대상(`$target` — 지금 화면에서 찾은 상자 안을 읽는다. 지금 없으면 `read`는 `unreadable`, 기다리는 노드는 계속 기다린다) 또는 사각형 `[x, y, w, h]`(클라이언트 픽셀, [[그래프 JSON 스키마 v0]] 1장 "상수"). 화면 비율로 잡을 영역은 target(`search.region`이 정규화 좌표)으로 쓴다. 기준 요소 옆을 읽는 Anchor 방식은 target 파일의 옵션으로 둔다. `region`이 없으면 화면 전체를 읽는데, 큰 화면은 작은 글자를 놓치지 않도록 원래 해상도 타일로 나눠 검출하므로 느리다(1920×1080 약 1.5초, 4K 약 5초). `wait_text`처럼 되풀이해 읽는 노드는 영역을 주는 것이 기본이다.
 
 ## 6. 입력
 
@@ -110,7 +124,7 @@
 
 입력 노드는 입력 직전에 대상 창이 유효한지, 포그라운드인지 확인한다. 실패하면 `error`다.
 
-- 위치: `match`는 target의 클릭 지점, 점은 클라이언트 픽셀이고 그래프 상수로는 `[x, y]`로 쓴다. `drag`의 `start`·`end`는 둘 다 받는다
+- 위치: `match`는 target의 클릭 지점, 점은 클라이언트 픽셀이고 그래프 상수로는 `[x, y]`로 쓴다(실행 전 검증이 모양을 보고 실행기가 점으로 바꾼다 — [[그래프 JSON 스키마 v0]] 1장 "상수"). `drag`의 `start`·`end`는 둘 다 받는다
 - `button`은 `left`·`right`·`middle`·`x1`·`x2`, `count` 2면 이중 클릭. `drag`의 `duration_ms` 기본은 300
 - `keys`는 키 하나나 `+`로 이은 조합(`ctrl+a`). `hold_ms`만큼 누르고 있다가 뗀다
 - `type_text`의 `target`(생략 가능)은 지금 화면에서 한 번 찾아 그 칸을 먼저 클릭한다. 못 찾으면 `error`다 — 칸이 뜰 때까지는 대기 노드로 기다린다. `clear`는 입력 전에 `ctrl+a` → `backspace`로 칸을 비운다(전체 선택이 없는 칸은 끝 글자 하나만 지워진다). `text`가 비밀값이면 기록에 남지 않는다
@@ -198,4 +212,6 @@
 |---|---|
 | M1 앱·창·입력 노드: `launch`의 `cwd` 입력·`timeout` 출구의 `process`, `attach`의 `owned`, 창을 정한 노드의 활성화, `drag` 입력 이름 `from`·`to` → `start`·`end`, 점 상수 `[x, y]`, `type_text`의 칸 찾기·`clear` 방법 (3·6장) | 게임은 작업 폴더가 맞아야 뜨는 것이 많다. `from`은 Python 예약어라 노드 함수 인자가 될 수 없다(SDK `ctx.input.drag(start, end)`와 같게). 실행기가 구조 타입 상수를 바꾸지 않아 점 상수의 모양을 정해야 한다. `clear`는 게임 입력 칸이 공통으로 아는 키 조합이 필요하다 |
 | M1 OCR: `confidence`(상자 점수 평균, 글자 없으면 `null`)·`text` 합치기(줄·띄어쓰기)·`parse: "number"` 규칙·`sensitive`의 `number = null`, 영역 없는 전체 읽기의 속도 (5장) | 노드 출력의 뜻을 엔진 구현(`kookabug_platform.ocr`)과 맞춘다. 숫자에는 비밀 타입이 없어 가린 값을 낼 수 없다. 큰 화면 전체 읽기는 타일 검출이라 수 초가 걸린다 |
+| M1 화면·이미지·검증·OCR 노드: 기다림(100 ms 간격, `timeout_ms: 0` = 한 번), 실패 시 마지막 프레임 `_timeout`·`_not_found`, `wait_any` 이름 일치, `image.click`·`ocr.click_text`의 기다림(`timeout_ms`)·`button`, `wait_stable`의 `tolerance`(기본 0.001), 화면 검증의 기다림과 `assert.text` 비교, `region` 사각형은 클라이언트 픽셀 `[x, y, w, h]`(정규화 사각형이 아님), 점 상수는 실행기의 일반 규칙 (2·4·5·6장) | 화면은 바로 바뀌지 않아 검증도 잠깐 다시 봐야 한다. 정지 화면은 같은 프레임의 반복이라 오류가 아니다. 버튼 한 줄 강조(약 0.006)를 멈춘 화면으로 보면 애니메이션 끝을 놓친다. SDK의 `Rect`가 클라이언트 픽셀이고, 화면 비율에 따르는 영역은 target(정규화 `search.region`)이 맡는다 |
+| OCR `match`가 영역 종류와 무관하게 캡처 시점 관측을 실음, 화면 밖 픽셀 영역은 `error` (4·5장) | 사각형·전체 화면 OCR의 `match`에 관측이 없으면 읽은 뒤 창 크기·DPI가 바뀌어도 옛 좌표를 눌렀다. 화면 밖 영역은 비교·읽을 픽셀이 없는데 "안 변함"으로 판정됐다 |
 | M1 공통 입력 `window`의 규칙: 받는 노드(exec 노드 전부, 같은 이름 입력이 있으면 그 입력), 타입·`null`, 바뀌는 범위, `core.graph.call`이면 서브그래프가 이어받는 창 (공통 입력) | "모든 exec 노드"만으로는 같은 이름 입력을 가진 노드와 서브그래프 호출에서 뜻이 정해지지 않는다 |

@@ -396,15 +396,15 @@ def _box(region: Rect | Sequence[int]) -> Box:
 def diff_pixels(a: Pixels, b: Pixels, region: Rect | Sequence[int] | None = None) -> float:
     """두 픽셀 배열의 채널 평균 절대 차이 / 255. 모양이 다르면 1.0.
 
-    `region`은 이미지 기준 `(x, y, w, h)`이고 이미지 안으로 자른다. 잘라서 비면 0.0(비교할 것이
-    없다).
+    `region`은 이미지 기준 `(x, y, w, h)`이고 이미지 안으로 자른다. 잘라서 비면 1.0 — 비교할 픽셀이
+    없는 영역을 "같다"로 보면 화면 밖 영역이 늘 멈춘 화면으로 판정된다(T11 검수 3).
     """
     if a.shape != b.shape:
         return 1.0
     if region is not None:
         x, y, w, h = _intersect(_box(region), (0, 0, int(a.shape[1]), int(a.shape[0])))
         if w == 0 or h == 0:
-            return 0.0
+            return 1.0
         a, b = a[y : y + h, x : x + w], b[y : y + h, x : x + w]
     if a.size == 0:
         return 0.0

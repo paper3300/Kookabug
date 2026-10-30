@@ -19,8 +19,13 @@ modules = [
     "kookabug_nodes.app",
     "kookabug_nodes.window",
     "kookabug_nodes.input",
+    "kookabug_nodes.image",
+    "kookabug_nodes.screen",
+    "kookabug_nodes.assert_",
+    "kookabug_nodes.ocr",
 ]
-# 노드 effects는 여기에 있어야 한다 (앱·창 = process, 입력 = input, 글자 입력의 칸 찾기 = capture)
+# 노드 effects는 여기에 있어야 한다 (앱·창 = process, 입력 = input, 화면·이미지·OCR·글자 입력의 칸
+# 찾기 = capture)
 permissions = ["capture", "input", "process"]
 
 [tool.uv.sources]

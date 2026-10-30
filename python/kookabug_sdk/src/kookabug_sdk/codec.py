@@ -121,6 +121,8 @@ def encode(value: Any) -> Any:
                 for line in value.lines
             ],
             "confidence": value.confidence,
+            "window": None if value.window is None else _window(value.window),
+            "frame_info": None if value.frame_info is None else _frame_ref(value.frame_info),
         }
     raise CodecError(f"경계 너머로 보낼 수 없는 값: {type(value).__name__}")
 
@@ -331,16 +333,18 @@ def _decode_tagged(tag: Any, data: dict[str, Any]) -> Any:
                 fullscreen=_bool(data["fullscreen"]),
             )
         case "ocr_result":
-            _fields(data, "text", "lines", "confidence")
+            _fields(data, "text", "lines", "confidence", "window", "frame_info")
             lines = data["lines"]
             if not isinstance(lines, list):
                 raise CodecError("ocr_result의 lines는 배열이다")
             items: list[Any] = lines
-            confidence = data["confidence"]
+            confidence, window, frame_info = data["confidence"], data["window"], data["frame_info"]
             return OcrResult(
                 _text(decode(data["text"])),
                 tuple(_decode_ocr_line(line) for line in items),
                 None if confidence is None else _num(confidence),
+                window=None if window is None else _decode_window(window),
+                frame_info=None if frame_info is None else _decode_frame_ref(frame_info),
             )
         case _:
             raise CodecError(f"모르는 값 태그 {tag!r}")

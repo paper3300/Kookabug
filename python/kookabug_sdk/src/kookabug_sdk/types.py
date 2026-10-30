@@ -211,11 +211,17 @@ class OcrResult:
 
     `text`는 줄을 위→아래·왼→오른 순서로 `\\n`으로 이은 것, `confidence`는 상자 점수 평균(엔진
     척도, 글자가 없으면 None). `sensitive=True`로 읽으면 `text`와 줄 글자가 `Secret`이다.
+
+    `window`·`frame_info`는 읽은 이미지의 **캡처 시점** 관측(창, 캡처 방식·클라이언트 크기·DPI·
+    캡처 번호)이다. 줄 상자로 만든 `Match`에 실어 입력 직전 재검증이 쓴다. `frame_info`는 값
+    비교에 들지 않는다.
     """
 
     text: str | Secret
     lines: tuple[OcrLine, ...] = ()
     confidence: float | None = None
+    window: WindowRef | None = None
+    frame_info: FrameRef | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True, slots=True)

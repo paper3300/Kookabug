@@ -12,6 +12,12 @@
   캡처다
 - 예외 스크린샷: 노드가 `error`로 끝나면 **그 스텝 안에서 얻은 마지막 캡처**만 후보다. 그 스텝에서
   캡처가 없으면 남기지 않는다
+- 실패 증거(M1 2.15): 처리되지 않은 fail이 확정된 스텝은 **그 스텝 아래(자기와 안쪽 스텝)에서
+  얻은 마지막 캡처**를 `steps/<스텝>_fail`로 남긴다. 안쪽 스텝이 닫힐 때 그 마지막 캡처를 부른
+  스텝으로 올린다(부른 스텝의 것보다 나중일 때만). 그 아래에서 캡처가 없으면 남기지 않는다
+- OCR 글자: 스텝 안에서 마지막으로 읽은 글자를 스텝을 닫을 때 `steps/<스텝>_ocr.txt`로 남긴다.
+  `sensitive` target으로 읽은 적이 있으면 남기지 않고 `sensitive_target`, 그 밖에는 스크린샷과
+  같은 정책(구간 끄기·비밀값 입력·획득 당시 표시)을 따른다 — 화면에서 읽은 글자도 화면이다
 - 경로는 실행 폴더 기준 `steps/<스텝>_<이름>`. 이미지 파일을 복사할 때는 확장자를 붙인다
 - 프레임 저장소(M1 2.7, `FrameRegistry`)가 있으면 캡처 픽셀은 저장소에 있고 노드는 픽셀 없는
   **참조 이미지**(`capture_id`만)를 받는다. 참조 이미지를 남길 때는 저장소 픽셀을 PNG로 인코딩해
@@ -34,6 +40,8 @@ from kookabug_sdk.types import Image, Match, WindowRef
 
 __all__ = [
     "ERROR_SCREENSHOT",
+    "FAIL_SCREENSHOT",
+    "OCR_TEXT",
     "STEPS_DIR",
     "ArtifactStore",
     "CaptureMeta",
@@ -49,6 +57,10 @@ __all__ = [
 STEPS_DIR: Final = "steps"
 ERROR_SCREENSHOT: Final = "error"
 """예외 스크린샷의 이름 (`steps/<스텝>_error.png`)."""
+FAIL_SCREENSHOT: Final = "fail"
+"""실패 증거의 이름 (`steps/<스텝>_fail.png`, M1 2.15)."""
+OCR_TEXT: Final = "ocr.txt"
+"""스텝의 마지막 OCR 글자 (`steps/<스텝>_ocr.txt`)."""
 
 _UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -184,12 +196,26 @@ class _CaptureMark:
     """획득한 스텝에서 스크린샷을 막은 이유와 위치."""
 
 
+@dataclass(frozen=True, slots=True)
+class _OcrRead:
+    text: str
+    image: Image
+    sensitive: bool
+
+
 @dataclass(eq=False)
 class _StepRecord:
     policy: StepPolicy
     artifacts: list[str] = field(default_factory=list[str])
     omitted: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
     last_capture: Image | None = None
+    """이 스텝이 직접 얻은 마지막 캡처 (예외 스크린샷)."""
+    last_under: Image | None = None
+    """이 스텝과 안쪽 스텝이 얻은 마지막 캡처 (실패 증거)."""
+    ocr: _OcrRead | None = None
+    """마지막으로 읽은 OCR 글자."""
+    ocr_sensitive: bool = False
+    """`sensitive` target으로 읽은 적이 있다."""
 
 
 class Recorder:
@@ -228,12 +254,17 @@ class Recorder:
         self, step: str, *, parent: str | None = None
     ) -> tuple[list[str], list[dict[str, Any]]]:
         """스텝을 닫고 `(artifacts, omitted)`를 돌려준다. 스텝의 마지막 캡처는 놓는다 — `parent`
-        (부른 스텝)를 주면 프레임 저장소에서 그 스텝의 증거로 넘긴다."""
+        (부른 스텝)를 주면 그 스텝 아래의 마지막 캡처로 올린다(프레임 저장소에서도 그 스텝의 증거로
+        넘긴다). OCR 글자는 그 전에 `ocr_artifact`로 남긴다."""
         record = self._open.pop(step, None)
+        above = self._open.get(parent) if parent is not None else None
         if self.frames is not None:
-            self.frames.close_step(step, parent=parent if parent in self._open else None)
+            self.frames.close_step(step, parent=parent if above is not None else None)
         if record is None:
             return [], []
+        last = record.last_under
+        if above is not None and last is not None and _later(last, above.last_under):
+            above.last_under = last
         return record.artifacts, record.omitted
 
     def note_outputs(self, outputs: Mapping[str, Any]) -> None:
@@ -271,7 +302,7 @@ class Recorder:
             if self.frames is None:
                 raise RuntimeError("프레임 저장소 없이 저장소용 픽셀을 받았다")
             self.frames.register(self._captures, staged, step)
-        record.last_capture = tagged
+        record.last_capture = record.last_under = tagged
         block = record.policy.screenshot_block()
         if block is not None:
             self._blocked[self._captures] = _CaptureMark(step, block)
@@ -304,6 +335,40 @@ class Recorder:
             return None
         return self.screenshot(step, record.last_capture, ERROR_SCREENSHOT)
 
+    def fail_screenshot(self, step: str) -> str | None:
+        """처리되지 않은 fail이 그 스텝에서 확정됐을 때: 그 스텝 아래(자기와 안쪽 스텝)의 마지막
+        캡처를 (정책이 허용하면) 남긴다 (M1 2.15)."""
+        record = self._open.get(step)
+        if record is None or record.last_under is None:
+            return None
+        return self.screenshot(step, record.last_under, FAIL_SCREENSHOT)
+
+    def ocr_read(self, step: str, image: Image, text: str, *, sensitive: bool) -> None:
+        """그 스텝에서 읽은 OCR 글자 (스텝을 닫을 때 마지막 것을 남긴다)."""
+        record = self._open.get(step)
+        if record is None:
+            return
+        record.ocr = _OcrRead(text, image, sensitive)
+        record.ocr_sensitive = record.ocr_sensitive or sensitive
+
+    def ocr_artifact(self, step: str) -> None:
+        """스텝을 닫기 전에: 그 스텝에서 마지막으로 읽은 OCR 글자를 남긴다 (또는 생략 이유)."""
+        record = self._open.get(step)
+        if record is None or record.ocr is None:
+            return
+        read = record.ocr
+        record.ocr = None
+        block: tuple[OmitReason, str | None] | None = (
+            ("sensitive_target", None) if record.ocr_sensitive else self._block(record, read.image)
+        )
+        if block is None:
+            record.artifacts.append(self.store.save_text(step, OCR_TEXT, read.text))
+            return
+        entry: dict[str, Any] = {"kind": "text", "name": "ocr", "reason": block[0]}
+        if block[1] is not None:
+            entry["source"] = block[1]
+        record.omitted.append(entry)
+
     def text(self, step: str, name: str, value: Any) -> str:
         """텍스트 artifact. 비밀값은 가린다 (M0b는 텍스트 구간 끄기가 없다)."""
         record = self._open[step]
@@ -330,6 +395,13 @@ class Recorder:
         """이 스텝 구간의 영상을 남겨도 되는가 (`failed_only`는 실행이 실패했을 때만)."""
         mode = self.video_policy(step)
         return mode == "on" or (mode == "failed_only" and run_failed)
+
+
+def _later(image: Image, than: Image | None) -> bool:
+    """`image`가 `than`보다 나중에 얻은 캡처인가 (캡처 번호는 실행 안에서 늘어난다)."""
+    if than is None:
+        return True
+    return (image.capture_id or 0) > (than.capture_id or 0)
 
 
 def _capture_ids(value: Any) -> list[int]:

@@ -5,18 +5,19 @@
 - 출구의 `screen`마다 문서의 화면 판정 예시(4장)를 그 ID로 둔다
 - `kookabug.json`은 워크스페이스 문서 예시 그대로(`game.executable`이 `null`), `local.json`에
   실행 경로
-- `$secret`은 메모리 비밀값, M1 노드는 선언만 한 스텁(`fixtures.doc_examples.stub_nodes`)
+- `$secret`은 메모리 비밀값. 노드는 설치된 코어 플러그인 그대로(M1 노드 22개가 다 구현돼 스텁이
+  없다)
 """
 
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from fixtures.doc_examples.stub_nodes import registry_with_stubs
 from helpers.graphs import check, check_program, write_json
 
 from kb_testing.doc_examples import json_blocks
 from kookabug_core.diagnostics import Diagnostic
+from kookabug_core.registry import default_registry
 from kookabug_core.validate.context import ValidationContext
 from kookabug_core.workspace import LOCAL_FILE, WORKSPACE_FILE, Workspace
 
@@ -69,7 +70,7 @@ def doc_workspace(root: Path, *, executable: str | None = EXECUTABLE) -> Workspa
 
 
 def run(ws: Workspace, rel: str) -> list[Diagnostic]:
-    return check(ws, rel, registry=registry_with_stubs(), secrets=SECRETS)
+    return check(ws, rel, registry=default_registry(), secrets=SECRETS)
 
 
 def test_enter_world_validates_without_errors(tmp_path: Path) -> None:
@@ -79,9 +80,7 @@ def test_enter_world_validates_without_errors(tmp_path: Path) -> None:
 def test_inventory_open_validates_without_errors(tmp_path: Path) -> None:
     # 테스트에서 시작하면 부르는 서브그래프까지 같이 검증한다
     ws = doc_workspace(tmp_path)
-    program, diags = check_program(
-        ws, INVENTORY_OPEN, registry=registry_with_stubs(), secrets=SECRETS
-    )
+    program, diags = check_program(ws, INVENTORY_OPEN, registry=default_registry(), secrets=SECRETS)
     assert sorted(program.graphs) == [ENTER_WORLD, INVENTORY_OPEN]
     assert diags == []
 
@@ -90,7 +89,7 @@ def test_inventory_open_unconnected_login_failed_is_not_a_validation_error(tmp_p
     # login_failed(fail)는 연결하지 않았다 → 실행 때 처리되지 않은 실패(판정 2행)일 뿐
     # 검증 오류가 아니다
     ws = doc_workspace(tmp_path)
-    registry = registry_with_stubs()
+    registry = default_registry()
     program, diags = check_program(ws, INVENTORY_OPEN, registry=registry, secrets=SECRETS)
     graph = program.graphs[INVENTORY_OPEN]
     call = graph.nodes["n_enter_world"]

@@ -418,7 +418,7 @@
       "description": "정책으로 남기지 않은 증거와 그 이유",
       "properties": {
         "kind": {
-          "description": "증거 종류 (screenshot 등)",
+          "description": "증거 종류 (screenshot, text 등)",
           "minLength": 1,
           "type": "string"
         },
@@ -426,7 +426,8 @@
           "type": "string"
         },
         "reason": {
-          "enum": ["capture_policy", "policy_off", "secret_input"]
+          "description": "sensitive_target = sensitive target 영역에서 읽은 OCR 글자",
+          "enum": ["capture_policy", "policy_off", "secret_input", "sensitive_target"]
         },
         "source": {
           "description": "정책을 끈 곳",

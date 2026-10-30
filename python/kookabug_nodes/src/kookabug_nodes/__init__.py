@@ -12,4 +12,8 @@ MODULES = (
     "kookabug_nodes.app",
     "kookabug_nodes.window",
     "kookabug_nodes.input",
+    "kookabug_nodes.image",
+    "kookabug_nodes.screen",
+    "kookabug_nodes.assert_",
+    "kookabug_nodes.ocr",
 )

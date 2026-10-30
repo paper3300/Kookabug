@@ -154,11 +154,14 @@ export interface StepEndEvent {
  */
 export interface Omitted {
   /**
-   * 증거 종류 (screenshot 등)
+   * 증거 종류 (screenshot, text 등)
    */
   kind: string;
   name?: string;
-  reason: "capture_policy" | "policy_off" | "secret_input";
+  /**
+   * sensitive_target = sensitive target 영역에서 읽은 OCR 글자
+   */
+  reason: "capture_policy" | "policy_off" | "secret_input" | "sensitive_target";
   /**
    * 정책을 끈 곳
    */

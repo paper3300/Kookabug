@@ -148,7 +148,9 @@ def test_diff_region_compares_same_client_area_per_image_origin(tmp_path: Path) 
     assert engines.diff(left, right, region=common) == 0.0  # 원점이 다른 두 영역 캡처
     assert engines.diff(full, right, region=common) == 0.0  # 전체 / 영역
     assert engines.diff(right, full, region=Rect(0, 0, 30, 20)) == 0.0  # 둘 다 덮는 부분만
-    assert engines.diff(left, right, region=Rect(25, 0, 5, 5)) == 0.0  # 겹치는 곳 없음
+    # 겹치는 곳 없음 = 비교할 픽셀이 없다 → 1.0 (멈춘 화면으로 보지 않는다, T11 검수 3)
+    assert engines.diff(left, right, region=Rect(25, 0, 5, 5)) == 1.0
+    assert engines.diff(full, full, region=Rect(500, 0, 5, 5)) == 1.0  # 같은 프레임이어도
     assert engines.diff(left, right) == pytest.approx(10 * 8 / 255)  # region 없으면 이미지 전체
     # 파일 이미지(원점 (0, 0)) / 참조 이미지
     path = tmp_path / "full.png"

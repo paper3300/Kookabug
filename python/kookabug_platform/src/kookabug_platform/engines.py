@@ -196,16 +196,18 @@ class RunEngines:
         `region`은 클라이언트 좌표다. 두 관측의 **클라이언트 크기가 다르면 1.0**(창 크기가 바뀜 =
         화면이 안정되지 않음 — 영역을 잘라 보기 전에 판정한다). 같으면 이미지마다 자기 원점(영역
         캡처면 그 영역 왼쪽 위, 파일 이미지는 (0, 0))을 빼서 **같은 클라이언트 영역**의 픽셀끼리
-        비교한다 — 두 이미지와 `region`이 모두 겹치는 부분만 본다(겹치는 곳이 없으면 0.0). 파일
-        이미지의 클라이언트 크기는 그 이미지 크기다.
+        비교한다 — 두 이미지와 `region`이 모두 겹치는 부분만 본다. **겹치는 곳이 없으면 1.0**(비교할
+        픽셀이 없는 영역을 "같다"로 보면 화면 밖 영역이 늘 멈춘 화면이 된다 — 같은 프레임이어도).
+        파일 이미지의 클라이언트 크기는 그 이미지 크기다.
         """
         sa, sb = self._stored(a), self._stored(b)
         if region is None and sa is not None and sb is not None:
             return self.vision.diff(sa[0], sb[0])
+        same = False
         if sa is not None and sb is not None:
             assert self.store is not None
-            if self.store.identity(sa[0]) == self.store.identity(sb[0]):
-                return 0.0  # 같은 프레임·같은 자르기 = 같은 원점의 같은 픽셀
+            # 같은 프레임·같은 자르기 = 같은 원점의 같은 픽셀 (영역이 겹치는지는 아래에서 본다)
+            same = self.store.identity(sa[0]) == self.store.identity(sb[0])
         with contextlib.ExitStack() as stack:
             pa, oa, client_a = self._view(a, sa, stack)
             pb, ob, client_b = self._view(b, sb, stack)
@@ -218,6 +220,8 @@ class RunEngines:
             )
             x, y, w, h = common
             if w == 0 or h == 0:
+                return 1.0
+            if same:
                 return 0.0
             ca = pa[y - oa[1] : y - oa[1] + h, x - oa[0] : x - oa[0] + w]
             cb = pb[y - ob[1] : y - ob[1] + h, x - ob[0] : x - ob[0] + w]
@@ -257,13 +261,15 @@ class RunEngines:
         reader = self._reader()
         stored = self._stored(image)
         if stored is not None:
-            result = reader.read_capture(
-                stored[0], stored[1], region=_box(region), deadline=deadline
-            )
+            meta = stored[1]
+            result = reader.read_capture(stored[0], meta, region=_box(region), deadline=deadline)
         else:
-            result = reader.read(self._pixels(image), region=_box(region), deadline=deadline)
+            pixels = self._pixels(image)
+            meta = self._file_meta(image, pixels)
+            result = reader.read(pixels, region=_box(region), deadline=deadline)
         hide: Callable[[str], str | Secret] = Secret if sensitive else str
         lines = tuple(
             OcrLine(hide(line.text), Rect(*line.box), line.score) for line in result.lines
         )
-        return OcrResult(hide(result.text), lines, result.confidence)
+        seen = FrameRef(meta.backend, meta.client_size, meta.dpi, meta.capture_id, meta.observed_at)
+        return OcrResult(hide(result.text), lines, result.confidence, meta.window, seen)

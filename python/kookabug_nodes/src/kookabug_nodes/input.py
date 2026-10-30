@@ -4,12 +4,11 @@
 재검증(창 크기·DPI가 바뀌었으면 다시 찾기)은 runner의 공용 입력 서비스가 한다 (구현 계획 M1 2.4).
 확인에 실패하면 그 노드는 `error`, 다시 찾지 못하면 처리되지 않은 fail(`stale_observation`)이다.
 
-그래프에 상수로 쓰는 점은 `[x, y]`(클라이언트 픽셀)다. 실행기는 구조 타입 상수를 바꾸지 않고
-넘기므로 여기서 `Point`로 바꾼다.
+그래프에 상수로 쓰는 점은 `[x, y]`(클라이언트 픽셀)다. 실행기가 핀 타입대로 `Point`로 바꿔
+주므로(검증기·실행기의 일반 규칙) 노드는 `Match`·`Point`만 받는다.
 """
 
-from collections.abc import Sequence
-from typing import Annotated, Final, Literal, cast
+from typing import Annotated, Final, Literal
 
 from kookabug_sdk import Context, Exit, Input, Result, Secret, node
 from kookabug_sdk.types import Match, Point, Target
@@ -18,17 +17,6 @@ Button = Literal["left", "right", "middle", "x1", "x2"]
 
 # ctrl+a로 칸 전체를 고른 뒤 지운다. 전체 선택을 모르는 칸은 끝 글자 하나만 지워진다
 CLEAR_KEYS: Final = ("ctrl+a", "backspace")
-
-
-def _where(value: object, pin: str) -> Match | Point:
-    """`match`·`point` 입력 값. 연결로 온 `Match`·`Point`는 그대로, 상수 `[x, y]`는 `Point`로."""
-    if isinstance(value, Match | Point):
-        return value
-    if isinstance(value, list | tuple):
-        items = cast(Sequence[object], value)
-        if len(items) == 2 and all(type(v) is int for v in items):
-            return Point(cast(int, items[0]), cast(int, items[1]))
-    raise TypeError(f"{pin}은(는) 매칭 결과나 점 [x, y](정수 픽셀)여야 한다: {value!r}")
 
 
 @node(
@@ -51,7 +39,7 @@ def click(
     if match is not None and point is None:
         ctx.input.click(match, button=button, count=count)
     elif point is not None and match is None:
-        ctx.input.click(_where(point, "point"), button=button, count=count)
+        ctx.input.click(point, button=button, count=count)
     else:
         raise ValueError("match와 point 중 하나만 준다")
     return Result.ok("done")
@@ -74,9 +62,7 @@ def drag(
 ) -> Result:
     """`start`에서 눌러 `duration_ms` 동안 `end`까지 옮긴 뒤 뗀다. 매칭 결과는 클릭 지점, 점은
     클라이언트 픽셀 `[x, y]`."""
-    ctx.input.drag(
-        _where(start, "start"), _where(end, "end"), duration_ms=duration_ms, button=button
-    )
+    ctx.input.drag(start, end, duration_ms=duration_ms, button=button)
     return Result.ok("done")
 
 
@@ -90,10 +76,7 @@ def drag(
 )
 def scroll(ctx: Context, point: Point, amount: int) -> Result:
     """`point`(클라이언트 픽셀 `[x, y]`)에서 휠을 `amount` 칸 굴린다. 양수 = 위."""
-    where = _where(point, "point")
-    if isinstance(where, Match):
-        raise TypeError("point는 점 [x, y]다")
-    ctx.input.scroll(where, amount)
+    ctx.input.scroll(point, amount)
     return Result.ok("done")
 
 

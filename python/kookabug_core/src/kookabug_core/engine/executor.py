@@ -24,7 +24,13 @@
 - 입력 직전 재검증 실패(`StaleObservation`)는 출구 없는 처리되지 않은 fail(`stale_observation`)이다.
   노드가 삼키고 끝내도 같다
 - 프레임 저장소 (M1 2.7): 스텝 출력에 든 캡처는 출력 참조로 표시하고, 서브그래프 안 스텝이 닫힐 때
-  그 마지막 캡처를 부른 스텝의 증거로 넘긴다 (실패 증거 2.15)
+  그 마지막 캡처를 부른 스텝의 증거로 넘긴다
+- 실패 증거 (M1 2.15): fail 출구로 나간 스텝(서브그래프 호출이면 그 호출 스텝)과 재검증 실패
+  스텝은 그 스텝 아래(자기와 안쪽 스텝)의 마지막 캡처를 `steps/<스텝>_fail.png`로 한 번 남긴다.
+  처리되지 않은 fail의 원인 스텝(실패 위치)은 늘 이 스텝들 중 하나다 — 연결 안 된 출구로 바로
+  확정되든, 연결된 분기가 경로 끝에서 확정되든. 연결된 fail 분기가 뒤에서 처리돼도 그 스텝의
+  증거는 남는다(fail 출구로 나간 사실의 증거). 안쪽에서 확정돼 올라오는 fail은 지나가는 호출
+  스텝이 다시 남기지 않는다
 """
 
 from __future__ import annotations
@@ -451,17 +457,20 @@ class _Run:
                 end["error"] = {"code": halt.cause.code, "message": halt.cause.message}
                 if halt.status == "error" and halt.cause.step == step:
                     # 이 스텝의 오류만. 서브그래프 안쪽 오류는 안쪽 스텝이 이미 처리했다
-                    self._error_screenshot(node, step)
+                    self._evidence(node, step, "예외 스크린샷", self.rt.recorder.error_screenshot)
             elif isinstance(halt, _Unhandled):
                 end["message"] = halt.cause.message
-                if halt.cause.code == STALE_OBSERVATION and halt.cause.step == step:
-                    end["message"] = f"{STALE_OBSERVATION}: {halt.cause.message}"
-            self._finish(end, began, frame)
+                if halt.cause.step == step:
+                    # 이 스텝에서 확정된 것만. 안쪽에서 올라오는 것은 안쪽 스텝이 이미 남겼다
+                    if halt.cause.code == STALE_OBSERVATION:
+                        end["message"] = f"{STALE_OBSERVATION}: {halt.cause.message}"
+                    self._evidence(node, step, "실패 증거", self.rt.recorder.fail_screenshot)
+            self._finish(end, began, frame, node)
             raise
 
         if isinstance(outcome, _TerminalEnd):
             end.update(status="success", exit=None, outputs={})
-            self._finish(end, began, frame)
+            self._finish(end, began, frame, node)
             default = {
                 "pass": "core.test.pass에 도달했다",
                 "fail": "core.test.fail에 도달했다",
@@ -472,7 +481,7 @@ class _Run:
             )
         if isinstance(outcome, FrameExit):
             end.update(status="success", exit=None, outputs=event_value(outcome.outputs))
-            self._finish(end, began, frame)
+            self._finish(end, began, frame, node)
             return outcome
 
         frame.record(node.id, outcome.outputs)
@@ -489,7 +498,11 @@ class _Run:
         )
         if outcome.kind == "fail" and outcome.message:
             end["message"] = outcome.message
-        self._finish(end, began, frame)
+        if outcome.kind == "fail":
+            # fail 출구로 나간 스텝은 연결과 상관없이 자기(와 안쪽) 프레임으로 증거를 남긴다 —
+            # 연결된 분기가 경로 끝에서 처리되지 않은 fail이 되면 이 스텝이 실패 위치다 (M1 2.15)
+            self._evidence(node, step, "실패 증거", self.rt.recorder.fail_screenshot)
+        self._finish(end, began, frame, node)
         if outcome.kind == "fail":
             cause = Cause(
                 step,
@@ -516,24 +529,27 @@ class _Run:
             )
         return found
 
-    def _error_screenshot(self, node: Node, step: str) -> None:
-        """저장이 실패해도(디스크 등) 원래 오류를 덮지 않는다. 경고 로그만 남긴다."""
+    def _evidence(self, node: Node, step: str, what: str, save: Callable[[str], object]) -> None:
+        """예외 스크린샷·실패 증거·OCR 글자 기록. 저장이 실패해도(디스크·버린 프레임 등) 원래
+        결과를 덮지 않는다. 경고 로그만 남긴다."""
         try:
-            self.rt.recorder.error_screenshot(step)
+            save(step)
         except Exception as exc:
             self.rt.emit(
                 {
                     "event": "log",
                     "level": "warn",
-                    "message": f"예외 스크린샷을 남기지 못했다: {type(exc).__name__}: {exc}",
+                    "message": f"{what}을(를) 남기지 못했다: {type(exc).__name__}: {exc}",
                     "node": node.id,
                     "step": step,
                 }
             )
 
-    def _finish(self, end: dict[str, Any], began: int, frame: Frame) -> None:
+    def _finish(self, end: dict[str, Any], began: int, frame: Frame, node: Node) -> None:
+        step = end["step"]
+        self._evidence(node, step, "OCR 글자 기록", self.rt.recorder.ocr_artifact)
         # 서브그래프 안 스텝의 마지막 캡처는 부른 스텝의 증거로 넘어간다 (실패 증거, M1 2.15)
-        artifacts, omitted = self.rt.recorder.close_step(end["step"], parent=frame.parent)
+        artifacts, omitted = self.rt.recorder.close_step(step, parent=frame.parent)
         if artifacts:
             end["artifacts"] = artifacts
         if omitted:

@@ -71,9 +71,12 @@ class Omitted(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    kind: Annotated[str, Field(description="증거 종류 (screenshot 등)", min_length=1)]
+    kind: Annotated[str, Field(description="증거 종류 (screenshot, text 등)", min_length=1)]
     name: str | None = None
-    reason: Literal["capture_policy", "policy_off", "secret_input"]
+    reason: Annotated[
+        Literal["capture_policy", "policy_off", "secret_input", "sensitive_target"],
+        Field(description="sensitive_target = sensitive target 영역에서 읽은 OCR 글자"),
+    ]
     source: Annotated[str | None, Field(description="정책을 끈 곳")] = None
 
 

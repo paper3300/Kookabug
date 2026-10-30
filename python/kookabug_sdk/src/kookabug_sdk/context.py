@@ -160,7 +160,7 @@ class VisionApi(Protocol):
         """두 프레임의 채널 평균 절대 차이 / 255 (0 = 같음, 1 = 완전히 다름). 크기가 다르면 1.
 
         `region`(클라이언트 좌표)을 주면 두 프레임의 같은 클라이언트 영역끼리 비교한다 (영역 캡처는
-        자기 원점 기준으로 옮긴다, 둘 다 덮는 부분만)."""
+        자기 원점 기준으로 옮긴다, 둘 다 덮는 부분만). 덮는 부분이 없으면 1."""
         ...
 
 
@@ -173,7 +173,8 @@ class OcrApi(Protocol):
         sensitive: bool = False,
         deadline: Deadline | None = None,
     ) -> OcrResult:
-        """글자를 읽는다. `sensitive=True`(비밀 target 영역)면 글자가 `Secret`으로 온다."""
+        """글자를 읽는다. `sensitive=True`(비밀 target 영역)면 글자가 `Secret`으로 온다. 결과에는
+        읽은 이미지의 캡처 시점 관측(`window`·`frame_info`)이 실린다."""
         ...
 
 

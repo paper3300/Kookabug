@@ -17,8 +17,10 @@
 
 from __future__ import annotations
 
+import time
+from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import EllipsisType
 from typing import Any, Final, Protocol, cast, runtime_checkable
@@ -48,6 +50,7 @@ from kookabug_sdk.context import (
 )
 from kookabug_sdk.errors import ObservationTimeout, StaleObservation
 from kookabug_sdk.types import (
+    FrameRef,
     Image,
     Match,
     OcrResult,
@@ -74,6 +77,8 @@ __all__ = [
 
 DEFAULT_CAPTURE_TIMEOUT_MS: Final = 2000
 """`run.capture_timeout_ms` 기본값 (조율자 결정 Q2)."""
+OBSERVATIONS_KEPT: Final = 256
+"""캡처 시점 관측을 기억하는 최근 캡처 수 (OCR 결과에 실을 때 찾는다)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,6 +173,22 @@ class WindowPlatform(Protocol):
         ...
 
 
+class _WindowState(Protocol):
+    @property
+    def backend(self) -> str: ...
+    @property
+    def client_size(self) -> tuple[int, int]: ...
+    @property
+    def dpi(self) -> int: ...
+
+
+@runtime_checkable
+class _StatePlatform(Protocol):
+    """지금 창의 캡처 방식·클라이언트 크기·DPI를 주는 플랫폼 (공용 입력 서비스의 `state`와 같다)."""
+
+    def state(self, window: WindowRef) -> _WindowState: ...
+
+
 @dataclass(eq=False)
 class Runtime:
     """한 실행의 공용 상태: 프로그램, 레지스트리, 노드 실행 경계, 플랫폼, 시계, 취소, 전체 기한,
@@ -187,6 +208,16 @@ class Runtime:
     on_setting: Callable[[SettingLookup], None] | None = None
     """노드가 `ctx.setting()`으로 실제로 읽은 설정 (runner가 실행 조건 `run.json`에 남긴다)."""
     capture_timeout_ms: int = DEFAULT_CAPTURE_TIMEOUT_MS
+    observations: OrderedDict[int, tuple[FrameRef, WindowRef | None]] = field(
+        default_factory=OrderedDict[int, tuple[FrameRef, WindowRef | None]]
+    )
+    """캡처 번호 → 그 캡처 시점의 관측(캡처 방식·클라이언트 크기·DPI, 창). 최근
+    `OBSERVATIONS_KEPT`개 — OCR 결과에 실어 줄 `Match`의 재검증에 쓴다."""
+
+    def note_observation(self, capture_id: int, frame: FrameRef, window: WindowRef | None) -> None:
+        self.observations[capture_id] = (frame, window)
+        while len(self.observations) > OBSERVATIONS_KEPT:
+            self.observations.popitem(last=False)
 
     def limits(self, deadline: Deadline | None) -> ObservationLimits:
         """관측 호출 하나의 기한. 노드 기한이 이미 지났으면 `ObservationTimeout`(시작하지 않음)."""
@@ -385,6 +416,13 @@ class _StepOcr:
         runtime = self._ctx.runtime
         limits = runtime.limits(deadline)
         result = self._platform.read_text(image, region=region, sensitive=sensitive, limits=limits)
+        seen = runtime.observations.get(image.capture_id) if image.capture_id is not None else None
+        if seen is not None:
+            # 읽은 이미지의 캡처 시점 관측 (읽는 동안 창이 바뀌어도 그때 것 — 줄 Match 재검증용)
+            result = replace(result, frame_info=seen[0], window=seen[1])
+        # 기록: 스텝의 마지막 OCR 글자 (sensitive면 남기지 않고 생략 이유만 — 스키마 6장)
+        text = "" if sensitive or isinstance(result.text, Secret) else result.text
+        runtime.recorder.ocr_read(self._ctx.step, image, text, sensitive=sensitive)
         runtime.check()
         return result
 
@@ -575,10 +613,34 @@ class StepContext:
         if recorder.frames is not None and isinstance(platform, PixelPlatform):
             raw, staged = platform.capture_staged(self._window, region, limits)
             image = recorder.captured(self._step, raw, staged)
+            meta = staged.meta
+            if meta is not None and image.capture_id is not None:
+                seen = FrameRef(
+                    meta.backend, meta.client_size, meta.dpi, image.capture_id, meta.observed_at
+                )
+                runtime.note_observation(image.capture_id, seen, meta.window or self._window)
         else:
             image = recorder.captured(self._step, platform.capture(self._window, region))
+            self._note_state(image)
         runtime.check()
         return image
+
+    def _note_state(self, image: Image) -> None:
+        """관측 조건을 주지 않는 캡처: 플랫폼이 창 상태를 알면 캡처 직후 그것을 관측으로 둔다."""
+        platform = self._runtime.platform
+        if (
+            self._window is None
+            or image.capture_id is None
+            or not isinstance(platform, _StatePlatform)
+        ):
+            return
+        try:
+            now = platform.state(self._window)
+        except Exception:
+            return  # 관측 정보가 없을 뿐이다 (창 문제는 다음 관측·입력이 알린다)
+        size = (int(now.client_size[0]), int(now.client_size[1]))
+        seen = FrameRef(str(now.backend), size, int(now.dpi), image.capture_id, time.time())
+        self._runtime.note_observation(image.capture_id, seen, self._window)
 
     # ------------------------------------------------------------ 입력 재검증 (공용 입력 서비스)
 
