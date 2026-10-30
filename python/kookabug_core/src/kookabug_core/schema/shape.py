@@ -26,7 +26,16 @@ from kookabug_core.schema.pintype import PinTypeError, parse_pin_type
 
 # events는 events.jsonl 한 줄, rpc는 파이프 프레임 본문 하나(둘 다 format 없음)라 kind를 직접 준다
 SchemaKind = Literal[
-    "graph", "target", "workspace", "local", "node-schema", "events", "run", "user-settings", "rpc"
+    "graph",
+    "target",
+    "workspace",
+    "local",
+    "node-schema",
+    "events",
+    "run",
+    "user-settings",
+    "rpc",
+    "screen",
 ]
 KINDS: tuple[SchemaKind, ...] = get_args(SchemaKind)
 FORMAT_TO_KIND: dict[str, SchemaKind] = {
@@ -34,6 +43,7 @@ FORMAT_TO_KIND: dict[str, SchemaKind] = {
     "kookabug.local/0": "local",
     "kookabug.nodes/0": "node-schema",
     "kookabug.run/0": "run",
+    "kookabug.screen/0": "screen",
     "kookabug.target/0": "target",
     "kookabug.user-settings/0": "user-settings",
     "kookabug.workspace/0": "workspace",

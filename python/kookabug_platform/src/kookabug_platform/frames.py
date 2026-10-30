@@ -65,7 +65,12 @@ type Pixels = NDArray[np.uint8]
 
 def decode_image(data: bytes) -> Pixels:
     """이미지 바이트(PNG 등) → BGR 픽셀 (읽기 전용). 한글 경로도 되게 바이트로 받는다."""
-    pixels = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+    pixels = None
+    if data:  # 빈 버퍼는 imdecode가 None 대신 cv2.error를 던진다
+        try:
+            pixels = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+        except cv2.error:
+            pixels = None
     if pixels is None:
         raise ValueError("이미지를 읽을 수 없다 (형식이 깨졌거나 이미지가 아님)")
     result = np.asarray(pixels, dtype=np.uint8)

@@ -89,6 +89,10 @@ CODES: Final[dict[str, CodeInfo]] = {
     ),
     "subgraph_path_open": _e("flow", "서브그래프에서 연결 안 된 ok 출구로 끝나는 경로"),
     "while_requires_limit": _e("flow", "core.flow.while에 max_iterations가 없다"),
+    # 화면 (interface.exits.*.screen)
+    "screen_unknown": _w("screens", "출구의 screen이 screens/에 없는 화면 ID다"),
+    "screen_ambiguous": _e("screens", "같은 화면 ID의 *.screen.json이 둘 이상이다"),
+    "screen_invalid": _w("screens", "화면 파일 형식이 틀렸거나 그 target을 쓸 수 없다"),
 }
 
 

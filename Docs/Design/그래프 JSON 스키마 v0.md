@@ -28,10 +28,11 @@
 workspace/
 ├─ subgraphs/enter_world.graph.json   서브그래프: 게임시작 → 로그인 → 월드 접속
 ├─ tests/inventory_open.graph.json    테스트: 월드 접속 후 인벤토리 열기 확인
-└─ targets/                            찾기 대상 (이미지 + 임계값 + 검색 범위 + 클릭 지점)
-   ├─ title/start_button.target.json
-   ├─ title/start_button.png
-   └─ ...
+├─ targets/                            찾기 대상 (이미지 + 임계값 + 검색 범위 + 클릭 지점)
+│  ├─ title/start_button.target.json
+│  ├─ title/start_button.png
+│  └─ ...
+└─ screens/lobby.screen.json          화면 판정 조건 (출구의 screen이 가리킨다)
 ```
 
 폴더 구조는 열린 질문(워크스페이스 구조)에서 따로 정한다. 여기서는 예시를 위한 임시 구조다.
@@ -616,6 +617,7 @@ workspace/
   "format": "kookabug.target/0",
   "image": "start_button.png",
   "match": {
+    "color_tolerance": 40,
     "methods": ["template_multiscale", "template"],
     "rgb": true,
     "threshold": 0.85
@@ -635,7 +637,44 @@ workspace/
 - `search.region`은 클라이언트 영역 기준 정규화 좌표 `[x, y, w, h]`다
 - `anchor`는 9분할 클릭 지점(`top_left` … `center` … `bottom_right`)이다
 - `methods`는 앞에서부터 시도한다. 각 방법은 `threshold`를 넘어야 성공이다
+  - `template`은 배율 1.0, `template_multiscale`은 기대 배율 × `1.0, 0.95, 1.05, 0.9, 1.1, 0.85, 1.15, 0.8, 1.2` 순서로 본다. 기대 배율은 지금 클라이언트 높이 / `recorded.client_size`의 높이, 그것이 없으면 지금 DPI / `recorded.dpi`, 둘 다 없으면 1.0이다. 처음으로 `threshold`를 넘는 방법·배율에서 끝난다
+  - 점수는 정규화 상관계수(`TM_CCOEFF_NORMED`)다. `rgb: true`(기본)면 컬러로, `false`면 회색조로 비교한다
+  - `rgb: true`면 색도 확인한다: 찾은 자리와 이미지의 채널별 평균 차이가 `color_tolerance`(기본 40, 0~255)를 넘으면 그 자리는 실패다. 모양은 같고 색만 다른 것(회색으로 바뀐 비활성 버튼 등)을 걸러 낸다
+  - 기본값: `threshold` 0.85, `methods` `["template_multiscale", "template"]`, `rgb` true
+- 이미지의 알파가 0인 픽셀은 비교에서 뺀다(마스크). 버튼 모서리 밖 배경처럼 화면마다 다른 부분을 지운 PNG로 쓴다
+- 클릭 지점은 찾은 상자(배율을 곱한 크기)의 `anchor` 지점 + `offset × 찾은 배율`이다. 오른쪽·아래 끝은 상자 안 마지막 픽셀이다
 - 여러 그래프가 같은 대상을 쓰므로 파일로 분리한다 (UiPath Object Repository). 사용처 추적은 target 파일과 PNG까지 포함한다
+- 확인 도구: `kookabug target test <target.json> (--window 제목 | --image PNG)`가 찾은 상자·점수·배율·클릭 지점을 그린 미리보기 PNG를 만든다
+
+### 화면 판정 파일: `screens/lobby.screen.json`
+
+```json
+{
+  "detect": {
+    "all": [
+      {
+        "$target": "targets/lobby/server_list.target.json"
+      }
+    ],
+    "none": [
+      {
+        "$target": "targets/common/loading.target.json"
+      }
+    ]
+  },
+  "format": "kookabug.screen/0",
+  "title": "로비"
+}
+```
+
+- 서브그래프 출구의 `screen`(1장)이 가리키는 화면을 판정하는 조건이다. 화면 ID는 파일 이름 줄기(`lobby`)다
+- `screens/` 아래 어디에 둬도 된다. `screens/_explored/`(Agent 탐색 결과, 사람 확인 전)는 보지 않는다
+- `detect.all`의 대상이 전부 보이고 `detect.none`의 대상이 하나도 안 보이면 이 화면이다. 둘 중 적어도 하나는 있어야 한다. 값은 `$target`(워크스페이스 루트 기준)만 쓴다 (화면 지도 단계에서 OCR 조건 등을 더한다)
+- 실행 전 검증
+  - 출구의 `screen`이 없는 화면 ID면 경고 `screen_unknown`. 화면 지도용 정보라 실행을 막지 않는다
+  - 검증하는 그래프(와 그것이 부르는 서브그래프)의 출구가 가리킨 화면 ID의 파일이 둘 이상이면 오류 `screen_ambiguous`. 아무 출구도 가리키지 않는 ID의 중복은 그 그래프의 검증에서 보지 않는다(관계없는 그래프 검증이 실패하지 않게). `kookabug screen test <화면 ID>`는 그 ID가 중복이면 오류로 끝난다
+  - 화면 파일 형식이 틀렸거나 그 target을 쓸 수 없으면 경고 `screen_invalid`
+- 실행 중에는 화면 판정으로 실행 흐름을 바꾸지 않는다. 확인 도구 `kookabug screen test <화면 ID|파일> (--window 제목 | --image PNG)`가 조건별 결과를 보여 준다
 
 ---
 
@@ -656,7 +695,7 @@ runs/2026-10-29T15-02-11_inventory_open_r8k2x7qm/
 - 폴더 이름: `<시작 시각 UTC YYYY-MM-DDTHH-MM-SS>_<테스트 그래프 파일 줄기>_<run_id>`. `run_id`는 소문자·숫자 8자이고, 이미 쓰인 ID면 다시 뽑는다
 - `run.json`은 원자적 교체로만 쓴다 (`running` → `finished`). 형식은 `packages/schema/run.schema.json`
 - **실행 시작 때 고정**: 러너는 시작할 때 테스트가 참조하는 모든 파일을 따라가 `snapshot/`에 복사하고, 실행 내내 그 복사본만 읽는다. 실행 중에 서브그래프나 이미지를 고쳐도 이번 실행에는 섞이지 않는다
-  - 따라가는 방법: `kookabug.json`과 테스트 그래프를 복사하고, 스냅샷에서 읽어 새로 보이는 참조(서브그래프·target·target의 이미지)를 복사하기를 더 없을 때까지 되풀이한다. 파일마다 한 번만 복사하므로 호출 깊이와 상관없이 끝난다. 실행은 마지막으로 읽은 결과를 그대로 쓴다
+  - 따라가는 방법: `kookabug.json`과 테스트 그래프를 복사하고, 스냅샷에서 읽어 새로 보이는 참조(서브그래프·target·target의 이미지·서브그래프 출구가 가리킨 화면 판정 파일과 그 target·이미지)를 복사하기를 더 없을 때까지 되풀이한다. 화면 판정 파일은 ID로 찾으므로 원본의 `screens/`에서 그 ID의 파일을 찾아 복사한다. 파일마다 한 번만 복사하므로 호출 깊이와 상관없이 끝난다. 실행은 마지막으로 읽은 결과를 그대로 쓴다
   - 설정(`$setting`의 `kookabug.json` 기본값·프로필)도 복사한 `kookabug.json`에서 읽는다. `.kookabug/local.json` 값은 원본에서 읽는다
   - 다 따라간 뒤 복사한 원본의 크기·수정 시각을 다시 보고, 복사 도중 바뀐 것이 있으면 스냅샷을 비우고 처음부터 다시 한다. 세 번 다시 해도 바뀌면 `error`(`snapshot_unstable`). 파일 1만 개·합계 1 GiB를 넘으면 `error`(`snapshot_too_large`)
   - 원본에도 없는 참조는 복사하지 않고, 실행 전 검증이 원래 오류(`call_target_missing`·`target_missing`·`target_invalid`)로 보고한다. 호출 깊이 한도는 `call_depth`다
@@ -956,3 +995,11 @@ Codex 제안을 기본으로 하고, 세 군데는 Claude가 다르게 정했다
 | 러너가 죽은 실행은 감독자가 마무리(잘린 줄 자르기 → 키 떼기 → 없을 때만 `run.end` → `run.json`), 아무도 마무리하지 못하면 읽기가 "중단" (5장) | 마무리를 두 번 해도 같은 결과여야 감독자가 같은 실행을 다시 열어도 안전하다. 이미 쓴 결과를 덮으면 러너가 확정한 판정이 사라진다 |
 | 스냅샷은 스냅샷에서 다시 읽으며 참조를 따라가 파일마다 한 번 복사(고정점), 복사 도중 원본이 바뀌면 처음부터, 원본에도 없는 참조는 검증 오류, 설정은 복사한 `kookabug.json` 기준, 경로가 `.kookabug/` 안을 가리키면(심볼릭 링크·정션 해석, 하드 링크는 제외) 복사하지 않고 `snapshot_private_file` (5장 "실행 시작 때 고정") | 한 번 읽은 참조 목록만 복사하면 서브그래프가 새로 부르는 파일을 놓친다. 원본 기준으로 복사한 것과 실행이 읽는 것이 어긋나지 않게 스냅샷에서 읽는다(설정도 같다). 사라진 파일을 스냅샷 오류로 보면 사용자가 원인(어느 노드의 어느 경로)을 찾기 어렵다. target 이미지 경로에 `../.kookabug/local.json`을 쓰면 개인 설정 원문이 실행 기록에 남는다 |
 | 기록 정책: 층 순서(호출 노드 포함)·`video` 강약, 비밀값 입력은 계산한 값으로 판단, 예외 스크린샷은 같은 스텝의 마지막 캡처만, 획득 당시 표시와 저장 스텝을 둘 다 확인, `step.end.omitted`의 이유·위치 (6장 "화면에 찍힌 비밀값") | "실행의 마지막 캡처"를 예외 스크린샷으로 쓰면 꺼 둔 구간·비밀값 스텝의 화면이 뒤 노드의 오류로 다시 기록된다. 프레임은 출력으로 구간 밖에 나갈 수 있어 저장하는 스텝만 보면 막지 못한다. 어느 층이 껐는지 남겨야 사용자가 빠진 스크린샷의 이유를 찾는다 |
+
+### M1 구현 반영
+
+| 바뀐 것 | 이유 |
+|---|---|
+| target 매칭 규칙: 배율 순서·기대 배율(녹화 높이 → DPI), 첫 성공에서 끝, 색 확인 `match.color_tolerance`(기본 40), 알파 0 마스크, 클릭 지점 = `anchor` + `offset × 배율` (4장) | 같은 target이 DPI·창 크기가 다른 PC에서도 맞아야 한다. 모양 점수만 보면 회색 비활성 버튼을 활성 버튼으로 찾는다. 배경이 바뀌는 버튼은 투명 부분을 빼야 맞는다 |
+| 화면 판정 파일 `*.screen.json`(`detect.all`·`none`, 값은 `$target`), 화면 ID = 파일 줄기, `_explored/` 제외, `screen_unknown`(경고)·`screen_ambiguous`(오류, 출구가 가리킨 ID만)·`screen_invalid`(경고) (4장 "화면 판정 파일") | 출구의 `screen`이 가리키는 대상의 형식이 없었다. 화면 지도 전이라 실행을 막지 않되, 가리킨 ID가 두 개면 어느 화면인지 정할 수 없어 오류다 |
+| 스냅샷이 출구가 가리킨 화면 파일과 그 target·이미지까지 복사 (5장 "실행 시작 때 고정") | 실행 기록만으로 그때의 화면 정의를 다시 볼 수 있어야 한다. 화면 파일은 ID로 찾으므로 원본 `screens/`에서 찾는다 |

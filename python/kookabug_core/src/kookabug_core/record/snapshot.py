@@ -6,7 +6,10 @@
 1. `kookabug.json`을 복사하고 그 복사본으로 스냅샷 워크스페이스를 연다(설정은 복사본 기준,
    `.kookabug/local.json` 설정은 원래 워크스페이스에서 읽은 것). 작업 큐 = [루트 그래프]
 2. 큐의 경로를 원본에서 스냅샷으로 **한 번씩** 바이트 그대로 복사한다. 원본에 없으면 `absent`
-3. 스냅샷 워크스페이스에서 읽어 `discovered`를 얻는다
+3. 스냅샷 워크스페이스에서 읽어 `discovered`를 얻는다. 출구가 가리킨 화면 ID(`screen_ids`)는
+   **원본** 워크스페이스의 `screens/`에서 그 ID의 파일을 찾아 더한다 — 화면 파일은 ID로 찾으므로
+   스냅샷에 복사되기 전에는 스냅샷 쪽에서 보이지 않는다. 복사한 뒤 다시 읽으면 화면의 target·
+   이미지가 `discovered`에 들어온다 (M1 2.10)
 4. 아직 처리하지 않은 경로가 있으면 2로. 없으면 고정점이다. 경로를 다시 처리하지 않으므로 반복
    횟수는 참조 파일 수 + 1 이하이고, 호출 깊이와 무관하다
 5. 고정점에서 복사한 원본을 다시 `stat`해 복사 때와 다르면(크기·수정 시각) 복사 도중 원본이
@@ -31,6 +34,7 @@ from typing import Final, Literal
 
 from kookabug_core.loader import Program, load_program
 from kookabug_core.record.runfolder import SNAPSHOT_DIR
+from kookabug_core.screens import screen_index
 from kookabug_core.workspace import (
     LOCAL_FILE,
     WORKSPACE_FILE,
@@ -124,12 +128,15 @@ def take_snapshot(
         copier = _Copier(workspace, root, limits, attempt, on_copy)
         copier.copy(WORKSPACE_FILE)
         snap = _open_snapshot(workspace, root)
+        screens = screen_index(workspace)
         queue = {graph}
         while True:
             for rel in sorted(queue):
                 copier.copy(rel)
             program = load_program(snap, graph, options=options, secrets=secrets)
-            queue = program.references.discovered - copier.done()
+            refs = program.references
+            found = {rel for sid in refs.screen_ids for rel in screens.get(sid, ())}
+            queue = (refs.discovered | found) - copier.done()
             if not queue:
                 break
         if copier.changed() is None:

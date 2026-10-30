@@ -36,6 +36,7 @@ KINDS = (
     "run",
     "user-settings",
     "rpc",
+    "screen",
 )
 
 MODELS_INIT = '''\

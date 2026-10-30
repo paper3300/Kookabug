@@ -4,8 +4,11 @@
 `$setting`·`$secret`·`$target`을 해석하고, 그 문제(`setting_missing` 등)를 진단으로 남긴다.
 `$link`는 `LinkRef`로 바꿔 두기만 한다 (값은 실행 때 읽는다).
 
-참조 파일 목록(`references`)은 서브그래프·target·이미지의 워크스페이스 기준 경로다
+참조 파일 목록(`references`)은 서브그래프·target·이미지·화면 파일의 워크스페이스 기준 경로다
 (M0b 실행 시작 스냅샷이 쓴다). `discovered`는 파일이 없거나 읽지 못한 경로까지 담는다.
+
+서브그래프 출구의 `screen`(화면 ID)은 `screens/`에서 찾아 읽고 그 target까지 따라간다(M1 2.10).
+결과는 `Program.screens`이고, 진단은 `validate.screens`가 낸다.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ from kookabug_core.codes import diag
 from kookabug_core.diagnostics import Diagnostic, json_pointer
 from kookabug_core.ir import GRAPH_CALL, Graph, Link, LinkRef, Node, Unresolved
 from kookabug_core.schema import check_shape
+from kookabug_core.screens import ScreenDef, ScreenFileError, read_screen_file, screen_index
 from kookabug_core.workspace import (
     RunOptions,
     SecretProvider,
@@ -38,6 +42,8 @@ __all__ = [
     "CallRef",
     "Program",
     "References",
+    "ScreenRef",
+    "exit_screens",
     "graph_from_data",
     "load_program",
 ]
@@ -67,19 +73,40 @@ class CallRef:
 class References:
     """실행이 읽는 파일 (워크스페이스 기준 경로). 루트 그래프 자신은 `graphs`에 들어간다.
 
-    `graphs`·`targets`·`images`는 있는 파일만이다. `discovered`는 그래프가 가리킨 모든 경로
-    (서브그래프·target·target의 이미지)로, 파일이 없거나 읽기·형식 오류인 것, 호출 깊이 한도 밖이라
-    읽지 않은 서브그래프(`unloaded`)도 든다. 워크스페이스 경로가 아닌 값은 들지 않는다.
-    스냅샷이 이것으로 복사할 파일을 찾는다.
+    `graphs`·`targets`·`images`·`screens`는 있는 파일만이다. `discovered`는 그래프가 가리킨 모든
+    경로(서브그래프·target·target의 이미지·화면 파일)로, 파일이 없거나 읽기·형식 오류인 것, 호출
+    깊이 한도 밖이라 읽지 않은 서브그래프(`unloaded`)도 든다. 워크스페이스 경로가 아닌 값은 들지
+    않는다. 스냅샷이 이것으로 복사할 파일을 찾는다. `screen_ids`는 출구가 가리킨 화면 ID다
+    (스냅샷은 원본 워크스페이스에서 그 ID의 파일을 찾는다 — 스냅샷 폴더에는 아직 없으므로).
     """
 
     graphs: set[str] = field(default_factory=set[str])
     targets: set[str] = field(default_factory=set[str])
     images: set[str] = field(default_factory=set[str])
+    screens: set[str] = field(default_factory=set[str])
     discovered: set[str] = field(default_factory=set[str])
+    screen_ids: set[str] = field(default_factory=set[str])
 
     def all(self) -> list[str]:
-        return sorted(self.graphs | self.targets | self.images)
+        return sorted(self.graphs | self.targets | self.images | self.screens)
+
+
+ScreenStatus = Literal["ok", "unknown", "ambiguous", "invalid"]
+
+
+@dataclass(frozen=True, slots=True)
+class ScreenRef:
+    """출구가 가리킨 화면 ID 하나를 찾은 결과.
+
+    `status`: `ok` 읽음(`screen`), `unknown` 그 ID의 파일이 없음, `ambiguous` 둘 이상(`paths`),
+    `invalid` 파일 형식이 틀렸거나 그 target을 쓸 수 없음(`problem`).
+    """
+
+    id: str
+    status: ScreenStatus
+    paths: tuple[str, ...] = ()
+    screen: ScreenDef | None = None
+    problem: str | None = None
 
 
 @dataclass
@@ -96,6 +123,8 @@ class Program:
     references: References = field(default_factory=References)
     settings: dict[str, SettingLookup] = field(default_factory=dict[str, SettingLookup])
     """그래프가 `$setting`으로 쓴 설정 (키 → 찾은 값·계층). 실행 정보(`run.json`)에 남긴다."""
+    screens: dict[str, ScreenRef] = field(default_factory=dict[str, ScreenRef])
+    """출구 `screen`이 가리킨 화면 ID → 찾은 결과."""
 
     def callee(self, graph: str, node: str) -> Graph | None:
         ref = self.calls.get((graph, node))
@@ -132,7 +161,22 @@ def load_program(
         program.diagnostics.append(
             diag("graph_missing", f"그래프 파일 '{rel}'이(가) 없다", file=rel)
         )
+    loader.load_screens()
     return program
+
+
+def exit_screens(graph: Graph) -> list[tuple[str, str]]:
+    """그래프 `interface.exits`의 (출구 이름, 화면 ID). 형식 검사를 통과한 그래프만 넘긴다."""
+    interface = graph.interface if isinstance(graph.interface, Mapping) else {}
+    exits = interface.get("exits")
+    if not isinstance(exits, Mapping):
+        return []
+    found = []
+    for name, spec in exits.items():
+        screen = spec.get("screen") if isinstance(spec, Mapping) else None
+        if isinstance(screen, str):
+            found.append((name, screen))
+    return found
 
 
 def graph_from_data(
@@ -344,3 +388,38 @@ class _Loader:
             return "target_invalid", f"target '{rel}'의 이미지 '{image}'이(가) 없다"
         refs.images.add(image)
         return Target(name=rel, path=path, spec=data)
+
+    # ------------------------------------------------------------ 화면
+
+    def load_screens(self) -> None:
+        """읽은 그래프의 출구가 가리킨 화면 ID를 `screens/`에서 찾아 읽는다 (그 target까지)."""
+        refs = self.program.references
+        for graph in self.program.graphs.values():
+            refs.screen_ids.update(screen for _, screen in exit_screens(graph))
+        if not refs.screen_ids:
+            return
+        index = screen_index(self.ws)
+        for screen_id in sorted(refs.screen_ids):
+            paths = tuple(index.get(screen_id, []))
+            refs.discovered.update(paths)
+            self.program.screens[screen_id] = self._screen(screen_id, paths)
+
+    def _screen(self, screen_id: str, paths: tuple[str, ...]) -> ScreenRef:
+        if len(paths) != 1:
+            return ScreenRef(screen_id, "ambiguous" if paths else "unknown", paths)
+        rel = paths[0]
+        path = self.ws.resolve(rel)
+        assert path is not None
+        self.program.references.screens.add(rel)
+        try:
+            screen = read_screen_file(path, rel)
+        except ScreenFileError as exc:
+            return ScreenRef(screen_id, "invalid", paths, problem=str(exc))
+        problems: list[str] = []
+        for target in screen.targets:
+            found = self._target(target)
+            if not isinstance(found, Target):
+                problems.append(found[1])
+        if problems:
+            return ScreenRef(screen_id, "invalid", paths, screen, "; ".join(problems))
+        return ScreenRef(screen_id, "ok", paths, screen)

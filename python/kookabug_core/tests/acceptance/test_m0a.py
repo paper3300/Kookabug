@@ -246,10 +246,11 @@ def _target_refs(value: Any) -> Iterator[str]:
 def test_doc_examples_validate(tmp_path: Path) -> None:
     blocks = [b.data for b in json_blocks()]
     whole = [d for d in blocks if "format" in d]
-    # 형식: format이 있는 예시 전부 (그래프 2·target·workspace)
+    # 형식: format이 있는 예시 전부 (그래프 2·target·workspace, M1에서 화면 판정 파일)
     assert sorted(d["format"] for d in whole) == [
         "kookabug.graph/0",
         "kookabug.graph/0",
+        "kookabug.screen/0",
         "kookabug.target/0",
         "kookabug.workspace/0",
     ]
@@ -261,10 +262,14 @@ def test_doc_examples_validate(tmp_path: Path) -> None:
     (test,) = [d for d in whole if d.get("kind") == "test"]
     (target,) = [d for d in whole if d["format"] == "kookabug.target/0"]
     (workspace,) = [d for d in whole if d["format"] == "kookabug.workspace/0"]
+    (screen,) = [d for d in whole if d["format"] == "kookabug.screen/0"]
     write_json(tmp_path, WORKSPACE_FILE, workspace)
     local = {"format": "kookabug.local/0", "settings": {"game.executable": "D:/Games/Sample.exe"}}
     write_json(tmp_path, LOCAL_FILE, local)
-    for rel in sorted({*_target_refs(subgraph), *_target_refs(test)}):
+    # 출구가 가리키는 화면마다 화면 판정 예시를 그 ID로 둔다 (없으면 screen_unknown 경고)
+    for exit_spec in subgraph["interface"]["exits"].values():
+        write_json(tmp_path, f"screens/{exit_spec['screen']}.screen.json", screen)
+    for rel in sorted({*_target_refs(subgraph), *_target_refs(test), *_target_refs(screen)}):
         path = write_json(tmp_path, rel, target)
         (path.parent / target["image"]).write_bytes(b"\x89PNG\r\n\x1a\n")
     write_json(tmp_path, ENTER_WORLD, subgraph)

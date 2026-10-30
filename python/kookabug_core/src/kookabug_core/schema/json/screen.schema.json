@@ -1,0 +1,60 @@
+{
+  "$defs": {
+    "ScreenCondition": {
+      "additionalProperties": false,
+      "description": "조건 하나. M1은 찾기 대상($target)만",
+      "properties": {
+        "$target": {
+          "description": "워크스페이스 루트 기준 *.target.json 경로 ('/' 구분)",
+          "pattern": "^[^\\\\]+\\.target\\.json$",
+          "type": "string"
+        }
+      },
+      "required": ["$target"],
+      "title": "ScreenCondition",
+      "type": "object"
+    },
+    "ScreenDetect": {
+      "additionalProperties": false,
+      "description": "all은 전부 보여야, none은 하나도 보이지 않아야 이 화면이다. 적어도 하나",
+      "minProperties": 1,
+      "properties": {
+        "all": {
+          "items": {
+            "$ref": "#/$defs/ScreenCondition"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "none": {
+          "items": {
+            "$ref": "#/$defs/ScreenCondition"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "title": "ScreenDetect",
+      "type": "object"
+    }
+  },
+  "$id": "urn:kookabug:screen:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "화면 판정 파일 (*.screen.json). 화면 ID는 파일 이름 줄기",
+  "properties": {
+    "detect": {
+      "$ref": "#/$defs/ScreenDetect"
+    },
+    "format": {
+      "const": "kookabug.screen/0"
+    },
+    "title": {
+      "description": "사람이 읽는 화면 이름",
+      "type": "string"
+    }
+  },
+  "required": ["detect", "format"],
+  "title": "Screen",
+  "type": "object"
+}

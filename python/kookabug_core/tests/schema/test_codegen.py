@@ -8,6 +8,7 @@ from kb_testing.doc_examples import json_blocks
 from kb_testing.packaging import REPO_ROOT
 from kookabug_core.schema import KINDS, check_shape, kind_of
 from kookabug_core.schema.models.graph import Graph
+from kookabug_core.schema.models.screen import Screen
 from kookabug_core.schema.models.target import Target
 from kookabug_core.schema.models.workspace import Workspace
 
@@ -60,7 +61,12 @@ def test_ts_generated_for_every_schema() -> None:
     assert sorted(p.name for p in generated.glob("*.ts")) == sorted(f"{k}.ts" for k in KINDS)
 
 
-MODELS: dict[str, Any] = {"graph": Graph, "target": Target, "workspace": Workspace}
+MODELS: dict[str, Any] = {
+    "graph": Graph,
+    "screen": Screen,
+    "target": Target,
+    "workspace": Workspace,
+}
 
 
 @pytest.mark.parametrize(

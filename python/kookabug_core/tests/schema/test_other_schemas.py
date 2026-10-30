@@ -284,6 +284,28 @@ def test_node_schema_file_fields() -> None:
     ]
 
 
+def test_screen_shape() -> None:
+    # 화면 판정 파일 (M1 2.10): detect.all·none 중 적어도 하나, 값은 $target(*.target.json)만
+    def screen(detect: Any) -> dict[str, Any]:
+        return {"detect": detect, "format": "kookabug.screen/0"}
+
+    ok = screen({"none": [{"$target": "targets/loading.target.json"}]})
+    assert check_shape(ok) == []
+    cases = [
+        (screen({}), "out_of_range", "/detect"),
+        (screen({"all": []}), "out_of_range", "/detect/all"),
+        (
+            screen({"all": [{"$target": "targets/a.png"}]}),
+            "pattern_mismatch",
+            "/detect/all/0/$target",
+        ),
+        (screen({"any": [{"$target": "t.target.json"}]}), "unknown_field", "/detect/any"),
+        (screen({"all": [{"$setting": "x"}]}), "missing_field", "/detect/all/0"),
+    ]
+    for data, code, pointer in cases:
+        assert (code, pointer) in {(d.code, d.pointer) for d in check_shape(data)}, data
+
+
 def test_shared_defs_identical_across_files() -> None:
     # 생성기가 파일 간 $ref를 풀지 못해 공용 정의를 파일마다 복사했다. 어긋나면 실패
     # (설명 문구는 파일마다 다를 수 있다)
@@ -308,7 +330,8 @@ def test_ecma_pattern_translation() -> None:
 
 
 @pytest.mark.parametrize(
-    "kind", ["graph", "target", "workspace", "local", "node-schema", "run", "user-settings"]
+    "kind",
+    ["graph", "target", "workspace", "local", "node-schema", "run", "user-settings", "screen"],
 )
 def test_empty_object_reports_required_fields(kind: Any) -> None:
     diags = check_shape({}, kind)

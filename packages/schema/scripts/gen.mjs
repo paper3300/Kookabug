@@ -16,6 +16,7 @@ const kinds = [
   "run",
   "user-settings",
   "rpc",
+  "screen",
 ];
 
 const banner =

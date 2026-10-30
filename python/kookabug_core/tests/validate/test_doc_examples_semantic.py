@@ -2,6 +2,7 @@
 
 문서의 ```json 블록을 꺼내 임시 워크스페이스에 그대로 쓰고 실행 전 검증 전체를 돌린다.
 - 참조하는 target 파일은 문서의 target 예시(4장)로 채운다 (이미지는 각 target 옆에 만든다)
+- 출구의 `screen`마다 문서의 화면 판정 예시(4장)를 그 ID로 둔다
 - `kookabug.json`은 워크스페이스 문서 예시 그대로(`game.executable`이 `null`), `local.json`에
   실행 경로
 - `$secret`은 메모리 비밀값, M1 노드는 선언만 한 스텁(`fixtures.doc_examples.stub_nodes`)
@@ -51,11 +52,15 @@ def doc_workspace(root: Path, *, executable: str | None = EXECUTABLE) -> Workspa
     subgraph = doc("kookabug.graph/0", "subgraph")
     test = doc("kookabug.graph/0", "test")
     target = doc("kookabug.target/0")
+    screen = doc("kookabug.screen/0")
     write_json(root, WORKSPACE_FILE, doc("kookabug.workspace/0"))
     if executable is not None:
         local = {"format": "kookabug.local/0", "settings": {"game.executable": executable}}
         write_json(root, LOCAL_FILE, local)
-    for rel in sorted({*target_refs(subgraph), *target_refs(test)}):
+    # 출구가 가리키는 화면마다 화면 판정 예시(4장)를 그 ID로 둔다
+    for exit_spec in subgraph["interface"]["exits"].values():
+        write_json(root, f"screens/{exit_spec['screen']}.screen.json", screen)
+    for rel in sorted({*target_refs(subgraph), *target_refs(test), *target_refs(screen)}):
         path = write_json(root, rel, target)
         (path.parent / target["image"]).write_bytes(b"\x89PNG\r\n\x1a\n")
     write_json(root, ENTER_WORLD, subgraph)

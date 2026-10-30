@@ -4,7 +4,7 @@
     program, diagnostics = check_graph(workspace, "tests/inventory/open.graph.json")
 
 진단 코드 표는 `kookabug_core.codes`. 로더가 읽으면서 남긴 진단(파일·형식·`$setting` 등)과 검증
-모듈(구조·값·타입·서브그래프·재시도·변수·흐름)의 진단을 합쳐 파일·위치 순으로 돌려준다.
+모듈(구조·값·타입·서브그래프·화면·재시도·변수·흐름)의 진단을 합쳐 파일·위치 순으로 돌려준다.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from kookabug_core.validate import (
     pure_cycles,
     retry,
     scopes,
+    screens,
     structure,
     subgraph,
     types,
@@ -30,7 +31,18 @@ from kookabug_core.workspace import RunOptions, SecretProvider, Workspace
 
 __all__ = ["check_graph", "sort_diagnostics", "validate"]
 
-CHECKS = (structure, values, types, subgraph, retry, vars_, scopes, pure_cycles, dominance)
+CHECKS = (
+    structure,
+    values,
+    types,
+    subgraph,
+    screens,
+    retry,
+    vars_,
+    scopes,
+    pure_cycles,
+    dominance,
+)
 
 
 def sort_diagnostics(diagnostics: list[Diagnostic]) -> list[Diagnostic]:

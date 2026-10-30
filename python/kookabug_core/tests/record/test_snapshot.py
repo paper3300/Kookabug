@@ -232,6 +232,44 @@ def test_new_image_reference_copied(tmp_path: Path) -> None:
     assert errors(snap.program) == []
 
 
+def test_screen_files_and_their_targets_copied(tmp_path: Path) -> None:
+    # 서브그래프 출구의 screen → screens/의 화면 파일 → 그 target·이미지까지 (M1 2.10)
+    root = tmp_path / "ws"
+    ws = make_workspace(root)
+    write_target(ws, "targets/lobby/list.target.json")
+    write_target(ws, "targets/common/loading.target.json", image="../img/loading.png")
+    write_target(ws, "targets/unused.target.json")
+    screen = {
+        "detect": {
+            "all": [target("targets/lobby/list.target.json")],
+            "none": [target("targets/common/loading.target.json")],
+        },
+        "format": "kookabug.screen/0",
+    }
+    write_json(ws, "screens/lobby/lobby.screen.json", screen)
+    write_json(ws, "screens/other.screen.json", screen)  # 출구가 가리키지 않음
+    write_json(ws, "screens/_explored/lobby.screen.json", screen)  # 탐색 결과는 보지 않음
+    interface = {"exits": {"done": {"kind": "ok", "screen": "lobby"}}}
+    sub_graph = GraphBuilder("subgraph", interface=interface)
+    sub_graph.entry("n_exit").exit("n_exit", "done").write(ws, "subgraphs/a.graph.json")
+    main(call("subgraphs/a.graph.json")).write(ws, TEST)
+
+    snap = snapshot(ws, tmp_path / "snap")
+    assert files_under(snap.root) == {
+        WORKSPACE_FILE,
+        TEST,
+        "subgraphs/a.graph.json",
+        "screens/lobby/lobby.screen.json",
+        "targets/lobby/list.target.json",
+        "targets/lobby/list.png",
+        "targets/common/loading.target.json",
+        "targets/img/loading.png",
+    }
+    assert snap.program.screens["lobby"].status == "ok"
+    assert validate(snap.program) == []
+    assert run(snap.program).verdict == "pass"
+
+
 def test_reference_missing_in_original_is_validation_error_not_unstable(tmp_path: Path) -> None:
     root = tmp_path / "ws"
     ws = make_workspace(root)

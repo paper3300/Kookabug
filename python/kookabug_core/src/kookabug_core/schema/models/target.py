@@ -34,6 +34,14 @@ class Match(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    color_tolerance: Annotated[
+        float | None,
+        Field(
+            description="rgb가 true일 때 찾은 영역과 이미지의 채널별 평균 차이 상한 (0~255, 기본 40)",
+            ge=0.0,
+            le=255.0,
+        ),
+    ] = None
     methods: Annotated[
         list[Literal["template", "template_multiscale"]] | None,
         Field(description="앞에서부터 시도한다. 각 방법은 threshold를 넘어야 성공", min_length=1),

@@ -1,7 +1,9 @@
-"""`kookabug` 명령 (구현 계획 M0b 2.11).
+"""`kookabug` 명령 (구현 계획 M0b 2.11, M1 2.11).
 
     kookabug run <그래프 경로> [--workspace DIR] [--profile 이름] [--set 키=JSON값]...
                  [--deadline-ms N] [--json] [--quiet] [--plugin-module 모듈]...
+    kookabug target test <target.json> (--window 제목 | --hwnd N | --image PNG) ...  (target_cmd)
+    kookabug screen test <ID|파일> (--window 제목 | --hwnd N | --image PNG) ...       (screen_cmd)
 
 이 프로세스가 감독자다: `WorkspaceService.start_run`(권한 판정 → 감독자 시작) → 진행 출력(`follow`로
 `step.end` 한 줄씩) → `RunHandle.wait()`(runner 종료 → 복구 경로) → 판정에 맞는 종료 코드.
@@ -84,6 +86,7 @@ _VERDICT_EXIT: Final = {
 _INVALID_CODES: Final = frozenset({"graph_invalid"})
 _VERDICT_WORDS: Final = {"pass": "통과", "fail": "실패", "error": "오류", "skipped": "건너뜀"}
 _STATUS_WORDS: Final = {"success": "성공", "fail": "실패", "error": "오류", "cancelled": "취소"}
+_PLATFORM_MODULES: Final = frozenset({"kookabug_platform", "cv2", "numpy", "windows_capture"})
 
 
 class UsageError(Exception):
@@ -161,7 +164,47 @@ def build_parser() -> argparse.ArgumentParser:
     )
     # 테스트용: 가짜 플랫폼(프레임·입력 기록·훅) 사양 JSON 파일. 도움말에 보이지 않는다
     run.add_argument("--platform-fake", metavar="FILE", help=argparse.SUPPRESS)
+
+    target = commands.add_parser("target", help="찾기 대상(*.target.json) 도구")
+    target_commands = target.add_subparsers(dest="action", required=True, metavar="동작")
+    target_test = target_commands.add_parser(
+        "test",
+        help="target을 창이나 이미지에서 찾고 미리보기 PNG를 쓴다",
+        description="target을 창(지금 화면) 또는 이미지에서 찾는다 "
+        "(0 찾음, 1 못 찾음, 6 사용법·환경 오류)",
+    )
+    target_test.add_argument("target", help="*.target.json 파일")
+    _add_source_arguments(target_test)
+    target_test.add_argument(
+        "--out", metavar="PNG", help="미리보기 PNG 경로 (기본: 임시 폴더 kookabug/target-test/)"
+    )
+    target_test.add_argument("--json", action="store_true", help="결과 JSON 한 개만 출력한다")
+    target_test.add_argument(
+        "--all-scales", action="store_true", help="찾은 뒤에도 모든 방법·배율을 계산해 보여 준다"
+    )
+
+    screen = commands.add_parser("screen", help="화면 판정(*.screen.json) 도구")
+    screen_commands = screen.add_subparsers(dest="action", required=True, metavar="동작")
+    screen_test = screen_commands.add_parser(
+        "test",
+        help="화면 판정 조건을 창이나 이미지에서 본다",
+        description="화면 판정 조건을 창(지금 화면) 또는 이미지에서 본다 "
+        "(0 그 화면, 1 아님, 6 사용법·환경 오류)",
+    )
+    screen_test.add_argument("screen", help="화면 ID 또는 *.screen.json 파일")
+    _add_source_arguments(screen_test)
+    screen_test.add_argument(
+        "--workspace", metavar="DIR", help="워크스페이스 루트 (기본: 현재 폴더에서 위로 찾는다)"
+    )
+    screen_test.add_argument("--json", action="store_true", help="결과 JSON 한 개만 출력한다")
     return parser
+
+
+def _add_source_arguments(parser: argparse.ArgumentParser) -> None:
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--window", metavar="제목", help="창 제목 (부분 일치, /정규식/)")
+    source.add_argument("--hwnd", metavar="N", help="창 핸들 (10진 또는 0x16진)")
+    source.add_argument("--image", metavar="PNG", help="화면 이미지 파일")
 
 
 # ---------------------------------------------------------------- 인수 → 실행 조건
@@ -517,6 +560,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "run":
         return run_command(args, sys.stdout, sys.stderr)
+    # 비전 명령은 opencv를 불러오므로 쓸 때만 import한다 (`kookabug run` 시작을 가볍게)
+    try:
+        if args.command == "target":
+            from kookabug_cli import target_cmd
+
+            return target_cmd.run(args, sys.stdout, sys.stderr)
+        if args.command == "screen":
+            from kookabug_cli import screen_cmd
+
+            return screen_cmd.run(args, sys.stdout, sys.stderr)
+    except ModuleNotFoundError as exc:
+        if exc.name is None or exc.name.split(".")[0] not in _PLATFORM_MODULES:
+            raise
+        print(
+            f"오류: {args.command} {args.action}에는 Windows 플랫폼 패키지(kookabug-platform)가 "
+            f"필요하다 ({exc.name} 없음)",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
     raise AssertionError(args.command)
 
 

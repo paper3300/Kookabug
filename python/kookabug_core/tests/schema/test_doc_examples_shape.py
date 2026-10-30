@@ -38,7 +38,8 @@ HANDLING: dict[str, tuple[list[str], Whole | Fragment | Unvalidated]] = {
     ),
     "schema#1": (["format", "kind", "layout", "meta", "nodes", "plugins"], Whole("graph")),
     "schema#2": (["click", "format", "image", "match", "recorded", "search"], Whole("target")),
-    "schema#3": (
+    "schema#3": (["detect", "format", "title"], Whole("screen")),
+    "schema#4": (
         ["config"],
         Fragment(
             (
@@ -47,7 +48,7 @@ HANDLING: dict[str, tuple[list[str], Whole | Fragment | Unvalidated]] = {
             )
         ),
     ),
-    "schema#4": (
+    "schema#5": (
         ["retry", "type"],
         Fragment(
             (
@@ -56,11 +57,11 @@ HANDLING: dict[str, tuple[list[str], Whole | Fragment | Unvalidated]] = {
             )
         ),
     ),
-    "schema#5": (
+    "schema#6": (
         ["debug_intervened", "pause_count", "paused_ms"],
         Fragment((((), "run", "#/$defs/DebugInfo"),)),
     ),
-    "schema#6": (["record"], Fragment(((("record",), "graph", "#/$defs/RecordPolicy"),))),
+    "schema#7": (["record"], Fragment(((("record",), "graph", "#/$defs/RecordPolicy"),))),
     "workspace#0": (
         ["format", "profiles", "record", "retention", "run", "settings"],
         Whole("workspace"),
@@ -133,7 +134,7 @@ def test_doc_blocks_with_format_validate(block: DocBlock) -> None:
 
 def test_doc_blocks_with_format_counts() -> None:
     kinds = [h.kind for _, h in HANDLING.values() if isinstance(h, Whole)]
-    assert sorted(kinds) == ["graph", "graph", "target", "workspace"]
+    assert sorted(kinds) == ["graph", "graph", "screen", "target", "workspace"]
 
 
 def test_doc_fragments_validate_against_defs() -> None:
@@ -162,7 +163,7 @@ def test_fragment_check_rejects_bad_values() -> None:
 
 
 def test_doc_run_debug_fragment_validates() -> None:
-    (block,) = [b for b in BLOCKS if b.id == "schema#5"]
+    (block,) = [b for b in BLOCKS if b.id == "schema#6"]
     assert check_shape(block.data, "run", ref="#/$defs/DebugInfo") == []
     # run.json 전체의 같은 필드로도 쓸 수 있다
     whole = {
