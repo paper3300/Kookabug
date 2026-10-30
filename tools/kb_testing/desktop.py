@@ -493,6 +493,12 @@ def _check_wgc_frame(win: _TempWindow) -> tuple[bool, str]:
         from windows_capture import WindowsCapture
     except ImportError as exc:
         return False, f"windows_capture를 불러올 수 없다 ({exc})"
+    from kb_testing.sample_game import keep_process_mta
+
+    try:
+        keep_process_mta()  # 제품 캡처와 같은 MTA 수명 규칙 (sample_game.keep_process_mta)
+    except OSError as exc:
+        return False, f"프로세스 MTA를 유지할 수 없다 ({exc})"
     got = threading.Event()
     seen: dict[str, Any] = {}
     try:

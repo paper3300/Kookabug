@@ -26,6 +26,7 @@ from __future__ import annotations
 import ctypes
 import itertools
 import threading
+from collections.abc import Callable, Iterable
 from ctypes import wintypes
 from dataclasses import dataclass
 from typing import Final, Self
@@ -72,6 +73,7 @@ class WindowTracker:
         self._by_hwnd: dict[int, set[str]] = {}  # 살아 있는 바인딩만
         self._unbound: dict[tuple[int, int, int], str] = {}  # 바인딩 없는 참조 → 만든 바인딩
         self._generation = 0
+        self._listeners: list[Callable[[str], None]] = []
         self._thread: threading.Thread | None = None
         self._thread_id = 0
         self._ready = threading.Event()
@@ -181,6 +183,20 @@ class WindowTracker:
 
     # ------------------------------------------------------------ 이벤트
 
+    def on_death(self, listener: Callable[[str], None]) -> None:
+        """바인딩이 죽을 때마다 `listener(binding_id)`를 부른다 (잠금 밖, 죽인 스레드에서 —
+        추적기 스레드·WGC 콜백 스레드일 수 있으므로 듣는 쪽은 그 자리에서 기다리지 않는다).
+        캡처 서비스가 죽은 바인딩의 세션 픽셀을 바로 놓는 데 쓴다."""
+        with self._lock:
+            self._listeners.append(listener)
+
+    def _announce(self, ids: Iterable[str]) -> None:
+        with self._lock:
+            listeners = list(self._listeners)
+        for binding_id in ids:
+            for listener in listeners:
+                listener(binding_id)
+
     def notify_destroyed(self, hwnd: int) -> None:
         """그 hwnd의 창이 파괴됐다: 그 hwnd의 살아 있는 바인딩을 전부 죽인다."""
         with self._lock:
@@ -189,17 +205,20 @@ class WindowTracker:
                 self._dead[binding_id] = "창 파괴 이벤트"
             if ids:
                 self._generation += 1
+        self._announce(ids)
 
     def notify_capture_closed(self, binding_id: str) -> None:
-        """그 바인딩의 WGC 세션이 `on_closed`를 받았다 (T4가 연결한다)."""
+        """그 바인딩의 WGC 세션이 `on_closed`를 받았다 (캡처 서비스가 연결한다)."""
         with self._lock:
-            self._kill(binding_id, "캡처 세션 종료(on_closed)")
+            killed = self._kill(binding_id, "캡처 세션 종료(on_closed)")
+        if killed:
+            self._announce([binding_id])
 
-    def _kill(self, binding_id: str, reason: str) -> None:
-        # 잠금 안에서 부른다
+    def _kill(self, binding_id: str, reason: str) -> bool:
+        # 잠금 안에서 부른다. 이번에 죽였으면 True (알림은 잠금 밖에서 `_announce`)
         binding = self._bindings.get(binding_id)
         if binding is None or binding_id in self._dead:
-            return
+            return False
         self._dead[binding_id] = reason
         live = self._by_hwnd.get(binding.hwnd)
         if live is not None:
@@ -207,6 +226,7 @@ class WindowTracker:
             if not live:
                 del self._by_hwnd[binding.hwnd]
         self._generation += 1
+        return True
 
     @property
     def generation(self) -> int:
@@ -269,7 +289,9 @@ class WindowTracker:
             process_created and made.process_created != process_created
         ):
             with self._lock:
-                self._kill(made.binding_id, "참조와 다른 프로세스의 창")
+                killed = self._kill(made.binding_id, "참조와 다른 프로세스의 창")
+            if killed:
+                self._announce([made.binding_id])
             raise PlatformError(
                 WINDOW_GONE,
                 f"창 {hwnd:#x}는 참조한 프로세스(pid {pid})의 창이 아니다 (지금 pid {made.pid})",
@@ -293,7 +315,9 @@ class WindowTracker:
             reason = self._mismatch(binding)
             if reason is not None:
                 with self._lock:
-                    self._kill(binding.binding_id, reason)
+                    killed = self._kill(binding.binding_id, reason)
+                if killed:
+                    self._announce([binding.binding_id])
         if reason is not None:
             raise PlatformError(
                 WINDOW_GONE,

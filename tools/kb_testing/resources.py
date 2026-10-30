@@ -1,6 +1,7 @@
 """프로세스 자원 측정: 핸들·스레드·개인 바이트 (구현 계획 M1 2.3 장시간 안정성 검사).
 
 `soak` 검사가 시작과 끝을 재서 증가량 상한(핸들 ≤ 50, 스레드 ≤ 2, 개인 바이트 ≤ 64 MiB)을 본다.
+새로 열린 핸들의 종류(`new_handle_types`)로 어디서 새는지 가른다.
 """
 
 from __future__ import annotations
@@ -129,3 +130,67 @@ def sample(pid: int | None = None) -> ResourceSample:
     finally:
         _CloseHandle(handle)
     return ResourceSample(handles.value, count_threads(pid), mem.PrivateUsage)
+
+
+# ---------------------------------------------------------------- 핸들 종류 (현재 프로세스)
+
+_ntdll = ctypes.WinDLL("ntdll")
+_PROCESS_HANDLE_INFORMATION = 51
+_OBJECT_TYPE_INFORMATION = 2
+_CURRENT_PROCESS = ctypes.c_void_p(-1)
+
+
+class _HandleEntry(ctypes.Structure):
+    _fields_ = (
+        ("HandleValue", ctypes.c_void_p),
+        ("HandleCount", ctypes.c_size_t),
+        ("PointerCount", ctypes.c_size_t),
+        ("GrantedAccess", wintypes.ULONG),
+        ("ObjectTypeIndex", wintypes.ULONG),
+        ("HandleAttributes", wintypes.ULONG),
+        ("Reserved", wintypes.ULONG),
+    )
+
+
+def open_handles() -> set[int]:
+    """현재 프로세스가 지금 연 핸들 값들 (`NtQueryInformationProcess` ProcessHandleInformation)."""
+    size = 1 << 16
+    while True:
+        buffer = ctypes.create_string_buffer(size)
+        needed = wintypes.ULONG()
+        status = _ntdll.NtQueryInformationProcess(
+            _CURRENT_PROCESS, _PROCESS_HANDLE_INFORMATION, buffer, size, ctypes.byref(needed)
+        )
+        if status == 0:
+            break
+        if size > 1 << 26:
+            raise OSError(f"NtQueryInformationProcess 실패: {status & 0xFFFFFFFF:#010x}")
+        size = max(size * 2, needed.value)
+    count = ctypes.c_size_t.from_buffer(buffer, 0).value
+    # PROCESS_HANDLE_SNAPSHOT_INFORMATION: NumberOfHandles, Reserved 다음에 항목들
+    entries = (_HandleEntry * count).from_buffer(buffer, 2 * ctypes.sizeof(ctypes.c_size_t))
+    return {int(e.HandleValue or 0) for e in entries}
+
+
+def handle_type(handle: int) -> str:
+    """핸들의 객체 종류 이름 (`File`·`Event`·`ALPC Port` …). 읽을 수 없으면 `?`."""
+    buffer = ctypes.create_string_buffer(4096)
+    needed = wintypes.ULONG()
+    status = _ntdll.NtQueryObject(
+        ctypes.c_void_p(handle), _OBJECT_TYPE_INFORMATION, buffer, 4096, ctypes.byref(needed)
+    )
+    if status != 0:
+        return "?"
+    # OBJECT_TYPE_INFORMATION은 UNICODE_STRING TypeName으로 시작한다
+    length = ctypes.c_ushort.from_buffer(buffer, 0).value
+    pointer = ctypes.c_void_p.from_buffer(buffer, ctypes.sizeof(ctypes.c_void_p)).value
+    return ctypes.wstring_at(pointer, length // 2) if pointer else "?"
+
+
+def new_handle_types(before: set[int]) -> dict[str, int]:
+    """`before` 뒤에 새로 열려 지금도 열린 핸들의 종류별 수."""
+    counts: dict[str, int] = {}
+    for handle in open_handles() - before:
+        kind = handle_type(handle)
+        counts[kind] = counts.get(kind, 0) + 1
+    return counts

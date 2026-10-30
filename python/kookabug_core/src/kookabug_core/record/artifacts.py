@@ -13,6 +13,9 @@
 - 예외 스크린샷: 노드가 `error`로 끝나면 **그 스텝 안에서 얻은 마지막 캡처**만 후보다. 그 스텝에서
   캡처가 없으면 남기지 않는다
 - 경로는 실행 폴더 기준 `steps/<스텝>_<이름>`. 이미지 파일을 복사할 때는 확장자를 붙인다
+- 프레임 저장소(M1 2.7, `FrameRegistry`)가 있으면 캡처 픽셀은 저장소에 있고 노드는 픽셀 없는
+  **참조 이미지**(`capture_id`만)를 받는다. 참조 이미지를 남길 때는 저장소 픽셀을 PNG로 인코딩해
+  `.png`로 둔다. 기록 정책 판정은 인코딩 전에 `capture_id`로 한다(막힌 프레임은 인코딩도 안 함)
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Hashable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Final, Protocol
@@ -34,9 +37,12 @@ __all__ = [
     "STEPS_DIR",
     "ArtifactStore",
     "FileArtifacts",
+    "FrameRegistry",
     "Recorder",
+    "StagedFrame",
     "artifact_path",
     "image_artifact_path",
+    "is_reference_image",
 ]
 
 STEPS_DIR: Final = "steps"
@@ -54,6 +60,38 @@ class ArtifactStore(Protocol):
         ...
 
     def save_text(self, step: str, name: str, text: str) -> str: ...
+
+
+@dataclass(frozen=True, slots=True)
+class StagedFrame:
+    """플랫폼이 캡처한 픽셀과 그 동일성 키 — 저장소에 등록하기 전 (M1 2.7).
+
+    `key`가 같으면 같은 픽셀이다(같은 프레임·같은 자르기). 코어는 `pixels`를 열지 않는다.
+    """
+
+    key: Hashable
+    pixels: Any = field(repr=False)
+
+
+class FrameRegistry(Protocol):
+    """실행의 프레임 저장소 (`kookabug_platform.frames.FrameStore`). 코어는 이 모양만 안다."""
+
+    def register(self, capture_id: int, staged: StagedFrame, step: str) -> None:
+        """캡처 하나를 그 스텝의 프레임으로 등록한다."""
+        ...
+
+    def close_step(self, step: str) -> None:
+        """스텝이 닫혔다: 그 스텝 증거 등급을 푼다."""
+        ...
+
+    def encode_png(self, capture_id: int) -> bytes:
+        """그 캡처의 픽셀을 PNG로. 버린 프레임이면 `frame_expired`."""
+        ...
+
+
+def is_reference_image(image: Image) -> bool:
+    """픽셀 없는 참조 이미지인가 (`data`·`path` 없이 `capture_id`만)."""
+    return image.data is None and image.path is None and image.capture_id is not None
 
 
 def artifact_path(step: str, name: str, suffix: str, taken: Callable[[str], bool]) -> str:
@@ -131,8 +169,10 @@ class _StepRecord:
 class Recorder:
     """한 실행의 기록 정책 집행. 실행기가 스텝마다 `open_step` → … → `close_step`을 부른다."""
 
-    def __init__(self, store: ArtifactStore) -> None:
+    def __init__(self, store: ArtifactStore, frames: FrameRegistry | None = None) -> None:
         self.store = store
+        self.frames = frames
+        """프레임 저장소 (없으면 캡처 이미지가 바이트·파일을 그대로 든다 — M0b)."""
         self._open: dict[str, _StepRecord] = {}
         self._policies: dict[str, StepPolicy] = {}
         self._captures = 0
@@ -161,6 +201,8 @@ class Recorder:
     def close_step(self, step: str) -> tuple[list[str], list[dict[str, Any]]]:
         """스텝을 닫고 `(artifacts, omitted)`를 돌려준다. 스텝의 마지막 캡처는 놓는다."""
         record = self._open.pop(step, None)
+        if self.frames is not None:
+            self.frames.close_step(step)
         if record is None:
             return [], []
         return record.artifacts, record.omitted
@@ -170,17 +212,22 @@ class Recorder:
 
     # ------------------------------------------------------------ 캡처·저장
 
-    def captured(self, step: str, image: Image) -> Image:
+    def captured(self, step: str, image: Image, staged: StagedFrame | None = None) -> Image:
         """캡처 표시: 실행 안 새 `capture_id`를 붙인 이미지를 돌려주고, 얻은 스텝에서 스크린샷이
         막혔으면 그 이유를 그 번호에 남긴다. 노드에는 돌려준 이미지를 준다.
 
         플랫폼이 주는 이미지의 `frame`·`path`·바이트와 상관없이 캡처마다 번호가 하나씩이다.
+        `staged`(저장소에 둘 픽셀)를 주면 그 번호로 프레임 저장소에 등록한다.
         """
         record = self._open.get(step)
         if record is None:
             return image
         self._captures += 1
         tagged = replace(image, capture_id=self._captures)
+        if staged is not None:
+            if self.frames is None:
+                raise RuntimeError("프레임 저장소 없이 저장소용 픽셀을 받았다")
+            self.frames.register(self._captures, staged, step)
         record.last_capture = tagged
         block = record.policy.screenshot_block()
         if block is not None:
@@ -198,6 +245,11 @@ class Recorder:
                 entry["source"] = source
             record.omitted.append(entry)
             return None
+        if is_reference_image(image) and self.frames is not None:
+            assert image.capture_id is not None
+            image = replace(image, data=self.frames.encode_png(image.capture_id))
+            if not name.lower().endswith(".png"):
+                name += ".png"
         path = self.store.save(step, image, name)
         record.artifacts.append(path)
         return path

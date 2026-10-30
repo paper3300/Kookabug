@@ -96,7 +96,7 @@ def wait_any(ctx: Context, targets: dict[str, Target], timeout_ms: int = 10000) 
 | `target` | `Target` | `*.target.json` |
 | `match` | `Match` | 위치, 점수, 창 ID, 캡처 프레임 번호 |
 | `rect`, `point` | `Rect`, `Point` | 클라이언트 영역 기준 |
-| `image` | `Image` | 기록에는 파일로 저장. `ctx.capture`가 준 이미지에는 러너가 캡처 번호(`capture_id`)를 붙인다. 기록 정책이 이 번호로 "얻을 때 허용됐는가"를 보므로 노드는 받은 이미지를 그대로 넘긴다 (값 비교에는 들지 않는다) |
+| `image` | `Image` | 기록에는 파일로 저장. `ctx.capture`가 준 이미지에는 러너가 캡처 번호(`capture_id`)를 붙인다. 기록 정책이 이 번호로 "얻을 때 허용됐는가"를 보므로 노드는 받은 이미지를 그대로 넘긴다 (값 비교에는 들지 않는다). 실제 캡처 이미지는 **참조 이미지**다: 픽셀(`data`)·파일(`path`) 없이 크기·`frame`·`capture_id`만 들고, 픽셀은 러너의 프레임 저장소에 있다. 찾기·비교·OCR은 러너가 그 픽셀로 하고(`ctx.vision`·`ctx.ocr`), `ctx.artifacts.save`는 저장소 픽셀을 PNG로 남긴다. 저장소는 최근 캡처만 들고 있으므로 오래 전에 얻은 이미지를 나중에 쓰면 `frame_expired`일 수 있다 — 지금 화면이 필요하면 다시 캡처한다. 파일·바이트에서 만든 이미지는 그대로 오간다 |
 | `window`, `process` | `WindowRef`, `ProcessRef` | 유효성 확인 가능 |
 | `list[T]`, `dict[str, T]` | 같음 | |
 | `any` | `Any` | 연결 검사를 하지 않음. 가급적 쓰지 않는다 |

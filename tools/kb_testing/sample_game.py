@@ -1,7 +1,9 @@
 """예제 게임을 띄우고 기다리고 닫는 테스트 헬퍼 (구현 계획 M1 2.13 `kb_testing.sample_game`).
 
 게임은 **테스트 하네스의 세션 Job** 안에서 뜬다(pytest가 세션 Job 소속이라 자식은 생성 시점부터
-소속). 그래서 runner의 실행 Job과는 따로 살고, pytest가 강제로 끝나도 Job이 정리한다.
+소속). 그래서 runner의 실행 Job과는 따로 살고, pytest가 강제로 끝나도 Job이 정리한다. pytest 밖
+(도구·조사 스크립트)에서는 띄우는 프로세스 전용 `KILL_ON_JOB_CLOSE` Job을 같은 방식으로 만든다
+(`launch_job`) — 띄운 쪽이 네이티브 크래시로 죽어도 게임이 남지 않는다.
 
 venv의 `python.exe`는 실제 인터프리터를 자식으로 띄우는 런처라, 게임은 기반 인터프리터로 직접
 띄운다(`kb_testing.proc.python_cmd`). 그러면 `Popen.pid`가 창을 가진 프로세스의 PID다.
@@ -39,6 +41,8 @@ __all__ = [
     "game_command",
     "game_env",
     "is_window",
+    "keep_process_mta",
+    "launch_job",
     "launch_sample_game",
     "post_close",
     "snap_scene",
@@ -116,6 +120,9 @@ _DwmGetWindowAttribute = _sig(
 _SetThreadDpiAwarenessContext = _sig(
     _user32.SetThreadDpiAwarenessContext, ctypes.c_void_p, ctypes.c_void_p
 )
+_CoIncrementMTAUsage = _sig(
+    ctypes.WinDLL("ole32").CoIncrementMTAUsage, ctypes.c_long, ctypes.POINTER(ctypes.c_void_p)
+)
 
 DPI_PMV2: Final = -4
 GW_OWNER: Final = 4
@@ -188,6 +195,26 @@ def _extended_frame(hwnd: int) -> tuple[int, int, int, int]:
     return rect.left, rect.top, rect.right, rect.bottom
 
 
+_mta_cookie: ctypes.c_void_p | None = None
+
+
+def keep_process_mta() -> None:
+    """프로세스 MTA를 끝까지 살려 둔다 (한 번). WGC 세션을 열기 전에 부른다.
+
+    제품 `kookabug_platform.capture.ensure_mta`와 같은 규칙을 제품 코드 없이 따른다:
+    windows-capture가 캐시한 WinRT 객체가 속한 MTA를 다른 라이브러리(`import onnxruntime`)가
+    없애면 다음 세션 시작이 접근 위반으로 프로세스를 죽인다.
+    """
+    global _mta_cookie
+    if _mta_cookie is not None:
+        return
+    cookie = ctypes.c_void_p()
+    hr = _CoIncrementMTAUsage(ctypes.byref(cookie))
+    if hr < 0:
+        raise OSError(f"CoIncrementMTAUsage 실패: 0x{hr & 0xFFFFFFFF:08x}")
+    _mta_cookie = cookie
+
+
 def capture_client(
     hwnd: int, *, timeout: float = CAPTURE_TIMEOUT_S, settle: float = CAPTURE_SETTLE_S
 ) -> Any:
@@ -197,6 +224,8 @@ def capture_client(
     """
     import numpy as np
     from windows_capture import WindowsCapture
+
+    keep_process_mta()
 
     lock = threading.Lock()
     latest: dict[str, Any] = {}
@@ -367,6 +396,28 @@ def _session_job() -> Job | None:
     return None if plugin is None else plugin._session_job
 
 
+_own_job: Job | None = None
+
+
+def launch_job() -> Job:
+    """게임이 생성 시점부터 들어갈 `KILL_ON_JOB_CLOSE` Job.
+
+    pytest 안이면 세션 Job(pytest 자신이 들어 있음). 밖(화면 PNG 도구·조사 스크립트)이면 이
+    프로세스 전용 Job을 한 번 만들고 **자신을 넣는다** — 세션 Job과 같은 방식이라 이 프로세스가
+    네이티브 크래시·강제 종료로 죽어도 마지막 핸들이 닫히며 OS가 게임을 끝낸다. 핸들은 닫지
+    않는다(`keep_until_exit`, 닫으면 자신도 끝난다).
+    """
+    global _own_job
+    session = _session_job()
+    if session is not None:
+        return session
+    if _own_job is None:
+        job = Job.create(kill_on_close=True).keep_until_exit()
+        job.assign_current()
+        _own_job = job
+    return _own_job
+
+
 def launch_sample_game(
     options: Sequence[str | Path] = (),
     *,
@@ -377,9 +428,11 @@ def launch_sample_game(
 ) -> SampleGame:
     """예제 게임을 띄운다. `workdir`에 입력 수신 기록과 stdout·stderr를 둔다.
 
-    `job`이 없으면 pytest 세션 Job(있을 때)에 들어 있는지 확인한다. 주면 그 Job에도 넣는다.
+    게임은 생성 시점부터 `launch_job()`(pytest 세션 Job 또는 이 프로세스 전용 Job) 안이다 —
+    띄운 쪽이 어떻게 죽어도 게임이 남지 않는다. `job`을 주면 그 Job에도 넣는다.
     `wait_ready`면 메인 창과 첫 화면이 그려질 때까지 기다린다.
     """
+    owner = launch_job()  # 띄우기 전에: 자식은 생성 시점부터 이 Job 소속
     workdir = workdir.resolve()  # 게임은 GAME_DIR에서 뜨므로 절대 경로로 넘긴다
     workdir.mkdir(parents=True, exist_ok=True)
     stem = f"sample-game-{uuid.uuid4().hex[:8]}"
@@ -399,12 +452,10 @@ def launch_sample_game(
         )
     game = SampleGame(proc, event_log, stdout, stderr)
     try:
+        if not owner.contains(proc.pid):
+            raise AssertionError(f"게임 {proc.pid}가 정리 Job(launch_job) 밖이다")
         if job is not None:
             job.assign(proc.pid)
-        else:
-            session = _session_job()
-            if session is not None and not session.contains(proc.pid):
-                raise AssertionError(f"게임 {proc.pid}가 테스트 세션 Job 밖이다")
         if wait_ready:
             game.wait_ready(timeout=timeout)
             game.wait_event("screen", timeout=timeout)

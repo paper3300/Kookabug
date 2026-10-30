@@ -21,6 +21,9 @@
 | `target_image_invalid` | target 이미지를 읽을 수 없다 (T6) |
 
 처리되지 않은 fail로 끝나는 `stale_observation`(출구 없음)은 이 표의 `error`와 다르다 (T8·T9).
+
+관측 호출이 **노드 기한** 때문에 끝나면 `ObservationTimeout`이다(오류 코드 아님, M1 2.6). 노드가
+잡아 `timeout` 출구로 간다.
 """
 
 from __future__ import annotations
@@ -50,6 +53,7 @@ __all__ = [
     "WINDOW_MINIMIZED",
     "WINDOW_MISMATCH",
     "WINDOW_NOT_FOREGROUND",
+    "ObservationTimeout",
     "PlatformError",
 ]
 
@@ -102,3 +106,11 @@ class PlatformError(EngineError):
         if code not in CODES:
             raise ValueError(f"모르는 플랫폼 오류 코드: {code}")
         super().__init__(code, message)
+
+
+class ObservationTimeout(Exception):
+    """관측 호출(캡처·찾기·OCR)이 노드가 넘긴 기한 안에 끝나지 않았다. 노드는 잡아서 `timeout`
+    출구로 간다. 설정 기한(`capture_timeout`)·전체 기한(`DeadlineExceeded`)과 다르다.
+
+    T8이 SDK에 같은 이름의 예외를 두면 이것은 그 예외를 가리키게 바꾼다.
+    """

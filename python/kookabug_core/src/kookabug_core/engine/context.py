@@ -17,13 +17,20 @@ from kookabug_core.engine.frame import Frame
 from kookabug_core.engine.invoker import NodeInvoker
 from kookabug_core.ir import Node
 from kookabug_core.loader import Program
-from kookabug_core.record.artifacts import ArtifactStore, Recorder
+from kookabug_core.record.artifacts import ArtifactStore, Recorder, StagedFrame
 from kookabug_core.registry import Registry
 from kookabug_core.workspace import SettingLookup
 from kookabug_sdk.context import ArtifactsApi, Clock, Deadline, InputApi, LogApi, VarsApi
 from kookabug_sdk.types import Image, Match, Point, Rect, Secret, WindowRef
 
-__all__ = ["ArtifactStore", "Platform", "Runtime", "StepContext", "StepInputPlatform"]
+__all__ = [
+    "ArtifactStore",
+    "PixelPlatform",
+    "Platform",
+    "Runtime",
+    "StepContext",
+    "StepInputPlatform",
+]
 
 
 class Platform(Protocol):
@@ -42,6 +49,19 @@ class StepInputPlatform(Protocol):
     """
 
     def input_for(self, step: str) -> InputApi: ...
+
+
+@runtime_checkable
+class PixelPlatform(Protocol):
+    """캡처 픽셀을 프레임 저장소에 두는 플랫폼 (M1 2.7).
+
+    실행에 프레임 저장소(`Recorder.frames`)가 있으면 `ctx.capture`는 `capture`가 아니라 이것을
+    부르고, 노드에는 픽셀 없는 참조 이미지를 준다. 픽셀은 `capture_id`로 저장소에 등록된다.
+    """
+
+    def capture_staged(
+        self, window: WindowRef | None, region: Rect | None
+    ) -> tuple[Image, StagedFrame]: ...
 
 
 @dataclass(eq=False)
@@ -227,9 +247,14 @@ class StepContext:
 
     def capture(self, region: Rect | None = None) -> Image:
         self._runtime.check()
-        image = self._runtime.recorder.captured(
-            self._step, self._runtime.platform.capture(self._frame.current_window, region)
-        )
+        platform = self._runtime.platform
+        recorder = self._runtime.recorder
+        window = self._frame.current_window
+        if recorder.frames is not None and isinstance(platform, PixelPlatform):
+            raw, staged = platform.capture_staged(window, region)
+            image = recorder.captured(self._step, raw, staged)
+        else:
+            image = recorder.captured(self._step, platform.capture(window, region))
         self._runtime.check()
         return image
 

@@ -50,7 +50,7 @@ from kookabug_core.engine.retry import retry_policy
 from kookabug_core.engine.verdict import Cause, Facts, Judgement, Terminal, Verdict, judge
 from kookabug_core.ir import GRAPH_ENTRY, Node
 from kookabug_core.loader import MAX_CALL_DEPTH, Program
-from kookabug_core.record.artifacts import Recorder
+from kookabug_core.record.artifacts import FrameRegistry, Recorder
 from kookabug_core.record.policy import (
     RecordPolicy,
     graph_source,
@@ -139,6 +139,7 @@ class Executor:
         invoker: NodeInvoker | None = None,
         before_step: Callable[[str], None] | None = None,
         on_setting: Callable[[SettingLookup], None] | None = None,
+        frames: FrameRegistry | None = None,
     ) -> None:
         """`sink`는 이벤트를 더 보낼 곳이다 (`RunResult.events`에는 `collect_events`일 때 모인다).
 
@@ -147,6 +148,8 @@ class Executor:
         경계 멈춤이 여기서 기다린다. `Cancelled`를 던지면 그 스텝은 시작하지 않고 실행이 끝난다.
         `on_setting(조회 결과)`는 노드가 `ctx.setting()`으로 설정을 읽을 때마다 불린다
         (실행 조건 기록).
+        `frames`는 프레임 저장소다(M1 2.7). 주면 캡처 픽셀을 저장소에 두고 노드에는 참조 이미지를
+        준다(플랫폼이 `PixelPlatform`일 때).
         시계를 주지 않으면 취소로 깨는 `SystemClock`이다.
         """
         self.registry = registry or default_registry()
@@ -158,6 +161,7 @@ class Executor:
         self.sink = sink
         self.before_step = before_step
         self.on_setting = on_setting
+        self.frames = frames
 
     def run(self, program: Program, options: ExecOptions | None = None) -> RunResult:
         options = options or ExecOptions()
@@ -180,7 +184,7 @@ class Executor:
                 self.sink.emit(event)
 
         run_id = options.run_id or uuid.uuid4().hex[:8]
-        recorder = Recorder(self.artifacts)
+        recorder = Recorder(self.artifacts, self.frames)
         runtime = Runtime(
             run=run_id,
             program=program,

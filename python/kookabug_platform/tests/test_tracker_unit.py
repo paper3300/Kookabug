@@ -143,6 +143,29 @@ def test_check_detects_closed_or_reused_without_event(api: FakeWindowApi) -> Non
     assert "생성 시각" in gone(tracker, binding).message
 
 
+def test_death_listener_called_once_per_binding_outside_lock(api: FakeWindowApi) -> None:
+    # 캡처 서비스가 죽은 바인딩의 세션 픽셀을 놓는 데 쓴다 (T4 검수 Mid 3)
+    tracker = WindowTracker(api)
+    heard: list[str] = []
+
+    def listener(binding_id: str) -> None:
+        tracker.get(binding_id)  # 잠금 밖에서 불리므로 추적기를 다시 불러도 막히지 않는다
+        heard.append(binding_id)
+
+    tracker.on_death(listener)
+    a, b = tracker.bind(HWND), tracker.bind(HWND)
+    tracker.notify_destroyed(HWND)
+    assert sorted(heard) == sorted([a.binding_id, b.binding_id])
+    c = tracker.bind(api.add(0x2000, PID))
+    tracker.notify_capture_closed(c.binding_id)
+    tracker.notify_capture_closed(c.binding_id)  # 두 번째는 이미 죽어 알리지 않는다
+    d = tracker.bind(api.add(0x3000, PID))
+    api.destroy(0x3000)
+    gone(tracker, d)
+    gone(tracker, d)
+    assert heard[2:] == [c.binding_id, d.binding_id]
+
+
 def test_bind_missing_window_is_gone(api: FakeWindowApi) -> None:
     tracker = WindowTracker(api)
     with pytest.raises(PlatformError) as info:

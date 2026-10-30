@@ -14,6 +14,9 @@ Kookabug의 Windows 플랫폼 구현: 창·프로세스·DPI, WGC 캡처, SendIn
 | `windows.py` | 창 찾기·`WindowInfo`·포그라운드·점 아래 창·무결성·입력 데스크톱 판정, 활성화·크기 맞춤 |
 | `tracker.py` | 창 수명 추적기(파괴 이벤트 스레드)와 바인딩 |
 | `process.py` | 게임 띄우기(실행 Job 안)·닫기·Job 안 프로세스의 창 찾기 |
+| `deadline.py` | 관측 호출의 유효 기한(노드·설정·전체 기한 구분, `ObservationTimeout`) |
+| `capture.py` | WGC 창 세션·최신 프레임 재사용·장애 구분·클라이언트 자르기·`FrameInfo` |
+| `frames.py` | 프레임 저장소(픽셀 공유·보관 등급·바이트 예산·`frame_expired`)와 PNG 인코딩 |
 
 배포물에 들어가는 네이티브 파일(DLL·pyd)의 구성요소별 라이선스는 `tools/native-licenses.toml`이
 단일 출처다.

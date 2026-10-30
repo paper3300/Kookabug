@@ -33,3 +33,16 @@ def test_sample_tracks_threads_handles_and_private_bytes() -> None:
         for e in events:
             e.close()
         del block
+
+
+def test_new_handle_types_counts_by_kind() -> None:
+    before = resources.open_handles()
+    assert before and all(h > 0 for h in before)
+    events = [WinEvent.create() for _ in range(5)]
+    try:
+        kinds = resources.new_handle_types(before)
+        assert kinds.get("Event", 0) >= 5
+    finally:
+        for e in events:
+            e.close()
+    assert resources.new_handle_types(before).get("Event", 0) < 5
