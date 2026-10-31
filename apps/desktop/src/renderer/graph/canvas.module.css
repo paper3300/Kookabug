@@ -1,0 +1,137 @@
+/* 그래프 캔버스 (시안 Main 캔버스: 16px 점 격자, 오른쪽 아래 줌·미니맵) */
+
+.canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  background-color: var(--kb-editor-bg);
+}
+
+/* React Flow 기본 변수를 토큰으로 */
+.flow {
+  --xy-background-color: transparent;
+  --xy-node-border: none;
+  --xy-node-border-selected: none;
+  --xy-node-color: var(--kb-node-row-fg);
+  --xy-edge-stroke: var(--kb-pin-exec);
+  --xy-edge-stroke-selected: var(--kb-accent);
+  --xy-minimap-background-color: var(--kb-node-bg);
+  --xy-minimap-mask-background-color: transparent;
+  --xy-minimap-mask-stroke-color: var(--kb-minimap-view);
+  --xy-minimap-node-background-color: var(--kb-node-border);
+  --xy-selection-background-color: transparent;
+  --xy-selection-border: 1px dotted var(--kb-accent);
+  font-family: var(--kb-font);
+  font-size: var(--kb-font-size);
+}
+
+.flow :global(.react-flow__node) {
+  cursor: default;
+}
+
+/* 노드 위 층에 그리는 뒤로 가는 연결선은 그리기 전용 (겹친 노드 누르기를 가로채지 않는다) */
+.flow :global(.react-flow__edge.kb-edge-overlay),
+.flow :global(.react-flow__edge.kb-edge-overlay *) {
+  pointer-events: none;
+}
+
+.flow :global(.react-flow__node:focus-visible) {
+  outline: none;
+}
+
+.corner {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 5;
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.zoom {
+  display: flex;
+  background: var(--kb-node-bg);
+  border: 1px solid var(--kb-node-border);
+  border-radius: 4px;
+  color: var(--kb-fg);
+}
+
+.zoom button {
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: 0;
+  color: var(--kb-fg);
+}
+
+.zoom button:hover {
+  background: var(--kb-hover-bg);
+}
+
+.zoom span {
+  min-width: 40px;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.minimap:global(.react-flow__minimap) {
+  position: static;
+  margin: 0;
+  border: 1px solid var(--kb-node-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.minimap :global(.react-flow__minimap-svg) {
+  display: block;
+}
+
+.message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--kb-fg-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.message strong {
+  color: var(--kb-fg);
+  font-weight: 600;
+}
+
+.messagePath {
+  font-family: var(--kb-font-mono);
+  font-size: 12px;
+}
+
+.messageDetail {
+  max-width: 640px;
+  padding: 6px 10px;
+  border-radius: 2px;
+  background: var(--kb-banner-error-bg);
+  color: var(--kb-banner-error-fg);
+  font-family: var(--kb-font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  text-align: left;
+}
+
+.emptyHint {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+  pointer-events: none;
+}

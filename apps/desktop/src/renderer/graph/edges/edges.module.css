@@ -1,0 +1,11 @@
+.where {
+  position: absolute;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: var(--kb-editor-bg);
+  color: var(--kb-fg-muted);
+  font-family: var(--kb-font-mono);
+  font-size: 10px;
+  line-height: 14px;
+  pointer-events: none;
+}

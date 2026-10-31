@@ -1,6 +1,7 @@
 // 하단 패널 (시안 Main): 문제·출력·실행 로그·노드 결과. 고정 데이터·터미널은 이후 (2.11).
-// T7은 틀과 출력(daemon·연결 메시지)만 채운다. 문제는 T8, 실행 로그·노드 결과는 T11
+// 출력(daemon·연결 메시지)은 T7, 문제(검증 진단)는 T8, 실행 로그·노드 결과는 T11
 import { useEffect, useRef } from "react";
+import { Problems, useProblems } from "../problems/Problems";
 import { useUi, type PanelTab } from "../store/ui";
 import { useWorkspace } from "../store/workspace";
 import css from "./shell.module.css";
@@ -45,6 +46,7 @@ function Output() {
 
 export function Panel() {
   const tab = useUi((s) => s.panelTab);
+  const problems = useProblems().length;
   return (
     <section aria-label="하단 패널" className={css.panel}>
       <div role="tablist" aria-label="하단 패널 탭" className={css.panelTabs} data-part="panel-tabs">
@@ -58,16 +60,21 @@ export function Panel() {
             onClick={() => useUi.setState({ panelTab: id })}
           >
             {label}
+            {id === "problems" && problems > 0 && (
+              <span className={css.count} data-part="problem-count">
+                {problems}
+              </span>
+            )}
           </button>
         ))}
       </div>
       <div role="tabpanel" aria-label={TABS.find(([id]) => id === tab)?.[1]} className={css.panelBody}>
         {tab === "output" ? (
           <Output />
+        ) : tab === "problems" ? (
+          <Problems />
         ) : (
-          <div className={css.panelEmpty}>
-            {tab === "problems" ? "문제가 없어요" : tab === "runlog" ? "실행 기록이 없어요" : "고른 노드가 없어요"}
-          </div>
+          <div className={css.panelEmpty}>{tab === "runlog" ? "실행 기록이 없어요" : "고른 노드가 없어요"}</div>
         )}
       </div>
     </section>

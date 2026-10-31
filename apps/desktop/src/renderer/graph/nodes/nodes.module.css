@@ -1,0 +1,228 @@
+/* 캔버스 노드 (시안 Main·MainLight 그래프 노드). 색은 토큰만 쓴다 */
+
+.node {
+  width: 184px;
+  background: var(--kb-node-bg);
+  border: 1px solid var(--kb-node-border);
+  border-radius: 4px;
+  color: var(--kb-node-row-fg);
+}
+
+.node[data-unknown="true"] {
+  border-style: dashed;
+}
+
+.node[data-head="warn"] {
+  border-color: var(--kb-node-border-warn);
+}
+
+.node[data-head="error"] {
+  border-color: var(--kb-status-error);
+}
+
+.selected {
+  box-shadow: 0 0 0 2px var(--kb-accent);
+}
+
+.head {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 3px 3px 0 0;
+  background: var(--kb-node-head-neutral);
+  color: var(--kb-node-title-fg);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.node[data-head="blue"] .head {
+  background: var(--kb-node-head-blue);
+}
+
+.node[data-head="green"] .head {
+  background: var(--kb-node-head-green);
+}
+
+.node[data-head="purple"] .head {
+  background: var(--kb-node-head-purple);
+}
+
+.node[data-head="warn"] .head {
+  background: var(--kb-node-head-warn);
+}
+
+.node[data-head="error"] .head {
+  background: var(--kb-banner-error-bg);
+}
+
+.title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status {
+  flex: 0 0 auto;
+  font-size: var(--kb-font-size-small);
+  font-weight: 400;
+}
+
+.status[data-tone="warn"] {
+  color: var(--kb-status-warn);
+}
+
+.status[data-tone="error"] {
+  color: var(--kb-status-error);
+}
+
+.status[data-tone="muted"] {
+  color: var(--kb-fg-muted);
+}
+
+.body {
+  padding: 8px 0;
+}
+
+.row {
+  position: relative;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: var(--kb-font-size-small);
+}
+
+.label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 11px;
+}
+
+.labelRight {
+  margin-left: auto;
+  text-align: right;
+}
+
+.extra {
+  font-style: italic;
+  color: var(--kb-fg-muted);
+}
+
+.fail {
+  color: var(--kb-pin-fail);
+}
+
+/* 핀: 흐름 = 삼각형, 데이터 = 원 (시안 10px, 노드 테두리에 반쯤 걸침) */
+.pin:global(.react-flow__handle) {
+  width: 10px;
+  height: 10px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 50%;
+}
+
+.pin:global(.react-flow__handle.react-flow__handle-left) {
+  left: 0;
+}
+
+.pin:global(.react-flow__handle.react-flow__handle-right) {
+  right: 0;
+}
+
+.exec:global(.react-flow__handle) {
+  border-radius: 0;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.note {
+  margin: 6px 10px 2px;
+  padding: 4px 8px;
+  border-radius: 2px;
+  background: var(--kb-node-note-bg);
+  color: var(--kb-node-note-fg);
+  font-size: var(--kb-font-size-small);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.note[data-tone="warn"] {
+  background: var(--kb-node-note-warn-bg);
+  color: var(--kb-node-note-warn-fg);
+}
+
+.note[data-tone="error"] {
+  background: var(--kb-banner-error-bg);
+  color: var(--kb-banner-error-fg);
+}
+
+/* 접힌 그룹 */
+.group {
+  width: 184px;
+  background: var(--kb-node-bg);
+  border: 1px dashed var(--kb-node-border);
+  border-radius: 4px;
+  color: var(--kb-node-row-fg);
+}
+
+.group[data-expanded="true"] {
+  opacity: 0.85;
+}
+
+.groupHead {
+  composes: head;
+  border-radius: 3px;
+}
+
+.groupBody {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: var(--kb-font-size-small);
+}
+
+.groupButton {
+  height: 22px;
+  padding: 0 8px;
+  background: var(--kb-input-bg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  color: var(--kb-fg);
+  font-size: var(--kb-font-size-small);
+}
+
+.groupButton:hover {
+  background: var(--kb-hover-bg);
+}
+
+.groupPin:global(.react-flow__handle) {
+  width: 8px;
+  height: 8px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  background: var(--kb-pin-other);
+}
+
+/* 주석: 노드 뒤에 깔리는 상자 */
+.comment {
+  width: 100%;
+  height: 100%;
+  padding: 8px 10px;
+  border: 1px dashed var(--kb-node-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow: hidden;
+}

@@ -19,6 +19,8 @@ export const SCREENS = {
   welcome: { dark: "Setup0Welcome", light: "Setup0WelcomeLight" },
   // 앱 틀(캔버스 내용 제외), T7
   "shell-empty": { dark: "Main", light: "MainLight" },
+  // 캔버스(노드·핀·연결선·미니맵·문제 패널), T8
+  "main-canvas": { dark: "Main", light: "MainLight" },
   target: { dark: "Recorder" },
 };
 

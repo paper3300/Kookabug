@@ -1,0 +1,174 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "layout": {
+    "nodes": {
+      "n_attach": {
+        "x": 240,
+        "y": 40
+      },
+      "n_click": {
+        "x": 20,
+        "y": 260
+      },
+      "n_confirm": {
+        "x": 680,
+        "y": 440
+      },
+      "n_ocr": {
+        "x": 460,
+        "y": 260
+      },
+      "n_record": {
+        "x": 680,
+        "y": 260
+      },
+      "n_repeat": {
+        "x": 460,
+        "y": 40
+      },
+      "n_report": {
+        "x": 700,
+        "y": 40
+      },
+      "n_start": {
+        "x": 20,
+        "y": 40
+      },
+      "n_timeout_shot": {
+        "x": 240,
+        "y": 440
+      },
+      "n_wait": {
+        "x": 240,
+        "y": 260
+      }
+    }
+  },
+  "meta": {
+    "description": "UX 시안 Main 캔버스의 노드 배치를 실제 노드로 옮긴 그래프 (시안 비교 스크린샷용)",
+    "title": "장비 강화 반복"
+  },
+  "nodes": {
+    "n_attach": {
+      "in": {
+        "title": "SampleRPG*"
+      },
+      "next": {
+        "found": "n_repeat"
+      },
+      "title": "창 찾기",
+      "type": "core.window.attach",
+      "version": 1
+    },
+    "n_click": {
+      "in": {
+        "target": {
+          "$target": "targets/title/start_button.target.json"
+        }
+      },
+      "next": {
+        "done": "n_wait"
+      },
+      "title": "이미지 클릭",
+      "type": "core.image.click",
+      "version": 1
+    },
+    "n_confirm": {
+      "in": {
+        "target": {
+          "$target": "targets/login/login_button.target.json"
+        }
+      },
+      "title": "이미지 클릭",
+      "type": "core.image.click",
+      "version": 1
+    },
+    "n_ocr": {
+      "in": {
+        "region": {
+          "$target": "targets/login/error_text.target.json"
+        }
+      },
+      "next": {
+        "done": "n_record"
+      },
+      "title": "OCR 읽기",
+      "type": "core.ocr.read",
+      "version": 1
+    },
+    "n_record": {
+      "in": {
+        "name": "last_result",
+        "value": [
+          {
+            "$link": "n_repeat.index"
+          },
+          {
+            "$link": "n_ocr.text"
+          }
+        ]
+      },
+      "next": {
+        "done": "n_confirm"
+      },
+      "title": "결과 기록",
+      "type": "core.var.set",
+      "version": 1
+    },
+    "n_repeat": {
+      "in": {
+        "times": 10000
+      },
+      "next": {
+        "body": "n_click",
+        "done": "n_report"
+      },
+      "title": "반복",
+      "type": "core.flow.repeat",
+      "version": 1
+    },
+    "n_report": {
+      "in": {
+        "text": "enchant_result.csv"
+      },
+      "title": "확률 리포트 저장",
+      "type": "core.log.message",
+      "version": 1
+    },
+    "n_start": {
+      "next": {
+        "start": "n_attach"
+      },
+      "title": "시작",
+      "type": "core.graph.entry",
+      "version": 1
+    },
+    "n_timeout_shot": {
+      "in": {
+        "name": "timeout"
+      },
+      "title": "시간 초과 화면 저장",
+      "type": "core.screen.capture",
+      "version": 1
+    },
+    "n_wait": {
+      "in": {
+        "target": {
+          "$target": "targets/login/error_popup.target.json"
+        },
+        "timeout_ms": 10000
+      },
+      "next": {
+        "found": "n_ocr",
+        "timeout": "n_timeout_shot"
+      },
+      "title": "나타날 때까지 대기",
+      "type": "core.image.wait",
+      "version": 1
+    }
+  },
+  "plugins": {
+    "core": "0.1.0"
+  }
+}

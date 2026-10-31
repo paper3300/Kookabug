@@ -6,6 +6,8 @@ import type { TreeEntry } from "../explorer/tree";
 import { client, toRpcError } from "../rpc/client";
 import { RunCursors } from "../rpc/runCursor";
 import { SessionRecovery } from "../rpc/recovery";
+import { documentsHost, resetDocuments, revalidateOpenDocs, setDocumentsConnection } from "./documents";
+import { refreshRegistry, resetRegistry } from "./registry";
 import { closeAllTabs } from "./tabs";
 import { useUi } from "./ui";
 
@@ -96,6 +98,9 @@ export async function refreshInfo(): Promise<void> {
  * 프로세스다. 열기 응답과 상태 알림의 순서와 무관하게 같은 결과)
  */
 function switchProject(root: string | null): void {
+  // 문서 표를 먼저 비운다: 앞 연결은 이미 놓았으므로 탭을 닫으며 graph.close를 보내지 않는다
+  resetDocuments();
+  resetRegistry();
   closeAllTabs();
   useUi.setState({ expanded: null, selected: null, quickOpen: false });
   runCursors.reset();
@@ -110,9 +115,18 @@ function switchProject(root: string | null): void {
   });
 }
 
+/** 연결 번호가 없는 상태 알림을 매번 다른 연결로 보기 위한 수 */
+let unnumbered = 0;
+
 async function onDaemonState(state: DaemonState): Promise<void> {
   if (state.root !== useWorkspace.getState().root) switchProject(state.root);
   useWorkspace.setState({ daemon: state });
+  // 문서 참조는 연결 단위다 (다시 열기 전에 지금 연결을 알려 둔다)
+  setDocumentsConnection(
+    state.status === "connected" && state.startId !== undefined
+      ? `${state.startId}:${state.connection ?? `unknown-${++unnumbered}`}`
+      : null,
+  );
   if (state.status !== "connected" || state.root === null || state.startId === undefined) return;
   const kind = await recovery.connected({
     root: state.root,
@@ -121,7 +135,15 @@ async function onDaemonState(state: DaemonState): Promise<void> {
   });
   if (useWorkspace.getState().root !== state.root) return;
   if (kind === "daemon_replaced") note("info", "daemon이 바뀌어 열린 문서를 다시 열었다");
-  await Promise.all([refreshTree(), refreshInfo()]);
+  await Promise.all([refreshTree(), refreshInfo(), loadRegistry()]);
+}
+
+async function loadRegistry(): Promise<void> {
+  try {
+    await refreshRegistry();
+  } catch (err) {
+    note("warn", `노드 목록을 읽지 못했다: ${toRpcError(err).message}`);
+  }
 }
 
 let treeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -133,6 +155,8 @@ export async function initWorkspace(): Promise<void> {
   client().on("workspace.changed", () => {
     if (treeTimer !== null) clearTimeout(treeTimer);
     treeTimer = setTimeout(() => void refreshTree(), 150);
+    // 서브그래프·target·화면 파일이 바뀌면 열린 그래프의 검증 결과도 바뀐다
+    revalidateOpenDocs();
   });
   client().on("run.event", (p) => {
     try {
@@ -145,6 +169,7 @@ export async function initWorkspace(): Promise<void> {
   client().on("run.lagged", (p) => runCursors.lagged(p.run_id));
   client().on("run.ended", (p) => runCursors.ended(p.run_id));
   recovery.addRuns(runCursors);
+  recovery.addDocs(documentsHost);
   const [recent, output, state] = await Promise.all([app().recent(), app().daemonLog(), app().daemonState()]);
   useWorkspace.setState({ recent, output });
   await onDaemonState(state);

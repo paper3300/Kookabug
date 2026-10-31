@@ -95,6 +95,30 @@
   --kb-preview-head-green: #1e3d2f;
   --kb-preview-head-purple: #3b2a55;
   --kb-preview-wire: #555555;
+  /* 캔버스 노드 (시안 Main 그래프 노드). 머리 색은 palette/categories.ts가 분류로 고른다 */
+  --kb-node-border: #3c3c3c;
+  --kb-node-title-fg: #e7e7e7;
+  --kb-node-row-fg: #bbbbbb;
+  --kb-node-head-neutral: #333333;
+  --kb-node-head-blue: #1b3a57;
+  --kb-node-head-green: #1e3d2f;
+  --kb-node-head-purple: #3b2a55;
+  --kb-node-head-warn: #4a3b1c;
+  --kb-node-border-warn: #6b5320;
+  --kb-node-note-bg: #1a1a1a;
+  --kb-node-note-fg: #9d9d9d;
+  --kb-node-note-warn-bg: #2a2416;
+  --kb-node-note-warn-fg: #e2c08d;
+  /* 핀·연결선 (graph/pinColors.ts가 타입으로 고른다) */
+  --kb-pin-exec: #cccccc;
+  --kb-pin-fail: #f0883e;
+  --kb-pin-window: #4daafc;
+  --kb-pin-number: #89d185;
+  --kb-pin-image: #b392f0;
+  --kb-pin-region: #39c5cf;
+  --kb-pin-text: #e2c08d;
+  --kb-pin-other: #555555;
+  --kb-minimap-view: #4daafc;
 
   /* 시안에 없는 상태 */
   --kb-statusbar-idle-bg: #181818; /* 대기 상태 바: 실행 중(파랑)과 구분되는 무채색 = 타이틀 바 색 */
@@ -196,6 +220,28 @@
   --kb-preview-head-green: #ddf2e3;
   --kb-preview-head-purple: #eee6fa;
   --kb-preview-wire: #9a9a9a;
+  --kb-node-border: #cecece;
+  --kb-node-title-fg: #1f1f1f;
+  --kb-node-row-fg: #4d4d4d;
+  --kb-node-head-neutral: #e8e8e8;
+  --kb-node-head-blue: #dcebfa;
+  --kb-node-head-green: #ddf2e3;
+  --kb-node-head-purple: #eee6fa;
+  --kb-node-head-warn: #fbefd5;
+  --kb-node-border-warn: #e6c46a;
+  --kb-node-note-bg: #f5f5f5;
+  --kb-node-note-fg: #666666;
+  --kb-node-note-warn-bg: #fff7e0;
+  --kb-node-note-warn-fg: #7a5600;
+  --kb-pin-exec: #3b3b3b;
+  --kb-pin-fail: #b85c00;
+  --kb-pin-window: #005fb8;
+  --kb-pin-number: #2e7d32;
+  --kb-pin-image: #7048b8;
+  --kb-pin-region: #00737d;
+  --kb-pin-text: #7a5600;
+  --kb-pin-other: #9a9a9a;
+  --kb-minimap-view: #005fb8;
 
   /* 시안에 없는 상태 */
   --kb-statusbar-idle-bg: #f8f8f8;

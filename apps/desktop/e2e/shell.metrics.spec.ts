@@ -60,6 +60,7 @@ const SHELL_ROLES: Record<string, Rule> = {
   "tab.active.fg": { selector: '[data-part="tabs"] [role="tab"][aria-selected="true"]', prop: "color" },
   "tab.inactive.fg": { selector: '[data-part="tabs"] [role="tab"][aria-selected="false"]', prop: "color" },
   "editor.bg": { selector: '[data-part="canvas"]', prop: "background-color" },
+  "node.bg": { selector: '[data-part="node"]', prop: "background-color" },
   "panel.bg": { selector: 'section[aria-label="하단 패널"]', prop: "background-color" },
   "list.active.bg": { selector: '[role="treeitem"][aria-selected="true"]', prop: "background-color" },
   "list.active.fg": { selector: '[role="treeitem"][aria-selected="true"]', prop: "color" },
@@ -131,6 +132,7 @@ test("test_shell_metrics_match_sian", async () => {
   await start();
   await setContentSize(app, page, 1440, 900);
   await openShell();
+  await expect(page.locator('[data-part="node-head"]').first()).toBeVisible();
   await settle(page);
   const got = await page.evaluate(() => {
     const el = (s: string) => document.querySelector(s) as HTMLElement;
@@ -147,10 +149,12 @@ test("test_shell_metrics_match_sian", async () => {
       "tab.height": el('[data-part="tabs"] [role="tab"]').offsetHeight,
       "font.size": px('[data-screen="shell"]', "font-size"),
       "font.size.small": px('[data-part="sidebar-header"]', "font-size"),
+      // 캔버스 노드 머리 (T8). 화면 배율과 무관한 배치 크기
+      "node.header.height": el('[data-part="node-head"]').offsetHeight,
     };
   });
-  // 시안 치수 역할을 빠짐없이 잰다. 노드 머리 높이만 캔버스(T8)에서 본다
-  expect(Object.keys(got).sort()).toEqual(Object.keys(metrics).filter((k) => k !== "node.header.height").sort());
+  // 시안 치수 역할을 빠짐없이 잰다
+  expect(Object.keys(got).sort()).toEqual(Object.keys(metrics).sort());
   for (const [role, value] of Object.entries(got)) {
     expect(metrics[role], role).toBeDefined();
     expect(Math.abs(value - metrics[role]), `${role}: 앱 ${value}, 시안 ${metrics[role]}`).toBeLessThanOrEqual(1);

@@ -1,6 +1,7 @@
-// 에디터 영역 (시안 Main): 탭(TEST·SUB·TARGET 글자)·경로 표시줄·내용. 그래프 캔버스는 T8, target 편집기는
-// T12가 탭 내용으로 붙인다. 툴바(프로필·실행)는 T11
+// 에디터 영역 (시안 Main): 탭(TEST·SUB·TARGET 글자)·경로 표시줄·내용. 그래프 탭은 캔버스(T8), target
+// 편집기는 T12가 탭 내용으로 붙인다. 툴바(프로필·실행)는 T11
 import type { ReactNode } from "react";
+import { GraphCanvas } from "../graph/Canvas";
 import { activateTab, closeTab, tabBadge, useTabs } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
 import { LogoMark } from "../theme/icons";
@@ -48,6 +49,7 @@ function Breadcrumb() {
 
 export function Editor({ children }: { children?: ReactNode }) {
   const active = useTabs((s) => s.active);
+  const activeTab = useTabs((s) => s.tabs.find((t) => t.path === s.active));
   return (
     <main className={css.editorMain}>
       <Tabs />
@@ -59,6 +61,8 @@ export function Editor({ children }: { children?: ReactNode }) {
             <span className={css.kbd}>Ctrl+P</span> 파일 빠른 열기
           </span>
         </div>
+      ) : activeTab?.kind === "graph" ? (
+        <GraphCanvas key={active} path={active} />
       ) : (
         <div className={css.canvas} data-part="canvas" data-path={active} />
       )}
