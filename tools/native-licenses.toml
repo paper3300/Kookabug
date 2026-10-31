@@ -183,6 +183,20 @@ file = "third_party_licenses/clipper-BSL-1.0.txt"
 covers = ["BSL-1.0"]
 expect = ["Angus Johnson", "Boost Software License - Version 1.0"]
 
+# ---------------------------------------------------------------- websockets (kookabug-daemon)
+
+[[native]]
+glob = "websockets/speedups*.pyd"
+package = "websockets"
+license = "BSD-3-Clause"
+components = "websockets 프레임 마스킹 C 확장 (speedups.c, BSD-3-Clause)"
+reason = "같은 wheel에 든 websockets 자신의 speedups.c를 빌드한 확장이다. Python.h·표준 헤더·컴파일러 SIMD 헤더만 쓰고 다른 구성요소를 넣지 않는다"
+
+[[native.texts]]
+path = "websockets-*.dist-info/licenses/LICENSE"
+covers = ["BSD-3-Clause"]
+expect = ["Aymeric Augustin", "Redistribution and use in source and binary forms"]
+
 # ---------------------------------------------------------------- protobuf (onnxruntime 의존성)
 
 [[native]]

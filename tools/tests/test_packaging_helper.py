@@ -116,6 +116,7 @@ def test_workspace_names_are_the_uv_members() -> None:
         "kookabug-nodes",
         "kookabug-core",
         "kookabug-cli",
+        "kookabug-daemon",
         "kookabug-platform",
     }
 

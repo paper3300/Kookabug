@@ -6,6 +6,7 @@
     kookabug target test <target.json> (--window 제목 | --hwnd N | --image PNG) ...  (target_cmd)
     kookabug screen test <ID|파일> (--window 제목 | --hwnd N | --image PNG) ...       (screen_cmd)
     kookabug doctor [--profile headless|desktop] [--json]                            (doctor_cmd)
+    kookabug daemon [--workspace DIR] [--idle-timeout-s 600] [--json]                (daemon_cmd)
     kookabug --version
 
 이 프로세스가 감독자다: `WorkspaceService.start_run`(권한 판정 → 감독자 시작) → 진행 출력(`follow`로
@@ -36,7 +37,7 @@ from pathlib import Path
 from types import FrameType
 from typing import Any, Final, NoReturn, Protocol, TextIO
 
-from kookabug_cli import __version__
+from kookabug_cli import __version__, daemon_cmd
 from kookabug_core.canonical import loads_strict
 from kookabug_core.permissions import Decision, Principal
 from kookabug_core.record import follow
@@ -227,6 +228,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="검사 프로필 (기본 desktop. 설치 스모크·CI는 headless)",
     )
     doctor.add_argument("--json", action="store_true", help="결과 JSON 한 개만 출력한다")
+
+    daemon_cmd.add_parser(commands)
     return parser
 
 
@@ -615,6 +618,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "run":
         return run_command(args, sys.stdout, sys.stderr)
+    if args.command == "daemon":
+        # daemon은 target 캡처·미리보기에서 좌표를 쓴다: 창 API보다 먼저 DPI 인식을 정한다 (M1 2.2)
+        from kookabug_core.win import dpi
+
+        dpi_error = dpi.enable_at_startup()
+        return daemon_cmd.run(args, sys.stdout, sys.stderr, dpi_error=dpi_error)
     # 비전 명령은 opencv를 불러오므로 쓸 때만 import한다 (`kookabug run` 시작을 가볍게)
     try:
         if args.command == "target":

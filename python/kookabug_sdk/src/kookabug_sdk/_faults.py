@@ -67,6 +67,9 @@ POINTS: Final[dict[str, frozenset[Role]]] = {
     "recovery.before_finalize": _SUPERVISOR,
     "recovery.before_input_recovery": _SUPERVISOR,
     "lease.before_recovery": frozenset({"runner", "supervisor"}),
+    # daemon도 감독자다 (M2 계획 2.3: 잠금 직후, session.json 공개 직전)
+    "daemon.after_lock": _SUPERVISOR,
+    "daemon.before_session_publish": _SUPERVISOR,
 }
 
 _POLL_S: Final = 0.01

@@ -36,7 +36,13 @@ GRAPH = {
 def test_cli_installed_runs_graph_outside_repo(tmp_path: Path) -> None:
     wheels = [
         pk.build_dists(PYTHON / name, tmp_path / f"dist-{name}").wheel
-        for name in ("kookabug_sdk", "kookabug_nodes", "kookabug_core", "kookabug_cli")
+        for name in (
+            "kookabug_sdk",
+            "kookabug_nodes",
+            "kookabug_core",
+            "kookabug_daemon",
+            "kookabug_cli",
+        )
     ]
     py = pk.make_clean_venv(tmp_path / "venv")
     pk.install(py, *wheels)

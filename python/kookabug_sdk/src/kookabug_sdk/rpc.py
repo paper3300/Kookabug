@@ -59,6 +59,8 @@ __all__ = [
     "PeerLost",
     "RpcError",
     "RpcPeer",
+    "check_value",
+    "decode_text",
 ]
 
 # 표준 오류 코드
@@ -200,11 +202,16 @@ def _reject_constant(name: str) -> Any:
     raise ValueError(f"{name}는 JSON 숫자가 아니다")
 
 
-def _decode(frame: bytes) -> Any:
-    """프레임 본문 → JSON 값. 값 규칙을 어기거나 읽을 수 없으면 `ValueError`."""
+def check_value(value: object) -> None:
+    """JSON 값 규칙(숫자·키·중첩)을 어기면 `ValueError`/`TypeError`. daemon 전송(M2)도 같은 규칙."""
+    _check_value(value)
+
+
+def decode_text(text: str) -> Any:
+    """JSON 텍스트 → 값. 값 규칙을 어기거나 읽을 수 없으면 `ValueError`. daemon 전송(M2)도 쓴다."""
     try:
         value = json.loads(
-            frame.decode("utf-8"),
+            text,
             parse_constant=_reject_constant,
             parse_float=lambda text: _check_float(float(text)),
             parse_int=lambda text: _check_int(int(text)),
@@ -213,6 +220,11 @@ def _decode(frame: bytes) -> Any:
         raise ValueError(f"중첩이 너무 깊다 (최대 {MAX_DEPTH}단)") from e
     _check_value(value)
     return value
+
+
+def _decode(frame: bytes) -> Any:
+    """프레임 본문 → JSON 값. 값 규칙을 어기거나 읽을 수 없으면 `ValueError`."""
+    return decode_text(frame.decode("utf-8"))
 
 
 def _is_id(value: object) -> TypeIs[int]:

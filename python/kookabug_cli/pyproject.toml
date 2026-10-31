@@ -1,19 +1,21 @@
 [project]
 name = "kookabug-cli"
 version = "0.1.0.dev0"
-description = "Kookabug 명령줄 도구 (kookabug run·target test·screen test·doctor)"
+description = "Kookabug 명령줄 도구 (kookabug run·target test·screen test·doctor·daemon)"
 readme = "README.md"
 requires-python = ">=3.14"
 license = "Apache-2.0"
 # target test·screen test는 kookabug-platform(opencv)을 쓴다. 의존성으로 두지 않고 그 명령을 쓸
 # 때만 import한다 — 없으면 종료 코드 6과 안내. 설치 파일(M1 T13)은 둘 다 넣는다
-dependencies = ["kookabug-core", "kookabug-sdk"]
+# kookabug daemon(M2)은 kookabug-daemon(websockets)을 쓴다. 그 명령을 쓸 때만 import한다
+dependencies = ["kookabug-core", "kookabug-daemon", "kookabug-sdk"]
 
 [project.scripts]
 kookabug = "kookabug_cli.main:main"
 
 [tool.uv.sources]
 kookabug-core = { workspace = true }
+kookabug-daemon = { workspace = true }
 kookabug-sdk = { workspace = true }
 
 [build-system]

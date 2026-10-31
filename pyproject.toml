@@ -21,6 +21,7 @@ src = [
     "python/kookabug_nodes/src",
     "python/kookabug_core/src",
     "python/kookabug_cli/src",
+    "python/kookabug_daemon/src",
     "python/kookabug_platform/src",
     "tools",
     "fixtures/sample-game",

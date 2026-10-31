@@ -1,0 +1,17 @@
+[project]
+name = "kookabug-daemon"
+version = "0.1.0.dev0"
+description = "Kookabug 워크스페이스 daemon (UI·에이전트 ↔ 코어, WebSocket JSON-RPC)"
+readme = "README.md"
+requires-python = ">=3.14"
+license = "Apache-2.0"
+# websockets는 정확한 판으로 고정한다 (M2 계획 2.2: 고정하는 날 기준 2주 지난 최신 안정판)
+dependencies = ["kookabug-core", "kookabug-sdk", "websockets==17.2"]
+
+[tool.uv.sources]
+kookabug-core = { workspace = true }
+kookabug-sdk = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14"]
+build-backend = "uv_build"
