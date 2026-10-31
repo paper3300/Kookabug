@@ -1,0 +1,102 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "meta": {
+    "description": "입력 칸을 누르고 korean.text를 type_text로 넣은 뒤 화면을 찍고 그 영역을 OCR로 읽는다. 판정은 사람이 스크린샷으로 한다",
+    "tags": ["m1-manual"],
+    "title": "한글 입력"
+  },
+  "nodes": {
+    "n_attach": {
+      "in": {
+        "title": {
+          "$setting": "game.title"
+        }
+      },
+      "next": {
+        "found": "n_click_field"
+      },
+      "title": "게임 창 붙기",
+      "type": "core.window.attach",
+      "version": 1
+    },
+    "n_click_field": {
+      "in": {
+        "target": {
+          "$target": "targets/field.target.json"
+        }
+      },
+      "next": {
+        "done": "n_type"
+      },
+      "title": "입력 칸 클릭",
+      "type": "core.image.click",
+      "version": 1
+    },
+    "n_entry": {
+      "next": {
+        "start": "n_attach"
+      },
+      "title": "시작",
+      "type": "core.graph.entry",
+      "version": 1
+    },
+    "n_pass": {
+      "title": "통과",
+      "type": "core.test.pass",
+      "version": 1
+    },
+    "n_read": {
+      "in": {
+        "region": {
+          "$setting": "korean.region"
+        }
+      },
+      "next": {
+        "done": "n_pass",
+        "unreadable": "n_pass"
+      },
+      "title": "입력 결과 읽기",
+      "type": "core.ocr.read",
+      "version": 1
+    },
+    "n_settle": {
+      "in": {
+        "ms": 500
+      },
+      "next": {
+        "done": "n_shot"
+      },
+      "title": "그려질 시간",
+      "type": "core.flow.delay",
+      "version": 1
+    },
+    "n_shot": {
+      "in": {
+        "name": "typed"
+      },
+      "next": {
+        "done": "n_read"
+      },
+      "title": "입력 결과 찍기",
+      "type": "core.screen.capture",
+      "version": 1
+    },
+    "n_type": {
+      "in": {
+        "text": {
+          "$setting": "korean.text"
+        }
+      },
+      "next": {
+        "done": "n_settle"
+      },
+      "title": "한글 입력",
+      "type": "core.input.type_text",
+      "version": 1
+    }
+  },
+  "plugins": {
+    "core": "0.1.0"
+  }
+}

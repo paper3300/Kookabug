@@ -1,0 +1,23 @@
+{
+  "format": "kookabug.workspace/0",
+  "record": {
+    "screenshots": "on",
+    "video": "off"
+  },
+  "run": {
+    "deadline_ms": 600000
+  },
+  "settings": {
+    "capture.delay_ms": 0,
+    "check.key": "escape",
+    "check.text": null,
+    "game.title": null,
+    "hold.delay_ms": 2000,
+    "hold.key": "up",
+    "hold.ms": 60000,
+    "korean.region": null,
+    "korean.text": "한글 입력 확인",
+    "manual.delay_ms": 10000,
+    "resize.size": [1280, 720]
+  }
+}

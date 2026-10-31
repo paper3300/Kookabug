@@ -138,11 +138,13 @@ def test_plugin_applies_mode_to_marked_tests(tmp_path: Path) -> None:
         "    pass\n",
         encoding="utf-8",
     )
+    step_summary = tmp_path / "summary.md"
     env = {
         **os.environ,
         "PYTHONPATH": str(dk.TOOLS_DIR),
         "PYTHONIOENCODING": "utf-8",
         dk.MODE_ENV: "off",
+        "GITHUB_STEP_SUMMARY": str(step_summary),
     }
     proc = subprocess.run(
         [
@@ -170,3 +172,8 @@ def test_plugin_applies_mode_to_marked_tests(tmp_path: Path) -> None:
     assert "1 passed, 2 skipped" in proc.stdout
     assert f"데스크톱 검사 끔 ({dk.MODE_ENV}=off)" in proc.stdout
     assert "건너뜀 2개" in proc.stdout
+    # CI 잡 요약에도 건너뛴 수와 이유 (M1 2.13 방침 (b))
+    summary = step_summary.read_text(encoding="utf-8")
+    assert summary.startswith("### 데스크톱 검사\n")
+    assert f"- 건너뜀 2개: 데스크톱 검사 끔 ({dk.MODE_ENV}=off)" in summary
+    assert f"- {dk.MODE_ENV}=off" in summary

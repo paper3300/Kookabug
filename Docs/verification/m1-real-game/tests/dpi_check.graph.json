@@ -1,0 +1,111 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "meta": {
+    "description": "붙기 → 이미지 대기 → 클릭 → OCR → 키 → 처음 화면으로 돌아왔는지 이미지 대기. DPI 100%에서 만든 target 하나로 150·200%도 통과해야 한다",
+    "tags": ["m1-manual"],
+    "title": "DPI 확인"
+  },
+  "nodes": {
+    "n_attach": {
+      "in": {
+        "title": {
+          "$setting": "game.title"
+        }
+      },
+      "next": {
+        "found": "n_wait_anchor"
+      },
+      "title": "게임 창 붙기",
+      "type": "core.window.attach",
+      "version": 1
+    },
+    "n_back": {
+      "in": {
+        "target": {
+          "$target": "targets/anchor.target.json"
+        },
+        "timeout_ms": 10000
+      },
+      "next": {
+        "found": "n_pass"
+      },
+      "title": "처음 화면 대기",
+      "type": "core.image.wait",
+      "version": 1
+    },
+    "n_click": {
+      "in": {
+        "match": {
+          "$link": "n_wait_anchor.match"
+        }
+      },
+      "next": {
+        "done": "n_read"
+      },
+      "title": "기준 버튼 클릭",
+      "type": "core.input.click",
+      "version": 1
+    },
+    "n_entry": {
+      "next": {
+        "start": "n_attach"
+      },
+      "title": "시작",
+      "type": "core.graph.entry",
+      "version": 1
+    },
+    "n_key": {
+      "in": {
+        "keys": {
+          "$setting": "check.key"
+        }
+      },
+      "next": {
+        "done": "n_back"
+      },
+      "title": "돌아가기 키",
+      "type": "core.input.key",
+      "version": 1
+    },
+    "n_pass": {
+      "title": "통과",
+      "type": "core.test.pass",
+      "version": 1
+    },
+    "n_read": {
+      "in": {
+        "contains": {
+          "$setting": "check.text"
+        },
+        "region": {
+          "$target": "targets/label.target.json"
+        },
+        "timeout_ms": 10000
+      },
+      "next": {
+        "found": "n_key"
+      },
+      "title": "확인 글자 읽기",
+      "type": "core.ocr.wait_text",
+      "version": 1
+    },
+    "n_wait_anchor": {
+      "in": {
+        "target": {
+          "$target": "targets/anchor.target.json"
+        },
+        "timeout_ms": 10000
+      },
+      "next": {
+        "found": "n_click"
+      },
+      "title": "기준 버튼 대기",
+      "type": "core.image.wait",
+      "version": 1
+    }
+  },
+  "plugins": {
+    "core": "0.1.0"
+  }
+}

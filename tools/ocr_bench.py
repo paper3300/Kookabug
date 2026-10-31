@@ -19,7 +19,11 @@
 따로 낸다. 추론 한 번(`session.run`)의 최댓값도 낸다. 정답과 다른 표본이 실패 표본이다.
 
     uv run python tools/ocr_bench.py <표본 폴더> [--json-out 결과.json] [--min-accuracy 0.95]
-        [--min-korean-accuracy 0.90] [--max-median-ms 200] [--max-p95-ms 500]
+        [--min-korean-accuracy 0.90] [--max-median-ms 200] [--max-p95-ms 500] [--m1-real-game]
+
+`--m1-real-game`은 M1 사람 검증의 실제 게임 OCR 기준(구현 계획 M1 2.14) 묶음이다: 위 네 수치에 더해
+표본 수(전체 30개 이상, 한국어 15개 이상, 태그 `dpi100` 20개 이상·`dpi150`·`dpi200` 각 5개 이상)와
+모든 표본에 `region`이 있는지를 본다. 따로 준 수치 기준이 있으면 그것이 이긴다.
 
 종료 코드: 0 측정 완료(기준을 주면 기준 통과), 1 기준 미달, 2 표본 형식 오류.
 """
@@ -33,6 +37,7 @@ import re
 import statistics
 import sys
 import time
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -42,6 +47,22 @@ TRUTH_FILE: Final = "truth.jsonl"
 KEYS: Final = frozenset({"id", "image", "region", "text", "tags"})
 _SPACE: Final = re.compile(r"\s+")
 _HANGUL: Final = re.compile(r"[가-힣]")
+
+M1_REAL_GAME: Final = {
+    "min_accuracy": 0.95,
+    "min_korean_accuracy": 0.90,
+    "max_median_ms": 200.0,
+    "max_p95_ms": 500.0,
+}
+"""M1 실제 게임 OCR 수치 기준 (2.14, 조율자 결정 Q18)."""
+M1_SAMPLE_RULES: Final = (
+    ("표본", None, 30),
+    ("한국어 표본", "korean", 15),
+    ("dpi100 표본", "dpi100", 20),
+    ("dpi150 표본", "dpi150", 5),
+    ("dpi200 표본", "dpi200", 5),
+)
+"""(이름, 세는 것 — None 전체·`korean` 한국어·그 밖은 태그, 최소 개수)."""
 
 type Reader = Callable[[Any, tuple[int, int, int, int] | None], str]
 """(BGR 픽셀, 영역) → 읽은 글자."""
@@ -215,6 +236,7 @@ class BenchReport:
             "full_latency_median_ms": full_median,
             "full_latency_p95_ms": full_p95,
             "max_inference_ms": self.max_inference_ms,
+            "tag_counts": dict(sorted(Counter(t for r in self.samples for t in r.tags).items())),
             "failures": [r.id for r in self.samples if not r.ok],
         }
 
@@ -298,6 +320,7 @@ def render_table(report: BenchReport) -> str:
         f"전체 읽기 {s['full_count']}개 지연 중앙값 {_fmt(s['full_latency_median_ms'], 1)} ms, "
         f"p95 {_fmt(s['full_latency_p95_ms'], 1)} ms",
         f"추론 한 번 최댓값 {_fmt(s['max_inference_ms'], 1)} ms",
+        "태그별 표본 " + (", ".join(f"{t} {n}개" for t, n in s["tag_counts"].items()) or "없음"),
         f"실패 표본 {len(s['failures'])}개: {', '.join(s['failures']) or '없음'}",
     ]
     return "\n".join(lines)
@@ -327,6 +350,24 @@ def check_criteria(
     return misses
 
 
+def check_m1_samples(report: BenchReport) -> list[str]:
+    """M1 실제 게임 표본 구성 (`M1_SAMPLE_RULES`, 모든 표본은 영역 읽기) 중 못 채운 것."""
+    misses: list[str] = []
+    for name, kind, minimum in M1_SAMPLE_RULES:
+        if kind is None:
+            count = len(report.samples)
+        elif kind == "korean":
+            count = sum(r.korean for r in report.samples)
+        else:
+            count = sum(kind in r.tags for r in report.samples)
+        if count < minimum:
+            misses.append(f"{name} {count}개 — 기준 ≥ {minimum}개")
+    whole = [r.id for r in report.samples if r.region is None]
+    if whole:
+        misses.append(f"region 없는 표본 {len(whole)}개: {', '.join(whole)} — 영역을 적는다")
+    return misses
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     from kookabug_sdk.console import utf8_stdio
 
@@ -339,7 +380,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--min-korean-accuracy", type=float)
     parser.add_argument("--max-median-ms", type=float)
     parser.add_argument("--max-p95-ms", type=float)
+    parser.add_argument(
+        "--m1-real-game", action="store_true", help="M1 실제 게임 OCR 기준(수치·표본 구성)"
+    )
     args = parser.parse_args(argv)
+    if args.m1_real_game:
+        for key, value in M1_REAL_GAME.items():
+            if getattr(args, key) is None:
+                setattr(args, key, value)
     try:
         samples = load_truth(args.folder)
     except TruthError as exc:
@@ -368,6 +416,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_median_ms=args.max_median_ms,
         max_p95_ms=args.max_p95_ms,
     )
+    if args.m1_real_game:
+        misses += check_m1_samples(report)
     for miss in misses:
         print(f"기준 미달: {miss}", file=sys.stderr)
     return 1 if misses else 0

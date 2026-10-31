@@ -157,6 +157,61 @@ def test_failures_listed(tmp_path: Path) -> None:
     json.dumps(data, ensure_ascii=False)
 
 
+def m1_rows(dpi100: int, dpi150: int, dpi200: int, korean: int) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for tag, count in (("dpi100", dpi100), ("dpi150", dpi150), ("dpi200", dpi200)):
+        for i in range(count):
+            text = "한글 표본" if len(rows) < korean else "Sample"
+            rows.append(
+                {"id": f"{tag}-{i}", "image": "a.png", "text": text, "region": [0, 0, 4, 4]}
+                | {"tags": [tag]}
+            )
+    return rows
+
+
+def test_m1_real_game_sample_rules(tmp_path: Path) -> None:
+    """M1 사람 검증 표본 구성: 전체 30·한국어 15·dpi100 20·dpi150 5·dpi200 5, 모두 영역 읽기."""
+
+    def bench(rows: list[dict[str, Any]]) -> ob.BenchReport:
+        folder = write_set(tmp_path / str(len(list(tmp_path.iterdir()))), rows)
+        samples = ob.load_truth(folder)
+        return ob.run_bench(samples, lambda _p, _r: "", load=lambda p: p.stem, warmup=False)
+
+    enough = bench(m1_rows(20, 5, 5, korean=15))
+    assert ob.check_m1_samples(enough) == []
+    assert enough.summary()["tag_counts"] == {"dpi100": 20, "dpi150": 5, "dpi200": 5}
+    assert "태그별 표본 dpi100 20개, dpi150 5개, dpi200 5개" in ob.render_table(enough)
+
+    short = bench(m1_rows(19, 5, 4, korean=14))
+    assert ob.check_m1_samples(short) == [
+        "표본 28개 — 기준 ≥ 30개",
+        "한국어 표본 14개 — 기준 ≥ 15개",
+        "dpi100 표본 19개 — 기준 ≥ 20개",
+        "dpi200 표본 4개 — 기준 ≥ 5개",
+    ]
+    rows = m1_rows(20, 5, 5, korean=15)
+    rows[0] = {k: v for k, v in rows[0].items() if k != "region"}
+    assert ob.check_m1_samples(bench(rows)) == ["region 없는 표본 1개: dpi100-0 — 영역을 적는다"]
+
+
+def test_m1_real_game_flag_sets_thresholds_and_sample_rules(
+    tmp_path: Path,
+    ocr_models: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # 예제 게임 표본은 DPI 태그가 없어 표본 구성 기준을 못 채운다 → 1, 사유는 표본 구성
+    monkeypatch.setenv("KOOKABUG_OCR_MODELS", str(ocr_models))
+    out = tmp_path / "bench.json"
+    assert ob.main([str(SAMPLE_SET), "--m1-real-game", "--json-out", str(out)]) == 1
+    err = capsys.readouterr().err
+    assert "기준 미달: dpi100 표본 0개 — 기준 ≥ 20개" in err
+    assert "기준 미달: 문자 정확도" not in err  # 예제 게임은 수치 기준(0.95)을 넘는다
+    # 따로 준 수치 기준이 묶음보다 이긴다
+    assert ob.main([str(SAMPLE_SET), "--m1-real-game", "--min-accuracy", "1.01"]) == 1
+    assert "기준 미달: 문자 정확도" in capsys.readouterr().err
+
+
 def test_sample_game_set_is_valid() -> None:
     samples = ob.load_truth(SAMPLE_SET)
     assert len(samples) >= 20

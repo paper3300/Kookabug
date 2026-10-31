@@ -1,0 +1,64 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "meta": {
+    "description": "기다리는 동안 사람이 다른 창(메모장)을 누른다. 글자 입력은 window_not_foreground로 끝나고 메모장에는 아무것도 들어가지 않아야 한다",
+    "tags": ["m1-manual"],
+    "title": "포커스 잃음"
+  },
+  "nodes": {
+    "n_attach": {
+      "in": {
+        "title": {
+          "$setting": "game.title"
+        }
+      },
+      "next": {
+        "found": "n_delay"
+      },
+      "title": "게임 창 붙기",
+      "type": "core.window.attach",
+      "version": 1
+    },
+    "n_delay": {
+      "in": {
+        "ms": {
+          "$setting": "manual.delay_ms"
+        }
+      },
+      "next": {
+        "done": "n_type"
+      },
+      "title": "다른 창 누를 시간",
+      "type": "core.flow.delay",
+      "version": 1
+    },
+    "n_entry": {
+      "next": {
+        "start": "n_attach"
+      },
+      "title": "시작",
+      "type": "core.graph.entry",
+      "version": 1
+    },
+    "n_pass": {
+      "title": "통과",
+      "type": "core.test.pass",
+      "version": 1
+    },
+    "n_type": {
+      "in": {
+        "text": "kookabug focus test"
+      },
+      "next": {
+        "done": "n_pass"
+      },
+      "title": "글자 입력",
+      "type": "core.input.type_text",
+      "version": 1
+    }
+  },
+  "plugins": {
+    "core": "0.1.0"
+  }
+}

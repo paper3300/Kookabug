@@ -1,0 +1,20 @@
+<Configuration>
+  <!-- M1 사람 검증 S절: 깨끗한 Windows(Windows Sandbox)에서 설치 파일을 시험한다.
+       호스트에 C:\kookabug-m1\in(설치 파일, 읽기 전용)과 C:\kookabug-m1\out(증거, 쓰기)을 먼저 만든다.
+       네트워크를 끈다: 설치·실행·OCR이 내려받기 없이 되는지도 같이 본다. -->
+  <VGpu>Enable</VGpu>
+  <Networking>Disable</Networking>
+  <ClipboardRedirection>Enable</ClipboardRedirection>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>C:\kookabug-m1\in</HostFolder>
+      <SandboxFolder>C:\Users\WDAGUtilityAccount\Desktop\kookabug-in</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>C:\kookabug-m1\out</HostFolder>
+      <SandboxFolder>C:\Users\WDAGUtilityAccount\Desktop\kookabug-out</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+</Configuration>

@@ -1,0 +1,69 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "meta": {
+    "description": "hold.delay_ms만큼 기다린 뒤 hold.key를 hold.ms 동안 누르고 있는다. 강제 종료 키 해제와 키 설정 화면의 키 수신(오른쪽 Ctrl·Alt) 확인에 쓴다",
+    "tags": ["m1-manual"],
+    "title": "키 누르고 있기"
+  },
+  "nodes": {
+    "n_attach": {
+      "in": {
+        "title": {
+          "$setting": "game.title"
+        }
+      },
+      "next": {
+        "found": "n_delay"
+      },
+      "title": "게임 창 붙기",
+      "type": "core.window.attach",
+      "version": 1
+    },
+    "n_delay": {
+      "in": {
+        "ms": {
+          "$setting": "hold.delay_ms"
+        }
+      },
+      "next": {
+        "done": "n_hold"
+      },
+      "title": "준비 시간",
+      "type": "core.flow.delay",
+      "version": 1
+    },
+    "n_entry": {
+      "next": {
+        "start": "n_attach"
+      },
+      "title": "시작",
+      "type": "core.graph.entry",
+      "version": 1
+    },
+    "n_hold": {
+      "in": {
+        "hold_ms": {
+          "$setting": "hold.ms"
+        },
+        "keys": {
+          "$setting": "hold.key"
+        }
+      },
+      "next": {
+        "done": "n_pass"
+      },
+      "title": "키 누르고 있기",
+      "type": "core.input.key",
+      "version": 1
+    },
+    "n_pass": {
+      "title": "통과",
+      "type": "core.test.pass",
+      "version": 1
+    }
+  },
+  "plugins": {
+    "core": "0.1.0"
+  }
+}

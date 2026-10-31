@@ -78,20 +78,8 @@ DLL 검사의 등록 DLL 폴더(`dllcheck.DLL_DIRECTORIES`)는 지금 numpy의 `
 `os.add_dll_directory`로 더한다). numpy 안 파일의 import에만 쓰고, `numpy/__init__.py`에 그 패치 글귀가
 있을 때만 인정한다. 새 패키지가 이런 폴더를 쓰면 근거와 함께 이 표에 더한다.
 
-## 사람 검증용 설치 절차 (초안)
+## 사람 검증용 설치 절차
 
-깨끗한 Windows(Windows Sandbox 또는 VM)에서 한다. M1 사람 검증 절차서(`docs/verification/m1-manual.md`)의
-설치 절로 옮긴다.
-
-1. 설치 파일을 넣고 실행한다. 관리자 권한을 묻지 않아야 한다. SmartScreen 경고는 "추가 정보 → 실행"
-   (코드 서명 전)
-2. 새 터미널(PowerShell)을 연다. `where.exe python`이 아무것도 찾지 않는 것을 기록한다
-3. `kookabug --version` → `kookabug <버전>`
-4. `kookabug doctor --json > doctor.json` → `"ok": true` (desktop 프로필: 입력 데스크톱·WGC 캡처·정지
-   화면 재사용·포그라운드까지). 실패하면 그 항목의 `detail`을 결과에 적는다
-5. `cd "$env:LOCALAPPDATA\Programs\Kookabug\examples\sample-game\workspace"`, 비밀번호 환경 변수
-   `$env:KOOKABUG_SECRET_ACCOUNTS_QA_TESTER_01 = "sample-pass-01"`, `kookabug run tests/inventory_open.graph.json`
-   → 종료 코드 0 (예제 게임 창이 뜨고 캡처·OCR·입력으로 인벤토리까지). 실행 중 다른 창을 누르지 않는다
-6. 설정 → 앱 → Kookabug 제거 → 설치 폴더가 없고, 새 터미널에서 `kookabug`를 찾지 못한다
-7. 결과에 남길 것: 설치 파일 이름·크기, `doctor.json`, 5단계 실행 폴더(`runs\…`, 제거 전에 복사),
-   Windows 판(`winver`)과 화면 배율
+깨끗한 Windows(Windows Sandbox 또는 VM)에서 설치 → `doctor` → 예제 게임 실제 실행 → 제거를 하는 절차는
+M1 사람 검증 절차서 `Docs/verification/m1-manual.md`의 S절(S1~S6)로 옮겼다. Sandbox 설정은
+`Docs/verification/m1-sandbox.wsb`(설치 파일 폴더 읽기 전용, 네트워크 끔).

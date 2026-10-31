@@ -1,0 +1,64 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "meta": {
+    "description": "capture.delay_ms만큼 기다린 뒤 게임 창 클라이언트 영역을 steps/<스텝>_screen.png로 찍는다. target 이미지·OCR 표본·전체화면 캡처 확인에 쓴다",
+    "tags": ["m1-manual"],
+    "title": "화면 찍기"
+  },
+  "nodes": {
+    "n_attach": {
+      "in": {
+        "title": {
+          "$setting": "game.title"
+        }
+      },
+      "next": {
+        "found": "n_delay"
+      },
+      "title": "게임 창 붙기",
+      "type": "core.window.attach",
+      "version": 1
+    },
+    "n_capture": {
+      "in": {
+        "name": "screen"
+      },
+      "next": {
+        "done": "n_pass"
+      },
+      "title": "화면 찍기",
+      "type": "core.screen.capture",
+      "version": 1
+    },
+    "n_delay": {
+      "in": {
+        "ms": {
+          "$setting": "capture.delay_ms"
+        }
+      },
+      "next": {
+        "done": "n_capture"
+      },
+      "title": "게임으로 돌아갈 시간",
+      "type": "core.flow.delay",
+      "version": 1
+    },
+    "n_entry": {
+      "next": {
+        "start": "n_attach"
+      },
+      "title": "시작",
+      "type": "core.graph.entry",
+      "version": 1
+    },
+    "n_pass": {
+      "title": "통과",
+      "type": "core.test.pass",
+      "version": 1
+    }
+  },
+  "plugins": {
+    "core": "0.1.0"
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "meta": {
+    "description": "기준 버튼을 찾은 뒤 기다리는 동안 사람이 창을 옮긴다. 찾은 결과로 누른 자리가 맞으면 확인 글자가 보인다",
+    "tags": ["m1-manual"],
+    "title": "창 이동 뒤 클릭"
+  },
+  "nodes": {
+    "n_attach": {
+      "in": {
+        "title": {
+          "$setting": "game.title"
+        }
+      },
+      "next": {
+        "found": "n_wait_anchor"
+      },
+      "title": "게임 창 붙기",
+      "type": "core.window.attach",
+      "version": 1
+    },
+    "n_click": {
+      "in": {
+        "match": {
+          "$link": "n_wait_anchor.match"
+        }
+      },
+      "next": {
+        "done": "n_read"
+      },
+      "title": "기준 버튼 클릭",
+      "type": "core.input.click",
+      "version": 1
+    },
+    "n_delay": {
+      "in": {
+        "ms": {
+          "$setting": "manual.delay_ms"
+        }
+      },
+      "next": {
+        "done": "n_click"
+      },
+      "title": "창 옮길 시간",
+      "type": "core.flow.delay",
+      "version": 1
+    },
+    "n_entry": {
+      "next": {
+        "start": "n_attach"
+      },
+      "title": "시작",
+      "type": "core.graph.entry",
+      "version": 1
+    },
+    "n_pass": {
+      "title": "통과",
+      "type": "core.test.pass",
+      "version": 1
+    },
+    "n_read": {
+      "in": {
+        "contains": {
+          "$setting": "check.text"
+        },
+        "region": {
+          "$target": "targets/label.target.json"
+        },
+        "timeout_ms": 10000
+      },
+      "next": {
+        "found": "n_pass"
+      },
+      "title": "확인 글자 읽기",
+      "type": "core.ocr.wait_text",
+      "version": 1
+    },
+    "n_wait_anchor": {
+      "in": {
+        "target": {
+          "$target": "targets/anchor.target.json"
+        },
+        "timeout_ms": 10000
+      },
+      "next": {
+        "found": "n_delay"
+      },
+      "title": "기준 버튼 대기",
+      "type": "core.image.wait",
+      "version": 1
+    }
+  },
+  "plugins": {
+    "core": "0.1.0"
+  }
+}

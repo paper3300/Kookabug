@@ -9,8 +9,8 @@ pytest-timeout이 pytest를 강제로 끝내 fixture 정리가 돌지 않아도 
 종료 중 소멸자가 닫으면 그 순간 강제 종료돼 pytest의 종료 코드(실패 1 등)가 0으로 바뀐다.
 프로세스가 끝날 때 OS가 닫고, 종료 코드는 그 전에 정해진다.
 
-데스크톱 표시(`desktop`·`desktop_input`·`soak`)의 실행 조건과 `ocr_models` 픽스처도 여기서 건다
-(구현 계획 M1 2.13).
+데스크톱 표시(`desktop`·`desktop_input`·`soak`)의 실행 조건과 `ocr_models`·`installer_test_setup`
+픽스처도 여기서 건다 (구현 계획 M1 2.13).
 """
 
 from __future__ import annotations
@@ -27,10 +27,19 @@ from kb_testing import desktop
 from kb_testing.proc import Spawned
 from kookabug_core.win import Job
 
-__all__ = ["OCR_MODELS_ENV", "PROCESS_TIMEOUT_S", "ocr_models", "session_job", "spawned"]
+__all__ = [
+    "INSTALLER_ENV",
+    "OCR_MODELS_ENV",
+    "PROCESS_TIMEOUT_S",
+    "installer_test_setup",
+    "ocr_models",
+    "session_job",
+    "spawned",
+]
 
 PROCESS_TIMEOUT_S: Final = 60
 OCR_MODELS_ENV: Final = "KOOKABUG_OCR_MODELS"
+INSTALLER_ENV: Final = "KOOKABUG_INSTALLER"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _session_job: Job | None = None
@@ -85,14 +94,19 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
     report = desktop.session_probe_result()
     if report is None and not _desktop_skips:
         return
-    tr = terminalreporter
-    tr.section("데스크톱 검사")
-    tr.write_line(f"{desktop.MODE_ENV}={desktop.mode_from_env(os.environ).value}")
+    lines = [f"{desktop.MODE_ENV}={desktop.mode_from_env(os.environ).value}"]
     if report is not None:
         state = "통과" if report.ok else f"실패 — {report.reason}"
-        tr.write_line(f"탐지: {state} ({report.elapsed_ms} ms)")
-    for reason, count in sorted(_desktop_skips.items()):
-        tr.write_line(f"건너뜀 {count}개: {reason}")
+        lines.append(f"탐지: {state} ({report.elapsed_ms} ms)")
+    lines += [f"건너뜀 {count}개: {reason}" for reason, count in sorted(_desktop_skips.items())]
+    tr = terminalreporter
+    tr.section("데스크톱 검사")
+    for line in lines:
+        tr.write_line(line)
+    # CI 방침 (b) (구현 계획 M1 2.13): 잡 요약에 건너뛴 수와 이유를 남긴다
+    if summary := os.environ.get("GITHUB_STEP_SUMMARY", "").strip():
+        with open(summary, "a", encoding="utf-8") as out:
+            out.write("### 데스크톱 검사\n\n" + "".join(f"- {line}\n" for line in lines) + "\n")
 
 
 @pytest.fixture
@@ -129,3 +143,17 @@ def ocr_models() -> Path:
         f"`uv run python tools/fetch_ocr_models.py`로 받는다 (다른 폴더면 {OCR_MODELS_ENV})",
         pytrace=False,
     )
+
+
+@pytest.fixture(scope="session")
+def installer_test_setup(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """테스트 전용 판 설치 파일 (구현 계획 M1 2.12). `KOOKABUG_INSTALLER`(CI installer 잡이
+    `--test-setup`으로 빌드한 것)가 있으면 그것, 없으면 세션에 한 번 빌드한다 — 무인 설치 검사와
+    M1 인수 4가 같은 설치 파일을 쓴다 (Inno Setup 6·VC++ 재배포 파일·OCR 모델·네트워크 필요)."""
+    given = os.environ.get(INSTALLER_ENV, "").strip()
+    if given:
+        return Path(given).resolve()
+    from installer import build
+
+    result = build.build(tmp_path_factory.mktemp("installer-build"), variants=(build.TEST.key,))
+    return result.setups[build.TEST.key]
