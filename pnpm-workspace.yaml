@@ -1,2 +1,12 @@
 packages:
   - packages/*
+  - apps/*
+  - tools/design-ref
+
+# 설치 스크립트를 허용하는 패키지: esbuild 네이티브 바이너리 확인.
+# Electron 44는 설치 스크립트가 없고 처음 쓸 때(또는 install-electron) 바이너리를 받는다
+onlyBuiltDependencies:
+  - esbuild
+
+# 고정 규칙(2주 지난 판)을 전이 의존성 해석에도 적용한다 (분 단위, 14일)
+minimumReleaseAge: 20160

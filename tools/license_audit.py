@@ -146,6 +146,8 @@ class ScannedPackage:
     license: str
     license_text: str = ""
     notice_text: str = ""
+    # JS 패키지 폴더 (pnpm licenses의 paths). 글꼴 한정 라이선스 판정이 파일을 본다
+    paths: tuple[str, ...] = ()
 
 
 def _text(value: Any) -> str:
@@ -193,6 +195,7 @@ def parse_pnpm_licenses(data: Any) -> list[ScannedPackage]:
                         version=str(version),
                         license=str(lic),
                         license_text=_read_js_license_text(item.get("paths") or []),
+                        paths=tuple(str(p) for p in item.get("paths") or []),
                     )
                 )
     out.sort(key=lambda p: (p.display_name, p.version))
@@ -228,6 +231,16 @@ class PackageException:
     reason: str
 
 
+@dataclass(frozen=True)
+class FontOnly:
+    """글꼴 파일에만 허용하는 라이선스. JS 패키지 안 파일이 글꼴과 그 선언·메타데이터뿐일 때만."""
+
+    licenses: frozenset[str]
+    font_suffixes: tuple[str, ...]
+    support_suffixes: tuple[str, ...]
+    support_names: frozenset[str]
+
+
 @dataclass
 class Policy:
     allowed: frozenset[str]
@@ -239,6 +252,25 @@ class Policy:
     allowed_with: frozenset[str] = frozenset()
     # 패키지별 "라이선스 WITH 예외" → 이유. 그 패키지에서만, 거부 패턴보다 먼저 본다
     package_with: dict[NormalizedName, dict[str, str]] = field(default_factory=dict)
+    font_only: FontOnly | None = None
+
+
+def _load_font_only(data: Mapping[str, Any]) -> FontOnly | None:
+    raw = data.get("font_only")
+    if raw is None:
+        return None
+    try:
+        rule = FontOnly(
+            licenses=frozenset(raw["licenses"]),
+            font_suffixes=tuple(s.lower() for s in raw["font_suffixes"]),
+            support_suffixes=tuple(s.lower() for s in raw.get("support_suffixes", [])),
+            support_names=frozenset(raw.get("support_names", [])),
+        )
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise AuditInputError(f"font_only 설정 오류: {exc}") from exc
+    if not rule.licenses or not rule.font_suffixes:
+        raise AuditInputError("font_only에는 licenses와 font_suffixes가 있어야 한다")
+    return rule
 
 
 def load_policy(data: Mapping[str, Any]) -> Policy:
@@ -285,6 +317,7 @@ def load_policy(data: Mapping[str, Any]) -> Policy:
         exceptions,
         frozenset(allowed_with),
         package_with,
+        _load_font_only(data),
     )
 
 
@@ -507,6 +540,40 @@ def judge_package(name: NormalizedName, license_text: str, policy: Policy) -> Li
     return LicenseVerdict(False, exc_expr, "예외에 적은 라이선스도 허용 목록 밖")
 
 
+def font_only_verdict(pkg: ScannedPackage, policy: Policy) -> LicenseVerdict | None:
+    """글꼴 한정 라이선스(OFL-1.1) JS 패키지를 판정한다. 그 라이선스가 아니면 None.
+
+    패키지 폴더의 파일이 전부 글꼴·글꼴 선언·메타데이터이고 글꼴이 하나 이상일 때만 허용한다.
+    """
+    rule = policy.font_only
+    text = pkg.license.strip()
+    expr = policy.aliases.get(text.casefold(), text)
+    if rule is None or expr not in rule.licenses:
+        return None
+    files = [f for p in pkg.paths if Path(p).is_dir() for f in Path(p).rglob("*") if f.is_file()]
+    if not files:
+        return LicenseVerdict(
+            False, expr, "패키지 파일을 찾지 못해 글꼴 한정 허용을 확인할 수 없다"
+        )
+
+    def is_font(f: Path) -> bool:
+        return f.name.lower().endswith(rule.font_suffixes)
+
+    def is_support(f: Path) -> bool:
+        return f.name in rule.support_names or f.name.lower().endswith(rule.support_suffixes)
+
+    others = sorted(f.name for f in files if not is_font(f) and not is_support(f))
+    if others:
+        shown = ", ".join(others[:5])
+        return LicenseVerdict(
+            False, expr, f"글꼴 한정 라이선스인데 글꼴이 아닌 파일이 있다: {shown}"
+        )
+    fonts = sum(1 for f in files if is_font(f))
+    if fonts == 0:
+        return LicenseVerdict(False, expr, "글꼴 한정 라이선스인데 글꼴 파일이 없다")
+    return LicenseVerdict(True, expr, f"글꼴 파일 한정 허용 (글꼴 {fonts}개)")
+
+
 # ---------------------------------------------------------------- 감사
 
 
@@ -627,7 +694,7 @@ def audit(
     js_entries: list[tuple[ScannedPackage, str]] = []
     js_rows: list[tuple[str, str, str]] = []
     for pkg in js_scan:
-        verdict = judge_package(pkg.name, pkg.license, policy)
+        verdict = font_only_verdict(pkg, policy) or judge_package(pkg.name, pkg.license, policy)
         if not verdict.ok:
             problems.append(
                 f"[라이선스] (JS) {pkg.display_name}@{pkg.version}: {pkg.license!r} — "

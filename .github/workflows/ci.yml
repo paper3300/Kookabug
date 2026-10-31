@@ -40,9 +40,11 @@ jobs:
       # packaging 표시 테스트(wheel 빌드·깨끗한 venv·라이선스 파이프라인)도 건너뛰지 않는다.
       # 설치 파일 무인 설치 검사(M1 인수 4 포함)는 installer 잡이 빌드한 설치 파일로 돈다.
       # 데스크톱 검사는 auto(호스트 러너 탐지 실패면 건너뜀, 수·이유는 잡 요약 — M1 2.13 방침 (b))
+      # pnpm·앱 빌드가 필요한 검사(desktop_build)는 desktop 잡이 돌린다
       - run: >-
           uv run pytest --ignore=tools/tests/test_installer_e2e.py
           --deselect python/kookabug_core/tests/acceptance/test_m1.py::test_installed_cli_runs_capture_and_ocr_without_python
+          -m "not desktop_build"
 
   codegen:
     runs-on: windows-2025
@@ -73,6 +75,51 @@ jobs:
           git diff --exit-code
           test -z "$(git status --porcelain)"
       - run: pnpm -r run typecheck
+
+  # 데스크톱 앱 (구현 계획 M2 2.13): 타입 검사 → vitest → 앱 빌드 → 시안 렌더러 검사·기준 PNG·역할 토큰
+  # → 감사 범위 검사(desktop_build) → Electron E2E. 호스트 러너에서 Electron 창이 뜨는지는 E2E 스모크가
+  # 실측한다. 안 뜨면 E2E는 조율자 PC 필수 실행으로 돌린다 (M2 Q11)
+  desktop:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Electron 44는 설치 스크립트가 없다. 고정판 바이너리를 받아 둔다 (@electron/get 캐시)
+      - uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\electron\Cache
+          key: electron-${{ hashFiles('pnpm-lock.yaml') }}
+      - run: pnpm --filter @kookabug/desktop exec install-electron
+      - run: pnpm -r typecheck
+      - run: pnpm --filter @kookabug/desktop test
+      - run: pnpm --filter @kookabug/desktop build
+      # 시안 렌더러 검사(Edge), 기준 PNG와 역할 토큰 (M2 계획 2.12)
+      - run: pnpm --filter @kookabug/design-ref test
+      - run: node tools/design-ref/render.mjs
+      - run: node tools/design-ref/extract.mjs
+      - run: uv sync --locked --all-packages
+      - run: uv run pytest -m desktop_build -v
+      - run: pnpm --filter @kookabug/desktop e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop
+          path: |
+            build/design-ref
+            build/e2e
+            build/ui-shots
+            build/ui-compare
+          if-no-files-found: warn
 
   # 호스트 러너에서 WGC·포그라운드(SendInput 전제)가 되는지 실측한다 (구현 계획 M1 2.13 Q1).
   # 탐지 실패는 잡 실패가 아니다: 결과 JSON·잡 요약으로 CI 방침 (a)/(b)를 고른다

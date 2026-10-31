@@ -1,0 +1,16 @@
+/* 빈 화면의 시안 배경색. 색 토큰 표(tokens.css)는 T7이 시안에서 뽑아 만든다 */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --kb-bg: #1f1f1f;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --kb-bg: #ffffff;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--kb-bg);
+}

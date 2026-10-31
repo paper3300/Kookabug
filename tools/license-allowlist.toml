@@ -80,6 +80,16 @@ denied_patterns = [
 라이브러리(libgfortran 등). GCC Runtime Library Exception 3.1에 따라 GCC로 컴파일한 결과물에 결합된 \
 런타임 라이브러리에는 GPL 조건이 걸리지 않는다. 원문은 numpy의 LICENSE.txt에 있고 NOTICES에 싣는다"""
 
+# 글꼴 파일에만 허용하는 라이선스 (구현 계획 M2 2.2·U6). 앱에 넣는 시안 글꼴(@fontsource)이 OFL-1.1이다.
+# JS 패키지 안 파일이 글꼴 파일과 그 선언·메타데이터뿐일 때만 허용하고, 실행 코드(.js 등)가 하나라도
+# 있으면 실패다. Python 패키지·네이티브 파일에는 적용하지 않는다(거기서는 허용 목록 밖 그대로)
+[font_only]
+licenses = ["OFL-1.1"]
+font_suffixes = [".woff2", ".woff", ".ttf", ".otf"]
+# @font-face 선언(CSS·SCSS), 그 타입 선언, 패키지 메타데이터·설명
+support_suffixes = [".css", ".scss", ".d.css.ts", ".json", ".md"]
+support_names = ["LICENSE", "LICENSE.txt", "OFL.txt"]
+
 # 패키지 이름별 예외. 예:
 # "some-package" = { license = "MPL-2.0", reason = "수정 없이 동적으로만 쓴다. 소스 위치를 NOTICES에 적는다" }
 [exceptions]

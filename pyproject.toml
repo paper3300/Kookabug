@@ -54,4 +54,5 @@ pythonpath = ["tools", "python/kookabug_core/tests", "fixtures/sample-game"]
 markers = [
     "packaging: wheel·venv를 실제로 만드는 느린 검사 (uv 필요, 네트워크를 쓸 수 있음)",
     "process: 실제 프로세스·파이프·뮤텍스·Job을 쓰는 검사 (기본 timeout 60초, CI에서도 돈다)",
+    "desktop_build: pnpm 설치와 데스크톱 앱 빌드가 필요한 검사 (CI desktop 잡에서 돈다)",
 ]

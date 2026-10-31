@@ -1,0 +1,8 @@
+/* 시안 글꼴 (M2 계획 2.2 글꼴, U6). 인터넷에서 받지 않고 앱에 넣는다.
+   Noto Sans KR 400/500/700, JetBrains Mono 400/500, 시작 화면 워드마크 Fraunces 700 */
+@import "@fontsource/noto-sans-kr/400.css";
+@import "@fontsource/noto-sans-kr/500.css";
+@import "@fontsource/noto-sans-kr/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/fraunces/700.css";
