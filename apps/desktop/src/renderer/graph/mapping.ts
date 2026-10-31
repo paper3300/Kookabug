@@ -46,8 +46,8 @@ export interface NodeTypeInfo {
   /** 플러그인 판·이름 (노드를 더할 때 그래프 plugins에 적는다, 팔레트 오른쪽 칸) */
   pluginVersion: string;
   pluginTitle: string;
-  /** 노드 스키마의 inputs·outputs·exits 선언 그대로 (정적 모양용) */
-  decl: { inputs: unknown; outputs: unknown; exits: unknown };
+  /** 노드 스키마의 inputs·outputs·exits 선언 그대로 (정적 모양용). config는 속성 편집기(T10)가 쓴다 */
+  decl: { inputs: unknown; outputs: unknown; exits: unknown; config?: unknown };
 }
 
 export type TypeIndex = ReadonlyMap<string, NodeTypeInfo>;
@@ -172,7 +172,7 @@ export function indexNodeTypes(schemas: readonly unknown[]): Map<string, NodeTyp
         plugin,
         pluginVersion,
         pluginTitle,
-        decl: { inputs: n.inputs, outputs: n.outputs, exits: n.exits },
+        decl: { inputs: n.inputs, outputs: n.outputs, exits: n.exits, config: n.config },
       });
     }
   }

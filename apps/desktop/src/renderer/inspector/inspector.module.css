@@ -1,0 +1,477 @@
+/* 속성 편집기 (U1: 에이전트 패널 자리, 폭 320px). 사이드바와 같은 머리 줄(35px·11px)·섹션 머리(22px·굵은
+   대문자 11px)·입력 상자(26px, 입력 배경·테두리, 포커스 강조)를 쓴다. 색은 토큰만 쓴다 */
+
+.inspector {
+  flex: 0 0 calc(var(--kb-inspector-width) + 1px);
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--kb-sidebar-bg);
+  color: var(--kb-sidebar-fg);
+  border-left: 1px solid var(--kb-border);
+}
+
+.collapsed {
+  flex-basis: 29px;
+}
+
+.collapsedButton {
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: center;
+  padding-top: 12px;
+  background: none;
+  border: 0;
+  color: var(--kb-fg-muted);
+  font-size: var(--kb-font-size-small);
+  letter-spacing: 0.04em;
+}
+
+.collapsedButton:hover {
+  color: var(--kb-sidebar-fg);
+  background: var(--kb-hover-bg);
+}
+
+.vertical {
+  writing-mode: vertical-rl;
+}
+
+.header {
+  flex: 0 0 var(--kb-header-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 0 20px;
+  font-size: var(--kb-font-size-small);
+  letter-spacing: 0.04em;
+}
+
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 12px;
+}
+
+.empty {
+  padding: 8px 20px;
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.section + .section {
+  border-top: 1px solid var(--kb-border);
+}
+
+.sectionHeader {
+  width: 100%;
+  height: var(--kb-row-height);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  background: none;
+  border: 0;
+  font-size: var(--kb-font-size-small);
+  font-weight: 700;
+  color: var(--kb-sidebar-fg);
+  text-align: left;
+}
+
+.sectionTitle {
+  text-transform: uppercase;
+}
+
+.sectionBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 12px 10px 20px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fieldHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 18px;
+  min-width: 0;
+}
+
+.fieldName {
+  font-size: 12px;
+  color: var(--kb-sidebar-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.required {
+  margin-left: 2px;
+  color: var(--kb-status-error);
+}
+
+.fieldType {
+  font-family: var(--kb-font-mono);
+  font-size: var(--kb-font-size-small);
+  color: var(--kb-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.grow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 입력 상자: 사이드바 검색 칸과 같은 모양 (shell.module.css .inputBox) */
+.box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  min-width: 0;
+  padding: 0 6px;
+  background: var(--kb-input-bg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+}
+
+.box:focus-within {
+  border-color: var(--kb-accent);
+}
+
+.box input,
+.box select {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: none;
+  border: 0;
+  color: var(--kb-fg);
+  font-size: 12px;
+  outline: none;
+}
+
+.box select {
+  margin: 0 -2px;
+}
+
+.box select option {
+  background: var(--kb-menu-bg);
+  color: var(--kb-fg);
+}
+
+.boxInvalid,
+.boxInvalid:focus-within,
+.textarea.boxInvalid:focus {
+  border-color: var(--kb-status-error);
+}
+
+.mono,
+.box input.mono {
+  font-family: var(--kb-font-mono);
+}
+
+.textarea {
+  width: 100%;
+  min-height: 26px;
+  padding: 4px 6px;
+  resize: vertical;
+  background: var(--kb-input-bg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  color: var(--kb-fg);
+  font-family: var(--kb-font-mono);
+  font-size: 12px;
+  line-height: 17px;
+  outline: none;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.textarea:focus {
+  border-color: var(--kb-accent);
+}
+
+.cells {
+  display: flex;
+  gap: 4px;
+}
+
+.cell {
+  flex: 1 1 0;
+  padding: 0 4px;
+  gap: 4px;
+}
+
+.cellName {
+  font-family: var(--kb-font-mono);
+  font-size: var(--kb-font-size-small);
+  color: var(--kb-fg-muted);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  font-size: 12px;
+}
+
+.check input {
+  margin: 0;
+  accent-color: var(--kb-accent);
+}
+
+.choice {
+  height: 20px;
+  max-width: 64px;
+  padding: 0 2px;
+  background: var(--kb-input-bg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  color: var(--kb-fg);
+  font-size: var(--kb-font-size-small);
+}
+
+.choice option {
+  background: var(--kb-menu-bg);
+}
+
+/* 보조 단추: 시안의 회색 단추 (입력 배경 + 입력 테두리) */
+.button {
+  flex: 0 0 auto;
+  height: 26px;
+  padding: 0 10px;
+  background: var(--kb-input-bg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  color: var(--kb-fg);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--kb-accent);
+}
+
+.button:disabled {
+  opacity: 0.5;
+}
+
+.iconButton {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  color: var(--kb-fg-muted);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--kb-hover-bg);
+  color: var(--kb-sidebar-fg);
+}
+
+.iconButton:disabled {
+  opacity: 0.35;
+}
+
+.readonly {
+  min-height: 26px;
+  padding: 4px 6px;
+  background: var(--kb-bg);
+  border: 1px dashed var(--kb-input-border);
+  border-radius: 2px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.linkNode {
+  font-weight: 500;
+  color: var(--kb-log-node);
+}
+
+.pre {
+  margin: 4px 0 0;
+  font-family: var(--kb-font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--kb-hover-bg);
+  color: var(--kb-fg-muted);
+  font-size: var(--kb-font-size-small);
+  white-space: nowrap;
+}
+
+.chipSetting {
+  background: var(--kb-chip-graph-bg);
+  color: var(--kb-chip-graph-fg);
+}
+
+.chipSecret {
+  background: var(--kb-chip-agent-bg);
+  color: var(--kb-chip-agent-fg);
+}
+
+.keyRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.keyRow > .chip {
+  margin-top: 4px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.listRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.listKey {
+  flex: 0 0 88px;
+  min-width: 0;
+}
+
+.listValue {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.listActions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  height: 26px;
+}
+
+.addButton {
+  align-self: flex-start;
+  height: 22px;
+  padding: 0 6px;
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  color: var(--kb-link-fg);
+  font-size: 12px;
+}
+
+.addButton:hover:not(:disabled) {
+  background: var(--kb-hover-bg);
+}
+
+.fieldError {
+  font-size: var(--kb-font-size-small);
+  color: var(--kb-status-error);
+  overflow-wrap: anywhere;
+}
+
+.diagnostics {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--kb-font-size-small);
+  line-height: 1.5;
+}
+
+.diagError {
+  color: var(--kb-status-error);
+}
+
+.diagWarn {
+  color: var(--kb-status-warn);
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.meta dt {
+  color: var(--kb-fg-muted);
+}
+
+.meta dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--kb-font-size-small);
+  line-height: 18px;
+}
+
+.description {
+  margin: 0;
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.unknownNote {
+  margin: 0;
+  padding: 4px 8px;
+  background: var(--kb-node-note-warn-bg);
+  color: var(--kb-node-note-warn-fg);
+  border-radius: 2px;
+  font-size: var(--kb-font-size-small);
+  line-height: 1.5;
+}
+
+.muted {
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+}
+
+.hint {
+  color: var(--kb-fg-subtle);
+  font-size: var(--kb-font-size-small);
+}

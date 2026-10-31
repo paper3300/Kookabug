@@ -5,6 +5,7 @@ import { deleteNodes } from "./nodes";
 
 export { connect, connectData, connectExec, disconnect, parseEdgeId, type Connection, type EdgeRef } from "./edges";
 export { addNode, deleteNodes, moveNodes, roundCoord, type Move, type NewNode } from "./nodes";
+export { clearNodeValue, replaceNodeObject, setNodeTitle, setNodeValue, type NodeField } from "./setPin";
 
 /**
  * 고른 것 지우기 (명령 하나): 연결선을 먼저 끊고 노드를 지운다. 지우는 노드에 닿은 연결은 노드 지우기가

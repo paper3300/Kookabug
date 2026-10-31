@@ -285,4 +285,5 @@
   --kb-header-height: 35px;
   --kb-statusbar-height: 22px;
   --kb-panel-height: 260px;
+  --kb-inspector-width: 320px; /* 속성 편집기 (U1, + 왼쪽 테두리 1px) */
 }

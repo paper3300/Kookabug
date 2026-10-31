@@ -27,6 +27,7 @@ function useMenus(): [string, MenuEntry[]][] {
   const active = useTabs((s) => s.active);
   const graph = useTabs((s) => (s.tabs.find((t) => t.path === s.active)?.kind === "graph" ? s.active : null));
   const doc = useDocuments((s) => (graph === null ? undefined : s.docs.get(graph)));
+  const inspectorOpen = useUi((s) => s.inspectorOpen);
   const theme = (value: ThemeMode, label: string): MenuItem => ({
     label: `테마: ${label}`,
     checked: mode === value,
@@ -62,7 +63,16 @@ function useMenus(): [string, MenuEntry[]][] {
         { label: "다시 실행", shortcut: "Ctrl+Y", disabled: !canRedo(doc), run: () => graph !== null && redoEdit(graph) },
       ],
     ],
-    ["보기", [theme("system", "시스템"), theme("light", "라이트"), theme("dark", "다크")]],
+    [
+      "보기",
+      [
+        theme("system", "시스템"),
+        theme("light", "라이트"),
+        theme("dark", "다크"),
+        "separator",
+        { label: "속성 패널", checked: inspectorOpen, run: () => useUi.setState({ inspectorOpen: !inspectorOpen }) },
+      ],
+    ],
     [
       "실행",
       [

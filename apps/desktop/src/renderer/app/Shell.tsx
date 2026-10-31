@@ -1,6 +1,7 @@
 // 앱 틀 (M2 계획 2.11): 타이틀 바 · 연결 띠 · 액티비티 바 · 사이드바 · 에디터 · 하단 패널 · 상태 바.
 // 오른쪽 에이전트 패널 자리는 속성 편집기(T10)가 쓴다
 import { useEffect } from "react";
+import { Inspector } from "../inspector/Inspector";
 import { useDialog } from "../store/dialog";
 import { redoEdit, saveDoc, undoEdit } from "../store/documents";
 import { confirmLeaveDirty, requestCloseTab } from "../store/editing";
@@ -78,6 +79,7 @@ export function Shell() {
           <Editor />
           <Panel />
         </div>
+        <Inspector />
       </div>
       <StatusBar />
       <QuickOpen />

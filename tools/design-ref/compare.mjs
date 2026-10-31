@@ -27,6 +27,9 @@ export const SCREENS = {
   "palette-drag": { dark: "Main", light: "MainLight" },
   "connect-drag": { dark: "Main", light: "MainLight" },
   "close-confirm": { dark: "Main", light: "MainLight" },
+  // 속성 편집기(시안에 없는 화면, U1): 에이전트 패널 자리에 사이드바 섹션·입력 상자 모양, T10
+  inspector: { dark: "Main", light: "MainLight" },
+  "inspector-link": { dark: "Main", light: "MainLight" },
   target: { dark: "Recorder" },
 };
 
