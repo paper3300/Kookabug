@@ -1,0 +1,23 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "nodes": {
+    "n_entry": {"next": {"start": "n_magic"}, "type": "core.graph.entry", "version": 1},
+    "n_log": {
+      "in": {"text": {"$link": "n_magic.label"}},
+      "next": {"done": "n_pass"},
+      "type": "core.log.message",
+      "version": 1
+    },
+    "n_magic": {
+      "config": {"mode": "fast", "retries": 3},
+      "in": {"region": [0, 0, 100, 50], "target": {"$target": "targets/x.target.json"}},
+      "next": {"found": "n_log", "missing": "n_fail"},
+      "type": "acme.vision.magic",
+      "version": 2
+    },
+    "n_fail": {"in": {"reason": {"$link": "n_magic.reason"}}, "type": "core.test.fail", "version": 1},
+    "n_pass": {"type": "core.test.pass", "version": 1}
+  },
+  "plugins": {"acme": "2.0.0", "core": "0.1.0"}
+}

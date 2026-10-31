@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from kookabug_core.canonical import canonical_dumps
 from kookabug_sdk.console import utf8_stdio
@@ -37,6 +38,8 @@ KINDS = (
     "user-settings",
     "rpc",
     "screen",
+    "daemon-rpc",
+    "session",
 )
 
 MODELS_INIT = '''\
@@ -82,6 +85,34 @@ def _ruff(*args: str | Path) -> None:
     subprocess.run(cmd, check=True, cwd=REPO_ROOT)
 
 
+def _without_external_refs(value: Any) -> Any:
+    """다른 메타스키마 참조(`urn:kookabug:<종류>:0`)를 설명만 남긴 임의 값으로 바꾼다.
+
+    모델 생성기는 URN 참조를 풀지 못한다. 형식 검사(jsonschema)는 참조를 그대로 따라가고, 모델은 그
+    필드를 JSON 값으로 둔다.
+    """
+    if isinstance(value, list):
+        return [_without_external_refs(v) for v in value]
+    if not isinstance(value, dict):
+        return value
+    ref = value.get("$ref")
+    if isinstance(ref, str) and ref.startswith("urn:"):
+        rest = {k: v for k, v in value.items() if k != "$ref"}
+        return {**rest, "description": rest.get("description", ref)}
+    return {k: _without_external_refs(v) for k, v in value.items()}
+
+
+def _model_input(kind: str, work: Path) -> Path:
+    data = json.loads(schema_path(kind).read_text(encoding="utf-8"))
+    cleaned = _without_external_refs(data)
+    if cleaned == data:
+        return schema_path(kind)
+    path = work / "input" / schema_path(kind).name
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(json.dumps(cleaned, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
 def generate_models(work: Path) -> dict[str, str]:
     """{models/ 안 파일 이름: 내용}."""
     out: dict[str, str] = {"__init__.py": MODELS_INIT}
@@ -92,7 +123,7 @@ def generate_models(work: Path) -> dict[str, str]:
             "-m",
             "datamodel_code_generator",
             "--input",
-            str(schema_path(kind)),
+            str(_model_input(kind, work)),
             "--input-file-type",
             "jsonschema",
             "--output",

@@ -1,0 +1,1 @@
+{"format":"kookabug.graph/0","kind":"test","layout":{},"meta":{"tags":[]},"nodes":{"n_entry":{"next":{},"type":"core.graph.entry","version":1},"n_sink":{"config":{},"in":{"a":{},"b":[],"c":[[],{}],"d":{"$literal":{}}},"type":"acme.data.sink","version":1}},"plugins":{"acme":"1.0.0","core":"0.1.0"}}

@@ -1,0 +1,27 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "layout": {
+    "nodes": {
+      "__proto__": {"x": 280, "y": 0},
+      "constructor": {"x": 560, "y": 0},
+      "n_entry": {"x": 0, "y": 0}
+    }
+  },
+  "nodes": {
+    "__proto__": {
+      "config": {"__proto__": 2, "constructor": {"prototype": 3}},
+      "in": {
+        "__proto__": 1,
+        "constructor": "c",
+        "obj": {"__proto__": {"polluted": true}, "constructor": "c", "toString": 1, "hasOwnProperty": 2}
+      },
+      "next": {"done": "constructor"},
+      "type": "acme.data.sink",
+      "version": 1
+    },
+    "constructor": {"in": {"value": {"$link": "__proto__.value"}}, "type": "acme.data.sink", "version": 1},
+    "n_entry": {"next": {"start": "__proto__"}, "type": "core.graph.entry", "version": 1}
+  },
+  "plugins": {"acme": "1.0.0", "core": "0.1.0"}
+}

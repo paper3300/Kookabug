@@ -1,0 +1,14 @@
+{
+  "plugins": {"acme": "1.0.0", "core": "0.1.0"},
+  "nodes": {
+    "n_entry": {"type": "core.graph.entry", "version": 1, "next": {"start": "n_sink"}},
+    "n_sink": {
+      "type": "acme.data.sink",
+      "version": 1,
+      "in": {"table": {"b": 1, "10": "ten", "2": "two", "a": 0, "1.5": "x", "-1": "y"}},
+      "config": {"z": true, "10": null, "01": "zero-one"}
+    }
+  },
+  "kind": "test",
+  "format": "kookabug.graph/0"
+}

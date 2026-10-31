@@ -1,0 +1,26 @@
+{
+  "description": "그래프 원문 말뭉치 (M2 계획 2.13). Python·vitest·E2E가 같은 목록을 쓴다. 경로는 레포 루트 기준이다",
+  "files": [
+    "fixtures/graph-corpus/canonical.graph.json",
+    "fixtures/graph-corpus/crlf.graph.json",
+    "fixtures/graph-corpus/doc-enter-world.graph.json",
+    "fixtures/graph-corpus/doc-inventory-open.graph.json",
+    "fixtures/graph-corpus/empty-containers.graph.json",
+    "fixtures/graph-corpus/groups-comments.graph.json",
+    "fixtures/graph-corpus/indent4.graph.json",
+    "fixtures/graph-corpus/integer-like-keys.graph.json",
+    "fixtures/graph-corpus/no-final-newline.graph.json",
+    "fixtures/graph-corpus/numbers.graph.json",
+    "fixtures/graph-corpus/proto-keys.graph.json",
+    "fixtures/graph-corpus/shuffled-keys.graph.json",
+    "fixtures/graph-corpus/special-values.graph.json",
+    "fixtures/graph-corpus/strings.graph.json",
+    "fixtures/graph-corpus/unknown-keys.graph.json",
+    "fixtures/graph-corpus/unknown-node.graph.json",
+    "fixtures/sample-game/workspace/subgraphs/broken/enter_world_swapped_target.graph.json",
+    "fixtures/sample-game/workspace/subgraphs/enter_world.graph.json",
+    "fixtures/sample-game/workspace/tests/broken/swapped_target.graph.json",
+    "fixtures/sample-game/workspace/tests/inventory_open.graph.json",
+    "fixtures/sample-game/workspace/tests/smoke_headless.graph.json"
+  ]
+}

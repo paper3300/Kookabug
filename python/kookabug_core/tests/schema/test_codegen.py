@@ -58,7 +58,10 @@ def test_copied_json_matches_packages_schema() -> None:
 
 def test_ts_generated_for_every_schema() -> None:
     generated = PACKAGE_JSON / "src" / "generated"
-    assert sorted(p.name for p in generated.glob("*.ts")) == sorted(f"{k}.ts" for k in KINDS)
+    # daemon-rpc와 그것이 참조하는 events는 런타임 검사기(src/rpcCheck.ts)가 읽는
+    # 스키마 값(.data.ts)도 있다
+    expected = [f"{k}.ts" for k in KINDS] + ["daemon-rpc.data.ts", "events.data.ts"]
+    assert sorted(p.name for p in generated.glob("*.ts")) == sorted(expected)
 
 
 MODELS: dict[str, Any] = {

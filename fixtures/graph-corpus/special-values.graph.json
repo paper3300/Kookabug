@@ -1,0 +1,20 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "nodes": {
+    "n_a": {"in": {"value": 1}, "type": "acme.data.source", "version": 1},
+    "n_b": {"in": {"value": 2}, "type": "acme.data.source", "version": 1},
+    "n_entry": {"next": {"start": "n_sink"}, "type": "core.graph.entry", "version": 1},
+    "n_sink": {
+      "in": {
+        "literal": {"$literal": {"$link": "n_x.y", "$target": "nope", "n": 1e20, "deep": [{"$secret": "k"}]}},
+        "list": [{"$link": "n_a.value"}, 1, [{"$link": "n_b.value"}]],
+        "obj": {"k": {"$link": "n_a.value"}, "s": {"$setting": "game.title"}},
+        "secret": {"$secret": "accounts.qa"}
+      },
+      "type": "acme.data.sink",
+      "version": 1
+    }
+  },
+  "plugins": {"acme": "1.0.0", "core": "0.1.0"}
+}

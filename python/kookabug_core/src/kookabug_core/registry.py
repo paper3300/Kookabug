@@ -226,6 +226,7 @@ class Registry:
     def __init__(self) -> None:
         self._nodes: dict[str, NodeDef] = {}
         self._plugins: dict[str, str] = {}
+        self._plugin_info: dict[str, Mapping[str, Any]] = {}
 
     def __contains__(self, node_type: object) -> bool:
         return node_type in self._nodes
@@ -240,6 +241,16 @@ class Registry:
     def plugins(self) -> Mapping[str, str]:
         """플러그인 ID → 버전."""
         return dict(self._plugins)
+
+    def plugin_info(self, plugin: str) -> dict[str, Any]:
+        """노드 스키마 문서의 `plugin` 객체 (id·version·title, 복사본)."""
+        return copy.deepcopy(dict(self._plugin_info[plugin]))
+
+    def _register(self, schema: Mapping[str, Any], defs: Mapping[str, NodeDef]) -> None:
+        plugin = schema["plugin"]["id"]
+        self._nodes.update(defs)
+        self._plugins[plugin] = schema["plugin"]["version"]
+        self._plugin_info[plugin] = copy.deepcopy(dict(schema["plugin"]))
 
     def _check_document(self, schema: Mapping[str, Any]) -> str:
         problems = check_shape(schema, "node-schema")
@@ -271,8 +282,7 @@ class Registry:
             if "engine" in decl:
                 raise RegistryError(f"{node_type}: 원격 노드는 engine을 쓸 수 없다")
             defs[node_type] = NodeDef.from_json(plugin, copy.deepcopy(decl), None)
-        self._nodes.update(defs)
-        self._plugins[plugin] = schema["plugin"]["version"]
+        self._register(schema, defs)
 
     def add_plugin(self, schema: Mapping[str, Any], functions: Iterable[NodeFunction]) -> None:
         """노드 스키마 문서와 그 플러그인의 `@node` 함수들을 등록한다."""
@@ -299,8 +309,7 @@ class Registry:
             defs[node_type] = NodeDef.from_json(plugin, decl, fn)
         if by_type:
             raise RegistryError(f"함수는 있는데 스키마에 없는 노드: {sorted(by_type)}")
-        self._nodes.update(defs)
-        self._plugins[plugin] = schema["plugin"]["version"]
+        self._register(schema, defs)
 
     def add_functions(self, plugin: str, version: str, functions: Sequence[NodeFunction]) -> None:
         """빌드한 스키마 파일 없이 함수에서 바로 등록한다 (테스트 전용 플러그인용)."""

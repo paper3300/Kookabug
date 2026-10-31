@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from kookabug_core.diagnostics import Diagnostic
 from kookabug_core.loader import Program, load_program
@@ -29,7 +30,7 @@ from kookabug_core.validate import vars as vars_
 from kookabug_core.validate.context import ValidationContext
 from kookabug_core.workspace import RunOptions, SecretProvider, Workspace
 
-__all__ = ["check_graph", "sort_diagnostics", "validate"]
+__all__ = ["check_graph", "check_graph_value", "sort_diagnostics", "validate"]
 
 CHECKS = (
     structure,
@@ -69,4 +70,21 @@ def check_graph(
 ) -> tuple[Program, list[Diagnostic]]:
     """그래프 파일을 읽고 검증한다."""
     program = load_program(workspace, graph, options=options, secrets=secrets)
+    return program, validate(program, registry)
+
+
+def check_graph_value(
+    workspace: Workspace,
+    graph: str | Path,
+    value: Any,
+    *,
+    registry: Registry | None = None,
+    options: RunOptions | None = None,
+    secrets: SecretProvider | None = None,
+) -> tuple[Program, list[Diagnostic]]:
+    """편집 버퍼 검증 (M2 계획 2.7): 루트 그래프만 `value`로 바꾸고 서브그래프·target·화면은 디스크.
+
+    같은 바이트의 파일이면 `check_graph`와 진단이 같다. 비밀값이 없으면 실행과 같이 오류다.
+    """
+    program = load_program(workspace, graph, options=options, secrets=secrets, root_value=value)
     return program, validate(program, registry)

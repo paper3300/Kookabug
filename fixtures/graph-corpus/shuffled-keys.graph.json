@@ -1,0 +1,58 @@
+{
+  "plugins": {
+    "core": "0.1.0"
+  },
+  "nodes": {
+    "n_pass": {
+      "version": 1,
+      "type": "core.test.pass",
+      "in": {
+        "reason": "끝"
+      }
+    },
+    "n_log": {
+      "version": 1,
+      "type": "core.log.message",
+      "title": "로그",
+      "next": {
+        "done": "n_pass"
+      },
+      "in": {
+        "text": "키 순서",
+        "level": "info"
+      }
+    },
+    "n_entry": {
+      "version": 1,
+      "type": "core.graph.entry",
+      "next": {
+        "start": "n_log"
+      }
+    }
+  },
+  "meta": {
+    "title": "기본",
+    "tags": [
+      "corpus"
+    ],
+    "description": "말뭉치 기본 그래프"
+  },
+  "layout": {
+    "nodes": {
+      "n_pass": {
+        "y": 0,
+        "x": 560
+      },
+      "n_log": {
+        "y": 0,
+        "x": 280
+      },
+      "n_entry": {
+        "y": 0,
+        "x": 0
+      }
+    }
+  },
+  "kind": "test",
+  "format": "kookabug.graph/0"
+}

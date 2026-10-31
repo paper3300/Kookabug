@@ -1,0 +1,33 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "layout": {
+    "nodes": {
+      "n_entry": {"x": 1.0, "y": -0},
+      "n_sink": {"x": 280.5, "y": -0.0}
+    }
+  },
+  "nodes": {
+    "n_entry": {"next": {"start": "n_sink"}, "type": "core.graph.entry", "version": 1},
+    "n_sink": {
+      "config": {"big": 1e20, "ratio": 0.1},
+      "in": {
+        "one_float": 1.0,
+        "tiny": 1e-7,
+        "neg_zero": -0,
+        "neg_zero_float": -0.0,
+        "big": 1e20,
+        "big_plus": 1e+20,
+        "big_upper": 1E21,
+        "two_53_float": 9007199254740992.0,
+        "big_digits": 1.2345678901234567e19,
+        "max_safe": 9007199254740991,
+        "min_safe": -9007199254740991,
+        "list": [1.0, 1e20, -0, 0.5, 5e-324]
+      },
+      "type": "acme.data.sink",
+      "version": 1
+    }
+  },
+  "plugins": {"acme": "1.0.0", "core": "0.1.0"}
+}

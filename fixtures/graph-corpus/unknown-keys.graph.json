@@ -1,0 +1,20 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "layout": {
+    "nodes": {"n_entry": {"x": 0, "y": 0}},
+    "x_view": {"zoom": 1.5}
+  },
+  "nodes": {
+    "n_entry": {"next": {"start": "n_pass"}, "type": "core.graph.entry", "version": 1},
+    "n_pass": {
+      "config": {"x_extra": [1, 2]},
+      "in": {"reason": "끝", "x_unknown_pin": {"deep": [true, null]}},
+      "type": "core.test.pass",
+      "version": 1,
+      "x_note": "노드의 모르는 키"
+    }
+  },
+  "plugins": {"core": "0.1.0"},
+  "x_editor": {"opened": "2026-10-31"}
+}

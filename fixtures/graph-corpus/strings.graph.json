@@ -1,0 +1,22 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "meta": {"title": "\u00e9 é 원문 한글 \ud55c\uae00"},
+  "nodes": {
+    "n_entry": {"next": {"start": "n_sink"}, "type": "core.graph.entry", "version": 1},
+    "n_sink": {
+      "in": {
+        "lone_high": "\ud800",
+        "lone_low": "a\udc00b",
+        "pair": "\ud83d\ude00 😀",
+        "controls": "탭\t줄\n널\u0000끝",
+        "quotes": "\"q\" \\ \/ /",
+        "keys": {"\u00e9": 1, "é한": 2}
+      },
+      "title": "문자열 \u2028 줄 구분",
+      "type": "acme.data.sink",
+      "version": 1
+    }
+  },
+  "plugins": {"acme": "1.0.0", "core": "0.1.0"}
+}

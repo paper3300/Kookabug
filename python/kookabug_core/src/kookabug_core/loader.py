@@ -133,14 +133,22 @@ class Program:
         return self.graphs.get(ref.path)
 
 
+_NO_VALUE: Any = object()
+
+
 def load_program(
     workspace: Workspace,
     graph: str | Path,
     *,
     options: RunOptions | None = None,
     secrets: SecretProvider | None = None,
+    root_value: Any = _NO_VALUE,
 ) -> Program:
-    """`graph`(워크스페이스 기준 경로 또는 절대 경로)와 그 서브그래프를 읽는다."""
+    """`graph`(워크스페이스 기준 경로 또는 절대 경로)와 그 서브그래프를 읽는다.
+
+    `root_value`를 주면 루트 그래프 파일 대신 그 값(편집 버퍼, JSON 트리)을 쓴다. 서브그래프·target·
+    화면은 디스크에서 읽는다 (루트가 자기 자신을 부르면 그 호출도 버퍼다).
+    """
     if isinstance(graph, Path):
         rel = workspace.relative(graph)
         if rel is None:
@@ -148,6 +156,8 @@ def load_program(
     else:
         rel = graph
     loader = _Loader(workspace, options or RunOptions(), secrets or default_secrets())
+    if root_value is not _NO_VALUE:
+        loader.buffers[rel] = copy.deepcopy(root_value)
     program = loader.program
     program.root = rel
     program.diagnostics.extend(workspace.diagnostics)
@@ -206,6 +216,8 @@ class _Loader:
         self.program = Program(workspace, "", options)
         self._status: dict[str, CallStatus] = {}
         self._targets: dict[str, Target | tuple[str, str]] = {}
+        self.buffers: dict[str, Any] = {}
+        """경로 → 파일 대신 쓸 값 (편집 버퍼)."""
 
     def load_all(self, root: str) -> CallStatus:
         """루트에서 호출을 따라 너비 우선으로 읽는다 (재귀 없음).
@@ -249,17 +261,21 @@ class _Loader:
         path = self.ws.resolve(rel)
         assert path is not None
         self.program.references.discovered.add(rel)
-        if not path.is_file():
+        buffered = rel in self.buffers
+        if not buffered and not path.is_file():
             self._status[rel] = "missing"
             return "missing"
         self._status[rel] = "ok"
         self.program.references.graphs.add(rel)
         diags = self.program.diagnostics
-        try:
-            data = loads_strict(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, ValueError) as exc:
-            diags.append(diag("json_invalid", f"'{rel}'을(를) 읽을 수 없다: {exc}", file=rel))
-            return self._broken(rel)
+        if buffered:
+            data = self.buffers[rel]
+        else:
+            try:
+                data = loads_strict(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, ValueError) as exc:
+                diags.append(diag("json_invalid", f"'{rel}'을(를) 읽을 수 없다: {exc}", file=rel))
+                return self._broken(rel)
         problems = check_shape(data, "graph", file=rel)
         if problems:
             diags.extend(problems)
