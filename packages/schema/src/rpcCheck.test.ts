@@ -64,6 +64,11 @@ test("test_preview_template_crop_or_image", () => {
   expect(checkParams("target.save", { ...save, base_revision: `${REVISION}:missing` })).toEqual(
     [],
   );
+  // crop은 선택: 없으면 지금 이미지 그대로 JSON만 저장
+  const noCrop = { path: save.path, spec: save.spec };
+  expect(checkParams("target.save", { ...noCrop, base_revision: `${REVISION}:missing` })).toEqual(
+    [],
+  );
 });
 
 const STEP_END = {

@@ -37,6 +37,8 @@ from kookabug_core.runner.spec import PlatformSpec
 from kookabug_core.service import WorkspaceService
 from kookabug_core.workspace import WorkspaceError
 from kookabug_daemon.documents import DocumentTable, GraphChecker
+from kookabug_daemon.frames import FrameCache
+from kookabug_daemon.image_cache import EditorCache
 from kookabug_daemon.lease_watch import LeaseWatcher, lease_dir
 from kookabug_daemon.methods import MethodSpec, RunsLike, registry
 from kookabug_daemon.methods.tools import Authorizer
@@ -54,6 +56,7 @@ from kookabug_daemon.session import (
     wait_for_valid_session,
     write_session,
 )
+from kookabug_daemon.targets import TargetStore
 from kookabug_daemon.transport import Limits, Transport
 from kookabug_daemon.watch import DocChange, Watcher
 from kookabug_sdk import _faults
@@ -152,6 +155,9 @@ class Daemon:
         self._authorizer = Authorizer(self.service)
         self._documents = DocumentTable(self.root)
         self._checker = GraphChecker(self.root, plugin_registry(config.plugin_modules))
+        self._frames = FrameCache()
+        self._image_cache = EditorCache(self.root)
+        self._targets = TargetStore(self.root, self._frames)
         self._run_manager = RunManager(
             self.root,
             self.service,
@@ -208,6 +214,18 @@ class Daemon:
     @property
     def checker(self) -> GraphChecker:
         return self._checker
+
+    @property
+    def frames(self) -> FrameCache:
+        return self._frames
+
+    @property
+    def image_cache(self) -> EditorCache:
+        return self._image_cache
+
+    @property
+    def targets(self) -> TargetStore:
+        return self._targets
 
     def credentials(self) -> tuple[str, str, str] | None:
         if self.session is None:
@@ -305,6 +323,8 @@ class Daemon:
         self._stop = asyncio.Event()
         self._run_manager.sink = self
         try:
+            # 편집기 캐시는 시작 때 비운다 (옛 daemon의 frame_id는 모두 만료다)
+            await asyncio.to_thread(self._image_cache.reset)
             async with self.transport.serve() as server:
                 port = self.transport.bound(server)
                 await asyncio.to_thread(_faults.fault_point, "daemon.before_session_publish")

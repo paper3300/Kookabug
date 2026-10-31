@@ -18,7 +18,10 @@ from kookabug_core.permissions import Principal
 
 if TYPE_CHECKING:
     from kookabug_daemon.documents import DocumentTable, GraphChecker
+    from kookabug_daemon.frames import FrameCache
+    from kookabug_daemon.image_cache import EditorCache
     from kookabug_daemon.runs import RunManager
+    from kookabug_daemon.targets import TargetStore
 
 __all__ = ["Call", "DaemonContext", "MethodSpec", "RunsLike", "no_arg", "registry"]
 
@@ -70,6 +73,21 @@ class DaemonContext(Protocol):
     @property
     def checker(self) -> GraphChecker: ...
 
+    @property
+    def frames(self) -> FrameCache:
+        """편집기 정지 화면 (target 편집기)."""
+        ...
+
+    @property
+    def image_cache(self) -> EditorCache:
+        """`.kookabug/cache/editor/` (RPC에 이미지를 싣지 않는다)."""
+        ...
+
+    @property
+    def targets(self) -> TargetStore:
+        """target 열기·미리보기·저장 (저장 잠금·에디터 소유 기록)."""
+        ...
+
     def request_shutdown(self, *, force: bool, reason: str) -> None: ...
 
 
@@ -104,7 +122,7 @@ class MethodSpec:
 
 def registry() -> dict[str, MethodSpec]:
     """이 daemon이 처리하는 메서드. 계약에 있지만 여기 없는 메서드는 `method_not_found`다."""
-    from kookabug_daemon.methods import graph, nodes, run, session, workspace
+    from kookabug_daemon.methods import graph, nodes, run, session, target, windows, workspace
 
     return {
         **session.METHODS,
@@ -112,4 +130,6 @@ def registry() -> dict[str, MethodSpec]:
         **nodes.METHODS,
         **graph.METHODS,
         **run.METHODS,
+        **windows.METHODS,
+        **target.METHODS,
     }

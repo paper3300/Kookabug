@@ -220,6 +220,9 @@ def test_points_table_matches_plan() -> None:
         # M2: daemon 잠금 직후·session.json 공개 직전 (daemon은 감독자 역할)
         "daemon.after_lock",
         "daemon.before_session_publish",
+        # M2 T6: target 저장 (새 이미지를 쓴 뒤 소유 기록 전·JSON 커밋 전)
+        "target.before_record",
+        "target.before_commit",
     }
     assert _faults.POINTS["journal.partial_line"] == frozenset(_faults.ROLES)
     assert _faults.POINTS["daemon.after_lock"] == frozenset({"supervisor"})

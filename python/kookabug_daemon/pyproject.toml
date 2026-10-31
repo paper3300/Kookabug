@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.14"
 license = "Apache-2.0"
 # websockets는 정확한 판으로 고정한다 (M2 계획 2.2: 고정하는 날 기준 2주 지난 최신 안정판)
+# target 편집 메서드는 kookabug-platform(창·캡처·비전, opencv)을 쓴다. CLI처럼 의존성으로 두지 않고
+# 그 메서드를 부를 때만 import한다 — 없으면 platform_unavailable. 설치 파일은 둘 다 넣는다
 dependencies = ["kookabug-core", "kookabug-sdk", "websockets==17.2"]
 
 [tool.uv.sources]

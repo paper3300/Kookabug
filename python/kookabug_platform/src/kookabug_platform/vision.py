@@ -197,6 +197,16 @@ class TargetImage:
     def size(self) -> tuple[int, int]:
         return int(self.bgr.shape[1]), int(self.bgr.shape[0])
 
+    @classmethod
+    def of_pixels(cls, bgr: Pixels, path: Path) -> TargetImage:
+        """메모리의 BGR 픽셀(편집기에서 저장 전에 자른 영역) → 마스크 없는 target 이미지.
+        `path`는 이름표다 (읽지 않는다)."""
+        image = np.array(bgr[:, :, :3], dtype=np.uint8, copy=True)
+        gray = _u8(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY))
+        image.setflags(write=False)
+        gray.setflags(write=False)
+        return cls(path, image, gray, None)
+
 
 def load_target_image(path: Path) -> TargetImage:
     """이미지 파일 → `TargetImage`. 없거나 깨졌으면 `target_image_invalid`."""

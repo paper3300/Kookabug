@@ -135,10 +135,12 @@ class Workspace:
         parts = _rel_parts(rel)
         return None if parts is None else self.root.joinpath(*parts)
 
-    def resolve_from(self, base: str, rel: str) -> str | None:
+    @staticmethod
+    def resolve_from(base: str, rel: str) -> str | None:
         """`base`(루트 기준 파일 경로)가 있는 폴더 기준 상대 경로 → 루트 기준 경로.
 
-        `..`은 쓸 수 있지만 루트 밖으로 나가면 None. target의 `image`가 이 규칙이다.
+        `..`은 쓸 수 있지만 루트 밖으로 나가면 None. target의 `image`가 이 규칙이다. 경로 계산만
+        하므로(루트를 쓰지 않음) 워크스페이스 없이도 부를 수 있다(daemon target 편집).
         """
         if not isinstance(rel, str) or not rel or "\\" in rel or rel.startswith("/") or ":" in rel:
             return None

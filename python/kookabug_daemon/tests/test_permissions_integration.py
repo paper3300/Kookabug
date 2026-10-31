@@ -32,7 +32,6 @@ from kookabug_core.service import (
     WorkspaceService,
 )
 from kookabug_daemon.client import DaemonClient, DaemonError
-from kookabug_daemon.methods import Call, MethodSpec, registry
 
 pytestmark = [pytest.mark.process, pytest.mark.timeout(180)]
 
@@ -225,25 +224,6 @@ def test_ui_principal_not_judged_under_deny_policy(tmp_path: Path) -> None:
 # ---------------------------------------------------------------- 편집: 두 경로
 
 
-def stub_target_save() -> MethodSpec:
-    """`target.save`가 아직 없는 daemon(T6 전)에서 판정 경로를 검사하는 대역: 판정을 지나면 파일을
-    쓴다. 그래서 거부·승인 필요면 파일이 생기지 않음으로 집행까지 본다."""
-
-    async def save(call: Call) -> dict[str, Any]:
-        path = call.daemon.root / str(call.params["path"])
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("{}", encoding="utf-8")
-        raise AssertionError("판정을 지나면 안 된다")
-
-    return MethodSpec(save, lambda call: str(call.params["path"]))
-
-
-def edit_methods() -> dict[str, MethodSpec]:
-    methods = registry()
-    methods.setdefault("target.save", stub_target_save())
-    return methods
-
-
 def attempt(client: DaemonClient, tool: str) -> DaemonError:
     """그 도구에 대응하는 메서드를 부른다 (읽기 도구로 연 뒤). 거부·승인 필요 오류를 돌려준다."""
     with pytest.raises(DaemonError) as caught:
@@ -299,7 +279,7 @@ def test_graph_edit_same_decision_daemon_service(tmp_path: Path, tool: str, poli
     service = WorkspaceService(rig.root, environ=rig.env)
     expected = service.authorize(principal, tool, TOOL_ARGS[tool]).to_dict()
 
-    daemon = ThreadDaemon(rig.root, service=rig.service(), methods=edit_methods())
+    daemon = ThreadDaemon(rig.root, service=rig.service())
     with daemon as d, d.client(agent(attended=attended)) as client:
         error = attempt(client, tool)
     assert error.kind == kind, error

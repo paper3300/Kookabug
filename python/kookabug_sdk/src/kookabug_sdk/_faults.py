@@ -70,6 +70,9 @@ POINTS: Final[dict[str, frozenset[Role]]] = {
     # daemon도 감독자다 (M2 계획 2.3: 잠금 직후, session.json 공개 직전)
     "daemon.after_lock": _SUPERVISOR,
     "daemon.before_session_publish": _SUPERVISOR,
+    # target 저장 (M2 계획 2.9: 새 이미지를 쓴 뒤 소유 기록 전, 기록 뒤 JSON 커밋 전)
+    "target.before_record": _SUPERVISOR,
+    "target.before_commit": _SUPERVISOR,
 }
 
 _POLL_S: Final = 0.01

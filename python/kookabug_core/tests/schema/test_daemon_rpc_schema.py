@@ -112,6 +112,12 @@ def test_envelope_and_params_validate() -> None:
     assert check("TargetSaveParams", {**target, "base_revision": None}) == []
     assert check("TargetSaveParams", {**target, "base_revision": "a" * 64 + ":" + "b" * 64}) == []
     assert check("TargetSaveParams", target)
+    # crop은 선택 (없으면 지금 이미지 그대로 JSON만 저장), 저장 결과의 preview는 그때 null
+    no_crop = {k: v for k, v in target.items() if k != "crop"}
+    assert check("TargetSaveParams", {**no_crop, "base_revision": "a" * 64 + ":" + "b" * 64}) == []
+    result = {"image": "targets/a.png", "revision": "a" * 64 + ":missing", "warnings": []}
+    assert check("TargetSaveResult", {**result, "preview": None}) == []
+    assert check("TargetSaveResult", result)
     # preview 템플릿은 crop 또는 image 하나
     preview = {"frame_id": "f", "seq": 1, "spec": {}}
     assert check("TargetPreviewParams", {**preview, "template": {"crop": crop}}) == []

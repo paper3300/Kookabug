@@ -916,28 +916,28 @@ export interface PreviewResult {
   threshold: number;
 }
 /**
- * 새 파일이면 base_revision null(파일이 있으면 exists), 기존 파일이면 target.open의 revision (M2 계획 2.9 저장 단계)
+ * 새 파일이면 base_revision null(파일이 있으면 exists), 기존 파일이면 target.open의 revision (M2 계획 2.9 저장 단계). crop이 없으면 이미지를 새로 만들지 않고 지금 image·recorded를 그대로 둔 채 JSON만 저장한다(기존 파일만, 검색 범위는 recorded.client_size 기준)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "TargetSaveParams".
  */
 export interface TargetSaveParams {
   base_revision: TargetRevision | null;
-  crop: CropRef;
+  crop?: CropRef;
   path: WorkspacePath;
   spec: {
     [k: string]: unknown | undefined;
   };
 }
 /**
- * preview = 저장한 파일을 다시 읽어 같은 정지 화면에서 찾은 결과 (바로 매칭)
+ * preview = 저장한 파일을 다시 읽어 crop의 정지 화면에서 찾은 결과 (바로 매칭). crop 없이 저장했으면 찾을 정지 화면이 없어 null
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "TargetSaveResult".
  */
 export interface TargetSaveResult {
   image: WorkspacePath;
-  preview: PreviewResult;
+  preview: PreviewResult | null;
   revision: TargetRevision;
   warnings: string[];
 }

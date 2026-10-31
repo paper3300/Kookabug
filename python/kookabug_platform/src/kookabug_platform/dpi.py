@@ -15,17 +15,20 @@ import math
 from collections.abc import Iterator
 from contextlib import contextmanager
 from ctypes import wintypes
+from typing import Final
 
 from kookabug_core.win import dpi as _core_dpi
 from kookabug_platform.errors import DPI_AWARENESS_UNAVAILABLE, PlatformError
 from kookabug_platform.win32 import user32
 
 __all__ = [
+    "NORMALIZED_DIGITS",
     "client_to_screen",
     "ensure_per_monitor_v2",
     "normalized_to_pixels",
     "offset_point",
     "per_monitor_v2_thread",
+    "pixels_to_normalized",
     "round_half_up",
 ]
 
@@ -74,6 +77,64 @@ def normalized_to_pixels(
     x1 = min(max(round_half_up((x + w) * cw), x0), cw)
     y1 = min(max(round_half_up((y + h) * ch), y0), ch)
     return x0, y0, x1 - x0, y1 - y0
+
+
+NORMALIZED_DIGITS: Final = 6
+"""정규화 좌표를 저장할 때의 소수 자릿수 (target `search.region`)."""
+_STEP: Final = 10.0**-NORMALIZED_DIGITS
+_MAX_STEPS: Final = 1000
+
+
+def pixels_to_normalized(
+    rect: Rect | tuple[int, int, int, int], client_size: tuple[int, int]
+) -> tuple[float, float, float, float]:
+    """`normalized_to_pixels`의 역: 클라이언트 물리 픽셀 사각형 → 정규화 `(x, y, w, h)`.
+
+    소수 `NORMALIZED_DIGITS`자리에서 반올림하고, 그 값을 `normalized_to_pixels`로 다시 바꾼 사각형이
+    `rect`와 다르면 그 변을 한 단계(`1e-6`)씩 바깥(왼쪽·위는 작게, 오른쪽·아래는 크게)부터 옮겨
+    같아지는 값을 고른다. 그래서 저장한 검색 범위가 같은 클라이언트 크기에서 같은 픽셀이 된다.
+    사각형은 클라이언트 안이어야 한다(아니면 `ValueError`).
+    """
+    x, y, w, h = (int(v) for v in rect)
+    cw, ch = client_size
+    if cw <= 0 or ch <= 0 or w < 0 or h < 0 or x < 0 or y < 0 or x + w > cw or y + h > ch:
+        raise ValueError(f"사각형 {rect}이(가) 클라이언트 {client_size} 안이 아니다")
+    nx = _edge(x, cw, outward=-1)
+    ny = _edge(y, ch, outward=-1)
+    nx1 = _edge(x + w, cw, outward=1)
+    ny1 = _edge(y + h, ch, outward=1)
+    nw = _length(nx, nx1, x + w, cw)
+    nh = _length(ny, ny1, y + h, ch)
+    result = (nx, ny, nw, nh)
+    if normalized_to_pixels(result, client_size) != (x, y, w, h):
+        raise ValueError(f"사각형 {rect}을(를) 정규화 좌표로 왕복할 수 없다 ({client_size})")
+    return result
+
+
+def _fits(value: float, pixel: int, size: int) -> bool:
+    return min(max(round_half_up(value * size), 0), size) == pixel
+
+
+def _edge(pixel: int, size: int, *, outward: int) -> float:
+    """`round(v * size) == pixel`인 6자리 소수 v. 반올림한 값이 안 맞으면 바깥 방향부터 찾는다."""
+    base = round(pixel / size, NORMALIZED_DIGITS)
+    for k in range(_MAX_STEPS):
+        for sign in (outward, -outward) if k else (0,):
+            value = round(min(max(base + sign * k * _STEP, 0.0), 1.0), NORMALIZED_DIGITS)
+            if _fits(value, pixel, size):
+                return value
+    raise ValueError(f"픽셀 {pixel}을(를) 크기 {size}의 정규화 좌표로 나타낼 수 없다")
+
+
+def _length(start: float, end: float, pixel_end: int, size: int) -> float:
+    """`start + w`가 `pixel_end`로 돌아오는 6자리 소수 w (덧셈 오차를 피해 한 단계씩 고친다)."""
+    base = round(end - start, NORMALIZED_DIGITS)
+    for k in range(_MAX_STEPS):
+        for sign in (1, -1) if k else (0,):
+            value = round(min(max(base + sign * k * _STEP, 0.0), 1.0), NORMALIZED_DIGITS)
+            if _fits(start + value, pixel_end, size):
+                return value
+    raise ValueError(f"끝 픽셀 {pixel_end}을(를) 크기 {size}의 정규화 길이로 나타낼 수 없다")
 
 
 def offset_point(origin: tuple[int, int], point: tuple[int, int]) -> tuple[int, int]:

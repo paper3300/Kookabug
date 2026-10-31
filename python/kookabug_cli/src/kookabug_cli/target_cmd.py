@@ -24,8 +24,8 @@ from typing import Any, Final, TextIO
 from kookabug_platform.errors import PlatformError
 from kookabug_platform.frames import decode_image, encode_png
 from kookabug_platform.preview import render_preview
+from kookabug_platform.report import candidate_json, result_json
 from kookabug_platform.vision import (
-    Candidate,
     FindResult,
     FrameMeta,
     Pixels,
@@ -136,42 +136,6 @@ def _capture_window(title: str | None, hwnd: int | None) -> Frame:
         "dpi": captured.info.dpi,
     }
     return Frame(captured.pixels, meta, source)
-
-
-def candidate_json(candidate: Candidate | None) -> dict[str, Any] | None:
-    if candidate is None:
-        return None
-    return {
-        "method": candidate.method,
-        "scale": round(candidate.scale, 4),
-        "rect": list(candidate.rect),
-        "score": round(candidate.score, 4),
-        "color_diff": None if candidate.color_diff is None else round(candidate.color_diff, 2),
-        "accepted": candidate.accepted,
-        "reason": candidate.reason or None,
-    }
-
-
-def result_json(result: FindResult) -> dict[str, Any]:
-    match = result.match
-    return {
-        "found": result.found,
-        "match": None
-        if match is None
-        else {
-            "rect": list(match.rect),
-            "score": round(match.score, 4),
-            "scale": round(match.scale, 4),
-            "method": match.method,
-            "click": list(match.click),
-        },
-        "best": candidate_json(result.best),
-        "threshold": result.threshold,
-        "expected_scale": round(result.expected_scale, 4),
-        "search": list(result.search),
-        "candidates": [candidate_json(c) for c in result.candidates],
-        "elapsed_ms": round(result.elapsed_ms, 1),
-    }
 
 
 def _default_out(target: Path) -> Path:
