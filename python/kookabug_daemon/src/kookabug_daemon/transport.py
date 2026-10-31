@@ -43,6 +43,7 @@ from kookabug_daemon.protocol import (
     METHOD_NOT_FOUND,
     PARSE_ERROR,
     PROTOCOL,
+    InvalidParams,
     RequestFailed,
     decode,
     diagnostics_data,
@@ -302,6 +303,10 @@ class Host(Protocol):
 
     def connections_changed(self) -> None: ...
 
+    def connection_closed(self, number: int) -> None:
+        """연결이 끝났다 (그 연결이 쥔 문서 참조 등을 푼다)."""
+        ...
+
 
 @dataclass
 class Transport:
@@ -349,6 +354,10 @@ class Transport:
     def count(self) -> int:
         return len(self.connections)
 
+    def find(self, number: int) -> Connection | None:
+        """연결 번호로 찾는다 (끝난 연결이면 None)."""
+        return next((c for c in self.connections if c.number == number), None)
+
     async def handler(self, ws: ServerConnection) -> None:
         conn = Connection(ws, next(self._numbers), self.limits)
         self.connections.add(conn)
@@ -365,6 +374,7 @@ class Transport:
             writer.cancel()
             await asyncio.gather(writer, return_exceptions=True)
             self.connections.discard(conn)
+            self.host.connection_closed(conn.number)
             self.host.connections_changed()
 
     async def _refuse(self, conn: Connection, message: Mapping[str, Any], code: int) -> bool:
@@ -515,6 +525,9 @@ class Transport:
             result = await spec.handler(call)
         except RequestFailed as failed:
             conn.send(error_message(request_id, **_fields(failed)))
+            return
+        except InvalidParams as exc:
+            fail(INVALID_PARAMS, exc.message, exc.data or None)
             return
         except asyncio.CancelledError:
             raise

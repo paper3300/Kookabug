@@ -33,6 +33,7 @@ __all__ = [
     "PROTOCOL",
     "REQUEST_FAILED",
     "UI_ONLY",
+    "InvalidParams",
     "MethodInfo",
     "RequestFailed",
     "decode",
@@ -170,6 +171,16 @@ class RequestFailed(Exception):
             "message": self.message,
             "data": {"code": self.code, **self.fields},
         }
+
+
+class InvalidParams(Exception):
+    """-32602 invalid_params: 형식 검사는 지났지만 그 메서드가 받을 수 없는 인자 (예: 그래프
+    메서드에 `*.graph.json`이 아닌 경로). `data`는 사람이 읽는 정보다."""
+
+    def __init__(self, text: str, /, **data: Any) -> None:
+        super().__init__(text)
+        self.message = text
+        self.data = data
 
 
 def success_message(request_id: int, result: Any) -> dict[str, Any]:

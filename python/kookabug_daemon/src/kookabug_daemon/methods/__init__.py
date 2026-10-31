@@ -11,9 +11,13 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Protocol
 
 from kookabug_core.permissions import Principal
+
+if TYPE_CHECKING:
+    from kookabug_daemon.documents import DocumentTable, GraphChecker
 
 __all__ = ["Call", "DaemonContext", "MethodSpec", "RunsLike", "no_arg", "registry"]
 
@@ -35,6 +39,22 @@ class DaemonContext(Protocol):
 
     @property
     def runs(self) -> RunsLike: ...
+
+    @property
+    def root(self) -> Path:
+        """워크스페이스 루트 (해석한 절대 경로)."""
+        ...
+
+    @property
+    def platform_fake(self) -> Path | None:
+        """숨은 `--platform-fake` 사양 (상태 바 정보에 쓴다)."""
+        ...
+
+    @property
+    def documents(self) -> DocumentTable: ...
+
+    @property
+    def checker(self) -> GraphChecker: ...
 
     def request_shutdown(self, *, force: bool, reason: str) -> None: ...
 
@@ -67,6 +87,6 @@ class MethodSpec:
 
 def registry() -> dict[str, MethodSpec]:
     """이 daemon이 처리하는 메서드. 계약에 있지만 여기 없는 메서드는 `method_not_found`다."""
-    from kookabug_daemon.methods import session
+    from kookabug_daemon.methods import graph, nodes, session, workspace
 
-    return {**session.METHODS}
+    return {**session.METHODS, **workspace.METHODS, **nodes.METHODS, **graph.METHODS}

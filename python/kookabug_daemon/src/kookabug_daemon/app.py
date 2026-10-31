@@ -34,6 +34,7 @@ from typing import Any, Final, TextIO
 
 from kookabug_core.service import WorkspaceService
 from kookabug_core.workspace import WorkspaceError
+from kookabug_daemon.documents import DocumentTable, GraphChecker
 from kookabug_daemon.methods import MethodSpec, RunsLike, registry
 from kookabug_daemon.methods.tools import Authorizer
 from kookabug_daemon.options import DEFAULT_IDLE_TIMEOUT_S, SESSION_WAIT_S, add_arguments
@@ -50,6 +51,7 @@ from kookabug_daemon.session import (
     write_session,
 )
 from kookabug_daemon.transport import Limits, Transport
+from kookabug_daemon.watch import DocChange, Watcher
 from kookabug_sdk import _faults
 
 __all__ = [
@@ -72,6 +74,8 @@ EXIT_OK: Final = 0
 EXIT_USAGE: Final = 6
 """사용법·환경 오류 (CLI와 같은 값)."""
 LOG_KEEP: Final = 20
+WATCH_INTERVAL_S: Final = 1.0
+"""파일 변경 폴링 간격 (M2 계획 Q10)."""
 
 
 class NoRuns:
@@ -92,6 +96,7 @@ class DaemonConfig:
     platform_fake: Path | None = None
     log_level: str = "info"
     limits: Limits = field(default_factory=Limits)
+    watch_interval_s: float = WATCH_INTERVAL_S
 
 
 class Daemon:
@@ -110,6 +115,8 @@ class Daemon:
         self.service = service or WorkspaceService(self.root)
         self._runs: RunsLike = runs or NoRuns()
         self._authorizer = Authorizer(self.service)
+        self._documents = DocumentTable(self.root)
+        self._checker = GraphChecker(self.root)
         self.transport = Transport(self, registry() if methods is None else methods, config.limits)
         self.start_id = secrets.token_hex(16)
         self.token = secrets.token_hex(32)
@@ -139,6 +146,18 @@ class Daemon:
     def shutting_down(self) -> bool:
         return self._shutting_down
 
+    @property
+    def platform_fake(self) -> Path | None:
+        return self.config.platform_fake
+
+    @property
+    def documents(self) -> DocumentTable:
+        return self._documents
+
+    @property
+    def checker(self) -> GraphChecker:
+        return self._checker
+
     def credentials(self) -> tuple[str, str, str] | None:
         if self.session is None:
             return None
@@ -146,6 +165,21 @@ class Daemon:
 
     def connections_changed(self) -> None:
         self._idle_since = None
+
+    def connection_closed(self, number: int) -> None:
+        self._documents.release_connection(number)
+
+    # ---------------------------------------------------------------- 파일 변경 알림
+
+    def _publish_changes(self, paths: list[str], changes: list[DocChange]) -> None:
+        """감시 결과를 알린다 (이벤트 루프 안). 문서 변경은 감시가 정한 연결에만 보낸다."""
+        if paths:
+            self.transport.broadcast("workspace.changed", {"paths": paths})
+        for change in changes:
+            conn = self.transport.find(change.connection)
+            if conn is not None:
+                params = {"doc_id": change.entry.doc_id, "revision": change.revision}
+                self.transport.notify(conn, "graph.changed", params)
 
     # ---------------------------------------------------------------- 수명
 
@@ -203,15 +237,26 @@ class Daemon:
                 log.info("포트 %d에서 받는다 (start_id %s)", port, self.start_id)
                 if on_ready is not None:
                     on_ready(info)
-                watch = asyncio.create_task(self._idle_watch())
+                watcher = Watcher(
+                    self.root,
+                    self._documents,
+                    self._publish_changes,
+                    self.config.watch_interval_s,
+                )
+                tasks = [
+                    asyncio.create_task(self._idle_watch()),
+                    asyncio.create_task(watcher.run()),
+                ]
                 if not self._shutting_down:
                     await self._stop.wait()
                 if self._force:
                     await asyncio.to_thread(self._runs.cancel_all_and_wait)
                 await self.transport.close_all(self.exit_reason or "shutdown")
-                watch.cancel()
-                await asyncio.gather(watch, return_exceptions=True)
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
         finally:
+            self._checker.close()
             if self.session is not None:
                 await asyncio.to_thread(remove_session, self.root, self.start_id)
         return self.exit_reason or "shutdown"

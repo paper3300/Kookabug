@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -35,6 +36,7 @@ __all__ = [
     "DaemonProcess",
     "FakeRuns",
     "ThreadDaemon",
+    "copy_sample_workspace",
     "daemon_env",
     "make_workspace",
 ]
@@ -48,6 +50,15 @@ def make_workspace(root: Path, data: Mapping[str, Any] | None = None) -> Path:
         json.dumps(dict(data or {"format": "kookabug.workspace/0"})), encoding="utf-8"
     )
     return root.resolve()
+
+
+def copy_sample_workspace(dest: Path) -> Path:
+    """예제 워크스페이스(`fixtures/sample-game/workspace`) 사본 (`runs/`·`.kookabug/` 제외)."""
+    from kb_testing.packaging import REPO_ROOT
+
+    source = REPO_ROOT / "fixtures" / "sample-game" / "workspace"
+    shutil.copytree(source, dest, ignore=shutil.ignore_patterns("runs", ".kookabug"))
+    return dest.resolve()
 
 
 def daemon_env(tmp_path: Path, **extra: str) -> dict[str, str]:
@@ -137,10 +148,16 @@ class ThreadDaemon:
         limits: Limits | None = None,
         idle_timeout_s: float = 600.0,
         environ: Mapping[str, str] | None = None,
+        watch_interval_s: float = 1.0,
+        platform_fake: Path | None = None,
     ) -> None:
         self.root = root
         config = DaemonConfig(
-            workspace=root, idle_timeout_s=idle_timeout_s, limits=limits or Limits()
+            workspace=root,
+            idle_timeout_s=idle_timeout_s,
+            limits=limits or Limits(),
+            watch_interval_s=watch_interval_s,
+            platform_fake=platform_fake,
         )
         if service is None:
             service = WorkspaceService(root, environ=dict(environ or {}))
