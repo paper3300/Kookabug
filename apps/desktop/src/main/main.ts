@@ -1,35 +1,32 @@
-// Electron 주 프로세스: 창, 보안 기본값, app://·kbimg:// 프로토콜, IPC 다리 (M2 계획 2.10)
+// Electron 주 프로세스: 창, 보안 기본값, app://·kbimg:// 프로토콜, IPC 다리, daemon 관리자 (M2 계획 2.3·2.10)
+import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
-import { app, BrowserWindow, ipcMain, net, protocol, session, shell } from "electron";
-import { checkRendererMethod, checkSender, IpcGuardError, RPC_CHANNEL } from "./ipc-guard";
-import {
-  APP_ORIGIN,
-  APP_SCHEME,
-  cspHeaderValue,
-  isAppUrl,
-  isExternalOpenAllowed,
-  KBIMG_SCHEME,
-  lockedWebPreferences,
-  resolveAppFile,
-  resolveKbimgPath,
-} from "./security";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, shell } from "electron";
+import type { OpenResult, OutputLine, ThemeMode, ThemeState } from "../preload/bridge";
+import { locateCli } from "./cli-locate";
+import { DaemonManager, nodeDeps, parseExtraArgs, sameWorkspacePath } from "./daemon";
+import { createNotificationForwarder, createRpcHandler } from "./ipc";
+import { APP_CHANNEL, checkAppAction, checkSender, EVENT_CHANNEL, IpcGuardError, RPC_CHANNEL } from "./ipc-guard";
+import { handleProtocols, registerSchemes } from "./protocols";
+import { APP_ORIGIN, isExternalOpenAllowed, lockedWebPreferences } from "./security";
+import { checkWorkspaceFolder, isThemeMode, Settings } from "./settings";
 
 const RENDERER_ROOT = path.join(__dirname, "..", "renderer");
 const PRELOAD = path.join(__dirname, "..", "preload", "preload.cjs");
+// 개발 모드: dist/main → 레포 루트 (CLI는 레포 .venv)
+const REPO_ROOT = path.resolve(__dirname, "..", "..", "..", "..");
+const OUTPUT_MAX = 500;
+// 창 배경 (첫 칠하기 전 깜빡임 방지): 시안 --kb-bg
+const WINDOW_BG = { dark: "#1F1F1F", light: "#FFFFFF" } as const;
 
 // 검사·여러 사본 실행용: 사용자 데이터 폴더(단일 인스턴스 잠금 범위)를 바꾼다
 const userDataDir = app.commandLine.getSwitchValue("user-data-dir");
 if (userDataDir) app.setPath("userData", path.resolve(userDataDir));
 
-protocol.registerSchemesAsPrivileged([
-  { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
-  { scheme: KBIMG_SCHEME, privileges: { standard: true, secure: true } },
-]);
+registerSchemes();
 
-// 열린 워크스페이스 루트. daemon 연결(T7)이 정한다
-let workspaceRoot: string | null = null;
 let mainWindow: BrowserWindow | null = null;
+const output: OutputLine[] = [];
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -54,32 +51,134 @@ function lockContents(contents: Electron.WebContents): void {
   });
 }
 
+function send(name: string, data: unknown): void {
+  if (mainWindow !== null && !mainWindow.isDestroyed()) mainWindow.webContents.send(EVENT_CHANNEL, name, data);
+}
+
 function start(): void {
   const ses = session.defaultSession;
   ses.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   ses.setPermissionCheckHandler(() => false);
   ses.setDevicePermissionHandler(() => false);
 
-  protocol.handle(APP_SCHEME, serveApp);
-  protocol.handle(KBIMG_SCHEME, serveKbimg);
-  ipcMain.handle(RPC_CHANNEL, (event, method: unknown) => {
+  const settings = new Settings(app.getPath("userData"));
+  nativeTheme.themeSource = settings.theme;
+  const themeState = (): ThemeState => ({ mode: settings.theme, dark: nativeTheme.shouldUseDarkColors });
+
+  const forward = createNotificationForwarder(send);
+  const manager = new DaemonManager(
+    nodeDeps({
+      client: { kind: "ui", name: "Kookabug", version: app.getVersion() },
+      locateCli: () =>
+        locateCli({
+          env: process.env,
+          packaged: app.isPackaged,
+          installDir: path.dirname(process.execPath),
+          repoRoot: REPO_ROOT,
+          exists: (f) => fs.existsSync(f),
+        }),
+      extraArgs: parseExtraArgs(process.env.KOOKABUG_DAEMON_ARGS),
+    }),
+    {
+      state: (state) => send("daemon.state", state),
+      notification: (method, params) => forward(method, params),
+      log: (level, message) => {
+        const line: OutputLine = { time: new Date().toISOString(), level, message };
+        output.push(line);
+        if (output.length > OUTPUT_MAX) output.splice(0, output.length - OUTPUT_MAX);
+        send("daemon.log", line);
+      },
+    },
+  );
+
+  handleProtocols(RENDERER_ROOT, () => manager.root);
+
+  const rpc = createRpcHandler((method, params, text) => manager.call(method, params, text));
+  ipcMain.handle(RPC_CHANNEL, (event, method: unknown, params: unknown) => {
     guardSender(event);
-    checkRendererMethod(method);
-    // daemon 연결과 params 스키마 검사는 T7
-    throw new Error("daemon에 연결되지 않았다");
+    return rpc(method, params);
   });
 
+  const openWorkspace = (dir: string): OpenResult => {
+    const root = path.resolve(dir);
+    const check = checkWorkspaceFolder(root);
+    if (check !== "ok") return { ok: false, reason: check, path: root };
+    settings.addRecent(root);
+    // 이미 연결된 같은 프로젝트를 다시 고르면 연결을 끊지 않는다
+    const same = manager.root !== null && sameWorkspacePath(manager.root, root);
+    if (!(same && manager.state.status === "connected")) void manager.open(root);
+    return { ok: true, root, name: path.basename(root) };
+  };
+
+  const actions: Record<string, (...args: unknown[]) => unknown> = {
+    async openFolder() {
+      const win = mainWindow;
+      const options: Electron.OpenDialogOptions = { title: "프로젝트 열기", properties: ["openDirectory"] };
+      const picked = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+      if (picked.canceled || picked.filePaths.length === 0) return { ok: false, reason: "canceled" };
+      return openWorkspace(picked.filePaths[0]);
+    },
+    openRecent(dir) {
+      if (typeof dir !== "string" || dir === "") throw new IpcGuardError("경로가 문자열이 아니다");
+      return openWorkspace(dir);
+    },
+    recent: () => settings.recent(),
+    closeWorkspace: () => manager.detach(),
+    themeGet: () => themeState(),
+    themeSet(mode) {
+      if (!isThemeMode(mode)) throw new IpcGuardError(`모르는 테마: ${String(mode)}`);
+      settings.theme = mode;
+      nativeTheme.themeSource = mode as ThemeMode;
+      return themeState();
+    },
+    daemonState: () => manager.state,
+    daemonLog: () => output.slice(),
+    daemonRetry: () => manager.retry(),
+    daemonRestart: () => manager.restartDaemon(),
+    windowControl(action) {
+      const win = mainWindow;
+      if (win === null) return;
+      if (action === "minimize") win.minimize();
+      else if (action === "maximize") {
+        if (win.isMaximized()) win.unmaximize();
+        else win.maximize();
+      } else if (action === "close") win.close();
+      else throw new IpcGuardError(`모르는 창 동작: ${String(action)}`);
+    },
+    windowState: () => ({ maximized: mainWindow?.isMaximized() ?? false }),
+  };
+  ipcMain.handle(APP_CHANNEL, (event, action: unknown, ...args: unknown[]) => {
+    guardSender(event);
+    return actions[checkAppAction(action)](...args);
+  });
+
+  const theme = () => (nativeTheme.shouldUseDarkColors ? "dark" : "light");
   mainWindow = new BrowserWindow({
     title: "Kookabug",
     width: 1440,
     height: 900,
-    backgroundColor: "#1F1F1F",
+    minWidth: 960,
+    minHeight: 600,
+    // 시안 타이틀 바(메뉴·명령 검색·창 버튼)를 그대로 그린다 (2.10 "창")
+    frame: false,
+    backgroundColor: WINDOW_BG[theme()],
     webPreferences: lockedWebPreferences(PRELOAD),
   });
-  mainWindow.on("closed", () => {
-    mainWindow = null;
+  const win = mainWindow;
+  const windowState = () => send("window.state", { maximized: win.isMaximized() });
+  win.on("maximize", windowState);
+  win.on("unmaximize", windowState);
+  nativeTheme.on("updated", () => {
+    if (win.isDestroyed()) return;
+    win.setBackgroundColor(WINDOW_BG[theme()]);
+    send("theme.state", themeState());
   });
-  void mainWindow.loadURL(`${APP_ORIGIN}/index.html`);
+  win.on("closed", () => {
+    mainWindow = null;
+    // daemon은 남는다 (UI를 꺼도 daemon과 실행은 계속된다). 연결만 놓는다
+    manager.detach();
+  });
+  void win.loadURL(`${APP_ORIGIN}/index.html`);
 }
 
 function guardSender(event: Electron.IpcMainInvokeEvent): void {
@@ -90,20 +189,4 @@ function guardSender(event: Electron.IpcMainInvokeEvent): void {
     if (err instanceof IpcGuardError) console.warn(`IPC 거부: ${err.message}`);
     throw err;
   }
-}
-
-async function serveApp(request: Request): Promise<Response> {
-  const file = isAppUrl(request.url) ? resolveAppFile(request.url, RENDERER_ROOT) : null;
-  if (file === null) return new Response("not found", { status: 404 });
-  const res = await net.fetch(pathToFileURL(file).toString());
-  const headers = new Headers(res.headers);
-  headers.set("Content-Security-Policy", cspHeaderValue());
-  headers.set("X-Content-Type-Options", "nosniff");
-  return new Response(res.body, { status: res.status, headers });
-}
-
-async function serveKbimg(request: Request): Promise<Response> {
-  const result = resolveKbimgPath(request.url, workspaceRoot);
-  if (!result.ok) return new Response(result.reason, { status: 404 });
-  return net.fetch(pathToFileURL(result.file).toString());
 }

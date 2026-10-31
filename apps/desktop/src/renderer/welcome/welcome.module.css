@@ -1,0 +1,329 @@
+/* 시작 화면: 시안 Setup0Welcome(·Light) 배치 (1120×720 판) */
+.screen {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  background: var(--kb-welcome-bg);
+  color: var(--kb-fg);
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* 프레임 없는 창: 위쪽 띠로 창을 끌고, 오른쪽에 창 버튼 */
+.dragBar {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 32px;
+  display: flex;
+  justify-content: flex-end;
+  -webkit-app-region: drag;
+}
+
+/* 시안은 right 20·top 18. 창 버튼(높이 32) 아래로 내렸다 */
+.toggle {
+  position: absolute;
+  right: 20px;
+  top: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--kb-welcome-toggle-bg);
+  border-radius: 6px;
+  font-size: 12px;
+  z-index: 1;
+}
+
+.toggle button {
+  height: 26px;
+  padding: 0 10px;
+  background: none;
+  color: var(--kb-welcome-toggle-fg);
+  border: 0;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.toggle button[aria-pressed="true"] {
+  background: var(--kb-welcome-toggle-active-bg);
+  color: var(--kb-welcome-toggle-active-fg);
+}
+
+.hero {
+  margin-top: 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  text-align: center;
+}
+
+.brand {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.logo {
+  color: var(--kb-welcome-title-fg);
+}
+
+.wordmark {
+  font-family: var(--kb-font-wordmark);
+  font-weight: 700;
+  font-size: 40px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--kb-welcome-title-fg);
+  margin-bottom: 6px;
+}
+
+.title {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.25;
+  font-weight: 700;
+  color: var(--kb-welcome-title-fg);
+}
+
+.lead {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.8;
+  color: var(--kb-welcome-text-fg);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 9px;
+  border-radius: 6px;
+}
+
+.chipGraph {
+  background: var(--kb-chip-graph-bg);
+  color: var(--kb-chip-graph-fg);
+}
+
+.chipRecord {
+  background: var(--kb-chip-record-bg);
+  color: var(--kb-chip-record-fg);
+}
+
+.chipAgent {
+  background: var(--kb-chip-agent-bg);
+  color: var(--kb-chip-agent-fg);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 46px;
+  padding: 0 22px;
+  background: var(--kb-button-primary-bg);
+  color: var(--kb-button-primary-fg);
+  border: 0;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.error {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--kb-status-error);
+}
+
+.errorPath {
+  font-size: 12px;
+  color: var(--kb-welcome-text-fg);
+}
+
+.recent {
+  margin-top: 40px;
+  width: 520px;
+  max-width: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.recentTitle {
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--kb-welcome-text-fg);
+}
+
+.recentList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.recentItem {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 5px 8px;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.recentItem:hover {
+  background: var(--kb-welcome-toggle-bg);
+}
+
+.recentName {
+  flex: 0 0 auto;
+  color: var(--kb-link-fg);
+}
+
+.recentPath {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--kb-welcome-text-fg);
+  font-size: 12px;
+}
+
+/* 툴 미리보기 그림 (최근 프로젝트가 없을 때) */
+.preview {
+  position: absolute;
+  left: 150px;
+  right: 150px;
+  top: 452px;
+  height: 320px;
+  display: flex;
+  background: var(--kb-preview-bg);
+  border: 1px solid var(--kb-preview-border);
+  border-radius: 10px 10px 0 0;
+  overflow: hidden;
+  opacity: 0.7;
+}
+
+.previewActivity {
+  flex: 0 0 40px;
+  border-right: 1px solid var(--kb-preview-line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding-top: 14px;
+}
+
+.previewIcon,
+.previewIconDim {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--kb-preview-icon);
+}
+
+.previewIconDim {
+  background: var(--kb-preview-icon-dim);
+}
+
+.previewSide {
+  flex: 0 0 170px;
+  border-right: 1px solid var(--kb-preview-line);
+  padding: 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.previewBar,
+.previewBarDim {
+  height: 7px;
+  border-radius: 4px;
+  background: var(--kb-preview-bar);
+}
+
+.previewBarDim {
+  background: var(--kb-preview-bar-dim);
+  align-self: flex-start;
+}
+
+.previewCanvas {
+  position: relative;
+  flex: 1 1 auto;
+  background-color: var(--kb-preview-canvas);
+  background-image: radial-gradient(var(--kb-preview-dot) 1px, transparent 1px);
+  background-size: 14px 14px;
+}
+
+.previewNode {
+  position: absolute;
+  width: 120px;
+  height: 64px;
+  border-radius: 4px;
+  background: var(--kb-preview-node);
+  border: 1px solid var(--kb-preview-node-border);
+}
+
+.headBlue,
+.headGreen,
+.headPurple {
+  height: 18px;
+  border-radius: 3px 3px 0 0;
+}
+
+.headBlue {
+  background: var(--kb-preview-head-blue);
+}
+
+.headGreen {
+  background: var(--kb-preview-head-green);
+}
+
+.headPurple {
+  background: var(--kb-preview-head-purple);
+}
+
+.previewWire {
+  position: absolute;
+  top: 82px;
+  width: 50px;
+  height: 2px;
+  background: var(--kb-preview-wire);
+}
+
+.previewAgent {
+  flex: 0 0 180px;
+  border-left: 1px solid var(--kb-preview-line);
+  padding: 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.previewPill {
+  width: 110px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--kb-preview-bar-dim);
+}

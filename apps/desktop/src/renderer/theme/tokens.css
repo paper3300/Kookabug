@@ -1,0 +1,227 @@
+/* 색 토큰 (M2 계획 2.10 테마, 2.12). 색은 이 파일에만 쓴다. 컴포넌트는 var(--kb-…)만 쓴다
+   (tokens.test.ts의 test_no_raw_colors_outside_tokens).
+
+   - 역할 토큰: tools/design-ref/roles.json의 역할 이름 그대로(--kb-<역할의 . → ->). 값은 시안
+     Main·Setup0Welcome(다크)과 MainLight·Setup0WelcomeLight(라이트)의 같은 요소에서 뽑은 값과 같아야
+     한다 (tokens.test.ts가 build/design-ref/tokens.json과 대조)
+   - 그 밖의 토큰: 시안 다크·라이트 파일의 같은 자리 색 쌍(다크 → 라이트 대응이 1:1)에서 가져왔다.
+     시안에 없는 상태(대기 상태 바·연결 띠·창 닫기 강조)는 따로 적었다 */
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* 역할 토큰 (roles.json) */
+  --kb-bg: #1f1f1f;
+  --kb-fg: #cccccc;
+  --kb-fg-muted: #9d9d9d;
+  --kb-border: #2b2b2b;
+  --kb-accent: #0078d4;
+  --kb-titlebar-bg: #181818;
+  --kb-titlebar-fg: #cccccc;
+  --kb-titlebar-search-bg: #222222;
+  --kb-activitybar-bg: #181818;
+  --kb-activitybar-fg: #868686;
+  --kb-activitybar-active-fg: #e7e7e7;
+  --kb-sidebar-bg: #181818;
+  --kb-sidebar-fg: #cccccc;
+  --kb-input-bg: #313131;
+  --kb-input-border: #3c3c3c;
+  --kb-tabs-bg: #181818;
+  --kb-tab-active-bg: #1f1f1f;
+  --kb-tab-active-fg: #ffffff;
+  --kb-tab-inactive-fg: #9d9d9d;
+  --kb-editor-bg: #1f1f1f;
+  --kb-node-bg: #252526;
+  --kb-panel-bg: #181818;
+  --kb-statusbar-running-bg: #005fb8;
+  --kb-statusbar-fg: #ffffff;
+  --kb-status-run: #4daafc;
+  --kb-status-ok: #89d185;
+  --kb-status-warn: #cca700;
+  --kb-status-fail: #f0883e;
+  --kb-status-error: #f48771;
+  --kb-welcome-bg: #1f1f1f;
+  --kb-welcome-title-fg: #f3f3f3;
+  --kb-welcome-text-fg: #a9a9a9;
+  --kb-welcome-toggle-bg: #2a2a2a;
+  --kb-welcome-toggle-fg: #a9a9a9;
+  --kb-welcome-toggle-active-bg: #3c3c3c;
+  --kb-welcome-toggle-active-fg: #f3f3f3;
+  --kb-button-primary-bg: #0078d4;
+  --kb-button-primary-fg: #ffffff;
+  --kb-link-fg: #4daafc;
+  --kb-list-active-bg: #37373d;
+  --kb-list-active-fg: #ffffff;
+  --kb-kind-test: #b392f0;
+  --kb-kind-target: #39c5cf;
+  --kb-chip-graph-bg: #12324d;
+  --kb-chip-graph-fg: #7cc0ff;
+  --kb-chip-record-bg: #4a1f1c;
+  --kb-chip-record-fg: #f8a79b;
+  --kb-chip-agent-bg: #33264a;
+  --kb-chip-agent-fg: #d2c2f0;
+
+  /* 시안의 같은 자리 색 */
+  --kb-fg-strong: #e7e7e7; /* 활성 패널 탭 글자 */
+  --kb-fg-dim: #a9a9a9; /* 경로 표시줄 */
+  --kb-fg-subtle: #858585; /* 로그 시각 */
+  --kb-titlebar-search-border: #2b2b2b;
+  --kb-hover-bg: #2a2a2a;
+  --kb-badge-bg: #616161;
+  --kb-badge-fg: #ffffff;
+  --kb-kind-run: #f0883e;
+  --kb-file-json: #cbcb41;
+  --kb-file-md: #4daafc;
+  --kb-file-modified: #e2c08d;
+  --kb-canvas-dot: #2e2e2e;
+  --kb-log-node: #4ec9b0;
+  --kb-link-hover-fg: #7cc0ff;
+  --kb-menu-bg: #252526;
+  --kb-shadow: rgba(0, 0, 0, 0.4);
+  --kb-statusbar-ok-bg: #16825d; /* 상태 바 "실행 중" 칸 */
+  /* 시작 화면 툴 미리보기 그림 */
+  --kb-preview-bg: #181818;
+  --kb-preview-border: #2e2e2e;
+  --kb-preview-line: #2b2b2b;
+  --kb-preview-icon: #3a3a3a;
+  --kb-preview-icon-dim: #2c2c2c;
+  --kb-preview-bar: #333333;
+  --kb-preview-bar-dim: #2a2a2a;
+  --kb-preview-canvas: #1f1f1f;
+  --kb-preview-dot: #2c2c2c;
+  --kb-preview-node: #252526;
+  --kb-preview-node-border: #3c3c3c;
+  --kb-preview-head-blue: #1b3a57;
+  --kb-preview-head-green: #1e3d2f;
+  --kb-preview-head-purple: #3b2a55;
+  --kb-preview-wire: #555555;
+
+  /* 시안에 없는 상태 */
+  --kb-statusbar-idle-bg: #181818; /* 대기 상태 바: 실행 중(파랑)과 구분되는 무채색 = 타이틀 바 색 */
+  --kb-statusbar-idle-fg: #cccccc;
+  --kb-banner-info-bg: #12324d; /* 연결 중 띠: 시안 칩·노드 머리의 파랑 */
+  --kb-banner-info-fg: #7cc0ff;
+  --kb-banner-warn-bg: #4a3b1c; /* 끊김 띠: 시안 경고 노드 */
+  --kb-banner-warn-fg: #e2c08d;
+  --kb-banner-error-bg: #4a1f1c; /* 오류 띠: 시안 녹화 칩의 빨강 */
+  --kb-banner-error-fg: #f8a79b;
+  --kb-close-hover-bg: #c42b1c; /* 창 닫기 버튼 강조 (Windows 기본) */
+  --kb-close-hover-fg: #ffffff;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* 역할 토큰 (roles.json) */
+  --kb-bg: #ffffff;
+  --kb-fg: #3b3b3b;
+  --kb-fg-muted: #666666;
+  --kb-border: #e5e5e5;
+  --kb-accent: #005fb8;
+  --kb-titlebar-bg: #f8f8f8;
+  --kb-titlebar-fg: #3b3b3b;
+  --kb-titlebar-search-bg: #ffffff;
+  --kb-activitybar-bg: #f8f8f8;
+  --kb-activitybar-fg: #6e6e6e;
+  --kb-activitybar-active-fg: #1f1f1f;
+  --kb-sidebar-bg: #f8f8f8;
+  --kb-sidebar-fg: #3b3b3b;
+  --kb-input-bg: #ffffff;
+  --kb-input-border: #cecece;
+  --kb-tabs-bg: #f8f8f8;
+  --kb-tab-active-bg: #ffffff;
+  --kb-tab-active-fg: #111111;
+  --kb-tab-inactive-fg: #666666;
+  --kb-editor-bg: #ffffff;
+  --kb-node-bg: #ffffff;
+  --kb-panel-bg: #f8f8f8;
+  --kb-statusbar-running-bg: #005fb8;
+  --kb-statusbar-fg: #ffffff;
+  --kb-status-run: #005fb8;
+  --kb-status-ok: #2e7d32;
+  --kb-status-warn: #946b00;
+  --kb-status-fail: #b85c00;
+  --kb-status-error: #b42318;
+  --kb-welcome-bg: #ffffff;
+  --kb-welcome-title-fg: #111111;
+  --kb-welcome-text-fg: #5c5c5c;
+  --kb-welcome-toggle-bg: #ededed;
+  --kb-welcome-toggle-fg: #5c5c5c;
+  --kb-welcome-toggle-active-bg: #cecece;
+  --kb-welcome-toggle-active-fg: #111111;
+  --kb-button-primary-bg: #005fb8;
+  --kb-button-primary-fg: #ffffff;
+  --kb-link-fg: #005fb8;
+  --kb-list-active-bg: #e4e6f1;
+  --kb-list-active-fg: #111111;
+  --kb-kind-test: #7048b8;
+  --kb-kind-target: #00737d;
+  --kb-chip-graph-bg: #dcebfa;
+  --kb-chip-graph-fg: #0b63b6;
+  --kb-chip-record-bg: #fde7e9;
+  --kb-chip-record-fg: #b42318;
+  --kb-chip-agent-bg: #eee6fa;
+  --kb-chip-agent-fg: #5e43a6;
+
+  /* 시안의 같은 자리 색 */
+  --kb-fg-strong: #1f1f1f;
+  --kb-fg-dim: #5c5c5c;
+  --kb-fg-subtle: #767676;
+  --kb-titlebar-search-border: #e5e5e5;
+  --kb-hover-bg: #ededed;
+  --kb-badge-bg: #6e6e6e;
+  --kb-badge-fg: #ffffff;
+  --kb-kind-run: #b85c00;
+  --kb-file-json: #7a7a00;
+  --kb-file-md: #005fb8;
+  --kb-file-modified: #7a5600;
+  --kb-canvas-dot: #e1e1e1;
+  --kb-log-node: #0b7563;
+  --kb-link-hover-fg: #0b63b6;
+  --kb-menu-bg: #ffffff;
+  --kb-shadow: rgba(0, 0, 0, 0.18);
+  --kb-statusbar-ok-bg: #16825d;
+  --kb-preview-bg: #f8f8f8;
+  --kb-preview-border: #e1e1e1;
+  --kb-preview-line: #e5e5e5;
+  --kb-preview-icon: #d9d9d9;
+  --kb-preview-icon-dim: #e6e6e6;
+  --kb-preview-bar: #e8e8e8;
+  --kb-preview-bar-dim: #ededed;
+  --kb-preview-canvas: #ffffff;
+  --kb-preview-dot: #e6e6e6;
+  --kb-preview-node: #ffffff;
+  --kb-preview-node-border: #cecece;
+  --kb-preview-head-blue: #dcebfa;
+  --kb-preview-head-green: #ddf2e3;
+  --kb-preview-head-purple: #eee6fa;
+  --kb-preview-wire: #9a9a9a;
+
+  /* 시안에 없는 상태 */
+  --kb-statusbar-idle-bg: #f8f8f8;
+  --kb-statusbar-idle-fg: #3b3b3b;
+  --kb-banner-info-bg: #dcebfa;
+  --kb-banner-info-fg: #0b63b6;
+  --kb-banner-warn-bg: #fbefd5;
+  --kb-banner-warn-fg: #7a5600;
+  --kb-banner-error-bg: #fde7e9;
+  --kb-banner-error-fg: #b42318;
+  --kb-close-hover-bg: #c42b1c;
+  --kb-close-hover-fg: #ffffff;
+}
+
+/* 글꼴·치수 (시안 Main: 본문 13px, 작은 글자 11px, 고정폭 12px) */
+:root {
+  --kb-font: "Noto Sans KR", "Segoe UI", system-ui, sans-serif;
+  --kb-font-mono: "JetBrains Mono", Consolas, monospace;
+  --kb-font-wordmark: Fraunces, Georgia, serif;
+  --kb-font-size: 13px;
+  --kb-font-size-small: 11px;
+  --kb-titlebar-height: 36px; /* + 아래 테두리 1px = 시안 37px */
+  --kb-activitybar-width: 48px; /* + 오른쪽 테두리 1px */
+  --kb-sidebar-width: 249px; /* + 오른쪽 테두리 1px */
+  --kb-row-height: 22px;
+  --kb-header-height: 35px;
+  --kb-statusbar-height: 22px;
+  --kb-panel-height: 260px;
+}

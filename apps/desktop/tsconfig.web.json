@@ -12,5 +12,6 @@
     "isolatedModules": true,
     "noImplicitOverride": true
   },
-  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx"]
+  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx"],
+  "exclude": ["src/renderer/**/*.test.ts"]
 }

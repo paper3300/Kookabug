@@ -8,31 +8,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { launchBrowser, openReference, OUT_DIR, REPO_ROOT, TemplateError } from "./render.mjs";
+import { checkRoleTokens, parseThemeBlocks, THEMES, tokenName, toHex } from "./tokens-check.mjs";
+
+// 대조 함수는 tokens-check.mjs (브라우저 없이 앱 vitest도 쓴다)
+export { checkRoleTokens, parseThemeBlocks, THEMES, tokenName, toHex };
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-export const THEMES = ["dark", "light"];
-
 export function loadRoles() {
   return JSON.parse(fs.readFileSync(path.join(HERE, "roles.json"), "utf8"));
-}
-
-// CSS 변수 이름: "tab.active.bg" → "--kb-tab-active-bg"
-export function tokenName(role) {
-  return `--kb-${role.replaceAll(".", "-")}`;
-}
-
-// 계산된 색 → #RRGGBB (불투명) 또는 #RRGGBBAA
-export function toHex(css) {
-  const m = css.match(/^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([\d.]+%?))?\s*\)$/);
-  if (!m) {
-    if (/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(css)) return css.toUpperCase();
-    throw new TemplateError(`색으로 읽을 수 없다: ${css}`);
-  }
-  const hex = (n) => Number(n).toString(16).padStart(2, "0").toUpperCase();
-  const rgb = `#${hex(m[1])}${hex(m[2])}${hex(m[3])}`;
-  if (m[4] === undefined) return rgb;
-  const a = m[4].endsWith("%") ? Number(m[4].slice(0, -1)) / 100 : Number(m[4]);
-  return a >= 1 ? rgb : `${rgb}${hex(Math.round(a * 255))}`;
 }
 
 // 페이지 안에서 돈다: 규칙마다 요소를 찾아 계산된 값을 돌려준다
@@ -105,43 +88,6 @@ export async function extractRoles(browser, roles = loadRoles()) {
     }
   }
   return { colors, metrics };
-}
-
-// tokens.css의 `:root[data-theme="dark"]`·`[data-theme="light"]` 블록에서 변수 값을 읽는다
-export function parseThemeBlocks(cssText) {
-  const out = { dark: {}, light: {} };
-  const blockRe = /([^{}]*)\{([^{}]*)\}/g;
-  for (const m of cssText.matchAll(blockRe)) {
-    const theme = m[1].match(/\[data-theme=["']?(dark|light)["']?\]/)?.[1];
-    if (!theme) continue;
-    for (const d of m[2].matchAll(/(--[\w-]+)\s*:\s*([^;]+);?/g)) out[theme][d[1]] = d[2].trim();
-  }
-  return out;
-}
-
-// 역할 색 토큰이 다크·라이트 시안 값과 같은지. 문제 목록을 돌려준다
-export function checkRoleTokens(cssText, tokens) {
-  const blocks = parseThemeBlocks(cssText);
-  const problems = [];
-  for (const [role, values] of Object.entries(tokens.colors)) {
-    for (const theme of THEMES) {
-      const name = tokenName(role);
-      const got = blocks[theme][name];
-      if (got === undefined) {
-        problems.push(`${theme} ${name}: 없다`);
-        continue;
-      }
-      let hex;
-      try {
-        hex = toHex(got.toUpperCase().startsWith("#") ? got : got.toLowerCase());
-      } catch {
-        problems.push(`${theme} ${name}: 색이 아니다 (${got})`);
-        continue;
-      }
-      if (hex !== values[theme]) problems.push(`${theme} ${name}: ${hex}, 시안 ${values[theme]}`);
-    }
-  }
-  return problems;
 }
 
 async function main() {

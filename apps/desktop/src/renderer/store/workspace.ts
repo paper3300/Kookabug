@@ -1,0 +1,213 @@
+// 열린 워크스페이스·daemon 연결·탐색기 항목·출력 줄 (M2 계획 2.3·2.11)
+import type { ResultOf } from "@kookabug/schema";
+import { create } from "zustand";
+import type { DaemonState, OpenResult, OutputLine, RecentProject } from "../../preload/bridge";
+import type { TreeEntry } from "../explorer/tree";
+import { client, toRpcError } from "../rpc/client";
+import { RunCursors } from "../rpc/runCursor";
+import { SessionRecovery } from "../rpc/recovery";
+import { closeAllTabs } from "./tabs";
+import { useUi } from "./ui";
+
+export type WorkspaceInfo = ResultOf<"workspace.info">;
+
+export interface OpenError {
+  reason: "not_workspace" | "not_found";
+  path: string;
+}
+
+interface WorkspaceState {
+  root: string | null;
+  name: string | null;
+  daemon: DaemonState;
+  info: WorkspaceInfo | null;
+  entries: TreeEntry[];
+  treeLoaded: boolean;
+  output: OutputLine[];
+  recent: RecentProject[];
+  openError: OpenError | null;
+}
+
+const OUTPUT_MAX = 500;
+
+export const useWorkspace = create<WorkspaceState>(() => ({
+  root: null,
+  name: null,
+  daemon: { status: "idle", root: null, appProtocol: 1 },
+  info: null,
+  entries: [],
+  treeLoaded: false,
+  output: [],
+  recent: [],
+  openError: null,
+}));
+
+const app = () => window.kookabug.app;
+
+/** 다시 붙은 뒤 복구. 문서 표(T8)·target 편집기(T12)·실행 화면(T11)이 Host를 등록한다 */
+export const recovery = new SessionRecovery((method, params) => client().call(method, params));
+
+/** 실행 구독 커서. 실행 화면(T11)이 apply를 바꿔 끼운다 */
+export const runCursors = new RunCursors(
+  (method, params) => client().call(method, params),
+  (runId, seq, event) => runEventSink(runId, seq, event),
+);
+let runEventSink: (runId: string, seq: number, event: unknown) => void = () => {};
+export function setRunEventSink(sink: typeof runEventSink): void {
+  runEventSink = sink;
+}
+
+function pushOutput(line: OutputLine): void {
+  useWorkspace.setState((s) => {
+    const output = [...s.output, line];
+    return { output: output.length > OUTPUT_MAX ? output.slice(-OUTPUT_MAX) : output };
+  });
+}
+
+function note(level: OutputLine["level"], message: string): void {
+  pushOutput({ time: new Date().toISOString(), level, message });
+}
+
+export async function refreshTree(): Promise<void> {
+  const root = useWorkspace.getState().root;
+  if (root === null) return;
+  try {
+    const tree = await client().call("workspace.tree", {});
+    if (useWorkspace.getState().root === root) useWorkspace.setState({ entries: tree.entries, treeLoaded: true });
+  } catch (err) {
+    note("warn", `탐색기를 읽지 못했다: ${toRpcError(err).message}`);
+  }
+}
+
+export async function refreshInfo(): Promise<void> {
+  const root = useWorkspace.getState().root;
+  if (root === null) return;
+  try {
+    const info = await client().call("workspace.info", {});
+    if (useWorkspace.getState().root === root) useWorkspace.setState({ info });
+  } catch (err) {
+    note("warn", `워크스페이스 정보를 읽지 못했다: ${toRpcError(err).message}`);
+  }
+}
+
+/**
+ * 프로젝트가 바뀌었다(열기·바꾸기·닫기). 프로젝트 상태를 한 곳에서 정리한다: 탭·탐색기 펼침·선택·빠른
+ * 열기·실행 구독 커서·다시 붙기 복구. 주 프로세스의 daemon.state 루트가 바뀔 때 부른다 (루트의 권위는 주
+ * 프로세스다. 열기 응답과 상태 알림의 순서와 무관하게 같은 결과)
+ */
+function switchProject(root: string | null): void {
+  closeAllTabs();
+  useUi.setState({ expanded: null, selected: null, quickOpen: false });
+  runCursors.reset();
+  recovery.reset();
+  useWorkspace.setState({
+    root,
+    name: root === null ? null : baseName(root),
+    info: null,
+    entries: [],
+    treeLoaded: false,
+    openError: null,
+  });
+}
+
+async function onDaemonState(state: DaemonState): Promise<void> {
+  if (state.root !== useWorkspace.getState().root) switchProject(state.root);
+  useWorkspace.setState({ daemon: state });
+  if (state.status !== "connected" || state.root === null || state.startId === undefined) return;
+  const kind = await recovery.connected({
+    root: state.root,
+    startId: state.startId,
+    ...(state.connection === undefined ? {} : { connection: state.connection }),
+  });
+  if (useWorkspace.getState().root !== state.root) return;
+  if (kind === "daemon_replaced") note("info", "daemon이 바뀌어 열린 문서를 다시 열었다");
+  await Promise.all([refreshTree(), refreshInfo()]);
+}
+
+let treeTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 앱 시작 때 한 번 */
+export async function initWorkspace(): Promise<void> {
+  window.kookabug.on("daemon.state", (data) => void onDaemonState(data as DaemonState));
+  window.kookabug.on("daemon.log", (data) => pushOutput(data as OutputLine));
+  client().on("workspace.changed", () => {
+    if (treeTimer !== null) clearTimeout(treeTimer);
+    treeTimer = setTimeout(() => void refreshTree(), 150);
+  });
+  client().on("run.event", (p) => {
+    try {
+      runCursors.event(p.run_id, p.seq, p.event);
+    } catch (err) {
+      // 커서는 그대로다: 다음 이벤트·다시 붙기에서 이 seq부터 다시 받는다
+      note("error", `실행 이벤트를 적용하지 못했다 (${p.run_id} #${p.seq}): ${(err as Error).message}`);
+    }
+  });
+  client().on("run.lagged", (p) => runCursors.lagged(p.run_id));
+  client().on("run.ended", (p) => runCursors.ended(p.run_id));
+  recovery.addRuns(runCursors);
+  const [recent, output, state] = await Promise.all([app().recent(), app().daemonLog(), app().daemonState()]);
+  useWorkspace.setState({ recent, output });
+  await onDaemonState(state);
+}
+
+function baseName(p: string): string {
+  return p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? p;
+}
+
+/**
+ * 지금 프로젝트를 떠나도 되는지 묻는 함수들. 편집 버퍼가 생기면(T8·T9) 저장 안 된 문서를 묻는다.
+ * 하나라도 false면 열기·바꾸기·닫기를 하지 않는다
+ */
+type LeaveGuard = () => Promise<boolean> | boolean;
+const leaveGuards = new Set<LeaveGuard>();
+
+export function addLeaveGuard(guard: LeaveGuard): () => void {
+  leaveGuards.add(guard);
+  return () => leaveGuards.delete(guard);
+}
+
+async function canLeaveProject(): Promise<boolean> {
+  if (useWorkspace.getState().root === null) return true;
+  for (const guard of leaveGuards) if (!(await guard())) return false;
+  return true;
+}
+
+/** 열기 결과. 성공한 전환 자체는 daemon.state가 switchProject로 처리한다 */
+async function afterOpen(result: OpenResult): Promise<void> {
+  if (!result.ok) {
+    if (result.reason !== "canceled") {
+      useWorkspace.setState({ openError: { reason: result.reason, path: result.path ?? "" } });
+    }
+    return;
+  }
+  useWorkspace.setState({ openError: null, recent: await app().recent() });
+}
+
+export async function openFolder(): Promise<void> {
+  if (!(await canLeaveProject())) return;
+  await afterOpen(await app().openFolder());
+}
+
+export async function openRecent(path: string): Promise<void> {
+  if (!(await canLeaveProject())) return;
+  await afterOpen(await app().openRecent(path));
+}
+
+export async function closeWorkspace(): Promise<void> {
+  if (!(await canLeaveProject())) return;
+  await app().closeWorkspace();
+  switchProject(null);
+  useWorkspace.setState({ recent: await app().recent() });
+}
+
+export function dismissOpenError(): void {
+  useWorkspace.setState({ openError: null });
+}
+
+export async function retryDaemon(): Promise<void> {
+  await app().daemonRetry();
+}
+
+export async function restartDaemon(): Promise<void> {
+  await app().daemonRestart();
+}

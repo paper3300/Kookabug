@@ -107,15 +107,19 @@ jobs:
           key: electron-${{ hashFiles('pnpm-lock.yaml') }}
       - run: pnpm --filter @kookabug/desktop exec install-electron
       - run: pnpm -r typecheck
-      - run: pnpm --filter @kookabug/desktop test
-      - run: pnpm --filter @kookabug/desktop build
-      # 시안 렌더러 검사(Edge), 기준 PNG와 역할 토큰 (M2 계획 2.12)
+      # 시안 렌더러 검사(Edge), 기준 PNG와 역할 토큰 (M2 계획 2.12). 앱 vitest(tokens.test.ts)가
+      # build/design-ref/tokens.json을 쓰므로 먼저 돌린다
       - run: pnpm --filter @kookabug/design-ref test
       - run: node tools/design-ref/render.mjs
       - run: node tools/design-ref/extract.mjs
+      - run: pnpm --filter @kookabug/desktop test
+      - run: pnpm --filter @kookabug/desktop build
       - run: uv sync --locked --all-packages
       - run: uv run pytest -m desktop_build -v
       - run: pnpm --filter @kookabug/desktop e2e
+      # 시안 대비 스크린샷과 나란히 비교 PNG (artifact로 올린다)
+      - run: pnpm --filter @kookabug/desktop shots
+      - run: node tools/design-ref/compare.mjs welcome shell-empty
       - uses: actions/upload-artifact@v4
         if: always()
         with:

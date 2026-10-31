@@ -3,9 +3,10 @@
 
 export const RPC_CHANNEL = "kb:rpc";
 export const EVENT_CHANNEL = "kb:event";
+export const APP_CHANNEL = "kb:app";
 
-// 렌더러가 부를 수 있는 daemon 메서드 (2.4 메서드 표). params 스키마 검사는 T7이
-// daemon-rpc.schema.json으로 붙인다
+// 렌더러가 부를 수 있는 daemon 메서드 (2.4 메서드 표 중 renderer: true). params 스키마 검사는
+// 주 프로세스 ipc.ts가 daemon-rpc.schema.json으로 한다. 표와 같은지는 ipc.test.ts가 본다
 export const RENDERER_METHODS: ReadonlySet<string> = new Set([
   "workspace.info",
   "workspace.tree",
@@ -42,8 +43,34 @@ export const RENDERER_EVENTS: ReadonlySet<string> = new Set([
   "lease.changed",
 ]);
 
+// 주 프로세스가 보내는 앱 알림 (daemon 알림이 아님): 연결 상태, 출력 패널 줄, 창 최대화 상태, 테마
+export const APP_EVENTS: ReadonlySet<string> = new Set(["daemon.state", "daemon.log", "window.state", "theme.state"]);
+
+// 앱 API (preload `window.kookabug.app`). 인자 모양은 주 프로세스가 다시 검사한다
+export const APP_ACTIONS: ReadonlySet<string> = new Set([
+  "openFolder",
+  "openRecent",
+  "recent",
+  "closeWorkspace",
+  "themeGet",
+  "themeSet",
+  "daemonState",
+  "daemonLog",
+  "daemonRetry",
+  "daemonRestart",
+  "windowControl",
+  "windowState",
+]);
+
 export class IpcGuardError extends Error {
   override name = "IpcGuardError";
+}
+
+export function checkAppAction(action: unknown): string {
+  if (typeof action !== "string" || !APP_ACTIONS.has(action)) {
+    throw new IpcGuardError(`허용되지 않은 앱 동작: ${String(action)}`);
+  }
+  return action;
 }
 
 export function checkRendererMethod(method: unknown): string {
@@ -54,7 +81,7 @@ export function checkRendererMethod(method: unknown): string {
 }
 
 export function checkRendererEvent(event: unknown): string {
-  if (typeof event !== "string" || !RENDERER_EVENTS.has(event)) {
+  if (typeof event !== "string" || (!RENDERER_EVENTS.has(event) && !APP_EVENTS.has(event))) {
     throw new IpcGuardError(`허용되지 않은 알림: ${String(event)}`);
   }
   return event;

@@ -2,6 +2,8 @@ import { EventEmitter } from "node:events";
 import { describe, expect, test, vi } from "vitest";
 import { createBridge, type IpcRendererLike } from "../preload/bridge";
 import {
+  APP_ACTIONS,
+  APP_CHANNEL,
   checkRendererMethod,
   checkSender,
   EVENT_CHANNEL,
@@ -23,7 +25,9 @@ class FakeIpc extends EventEmitter implements IpcRendererLike {
   }
   invoke(channel: string, ...args: unknown[]): Promise<unknown> {
     this.calls.push([channel, ...args]);
-    return Promise.resolve("ok");
+    // 주 프로세스 처리기는 결과를 봉투로 돌려준다 (ipc.ts)
+    if (channel === APP_CHANNEL) return Promise.resolve("app-ok");
+    return Promise.resolve({ ok: true, result: "ok" });
   }
 }
 
@@ -65,7 +69,7 @@ describe("bridge", () => {
   test("test_internal_methods_not_exposed", async () => {
     const ipc = new FakeIpc();
     const bridge = createBridge(ipc);
-    expect(Object.keys(bridge).sort()).toEqual(["on", "rpc"]);
+    expect(Object.keys(bridge).sort()).toEqual(["app", "on", "rpc"]);
     for (const method of ["session.hello", "daemon.shutdown"]) {
       expect(INTERNAL_METHODS.has(method)).toBe(true);
       expect(RENDERER_METHODS.has(method)).toBe(false);
@@ -110,5 +114,24 @@ describe("bridge", () => {
     expect(ipc.listenerCount(EVENT_CHANNEL)).toBe(0);
     ipc.emit(EVENT_CHANNEL, { sender }, "run.event", { seq: 4 });
     expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  test("rpc 오류 봉투는 평범한 객체로 거부된다 (contextBridge 복제)", async () => {
+    const ipc = new FakeIpc();
+    ipc.invoke = async () => ({ ok: false, error: { code: -32100, message: "충돌", data: { code: "revision_conflict" } } });
+    const bridge = createBridge(ipc);
+    const err = await bridge.rpc("graph.open", { path: "a" }).catch((e: unknown) => e);
+    expect(err).toEqual({ code: -32100, message: "충돌", data: { code: "revision_conflict" } });
+    expect(err).not.toBeInstanceOf(Error);
+  });
+
+  test("앱 API는 허용한 동작만 앱 채널로 보낸다", async () => {
+    const ipc = new FakeIpc();
+    const bridge = createBridge(ipc);
+    expect(Object.keys(bridge.app).sort()).toEqual([...APP_ACTIONS].sort());
+    await expect(bridge.app.themeSet("dark")).resolves.toBe("app-ok");
+    expect(ipc.calls).toEqual([[APP_CHANNEL, "themeSet", "dark"]]);
+    // 앱 알림은 구독할 수 있다
+    expect(() => bridge.on("daemon.state", () => {})).not.toThrow();
   });
 });

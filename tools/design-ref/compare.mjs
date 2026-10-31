@@ -17,6 +17,8 @@ export const COMPARE_DIR = path.join(REPO_ROOT, "build", "ui-compare");
 export const SCREENS = {
   main: { dark: "Main", light: "MainLight" },
   welcome: { dark: "Setup0Welcome", light: "Setup0WelcomeLight" },
+  // 앱 틀(캔버스 내용 제외), T7
+  "shell-empty": { dark: "Main", light: "MainLight" },
   target: { dark: "Recorder" },
 };
 

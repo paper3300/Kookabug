@@ -60,7 +60,7 @@ test("test_renderer_has_no_node_globals", async () => {
     process: "undefined",
     module: "undefined",
     Buffer: "undefined",
-    bridge: ["on", "rpc"],
+    bridge: ["app", "on", "rpc"],
   });
   // 내부 메서드는 렌더러에서 부를 수 없다
   const hello = await page.evaluate(() =>
@@ -162,8 +162,12 @@ test("test_iframe_cannot_call_ipc", async () => {
     if (!sub) return "no-subframe";
     const call = async (senderFrame: unknown) => {
       try {
-        await handler({ senderFrame }, "graph.open", { path: "x" });
-        return "accepted";
+        // 처리기는 daemon 오류를 봉투로 돌려준다 (ipc.ts)
+        const reply = (await handler({ senderFrame }, "graph.open", { path: "x" })) as {
+          ok: boolean;
+          error?: { message: string };
+        };
+        return reply.ok ? "accepted" : `rejected: ${reply.error?.message}`;
       } catch (err) {
         return String((err as Error).message);
       }
@@ -172,7 +176,7 @@ test("test_iframe_cannot_call_ipc", async () => {
   });
   expect(verdict).toEqual({
     sub: expect.stringContaining("주 프레임이 아닌"),
-    // 주 프레임은 검사를 지나 daemon 단계에 닿는다 (연결은 T7)
-    main: expect.stringContaining("daemon에 연결되지 않았다"),
+    // 주 프레임은 검사를 지나 daemon 단계에 닿는다 (워크스페이스를 열지 않아 연결 없음)
+    main: "rejected: daemon에 연결되지 않았다",
   });
 });

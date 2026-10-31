@@ -1,16 +1,43 @@
-/* 빈 화면의 시안 배경색. 색 토큰 표(tokens.css)는 T7이 시안에서 뽑아 만든다 */
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --kb-bg: #1f1f1f;
-}
-:root[data-theme="light"] {
-  color-scheme: light;
-  --kb-bg: #ffffff;
-}
+/* 문서 기본값. 색은 tokens.css의 변수만 쓴다 */
 html,
 body,
 #root {
   margin: 0;
   height: 100%;
+  overflow: hidden;
   background: var(--kb-bg);
+  color: var(--kb-fg);
+  font-family: var(--kb-font);
+  font-size: var(--kb-font-size);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: default;
+}
+
+:focus-visible {
+  outline: 1px solid var(--kb-accent);
+  outline-offset: -1px;
+}
+
+a {
+  color: var(--kb-link-fg);
+}
+
+a:hover {
+  color: var(--kb-link-hover-fg);
 }

@@ -50,6 +50,8 @@ test("test_role_colors_dark_and_light", () => {
   assert.equal(tokens.metrics["statusbar.height"], 22);
   assert.equal(tokens.metrics["activitybar.width"], 49);
   assert.equal(tokens.metrics["node.header.height"], 32);
+  // 에디터 탭: 시안 탭 줄이 선언한 높이 (1440 판에서 툴바 줄바꿈으로 눌린 20px가 아님)
+  assert.equal(tokens.metrics["tab.height"], 35);
   assert.equal(tokens.metrics["sidebar.header.height"], 35);
   assert.equal(tokens.metrics["font.size"], 13);
   for (const [k, v] of Object.entries(tokens.metrics)) assert.ok(v > 0, k);

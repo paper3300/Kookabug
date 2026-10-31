@@ -11,5 +11,11 @@
     "isolatedModules": true,
     "noImplicitOverride": true
   },
-  "include": ["src/main/**/*.ts", "src/preload/**/*.ts", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "src/main/**/*.ts",
+    "src/preload/**/*.ts",
+    "src/renderer/**/*.test.ts",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ]
 }

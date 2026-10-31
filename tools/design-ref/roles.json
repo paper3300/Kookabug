@@ -1,5 +1,5 @@
 {
-  "$comment": "역할 → 시안 요소. 역할 색은 다크·라이트 시안 쌍에서 같은 요소의 계산된 CSS 값이다 (M2 계획 2.12). selector로 고르고, text가 있으면 그중 자기 글자에 text가 든 첫 요소, up만큼 부모로 올라간다. data-dc-row는 렌더러가 펼친 반복 줄에 붙이는 표시다. 치수는 테두리를 포함한 배치 크기(px)다. 탭 줄은 1440 폭 시안에서 툴바가 다음 줄로 넘어가 높이가 탭 높이가 아니므로 넣지 않았다. T7이 앱 틀 역할을 늘린다",
+  "$comment": "역할 → 시안 요소. 역할 색은 다크·라이트 시안 쌍에서 같은 요소의 계산된 CSS 값이다 (M2 계획 2.12). selector로 고르고, text가 있으면 그중 자기 글자에 text가 든 첫 요소, up만큼 부모로 올라간다. data-dc-row는 렌더러가 펼친 반복 줄에 붙이는 표시다. 치수는 테두리를 포함한 배치 크기(px)다. 에디터 탭 높이(tab.height)는 배치 크기가 아니라 시안 탭 줄이 선언한 min-height(35px)다: 1440 폭 시안에서는 툴바가 다음 줄로 넘어가 탭이 20px로 눌려 그려지는데(탭 줄 전체 49px), 이것은 판 폭 때문에 생긴 줄바꿈이고 시안이 정한 탭 줄 높이는 35px이다. 앱은 툴바를 탭과 같은 줄에 두고 이 높이를 쓴다(UX 시안 문서의 M2 구현 절). T7이 앱 틀 역할(목록 선택·명령 검색·탭 종류 글자·시작 화면 테마 고르기·소개 글 칩)을 늘렸다",
   "screens": {
     "main": { "dark": "Main", "light": "MainLight" },
     "welcome": { "dark": "Setup0Welcome", "light": "Setup0WelcomeLight" }
@@ -38,7 +38,22 @@
     "welcome.text.fg": { "screen": "welcome", "selector": "p", "prop": "color" },
     "button.primary.bg": { "screen": "welcome", "selector": "a", "text": "시작하기", "prop": "background-color" },
     "button.primary.fg": { "screen": "welcome", "selector": "a", "text": "시작하기", "prop": "color" },
-    "link.fg": { "screen": "welcome", "selector": "a", "text": "이미 있는 프로젝트 열기", "prop": "color" }
+    "link.fg": { "screen": "welcome", "selector": "a", "text": "이미 있는 프로젝트 열기", "prop": "color" },
+    "list.active.bg": { "screen": "main", "selector": "span", "text": "장비 강화 반복.graph.json", "up": 1, "prop": "background-color" },
+    "list.active.fg": { "screen": "main", "selector": "span", "text": "장비 강화 반복.graph.json", "up": 1, "prop": "color" },
+    "titlebar.search.bg": { "screen": "main", "selector": "input[aria-label=\"명령 검색\"]", "up": 1, "prop": "background-color" },
+    "kind.test": { "screen": "main", "selector": "span", "text": "TEST", "prop": "color" },
+    "kind.target": { "screen": "main", "selector": "span", "text": "TARGET", "prop": "color" },
+    "welcome.toggle.bg": { "screen": "welcome", "selector": "div[aria-label=\"테마\"]", "prop": "background-color" },
+    "welcome.toggle.fg": { "screen": "welcome", "selector": "button[aria-pressed=\"false\"]", "prop": "color" },
+    "welcome.toggle.active.bg": { "screen": "welcome", "selector": "button[aria-pressed=\"true\"]", "prop": "background-color" },
+    "welcome.toggle.active.fg": { "screen": "welcome", "selector": "button[aria-pressed=\"true\"]", "prop": "color" },
+    "chip.graph.bg": { "screen": "welcome", "selector": "span", "text": "노드 그래프", "prop": "background-color" },
+    "chip.graph.fg": { "screen": "welcome", "selector": "span", "text": "노드 그래프", "prop": "color" },
+    "chip.record.bg": { "screen": "welcome", "selector": "span", "text": "녹화", "prop": "background-color" },
+    "chip.record.fg": { "screen": "welcome", "selector": "span", "text": "녹화", "prop": "color" },
+    "chip.agent.bg": { "screen": "welcome", "selector": "span", "text": "에이전트", "prop": "background-color" },
+    "chip.agent.fg": { "screen": "welcome", "selector": "span", "text": "에이전트", "prop": "color" }
   },
   "metrics": {
     "titlebar.height": { "screen": "main", "selector": "nav[aria-label=\"메뉴\"]", "up": 1, "prop": "height" },
@@ -48,6 +63,7 @@
     "sidebar.width": { "screen": "main", "selector": "span", "text": "탐색기", "up": 2, "prop": "width" },
     "sidebar.header.height": { "screen": "main", "selector": "span", "text": "탐색기", "up": 1, "prop": "height" },
     "panel.tabs.height": { "screen": "main", "selector": "div", "text": "실행 로그", "up": 1, "prop": "height" },
+    "tab.height": { "screen": "main", "selector": "div", "text": "장비 강화 반복", "up": 1, "prop": "min-height" },
     "node.header.height": { "screen": "main", "selector": "[data-dc-row=\"graph\"] > div", "prop": "height" },
     "font.size": { "screen": "main", "selector": "body > div", "prop": "font-size" },
     "font.size.small": { "screen": "main", "selector": "span", "text": "탐색기", "up": 1, "prop": "font-size" }

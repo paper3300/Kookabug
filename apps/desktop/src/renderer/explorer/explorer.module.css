@@ -1,0 +1,100 @@
+/* 탐색기 줄: 시안 Main 사이드바 (22px 줄, 16px 들여쓰기, 앞 글자 9px 굵게, 오른쪽 배지 11px) */
+.tree {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  height: 22px;
+  flex: 0 0 22px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--kb-sidebar-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  outline: none;
+}
+
+.row:hover {
+  background: var(--kb-hover-bg);
+}
+
+.row.selected {
+  background: var(--kb-list-active-bg);
+  color: var(--kb-list-active-fg);
+}
+
+.row:focus-visible {
+  outline: 1px solid var(--kb-accent);
+  outline-offset: -1px;
+}
+
+.problem {
+  color: var(--kb-status-error);
+}
+
+.ignored {
+  color: var(--kb-fg-muted);
+}
+
+.chevron {
+  width: 16px;
+  flex: 0 0 16px;
+  display: flex;
+  justify-content: center;
+  color: var(--kb-fg-muted);
+}
+
+.glyph {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge {
+  margin-left: auto;
+  padding-right: 12px;
+  padding-left: 6px;
+  font-size: 11px;
+}
+
+.toneTest {
+  color: var(--kb-kind-test);
+}
+
+.toneTarget {
+  color: var(--kb-kind-target);
+}
+
+.toneJson {
+  color: var(--kb-file-json);
+}
+
+.toneMd {
+  color: var(--kb-file-md);
+}
+
+.toneMuted {
+  color: var(--kb-fg-muted);
+}
+
+.toneError {
+  color: var(--kb-status-error);
+}
+
+.empty {
+  padding: 8px 20px;
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+}

@@ -1,21 +1,19 @@
 import "./theme/fonts.css";
+import "./theme/tokens.css";
 import "./theme/base.css";
 import { ReactFlowProvider } from "@xyflow/react";
-import { StrictMode, useEffect } from "react";
+import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { App } from "./app/App";
 import { useTheme } from "./store/theme";
 
-// 앱 틀(타이틀 바·사이드바·탭·패널)은 T7, 캔버스는 T8. 지금은 시안 배경색의 빈 화면이다
-function Root() {
-  const theme = useTheme((s) => s.theme);
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
-  return <ReactFlowProvider>{null}</ReactFlowProvider>;
-}
+// 첫 칠하기 전에 테마를 정한다 (토큰이 data-theme에 걸려 있다)
+document.documentElement.dataset.theme = useTheme.getState().theme;
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <Root />
+    <ReactFlowProvider>
+      <App />
+    </ReactFlowProvider>
   </StrictMode>,
 );
