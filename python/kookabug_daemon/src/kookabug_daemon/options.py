@@ -40,6 +40,16 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     )
     # 테스트용: 가짜 플랫폼 사양 (CLI run과 같은 형식). 도움말에 보이지 않는다
     parser.add_argument("--platform-fake", metavar="FILE", help=argparse.SUPPRESS)
+    # 개발·테스트용: 실행의 워커가 import할 플러그인 모듈 (CLI run --plugin-module과 같다. 플러그인
+    # 설치가 생기기 전까지). 사전 검증·팔레트도 이 모듈의 노드를 안다
+    parser.add_argument(
+        "--plugin-module",
+        dest="plugin_modules",
+        action="append",
+        default=[],
+        metavar="모듈",
+        help=argparse.SUPPRESS,
+    )
     # 테스트용: 경쟁에서 졌을 때 유효한 세션을 기다리는 시간
     parser.add_argument(
         "--session-wait-s", type=_positive_float, default=SESSION_WAIT_S, help=argparse.SUPPRESS

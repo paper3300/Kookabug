@@ -521,7 +521,8 @@ class Transport:
             assert conn.principal is not None
             call = Call(self.host.context, conn.principal, conn.number, method, params)
             arg = spec.arg(call)
-            await asyncio.to_thread(self.host.authorizer.require, conn.principal, method, arg)
+            if not spec.self_authorized:
+                await asyncio.to_thread(self.host.authorizer.require, conn.principal, method, arg)
             result = await spec.handler(call)
         except RequestFailed as failed:
             conn.send(error_message(request_id, **_fields(failed)))

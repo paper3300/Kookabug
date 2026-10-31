@@ -80,16 +80,51 @@ from kookabug_sdk.rpc import INVALID_PARAMS, METHOD_NOT_FOUND, PeerLost, RpcErro
 
 __all__ = [
     "DEFAULT_DEADLINE_MS",
+    "EXIT_ERROR",
+    "EXIT_FAIL",
+    "EXIT_INVALID",
+    "EXIT_PASS",
+    "EXIT_SKIPPED",
     "HARD_STOP_EXIT_CODE",
     "ControlError",
     "RunHandle",
     "RunOutcome",
     "StartOptions",
     "Supervisor",
+    "run_exit_code",
 ]
 
 DEFAULT_DEADLINE_MS: Final = 30 * 60 * 1000
 """실행 전체 기한 기본값 30분 (구현 계획 M0b 2.11)."""
+
+# 실행 판정 → 종료 코드 (CLI `run`의 종료 코드, daemon `run.ended`의 `exit_code`)
+EXIT_PASS: Final = 0
+EXIT_FAIL: Final = 1
+EXIT_ERROR: Final = 2
+"""오류: 취소·기한 초과·runner 죽음·입력 임대권 거부·기록 마무리 실패 포함."""
+EXIT_SKIPPED: Final = 3
+EXIT_INVALID: Final = 4
+"""실행 전 검증 오류 (`run.end` 코드 `graph_invalid`)."""
+_VERDICT_EXIT: Final = {
+    "pass": EXIT_PASS,
+    "fail": EXIT_FAIL,
+    "error": EXIT_ERROR,
+    "skipped": EXIT_SKIPPED,
+}
+_INVALID_CODES: Final = frozenset({"graph_invalid"})
+
+
+def run_exit_code(run_end: Mapping[str, Any] | None, *, recover_error: str | None = None) -> int:
+    """`run.end` 판정 → 종료 코드. 감독자가 기록을 마무리하지 못했으면(`recover_error`) 그래프
+    판정과 무관하게 오류다 — `run.json`이 `running`으로 남았을 수 있다."""
+    if run_end is None or recover_error is not None:
+        return EXIT_ERROR
+    verdict = run_end.get("verdict")
+    if verdict == "error" and run_end.get("code") in _INVALID_CODES:
+        return EXIT_INVALID
+    return _VERDICT_EXIT.get(str(verdict), EXIT_ERROR)
+
+
 HARD_STOP_EXIT_CODE: Final = 4
 HELLO_TIMEOUT_S: Final = 30.0
 CONTROL_CALL_TIMEOUT_S: Final = 5.0
@@ -113,6 +148,9 @@ class StartOptions:
     platform: PlatformSpec = field(default_factory=PlatformSpec)
     runs_dir: Path | None = None
     """실행 폴더를 만들 곳 (기본: 워크스페이스의 `runs/`)."""
+    run_id: str | None = None
+    """미리 정한 실행 ID (daemon이 시작 예약에 쓴 ID). 이미 쓰였으면 시작하지 않고 `RuntimeError`.
+    없으면 감독자가 겹치지 않는 ID를 뽑는다."""
     worker_cancel_grace_ms: int = DEFAULT_WORKER_CANCEL_GRACE_MS
     worker_start_timeout_ms: int = DEFAULT_WORKER_START_TIMEOUT_MS
     shutdown_grace_ms: int = DEFAULT_SHUTDOWN_GRACE_MS
@@ -183,7 +221,11 @@ class Supervisor:
         준다(이미 하드 종료했고 `wait()`가 기록을 마무리한다). 실행 폴더·Job을 못 만들면 예외."""
         opts = options or StartOptions()
         root = Path(workspace_root).resolve()
-        folder = create_run_folder(opts.runs_dir or root / "runs", graph)
+        runs = opts.runs_dir or root / "runs"
+        if opts.run_id is None:
+            folder = create_run_folder(runs, graph)
+        else:
+            folder = create_run_folder(runs, graph, new_id=_only(opts.run_id))
         started_at = format_t(datetime.now(UTC))
         job = Job.create(run_job_name(folder.run_id))
         try:
@@ -604,6 +646,20 @@ class RunHandle:
 
 class _StartFailed(Exception):
     pass
+
+
+def _only(run_id: str) -> Callable[[], str]:
+    """`create_run_folder`의 ID 뽑기: 그 ID 한 번만. 이미 쓰인 ID라 다시 뽑으면 실패한다."""
+    used = False
+
+    def pick() -> str:
+        nonlocal used
+        if used:
+            raise RuntimeError(f"실행 ID {run_id}이(가) 이미 쓰였다")
+        used = True
+        return run_id
+
+    return pick
 
 
 def _send_spec(launcher: subprocess.Popen[bytes], data: bytes) -> None:

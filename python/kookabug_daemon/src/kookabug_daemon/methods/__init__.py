@@ -18,6 +18,7 @@ from kookabug_core.permissions import Principal
 
 if TYPE_CHECKING:
     from kookabug_daemon.documents import DocumentTable, GraphChecker
+    from kookabug_daemon.runs import RunManager
 
 __all__ = ["Call", "DaemonContext", "MethodSpec", "RunsLike", "no_arg", "registry"]
 
@@ -26,7 +27,13 @@ class RunsLike(Protocol):
     """daemon이 감독하는 실행 (T5가 채운다). 수명 판단(유휴 종료·shutdown)에 쓴다."""
 
     def active_run(self) -> str | None:
-        """진행 중이거나 시작 중인 실행의 ID. 없으면 None."""
+        """진행 중이거나 시작 중(시작 예약)인 실행의 ID. 없으면 None."""
+        ...
+
+    def reserve_shutdown(self, *, force: bool) -> str | None:
+        """종료를 정한다. 시작 예약과 같은 잠금 안에서 판단한다: force가 아니고 진행·시작 중인
+        실행이 있으면 정하지 않고 그 ID를 돌려준다. 정했으면 None이고, 그 뒤 시작 요청은
+        새 runner를 만들지 못한다(`shutting_down`)."""
         ...
 
     def cancel_all_and_wait(self) -> None:
@@ -38,7 +45,14 @@ class DaemonContext(Protocol):
     """처리기가 보는 daemon."""
 
     @property
-    def runs(self) -> RunsLike: ...
+    def runs(self) -> RunsLike:
+        """수명 판단(유휴 종료·shutdown)에 쓰는 실행 목록."""
+        ...
+
+    @property
+    def run_manager(self) -> RunManager:
+        """실행 메서드(`run.*`)가 쓰는 실행 관리."""
+        ...
 
     @property
     def root(self) -> Path:
@@ -83,10 +97,19 @@ def no_arg(call: Call) -> str:
 class MethodSpec:
     handler: Handler
     arg: ArgOf = no_arg
+    self_authorized: bool = False
+    """처리기가 계약이 정한 자리에서 같은 판정(`Authorizer.require`)을 직접 한다. 전송은 미리
+    판정하지 않는다 (`run.start`: 시작 잠금 안의 ② 단계, M2 계획 2.8)."""
 
 
 def registry() -> dict[str, MethodSpec]:
     """이 daemon이 처리하는 메서드. 계약에 있지만 여기 없는 메서드는 `method_not_found`다."""
-    from kookabug_daemon.methods import graph, nodes, session, workspace
+    from kookabug_daemon.methods import graph, nodes, run, session, workspace
 
-    return {**session.METHODS, **workspace.METHODS, **nodes.METHODS, **graph.METHODS}
+    return {
+        **session.METHODS,
+        **workspace.METHODS,
+        **nodes.METHODS,
+        **graph.METHODS,
+        **run.METHODS,
+    }

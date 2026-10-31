@@ -16,6 +16,7 @@ from kb_testing.daemon import ThreadDaemon, make_workspace
 from kb_testing.proc import wait_until
 from kookabug_core.permissions import Principal
 from kookabug_daemon.client import ConnectionLost, DaemonClient, DaemonError
+from kookabug_daemon.methods import registry
 from kookabug_daemon.protocol import encode, utf8_size
 from kookabug_daemon.transport import (
     CLOSE_BINARY,
@@ -275,11 +276,17 @@ def test_invalid_params_and_unknown_method(daemon: ThreadDaemon) -> None:
         with pytest.raises(DaemonError) as hello_again:
             client.call("session.hello", hello_params(daemon), timeout=10)
         assert hello_again.value.code == -32600
-        # 계약에 있지만 이 판에 아직 없는 메서드
+    assert daemon.is_running()
+
+
+def test_contract_method_missing_from_registry_not_found(root: Path) -> None:
+    # 계약에 있지만 이 daemon의 메서드 표에 없는 메서드
+    methods = {k: v for k, v in registry().items() if k != "run.list"}
+    with ThreadDaemon(root, methods=methods) as d, d.client() as client:
         with pytest.raises(DaemonError) as later:
             client.call("run.list", {"limit": 1}, timeout=10)
         assert later.value.code == -32601
-    assert daemon.is_running()
+        assert d.is_running()
 
 
 def test_slow_reader_queue_limit_drops_connection(

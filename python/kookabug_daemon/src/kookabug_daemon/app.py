@@ -32,13 +32,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, TextIO
 
+from kookabug_core.registry import Registry, default_registry
+from kookabug_core.runner.spec import PlatformSpec
 from kookabug_core.service import WorkspaceService
 from kookabug_core.workspace import WorkspaceError
 from kookabug_daemon.documents import DocumentTable, GraphChecker
+from kookabug_daemon.lease_watch import LeaseWatcher, lease_dir
 from kookabug_daemon.methods import MethodSpec, RunsLike, registry
 from kookabug_daemon.methods.tools import Authorizer
 from kookabug_daemon.options import DEFAULT_IDLE_TIMEOUT_S, SESSION_WAIT_S, add_arguments
 from kookabug_daemon.protocol import DAEMON_VERSION, PROTOCOL, json_text
+from kookabug_daemon.runs import RunManager
 from kookabug_daemon.session import (
     LOGS_DIR,
     PRIVATE_DIR,
@@ -79,9 +83,12 @@ WATCH_INTERVAL_S: Final = 1.0
 
 
 class NoRuns:
-    """실행 관리가 붙기 전(T5)의 빈 실행 목록."""
+    """빈 실행 목록 (수명 검사용)."""
 
     def active_run(self) -> str | None:
+        return None
+
+    def reserve_shutdown(self, *, force: bool) -> str | None:
         return None
 
     def cancel_all_and_wait(self) -> None:
@@ -94,9 +101,38 @@ class DaemonConfig:
     idle_timeout_s: float = DEFAULT_IDLE_TIMEOUT_S
     session_wait_s: float = SESSION_WAIT_S
     platform_fake: Path | None = None
+    plugin_modules: tuple[str, ...] = ()
+    """개발·테스트용 플러그인 모듈 (실행의 워커, 사전 검증·팔레트 레지스트리)."""
     log_level: str = "info"
     limits: Limits = field(default_factory=Limits)
     watch_interval_s: float = WATCH_INTERVAL_S
+
+
+def plugin_registry(modules: tuple[str, ...]) -> Callable[[], Registry]:
+    """코어 노드 + `modules`의 노드 선언 (runner가 워커 hello로 등록하는 것과 같은 선언)."""
+    if not modules:
+        return default_registry
+
+    def make() -> Registry:
+        from kookabug_sdk.worker import collect_plugins
+
+        found = default_registry()
+        for plugin in collect_plugins(modules):
+            found.add_remote(plugin["schema"])
+        return found
+
+    return make
+
+
+def run_platform(config: DaemonConfig) -> PlatformSpec:
+    """daemon이 띄우는 실행의 플랫폼: 실제 Windows, 숨은 `--platform-fake`면 가짜."""
+    if config.platform_fake is None:
+        return PlatformSpec("windows")
+    data = json.loads(config.platform_fake.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{config.platform_fake}은(는) JSON 객체여야 한다")
+    spec: dict[str, Any] = data
+    return PlatformSpec.fake_from(spec, config.platform_fake.parent)
 
 
 class Daemon:
@@ -113,10 +149,21 @@ class Daemon:
         self.config = config
         self.root = config.workspace.resolve()
         self.service = service or WorkspaceService(self.root)
-        self._runs: RunsLike = runs or NoRuns()
         self._authorizer = Authorizer(self.service)
         self._documents = DocumentTable(self.root)
-        self._checker = GraphChecker(self.root)
+        self._checker = GraphChecker(self.root, plugin_registry(config.plugin_modules))
+        self._run_manager = RunManager(
+            self.root,
+            self.service,
+            self._authorizer,
+            lambda: self._checker.registry,
+            platform=run_platform(config),
+            plugin_modules=config.plugin_modules,
+        )
+        self._runs: RunsLike = runs or self._run_manager
+        # 상태 폴더는 runner에 넘기는 환경으로 정한다 (판정만 하는 서비스 대역에는 감독자가 없다)
+        supervisor = getattr(self.service, "supervisor", None)
+        self._lease = LeaseWatcher(lease_dir(getattr(supervisor, "env", None)), self._publish_lease)
         self.transport = Transport(self, registry() if methods is None else methods, config.limits)
         self.start_id = secrets.token_hex(16)
         self.token = secrets.token_hex(32)
@@ -141,6 +188,10 @@ class Daemon:
     @property
     def runs(self) -> RunsLike:
         return self._runs
+
+    @property
+    def run_manager(self) -> RunManager:
+        return self._run_manager
 
     @property
     def shutting_down(self) -> bool:
@@ -168,6 +219,35 @@ class Daemon:
 
     def connection_closed(self, number: int) -> None:
         self._documents.release_connection(number)
+        self._run_manager.connection_closed(number)
+
+    # ---------------------------------------------------------------- 실행 알림 (runs.RunSink)
+
+    def post(self, fn: Callable[[], None]) -> None:
+        loop = self._loop
+        if loop is not None and not loop.is_closed():
+            with contextlib.suppress(RuntimeError):  # 루프가 막 닫혔다: 보낼 곳이 없다
+                loop.call_soon_threadsafe(fn)
+
+    def notify(self, connection: int, method: str, params: Mapping[str, Any], run_id: str) -> None:
+        conn = self.transport.find(connection)
+        if conn is not None:
+            self.transport.notify(conn, method, params, run_id=run_id)
+
+    def resume(self, connection: int, run_id: str) -> None:
+        conn = self.transport.find(connection)
+        if conn is not None:
+            conn.resume_run(run_id)
+
+    def on_lag(self, connection: int, listener: Callable[[str], None]) -> bool:
+        conn = self.transport.find(connection)
+        if conn is None:
+            return False
+        conn.lag_listeners.append(listener)
+        return True
+
+    def _publish_lease(self, owner: dict[str, Any] | None) -> None:
+        self.transport.broadcast("lease.changed", {"owner": owner})
 
     # ---------------------------------------------------------------- 파일 변경 알림
 
@@ -211,14 +291,19 @@ class Daemon:
             elif self._idle_since is None:
                 self._idle_since = now
             elif now - self._idle_since >= timeout:
-                self.request_shutdown(force=False, reason=f"유휴 {timeout:g}초")
-                return
+                # 종료 판단은 시작 예약과 같은 잠금 안에서: 그 사이 예약된 시작이 있으면 유휴가
+                # 아니고, 정한 뒤에 오는 시작은 runner를 만들지 못한다
+                if self._runs.reserve_shutdown(force=False) is None:
+                    self.request_shutdown(force=False, reason=f"유휴 {timeout:g}초")
+                    return
+                self._idle_since = None
             await asyncio.sleep(interval)
 
     async def serve(self, on_ready: Callable[[SessionInfo], None] | None = None) -> str:
         """포트를 열고 `session.json`을 공개한 뒤 끝날 때까지 돈다. 끝난 이유를 돌려준다."""
         self._loop = asyncio.get_running_loop()
         self._stop = asyncio.Event()
+        self._run_manager.sink = self
         try:
             async with self.transport.serve() as server:
                 port = self.transport.bound(server)
@@ -246,6 +331,7 @@ class Daemon:
                 tasks = [
                     asyncio.create_task(self._idle_watch()),
                     asyncio.create_task(watcher.run()),
+                    asyncio.create_task(self._lease.run()),
                 ]
                 if not self._shutting_down:
                     await self._stop.wait()
@@ -256,6 +342,7 @@ class Daemon:
                     task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
         finally:
+            await asyncio.to_thread(self._run_manager.close)
             self._checker.close()
             if self.session is not None:
                 await asyncio.to_thread(remove_session, self.root, self.start_id)
@@ -295,6 +382,7 @@ def config_from_args(args: argparse.Namespace) -> DaemonConfig:
         idle_timeout_s=args.idle_timeout_s,
         session_wait_s=args.session_wait_s,
         platform_fake=fake,
+        plugin_modules=tuple(args.plugin_modules),
         log_level=args.log_level,
     )
 

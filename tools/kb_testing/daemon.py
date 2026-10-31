@@ -130,6 +130,9 @@ class FakeRuns:
     def active_run(self) -> str | None:
         return self.active
 
+    def reserve_shutdown(self, *, force: bool) -> str | None:
+        return None if force else self.active
+
     def cancel_all_and_wait(self) -> None:
         self.cancelled.set()
         self.active = None
@@ -150,6 +153,7 @@ class ThreadDaemon:
         environ: Mapping[str, str] | None = None,
         watch_interval_s: float = 1.0,
         platform_fake: Path | None = None,
+        plugin_modules: tuple[str, ...] = (),
     ) -> None:
         self.root = root
         config = DaemonConfig(
@@ -158,6 +162,7 @@ class ThreadDaemon:
             limits=limits or Limits(),
             watch_interval_s=watch_interval_s,
             platform_fake=platform_fake,
+            plugin_modules=plugin_modules,
         )
         if service is None:
             service = WorkspaceService(root, environ=dict(environ or {}))

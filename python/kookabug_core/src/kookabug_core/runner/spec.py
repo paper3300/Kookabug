@@ -69,6 +69,23 @@ class PlatformSpec:
     hooks: Mapping[str, Mapping[str, str]] = field(default_factory=dict[str, Mapping[str, str]])
     scenario: str | None = None
 
+    @classmethod
+    def fake_from(cls, spec: Mapping[str, Any], base: Path) -> PlatformSpec:
+        """숨은 테스트 옵션 `--platform-fake`의 사양 객체(`frames`·`scenario`·`input_log`·
+        `hooks`) → 가짜 플랫폼. 장면 표·입력 기록 경로는 사양 파일 폴더(`base`) 기준이다 (runner는
+        다른 작업 폴더에서 돈다)."""
+
+        def beside(value: Any) -> str | None:
+            return None if value is None else str((base / str(value)).resolve())
+
+        return cls(
+            "fake",
+            frames=tuple(spec.get("frames", ())),
+            input_log=beside(spec.get("input_log")),
+            hooks=spec.get("hooks", {}),
+            scenario=beside(spec.get("scenario")),
+        )
+
     def to_json(self) -> dict[str, Any]:
         data: dict[str, Any] = {"kind": self.kind}
         if self.frames:

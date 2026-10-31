@@ -4,6 +4,9 @@
 (구현 계획 3장 계약). 같은 요청은 어느 쪽에서 와도 `authorize`가 같은 판정을 낸다.
 실행 시작(`start_run`)은 판정(`kb_run_start`, 인자 = 그래프 경로) → ask면 승인 확인 →
 `Supervisor.start` 순서다. 거부·승인 없음이면 실행 폴더도 프로세스도 만들지 않는다.
+
+판정과 시작 사이에 자기 단계(중복 방지 키·실행 중 확인·사전 검증)를 두는 호출자(daemon, M2 계획
+2.8)는 `require`로 판정한 뒤 그 판정을 `start_decided`에 넘긴다. 다시 판정하지 않는다.
 """
 
 from __future__ import annotations
@@ -21,8 +24,9 @@ from kookabug_core.permissions import (
     load_policy,
     user_config_dir,
 )
-from kookabug_core.supervisor import RunHandle, StartOptions, Supervisor
-from kookabug_core.workspace import WORKSPACE_FILE, WorkspaceError
+from kookabug_core.runner.spec import PlatformSpec
+from kookabug_core.supervisor import DEFAULT_DEADLINE_MS, RunHandle, StartOptions, Supervisor
+from kookabug_core.workspace import WORKSPACE_FILE, RunConditions, WorkspaceError
 
 __all__ = [
     "AGENT_ENV",
@@ -31,6 +35,7 @@ __all__ = [
     "PermissionDenied",
     "WorkspaceService",
     "cli_principal",
+    "start_options",
 ]
 
 AGENT_ENV: Final = "KOOKABUG_AGENT"
@@ -119,6 +124,62 @@ class WorkspaceService:
         판정은 한 번만 한다. 집행한 그 판정을 핸들(`handle.decision`)이나 예외(`exc.decision`)로
         돌려주므로, 호출자는 따로 `authorize()`를 부르지 않고 이것을 보고한다."""
         decision = self.require(principal, RUN_START_TOOL, graph, approved=approved)
+        return self.start_decided(decision, graph, options, approved=approved)
+
+    def start_decided(
+        self,
+        decision: Decision,
+        graph: str,
+        options: StartOptions | None = None,
+        *,
+        approved: bool = False,
+    ) -> RunHandle:
+        """이미 집행한 판정(`require`의 결과)으로 실행을 시작한다. 다시 판정하지 않는다. 거부이거나
+        승인 없는 ask인 판정을 넘기면 아무것도 만들지 않고 `ValueError`(호출자의 버그)."""
+        if decision.final == "deny" or (decision.final == "ask" and not approved):
+            raise ValueError(f"허용되지 않은 판정으로는 시작할 수 없다: {decision.final}")
         handle = self.supervisor.start(self.root, graph, options)
         handle.decision = decision
         return handle
+
+
+_CONDITION_FIELDS: Final = (
+    "worker_cancel_grace_ms",
+    "worker_start_timeout_ms",
+    "shutdown_grace_ms",
+    "frame_budget_mib",
+    "frame_output_refs",
+)
+
+
+def start_options(
+    conditions: RunConditions,
+    *,
+    deadline_ms: int | None = None,
+    capture_timeout_ms: int | None = None,
+    profile: str | None = None,
+    settings: Mapping[str, object] | None = None,
+    plugin_modules: tuple[str, ...] = (),
+    platform: PlatformSpec | None = None,
+) -> StartOptions:
+    """실행 조건: 호출 인자 → `kookabug.json`의 `run` 블록 → 감독자 기본값 (CLI `run`·daemon
+    `run.start`가 같이 쓴다). 관측 기한 기본값은 `RunSpec`의 기본값(2000)이다."""
+    timing = {
+        name: value
+        for name in _CONDITION_FIELDS
+        if (value := getattr(conditions, name)) is not None
+    }
+    deadline = deadline_ms if deadline_ms is not None else conditions.deadline_ms
+    capture = (
+        capture_timeout_ms if capture_timeout_ms is not None else conditions.capture_timeout_ms
+    )
+    if capture is not None:
+        timing["capture_timeout_ms"] = capture
+    return StartOptions(
+        deadline_ms=DEFAULT_DEADLINE_MS if deadline is None else deadline,
+        profile=profile,
+        settings=dict(settings or {}),
+        plugin_modules=tuple(plugin_modules),
+        platform=platform or PlatformSpec("windows"),
+        **timing,
+    )

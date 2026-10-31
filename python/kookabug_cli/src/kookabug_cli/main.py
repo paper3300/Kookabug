@@ -49,7 +49,19 @@ from kookabug_core.service import (
     WorkspaceService,
     cli_principal,
 )
-from kookabug_core.supervisor import DEFAULT_DEADLINE_MS, RunHandle, RunOutcome, StartOptions
+from kookabug_core.service import start_options as workspace_start_options
+from kookabug_core.supervisor import (
+    DEFAULT_DEADLINE_MS,
+    EXIT_ERROR,
+    EXIT_FAIL,
+    EXIT_INVALID,
+    EXIT_PASS,
+    EXIT_SKIPPED,
+    RunHandle,
+    RunOutcome,
+    StartOptions,
+    run_exit_code,
+)
 from kookabug_core.workspace import RunConditions, Workspace, WorkspaceError
 from kookabug_sdk import _faults
 from kookabug_sdk.console import utf8_stdio
@@ -74,25 +86,12 @@ __all__ = [
     "start_options",
 ]
 
-EXIT_PASS: Final = 0
-EXIT_FAIL: Final = 1
-EXIT_ERROR: Final = 2
-"""오류: 취소·기한 초과·runner 죽음·입력 임대권 거부·기록 마무리 실패 포함."""
-EXIT_SKIPPED: Final = 3
-EXIT_INVALID: Final = 4
-"""실행 전 검증 오류 (`run.end` 코드 `graph_invalid`)."""
+# 판정 종료 코드(0~4)는 코어(`kookabug_core.supervisor`)가 정한다: daemon `run.ended`도 같은 값이다
 EXIT_DENIED: Final = 5
 """권한 거부·승인 필요. 실행 폴더도 프로세스도 만들지 않았다."""
 EXIT_USAGE: Final = 6
 """사용법·환경 오류 (argparse 오류 포함)."""
 
-_VERDICT_EXIT: Final = {
-    "pass": EXIT_PASS,
-    "fail": EXIT_FAIL,
-    "error": EXIT_ERROR,
-    "skipped": EXIT_SKIPPED,
-}
-_INVALID_CODES: Final = frozenset({"graph_invalid"})
 _VERDICT_WORDS: Final = {"pass": "통과", "fail": "실패", "error": "오류", "skipped": "건너뜀"}
 _STATUS_WORDS: Final = {"success": "성공", "fail": "실패", "error": "오류", "cancelled": "취소"}
 _PLATFORM_MODULES: Final = frozenset({"kookabug_platform", "cv2", "numpy", "windows_capture"})
@@ -287,18 +286,7 @@ def read_platform_fake(path: str) -> PlatformSpec:
     if not isinstance(data, dict):
         raise UsageError(f"--platform-fake {path}은(는) JSON 객체여야 한다")
     spec: dict[str, Any] = data
-
-    def beside(value: Any) -> str | None:
-        # 장면 표·입력 기록 경로는 이 사양 파일 기준 (runner는 다른 작업 폴더에서 돈다)
-        return None if value is None else str((Path(path).parent / str(value)).resolve())
-
-    return PlatformSpec(
-        "fake",
-        frames=tuple(spec.get("frames", ())),
-        input_log=beside(spec.get("input_log")),
-        hooks=spec.get("hooks", {}),
-        scenario=beside(spec.get("scenario")),
-    )
+    return PlatformSpec.fake_from(spec, Path(path).parent)
 
 
 def resolve_capture_timeout(cli: int | None, conditions: RunConditions) -> int:
@@ -312,19 +300,10 @@ def resolve_capture_timeout(cli: int | None, conditions: RunConditions) -> int:
 
 def start_options(args: argparse.Namespace, ws: Workspace) -> StartOptions:
     conditions = ws.run_conditions()
-    timing = {
-        name: value
-        for name in (
-            "worker_cancel_grace_ms",
-            "worker_start_timeout_ms",
-            "shutdown_grace_ms",
-            "frame_budget_mib",
-            "frame_output_refs",
-        )
-        if (value := getattr(conditions, name)) is not None
-    }
-    return StartOptions(
+    return workspace_start_options(
+        conditions,
         deadline_ms=resolve_deadline(args.deadline_ms, conditions),
+        capture_timeout_ms=resolve_capture_timeout(args.capture_timeout_ms, conditions),
         profile=args.profile,
         settings=dict(args.settings),
         plugin_modules=tuple(args.plugin_modules),
@@ -334,8 +313,6 @@ def start_options(args: argparse.Namespace, ws: Workspace) -> StartOptions:
             if args.platform_fake is None
             else read_platform_fake(args.platform_fake)
         ),
-        capture_timeout_ms=resolve_capture_timeout(args.capture_timeout_ms, conditions),
-        **timing,
     )
 
 
@@ -455,13 +432,7 @@ class InterruptHandler:
 def exit_code_of(outcome: RunOutcome) -> int:
     """`run.end` 판정 → 종료 코드. 감독자가 기록을 마무리하지 못했으면(`recover_error`) 그래프
     판정과 무관하게 오류다 — `run.json`이 `running`으로 남았을 수 있다. 판정 자체는 보존한다."""
-    end = outcome.run_end
-    if end is None or outcome.recover_error is not None:
-        return EXIT_ERROR
-    verdict = end.get("verdict")
-    if verdict == "error" and end.get("code") in _INVALID_CODES:
-        return EXIT_INVALID
-    return _VERDICT_EXIT.get(str(verdict), EXIT_ERROR)
+    return run_exit_code(outcome.run_end, recover_error=outcome.recover_error)
 
 
 def decision_json(decision: Decision) -> dict[str, Any]:

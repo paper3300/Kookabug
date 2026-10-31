@@ -87,8 +87,9 @@ def hello(
 async def _shutdown(call: Call) -> dict[str, Any]:
     params: Mapping[str, Any] = call.params
     force = bool(params.get("force", False))
-    active = call.daemon.runs.active_run()
-    if active is not None and not force:
+    # 실행 중·시작 중 확인과 종료 결정은 시작 예약과 같은 잠금 안에서 한 번에 한다
+    active = call.daemon.runs.reserve_shutdown(force=force)
+    if active is not None:
         raise RequestFailed(
             "run_active",
             f"진행 중인 실행 {active}이(가) 있다. force면 실행을 취소하고 끝낸다",
