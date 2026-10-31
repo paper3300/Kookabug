@@ -21,6 +21,12 @@ export const SCREENS = {
   "shell-empty": { dark: "Main", light: "MainLight" },
   // 캔버스(노드·핀·연결선·미니맵·문제 패널), T8
   "main-canvas": { dark: "Main", light: "MainLight" },
+  // 팔레트(사이드바 "노드" 섹션)·저장 안 됨 탭, T9
+  "main-palette": { dark: "Main", light: "MainLight" },
+  // 시안에 없는 편집 중 상태 (끌어 놓기·핀 잇기): 시안 언어(색·글자)와 나란히 본다, T9
+  "palette-drag": { dark: "Main", light: "MainLight" },
+  "connect-drag": { dark: "Main", light: "MainLight" },
+  "close-confirm": { dark: "Main", light: "MainLight" },
   target: { dark: "Recorder" },
 };
 

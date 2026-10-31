@@ -6,7 +6,13 @@ import type { TreeEntry } from "../explorer/tree";
 import { client, toRpcError } from "../rpc/client";
 import { RunCursors } from "../rpc/runCursor";
 import { SessionRecovery } from "../rpc/recovery";
-import { documentsHost, resetDocuments, revalidateOpenDocs, setDocumentsConnection } from "./documents";
+import {
+  documentsHost,
+  onGraphChanged,
+  resetDocuments,
+  revalidateOpenDocs,
+  setDocumentsConnection,
+} from "./documents";
 import { refreshRegistry, resetRegistry } from "./registry";
 import { closeAllTabs } from "./tabs";
 import { useUi } from "./ui";
@@ -158,6 +164,8 @@ export async function initWorkspace(): Promise<void> {
     // 서브그래프·target·화면 파일이 바뀌면 열린 그래프의 검증 결과도 바뀐다
     revalidateOpenDocs();
   });
+  // 열린 문서의 디스크가 바뀜: 편집하지 않았으면 다시 열고, 편집 중이면 충돌 띠 (2.6)
+  client().on("graph.changed", (p) => onGraphChanged(p.doc_id, p.revision ?? null));
   client().on("run.event", (p) => {
     try {
       runCursors.event(p.run_id, p.seq, p.event);

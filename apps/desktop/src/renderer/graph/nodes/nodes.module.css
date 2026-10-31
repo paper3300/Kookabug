@@ -141,6 +141,24 @@
   clip-path: polygon(0 0, 100% 50%, 0 100%);
 }
 
+.pin:global(.react-flow__handle.connectionindicator) {
+  cursor: crosshair;
+}
+
+/* 연결 끌기 중 (2.11 "핀 호환 표시"): 이을 수 있는 핀은 크게·강조(흐름 삼각형은 잘라 그려 크기만), 아닌 핀과
+   그 이름은 흐리게 */
+.pin[data-compat="ok"]:global(.react-flow__handle) {
+  width: 14px;
+  height: 14px;
+  outline: 2px solid var(--kb-accent);
+  outline-offset: 1px;
+}
+
+.pin[data-compat="no"]:global(.react-flow__handle),
+.dim {
+  opacity: 0.25;
+}
+
 .note {
   margin: 6px 10px 2px;
   padding: 4px 8px;

@@ -6,7 +6,7 @@ import { pinColor } from "../pinColors";
 import css from "./edges.module.css";
 
 export function KbEdge(props: EdgeProps<KbFlowEdge>) {
-  const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data } = props;
+  const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, selected } = props;
   const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
   const tone = data?.tone ?? "other";
   return (
@@ -15,8 +15,9 @@ export function KbEdge(props: EdgeProps<KbFlowEdge>) {
         id={id}
         path={path}
         style={{
-          stroke: pinColor(tone),
-          strokeWidth: 2,
+          // 고른 연결선 (Delete로 지운다)은 강조 색
+          stroke: selected === true ? "var(--kb-accent)" : pinColor(tone),
+          strokeWidth: selected === true ? 3 : 2,
           ...(tone === "fail" ? { strokeDasharray: "5 4" } : {}),
         }}
       />

@@ -43,8 +43,15 @@ export const RENDERER_EVENTS: ReadonlySet<string> = new Set([
   "lease.changed",
 ]);
 
-// 주 프로세스가 보내는 앱 알림 (daemon 알림이 아님): 연결 상태, 출력 패널 줄, 창 최대화 상태, 테마
-export const APP_EVENTS: ReadonlySet<string> = new Set(["daemon.state", "daemon.log", "window.state", "theme.state"]);
+// 주 프로세스가 보내는 앱 알림 (daemon 알림이 아님): 연결 상태, 출력 패널 줄, 창 최대화 상태, 테마,
+// 창 닫기 확인 요청 (close-guard.ts)
+export const APP_EVENTS: ReadonlySet<string> = new Set([
+  "daemon.state",
+  "daemon.log",
+  "window.state",
+  "theme.state",
+  "app.closeRequested",
+]);
 
 // 앱 API (preload `window.kookabug.app`). 인자 모양은 주 프로세스가 다시 검사한다
 export const APP_ACTIONS: ReadonlySet<string> = new Set([
@@ -60,6 +67,8 @@ export const APP_ACTIONS: ReadonlySet<string> = new Set([
   "daemonRestart",
   "windowControl",
   "windowState",
+  "closeGuard",
+  "closeAnswer",
 ]);
 
 export class IpcGuardError extends Error {

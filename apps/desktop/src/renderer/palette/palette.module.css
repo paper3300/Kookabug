@@ -1,0 +1,78 @@
+/* 팔레트 (시안 Main 사이드바 "노드" 섹션): 묶음 줄 22px(점 8px), 노드 줄은 32px 들여 씀. 색은 토큰만 쓴다 */
+
+.list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 8px;
+}
+
+.groupRow,
+.itemRow {
+  height: var(--kb-row-height);
+  flex: 0 0 var(--kb-row-height);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  user-select: none;
+}
+
+.groupRow {
+  padding-left: 8px;
+  color: var(--kb-sidebar-fg);
+}
+
+.itemRow {
+  padding-left: 32px;
+  color: var(--kb-palette-item-fg);
+  cursor: grab;
+}
+
+.groupRow:hover,
+.itemRow:hover {
+  background: var(--kb-hover-bg);
+}
+
+.groupRow:focus-visible,
+.itemRow:focus-visible {
+  outline: 1px solid var(--kb-accent);
+  outline-offset: -1px;
+}
+
+.chevron {
+  width: 16px;
+  flex: 0 0 16px;
+  display: flex;
+  justify-content: center;
+  color: var(--kb-fg-muted);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 2px;
+}
+
+.name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.src {
+  margin-left: auto;
+  padding-right: 12px;
+  font-size: 11px;
+  color: var(--kb-fg-muted);
+}
+
+.empty {
+  padding: 2px 12px;
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+}

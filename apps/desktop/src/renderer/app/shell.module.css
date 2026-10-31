@@ -272,8 +272,45 @@
   letter-spacing: 0.04em;
 }
 
-.sectionHeader {
+.sectionRow {
   flex: 0 0 var(--kb-row-height);
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.sectionActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 8px;
+}
+
+.sectionAction {
+  height: 18px;
+  min-width: 22px;
+  padding: 0 3px;
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  color: var(--kb-fg-muted);
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--kb-font-mono);
+}
+
+.sectionAction:hover:not(:disabled) {
+  background: var(--kb-hover-bg);
+  color: var(--kb-sidebar-fg);
+}
+
+.sectionAction:disabled {
+  opacity: 0.4;
+}
+
+.sectionHeader {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -430,6 +467,100 @@
 
 .tabClose:hover {
   background: var(--kb-hover-bg);
+}
+
+/* 저장 안 됨 (시안 Main 탭의 ●). 누르면 닫기 확인 */
+.tabClose[data-dirty="true"] {
+  color: var(--kb-fg-strong);
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* ── 대화 상자 (저장 확인·새 그래프) ───────────────────────────── */
+.dialogBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 80px;
+  background: var(--kb-shadow);
+}
+
+.dialog {
+  width: 420px;
+  max-width: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--kb-menu-bg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px var(--kb-shadow);
+  color: var(--kb-fg);
+  font-size: 13px;
+}
+
+.dialogTitle {
+  font-weight: 700;
+  color: var(--kb-fg-strong);
+}
+
+.dialogMessage {
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dialogField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.dialogError {
+  color: var(--kb-status-error);
+  font-size: 12px;
+}
+
+.dialogButtons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dialogButton,
+.dialogPrimary {
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 2px;
+  font-size: 12px;
+}
+
+.dialogButton {
+  background: none;
+  border: 1px solid var(--kb-input-border);
+  color: var(--kb-fg);
+}
+
+.dialogButton:hover {
+  background: var(--kb-hover-bg);
+}
+
+.dialogPrimary {
+  background: var(--kb-accent);
+  border: 1px solid var(--kb-accent);
+  color: var(--kb-badge-fg);
+}
+
+.dialogButton:focus-visible,
+.dialogPrimary:focus-visible {
+  outline: 1px solid var(--kb-accent);
+  outline-offset: 2px;
 }
 
 .breadcrumb {

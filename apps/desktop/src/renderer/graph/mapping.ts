@@ -43,6 +43,9 @@ export interface NodeTypeInfo {
   /** 그래프 시작점(core.graph.entry): 흐름 입력이 없다 */
   entry: boolean;
   plugin: string;
+  /** 플러그인 판·이름 (노드를 더할 때 그래프 plugins에 적는다, 팔레트 오른쪽 칸) */
+  pluginVersion: string;
+  pluginTitle: string;
   /** 노드 스키마의 inputs·outputs·exits 선언 그대로 (정적 모양용) */
   decl: { inputs: unknown; outputs: unknown; exits: unknown };
 }
@@ -75,6 +78,8 @@ export interface PinRow {
   tone: PinTone;
   /** 모양에 없는 핀·출구 (JSON에만 있음) */
   extra: boolean;
+  /** 데이터 핀 타입 (모양 밖 핀은 null). 연결 끌기 중 호환 표시에 쓴다 */
+  type: string | null;
 }
 
 export interface NodeRow {
@@ -128,7 +133,12 @@ export type KbFlowEdge = Edge<KbEdgeData, "kb">;
 export interface ViewState {
   /** 보기 상태로 펼친 접힌 그룹 ID */
   expanded: ReadonlySet<string>;
-  selected: string | null;
+  /** 고른 노드 (여러 개) */
+  selected: ReadonlySet<string>;
+  /** 데이터 연결을 끄는 중: 숨긴 선택 입력 핀(기본값 있는 입력)도 핀 줄로 그린다 */
+  revealInputs?: boolean;
+  /** 좌표 없는 노드의 정해 둔 보기용 자리 (열 때 한 번 정한 자동 배치). 없으면 매번 자동 배치 */
+  auto?: ReadonlyMap<string, Point>;
 }
 
 export interface FlowGraph {
@@ -143,8 +153,10 @@ export function indexNodeTypes(schemas: readonly unknown[]): Map<string, NodeTyp
   const out = new Map<string, NodeTypeInfo>();
   for (const doc of schemas) {
     if (typeof doc !== "object" || doc === null) continue;
-    const d = doc as { plugin?: { id?: unknown }; nodes?: unknown };
+    const d = doc as { plugin?: { id?: unknown; version?: unknown; title?: unknown }; nodes?: unknown };
     const plugin = typeof d.plugin?.id === "string" ? d.plugin.id : "";
+    const pluginVersion = typeof d.plugin?.version === "string" ? d.plugin.version : "";
+    const pluginTitle = typeof d.plugin?.title === "string" ? d.plugin.title : plugin;
     if (!Array.isArray(d.nodes)) continue;
     for (const raw of d.nodes) {
       const n = raw as Record<string, unknown>;
@@ -158,6 +170,8 @@ export function indexNodeTypes(schemas: readonly unknown[]): Map<string, NodeTyp
         pure: n.pure === true,
         entry: n.engine === "graph_entry",
         plugin,
+        pluginVersion,
+        pluginTitle,
         decl: { inputs: n.inputs, outputs: n.outputs, exits: n.exits },
       });
     }
@@ -256,20 +270,21 @@ function buildRows(
   info: NodeTypeInfo | undefined,
   hasIncoming: boolean,
   readOutputs: readonly string[],
+  revealInputs: boolean,
 ): Built {
   const left: PinRow[] = [];
   const right: PinRow[] = [];
   const rowValues = new Set<string>();
   const known = !shape.unknown && info !== undefined;
   if (!known || hasIncoming || (!info.pure && !info.entry)) {
-    left.push({ handle: EXEC_IN, kind: "exec", label: "", tone: "exec", extra: false });
+    left.push({ handle: EXEC_IN, kind: "exec", label: "", tone: "exec", extra: false, type: null });
   }
   const declared = new Set(shape.inputs.map((p) => p.name));
   for (const pin of shape.inputs) {
     const has = Object.hasOwn(node.in, pin.name);
     const value = has ? node.in[pin.name] : undefined;
     const linked = has && findLinks(value).length > 0;
-    if (!(pin.required || linked || shape.unknown)) continue;
+    if (!(pin.required || linked || shape.unknown || revealInputs)) continue;
     const constant = has && !linked ? shortConstant(value) : null;
     if (constant !== null) rowValues.add(pin.name);
     left.push({
@@ -278,11 +293,12 @@ function buildRows(
       label: constant === null ? pin.name : `${pin.name} ${constant}`,
       tone: pinTone(pin.type),
       extra: false,
+      type: pin.type,
     });
   }
   for (const name of Object.keys(node.in)) {
     if (declared.has(name)) continue;
-    left.push({ handle: inputHandle(name), kind: "data", label: name, tone: "other", extra: true });
+    left.push({ handle: inputHandle(name), kind: "data", label: name, tone: "other", extra: true, type: null });
   }
   const exits = new Set(shape.exits.map((e) => e.name));
   const exitRow = (name: string, fail: boolean, extra: boolean): PinRow => ({
@@ -291,16 +307,24 @@ function buildRows(
     label: name,
     tone: fail ? "fail" : "exec",
     extra,
+    type: null,
   });
   for (const e of shape.exits) if (e.kind === "ok") right.push(exitRow(e.name, false, false));
   for (const [name] of node.next) if (!exits.has(name)) right.push(exitRow(name, false, true));
   const outputs = new Set(shape.outputs.map((o) => o.name));
   for (const o of shape.outputs) {
-    right.push({ handle: outputHandle(o.name), kind: "data", label: o.name, tone: pinTone(o.type), extra: false });
+    right.push({
+      handle: outputHandle(o.name),
+      kind: "data",
+      label: o.name,
+      tone: pinTone(o.type),
+      extra: false,
+      type: o.type,
+    });
   }
   for (const name of readOutputs) {
     if (!outputs.has(name)) {
-      right.push({ handle: outputHandle(name), kind: "data", label: name, tone: "other", extra: true });
+      right.push({ handle: outputHandle(name), kind: "data", label: name, tone: "other", extra: true, type: null });
     }
   }
   for (const e of shape.exits) if (e.kind === "fail") right.push(exitRow(e.name, true, false));
@@ -342,7 +366,9 @@ export function toFlow({ path, value, shapes, types, diagnostics, view }: Mappin
   const nodes = graphNodes(value);
   const ids = new Set(nodes.map((n) => n.id));
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const positions = autoLayout(nodes, layoutPositions(value));
+  const placed = layoutPositions(value);
+  for (const [id, p] of view.auto ?? []) if (!placed.has(id) && ids.has(id)) placed.set(id, p);
+  const positions = autoLayout(nodes, placed);
   const problems = problemsByNode(diagnostics, path, ids);
 
   // 다른 노드가 읽는 출력, 흐름이 들어오는 노드
@@ -382,6 +408,7 @@ export function toFlow({ path, value, shapes, types, diagnostics, view }: Mappin
       zIndex: -1,
       selectable: false,
       draggable: false,
+      deletable: false,
       data: { id: c.id, text: c.text },
     });
   }
@@ -393,6 +420,8 @@ export function toFlow({ path, value, shapes, types, diagnostics, view }: Mappin
       type: "kbGroup",
       position: g.position ?? first ?? { x: 0, y: 0 },
       draggable: false,
+      // 고를 수 없게 하면 React Flow가 포인터를 꺼서 펼치기 단추를 누를 수 없다. 고른 그룹은 지우기·편집 대상이 아니다
+      deletable: false,
       data: {
         id: g.id,
         title: g.title,
@@ -411,7 +440,7 @@ export function toFlow({ path, value, shapes, types, diagnostics, view }: Mappin
       shapeOf(shapes, node.id) ??
       (info !== undefined && info.version === node.version ? staticShape(info, node, reads) : fallbackShape(node, reads));
     const unknown = shape.unknown || info === undefined;
-    const built = buildRows(node, shape, info, incoming.has(node.id), reads);
+    const built = buildRows(node, shape, info, incoming.has(node.id), reads, view.revealInputs === true);
     const p = problems.get(node.id);
     const errors = p?.errors.length ?? 0;
     const warnings = p?.warnings.length ?? 0;
@@ -421,8 +450,7 @@ export function toFlow({ path, value, shapes, types, diagnostics, view }: Mappin
       id: node.id,
       type: "kb",
       position: positions.get(node.id) ?? { x: 0, y: 0 },
-      selected: view.selected === node.id,
-      draggable: false,
+      selected: view.selected.has(node.id),
       data: {
         id: node.id,
         type: node.type,

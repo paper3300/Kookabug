@@ -4,6 +4,7 @@ import path from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, shell } from "electron";
 import type { OpenResult, OutputLine, ThemeMode, ThemeState } from "../preload/bridge";
 import { locateCli } from "./cli-locate";
+import { CloseGuard } from "./close-guard";
 import { DaemonManager, nodeDeps, parseExtraArgs, sameWorkspacePath } from "./daemon";
 import { createNotificationForwarder, createRpcHandler } from "./ipc";
 import { APP_CHANNEL, checkAppAction, checkSender, EVENT_CHANNEL, IpcGuardError, RPC_CHANNEL } from "./ipc-guard";
@@ -146,7 +147,20 @@ function start(): void {
       else throw new IpcGuardError(`모르는 창 동작: ${String(action)}`);
     },
     windowState: () => ({ maximized: mainWindow?.isMaximized() ?? false }),
+    closeGuard(on) {
+      if (typeof on !== "boolean") throw new IpcGuardError("closeGuard 인자가 boolean이 아니다");
+      closeGuard.arm(on);
+    },
+    closeAnswer(ok) {
+      if (typeof ok !== "boolean") throw new IpcGuardError("closeAnswer 인자가 boolean이 아니다");
+      closeGuard.answer(ok);
+    },
   };
+  // 창 닫기 확인 (close-guard.ts): 저장 안 된 그래프가 있으면 렌더러가 저장·버림·취소를 묻는다
+  const closeGuard = new CloseGuard({
+    ask: () => send("app.closeRequested", {}),
+    close: () => mainWindow?.close(),
+  });
   ipcMain.handle(APP_CHANNEL, (event, action: unknown, ...args: unknown[]) => {
     guardSender(event);
     return actions[checkAppAction(action)](...args);
@@ -173,6 +187,14 @@ function start(): void {
     win.setBackgroundColor(WINDOW_BG[theme()]);
     send("theme.state", themeState());
   });
+  win.on("close", (event) => {
+    if (closeGuard.onClose()) event.preventDefault();
+  });
+  // 렌더러가 다시 읽히거나 죽으면 확인 경로가 없다: 붙일 때까지 막지 않는다
+  win.webContents.on("did-start-navigation", (details) => {
+    if (details.isMainFrame && !details.isSameDocument) closeGuard.rendererGone();
+  });
+  win.webContents.on("render-process-gone", () => closeGuard.rendererGone());
   win.on("closed", () => {
     mainWindow = null;
     // daemon은 남는다 (UI를 꺼도 daemon과 실행은 계속된다). 연결만 놓는다

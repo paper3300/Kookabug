@@ -119,6 +119,14 @@
   --kb-pin-text: #e2c08d;
   --kb-pin-other: #555555;
   --kb-minimap-view: #4daafc;
+  /* 팔레트 (시안 Main 사이드바 "노드": 분류 점 색·노드 줄 글자) */
+  --kb-cat-window: #4daafc;
+  --kb-cat-input: #89d185;
+  --kb-cat-vision: #39c5cf;
+  --kb-cat-flow: #b392f0;
+  --kb-cat-judge: #f0883e;
+  --kb-cat-plugin: #e2c08d;
+  --kb-palette-item-fg: #bbbbbb;
 
   /* 시안에 없는 상태 */
   --kb-statusbar-idle-bg: #181818; /* 대기 상태 바: 실행 중(파랑)과 구분되는 무채색 = 타이틀 바 색 */
@@ -242,6 +250,13 @@
   --kb-pin-text: #7a5600;
   --kb-pin-other: #9a9a9a;
   --kb-minimap-view: #005fb8;
+  --kb-cat-window: #005fb8;
+  --kb-cat-input: #2e7d32;
+  --kb-cat-vision: #00737d;
+  --kb-cat-flow: #7048b8;
+  --kb-cat-judge: #b85c00;
+  --kb-cat-plugin: #7a5600;
+  --kb-palette-item-fg: #4d4d4d;
 
   /* 시안에 없는 상태 */
   --kb-statusbar-idle-bg: #f8f8f8;

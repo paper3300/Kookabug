@@ -63,6 +63,10 @@ export interface AppApi {
   daemonRestart(): Promise<DaemonState>;
   windowControl(action: "minimize" | "maximize" | "close"): Promise<void>;
   windowState(): Promise<WindowState>;
+  /** 창 닫기 때 렌더러에 물을지 (app.closeRequested 알림을 받을 준비가 됨) */
+  closeGuard(on: boolean): Promise<void>;
+  /** app.closeRequested의 답: true면 창을 닫는다 */
+  closeAnswer(ok: boolean): Promise<void>;
 }
 
 export interface KookabugBridge {
@@ -94,6 +98,8 @@ function appApi(ipc: IpcRendererLike): AppApi {
     daemonRestart: call("daemonRestart"),
     windowControl: call("windowControl"),
     windowState: call("windowState"),
+    closeGuard: call("closeGuard"),
+    closeAnswer: call("closeAnswer"),
   };
 }
 

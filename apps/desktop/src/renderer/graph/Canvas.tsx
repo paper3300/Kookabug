@@ -1,6 +1,12 @@
-// 그래프 캔버스 (M2 계획 T8): 탭 하나의 문서를 React Flow로 그린다. T8은 보기만 한다(옮기기·연결은 T9).
-// 노드·연결선은 값에서 사상한 것(mapping.ts)이고, React Flow가 재는 노드 크기만 화면 상태로 붙인다.
-// 고르기·펼친 그룹·뷰포트는 문서의 보기 상태(store/documents.ts)라 파일에 쓰지 않는다
+// 그래프 캔버스 (M2 계획 T8·T9): 탭 하나의 문서를 React Flow로 그린다.
+// 노드·연결선은 값에서 사상한 것(mapping.ts)이다. 편집은 값 명령(commands/*)으로만 하고, React Flow 상태는 화면
+// 상태(잰 크기·끌기 중 좌표·고르기)로만 든다. 흐름은 한 방향이다: React Flow 변경 → 값 명령·보기 상태 → 사상 →
+// React Flow (T8의 React 오류 185 무한 다시 그리기: React Flow 상태를 그대로 다시 보기 상태로 되돌려 쓰지 않는다.
+// 고르기는 값이 같으면 표를 건드리지 않는다)
+// - 옮기기: 끌기 중에는 화면 좌표만 바꾸고 끌기를 놓을 때 이동 명령 하나 (정수 반올림)
+// - 연결: 핀을 끌어 놓으면 연결 명령. 끌기 중 호환 핀 강조, 데이터 연결이면 숨긴 선택 입력 핀도 보인다
+// - 지우기: Delete·Backspace로 고른 노드·연결선을 명령 하나로 지운다
+// - 팔레트에서 끌어 놓으면 그 자리에 노드를 더한다
 import "@xyflow/react/dist/base.css";
 import {
   applyNodeChanges,
@@ -11,17 +17,28 @@ import {
   ReactFlowProvider,
   useReactFlow,
   useViewport,
+  type Connection as FlowConnection,
+  type Edge,
+  type EdgeChange,
   type NodeChange,
+  type OnConnectStartParams,
+  type XYPosition,
 } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { saveViewport, selectNode, useDocuments, type GraphDoc } from "../store/documents";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { PALETTE_MIME } from "../palette/groups";
+import { applyEdit, getDoc, saveViewport, setSelection, useDocuments, type GraphDoc } from "../store/documents";
+import { useEditsLocked } from "../store/dialog";
 import { useRegistry } from "../store/registry";
 import css from "./canvas.module.css";
+import { registerCanvas } from "./canvasActions";
+import { addNode, connect, deleteSelection, moveNodes } from "./commands";
+import { compatible, type PinEnd } from "./compat";
 import { KbEdge } from "./edges/KbEdge";
-import { toFlow, type KbFlowNode, type TypeIndex } from "./mapping";
+import { newNodeId, takenIds } from "./ids";
+import { toFlow, type FlowGraph, type KbFlowEdge, type KbFlowNode, type NodeTypeInfo, type TypeIndex } from "./mapping";
 import { CommentNode } from "./nodes/CommentNode";
-import { CanvasPathContext } from "./nodes/context";
-import { GraphNode } from "./nodes/GraphNode";
+import { CanvasPathContext, ConnectingContext } from "./nodes/context";
+import { GraphNode, pinEnd } from "./nodes/GraphNode";
 import { GroupNode } from "./nodes/GroupNode";
 
 const NODE_TYPES = { kb: GraphNode, kbGroup: GroupNode, kbComment: CommentNode };
@@ -30,6 +47,10 @@ const PRO = { hideAttribution: true };
 const FIT = { padding: 0.15, maxZoom: 1 };
 /** 시안 미니맵 120×72 (React Flow는 style의 너비·높이로 그림 크기를 정한다) */
 const MINIMAP_SIZE = { width: 120, height: 72 };
+const DELETE_KEYS = ["Delete", "Backspace"];
+const CONNECTION_LINE = { stroke: "var(--kb-accent)", strokeWidth: 2 };
+/** 놓은 자리가 노드 머리 가운데쯤 오게 (노드 너비 184px, 머리 32px) */
+const DROP_OFFSET = { x: 92, y: 16 };
 
 function ZoomBox() {
   const rf = useReactFlow();
@@ -47,11 +68,41 @@ function ZoomBox() {
   );
 }
 
+/** 사상한 노드에서 손잡이 하나의 핀 끝 (호환 판정용) */
+function findEnd(flow: FlowGraph, node: string, handle: string | null | undefined): PinEnd | null {
+  const n = flow.nodes.find((x) => x.id === node);
+  if (n === undefined || n.type !== "kb" || handle === null || handle === undefined) return null;
+  for (const row of n.data.rows) {
+    if (row.left?.handle === handle) return pinEnd(node, row.left, "left");
+    if (row.right?.handle === handle) return pinEnd(node, row.right, "right");
+  }
+  return null;
+}
+
+/** 팔레트 노드를 그 자리에 더한다 (명령 하나, 더한 노드를 고른다) */
+function addNodeAt(path: string, info: NodeTypeInfo, at: XYPosition): string | null {
+  const doc = getDoc(path);
+  if (doc === undefined || doc.value === null) return null;
+  const id = newNodeId(takenIds(doc.value));
+  const plugin = info.plugin !== "" && info.pluginVersion !== "" ? { id: info.plugin, version: info.pluginVersion } : null;
+  const added = applyEdit(
+    path,
+    (v) => addNode(v, { id, type: info.type, version: info.version, x: at.x, y: at.y, plugin }),
+    [id],
+  );
+  return added ? id : null;
+}
+
 function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
   const rf = useReactFlow();
   const path = doc.path;
-  const { expanded: expandedList, selected, viewport, focus } = doc.view;
+  const { expanded: expandedList, selection, viewport, focus, auto } = doc.view;
   const expanded = useMemo(() => new Set(expandedList), [expandedList]);
+  const selected = useMemo(() => new Set(selection), [selection]);
+  // 대화 상자·저장하고 닫기 중에는 끌기·잇기·지우기를 끈다 (값 명령도 store가 거부한다)
+  const locked = useEditsLocked();
+  const [connecting, setConnecting] = useState<PinEnd | null>(null);
+  const revealInputs = connecting?.kind === "data";
   const flow = useMemo(
     () =>
       toFlow({
@@ -60,32 +111,154 @@ function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
         shapes: doc.shapes,
         types,
         diagnostics: doc.diagnostics,
-        view: { expanded, selected },
+        view: { expanded, selected, revealInputs, auto },
       }),
-    [path, doc.value, doc.shapes, doc.diagnostics, types, expanded, selected],
+    [path, doc.value, doc.shapes, doc.diagnostics, types, expanded, selected, revealInputs, auto],
+  );
+  const flowRef = useRef(flow);
+  flowRef.current = flow;
+
+  // React Flow가 잰 크기(measured)와 끌기 중 좌표만 화면 상태로 들고, 나머지는 매번 값에서 다시 만든다
+  const dragging = useRef(new Map<string, XYPosition>());
+  const nodesRef = useRef<KbFlowNode[]>(flow.nodes);
+  const [nodes, setNodesState] = useState<KbFlowNode[]>(flow.nodes);
+  const setNodes = useCallback((next: KbFlowNode[]) => {
+    nodesRef.current = next;
+    setNodesState(next);
+  }, []);
+  useEffect(() => {
+    const prev = new Map(nodesRef.current.map((n) => [n.id, n]));
+    setNodes(
+      flow.nodes.map((n) => {
+        const old = prev.get(n.id);
+        const at = dragging.current.get(n.id);
+        let out = n;
+        if (old?.measured !== undefined) out = { ...out, measured: old.measured };
+        if (at !== undefined) out = { ...out, position: at, dragging: true };
+        return out;
+      }),
+    );
+  }, [flow.nodes, setNodes]);
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange<KbFlowNode>[]) => {
+      // 지우기는 onDelete가 값 명령으로 한다. 크기·끌기 중 좌표·고르기만 화면 상태로 받는다
+      const keep = changes.filter((c) => c.type === "dimensions" || c.type === "position" || c.type === "select");
+      if (keep.length === 0) return;
+      for (const c of keep) {
+        if (c.type === "position" && c.position !== undefined && c.dragging === true) dragging.current.set(c.id, c.position);
+      }
+      const next = applyNodeChanges(keep, nodesRef.current);
+      setNodes(next);
+      if (keep.some((c) => c.type === "select")) {
+        // 보기 상태가 같으면 setSelection은 표를 건드리지 않는다 (되먹임이 멈춘다)
+        setSelection(
+          path,
+          next.filter((n) => n.type === "kb" && n.selected === true).map((n) => n.id),
+        );
+      }
+    },
+    [path, setNodes],
   );
 
-  // React Flow가 잰 크기(measured)만 화면 상태로 들고, 나머지는 매번 값에서 다시 만든다
-  const [nodes, setNodes] = useState<KbFlowNode[]>(flow.nodes);
-  useEffect(() => {
-    setNodes((prev) => {
-      const measured = new Map(prev.map((n) => [n.id, n.measured]));
-      return flow.nodes.map((n) => {
-        const m = measured.get(n.id);
-        return m === undefined ? n : { ...n, measured: m };
-      });
-    });
-  }, [flow.nodes]);
-  // 고르기의 권위는 문서 보기 상태 하나다 (누르기 → 보기 상태 → 노드의 selected). React Flow의 고르기 변경을
-  // 다시 보기 상태로 되돌려 쓰면 두 쪽이 서로를 고쳐 다시 그리기가 멈추지 않을 수 있다
-  const onNodesChange = useCallback((changes: NodeChange<KbFlowNode>[]) => {
-    // 보기 전용: 크기만 받는다. 옮기기·지우기는 T9
-    const allowed = changes.filter((c) => c.type === "dimensions");
-    if (allowed.length > 0) setNodes((ns) => applyNodeChanges(allowed, ns));
-  }, []);
-  const onNodeClick = useCallback(
-    (_: unknown, node: KbFlowNode) => selectNode(path, node.type === "kb" ? node.id : null),
+  const onNodeDragStop = useCallback(
+    (_: unknown, __: KbFlowNode, dragged: KbFlowNode[]) => {
+      const moves = dragged
+        .filter((n) => n.type === "kb")
+        .map((n) => {
+          const at = dragging.current.get(n.id) ?? n.position;
+          return { id: n.id, x: at.x, y: at.y };
+        });
+      dragging.current.clear();
+      // 끌기 하나 = 명령 하나 (2.6·T9). 같은 자리에 놓으면 값이 같아 기록을 남기지 않는다
+      applyEdit(path, (v) => moveNodes(v, moves));
+    },
     [path],
+  );
+
+  // 연결선 고르기는 화면 상태다 (지우기 대상)
+  const [edgeSelection, setEdgeSelection] = useState<ReadonlySet<string>>(() => new Set());
+  const edges = useMemo(
+    () => flow.edges.map((e) => (edgeSelection.has(e.id) ? { ...e, selected: true } : e)),
+    [flow.edges, edgeSelection],
+  );
+  const onEdgesChange = useCallback((changes: EdgeChange<KbFlowEdge>[]) => {
+    const select = changes.filter((c) => c.type === "select");
+    if (select.length === 0) return;
+    setEdgeSelection((prev) => {
+      const next = new Set(prev);
+      for (const c of select) {
+        if (c.selected) next.add(c.id);
+        else next.delete(c.id);
+      }
+      return next.size === prev.size && [...next].every((id) => prev.has(id)) ? prev : next;
+    });
+  }, []);
+
+  const onDelete = useCallback(
+    ({ nodes: gone, edges: cut }: { nodes: KbFlowNode[]; edges: Edge[] }) => {
+      const nodeIds = gone.filter((n) => n.type === "kb").map((n) => n.id);
+      const edgeIds = cut.map((e) => e.id);
+      if (nodeIds.length === 0 && edgeIds.length === 0) return;
+      applyEdit(path, (v) => deleteSelection(v, nodeIds, edgeIds));
+      setEdgeSelection(new Set());
+    },
+    [path],
+  );
+
+  const onConnectStart = useCallback((_: unknown, p: OnConnectStartParams) => {
+    if (p.nodeId === null) return;
+    setConnecting(findEnd(flowRef.current, p.nodeId, p.handleId));
+  }, []);
+  const onConnectEnd = useCallback(() => setConnecting(null), []);
+  const isValidConnection = useCallback((c: FlowConnection | Edge) => {
+    const a = findEnd(flowRef.current, c.source, c.sourceHandle);
+    const b = findEnd(flowRef.current, c.target, c.targetHandle);
+    return a !== null && b !== null && compatible(a, b);
+  }, []);
+  const onConnect = useCallback(
+    (c: FlowConnection) => {
+      setConnecting(null);
+      applyEdit(path, (v) => connect(v, c));
+    },
+    [path],
+  );
+
+  // 팔레트에서 끌어 놓기
+  const [dropping, setDropping] = useState(false);
+  const wrapper = useRef<HTMLDivElement>(null);
+  const onDragOver = useCallback((e: DragEvent) => {
+    if (!e.dataTransfer.types.includes(PALETTE_MIME)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setDropping(true);
+  }, []);
+  const onDragLeave = useCallback((e: DragEvent) => {
+    if (!(e.relatedTarget instanceof Node) || !e.currentTarget.contains(e.relatedTarget)) setDropping(false);
+  }, []);
+  const onDrop = useCallback(
+    (e: DragEvent) => {
+      setDropping(false);
+      const type = e.dataTransfer.getData(PALETTE_MIME);
+      const info = types.get(type);
+      if (info === undefined) return;
+      e.preventDefault();
+      const at = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      addNodeAt(path, info, { x: at.x - DROP_OFFSET.x, y: at.y - DROP_OFFSET.y });
+    },
+    [path, rf, types],
+  );
+  useEffect(
+    () =>
+      registerCanvas(path, {
+        addAtCenter(info) {
+          const box = wrapper.current?.getBoundingClientRect();
+          if (box === undefined) return;
+          const at = rf.screenToFlowPosition({ x: box.left + box.width / 2, y: box.top + box.height / 2 });
+          addNodeAt(path, info, { x: at.x - DROP_OFFSET.x, y: at.y - DROP_OFFSET.y });
+        },
+      }),
+    [path, rf],
   );
 
   // 문제 패널에서 고른 노드로 화면을 옮긴다. 막 펼친 그룹의 노드·막 연 탭은 크기를 잴 때까지 기다리고,
@@ -114,46 +287,65 @@ function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
   const empty = flow.nodes.every((n) => n.type !== "kb" && n.type !== "kbGroup");
   return (
     <CanvasPathContext.Provider value={path}>
-      <ReactFlow<KbFlowNode>
-        nodes={nodes}
-        edges={flow.edges}
-        nodeTypes={NODE_TYPES}
-        edgeTypes={EDGE_TYPES}
-        onNodesChange={onNodesChange}
-        onNodeClick={onNodeClick}
-        onPaneClick={() => selectNode(path, null)}
-        onMoveEnd={(_, vp) => saveViewport(path, vp)}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        elementsSelectable
-        edgesFocusable={false}
-        selectionOnDrag={false}
-        deleteKeyCode={null}
-        minZoom={0.2}
-        maxZoom={2}
-        {...(viewport === null ? { fitView: true, fitViewOptions: FIT } : { defaultViewport: viewport })}
-        proOptions={PRO}
-        className={css.flow}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--kb-canvas-dot)" />
-        <div className={css.corner}>
-          <ZoomBox />
-          <MiniMap
-            className={css.minimap}
-            style={MINIMAP_SIZE}
-            pannable
-            zoomable
-            ariaLabel="미니맵"
-            nodeColor="var(--kb-node-border)"
-            nodeStrokeColor="transparent"
-            bgColor="var(--kb-node-bg)"
-            maskColor="transparent"
-            maskStrokeColor="var(--kb-minimap-view)"
-            maskStrokeWidth={1}
-          />
+      <ConnectingContext.Provider value={connecting}>
+        <ReactFlow<KbFlowNode, KbFlowEdge>
+          ref={wrapper}
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={NODE_TYPES}
+          edgeTypes={EDGE_TYPES}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeDragStop={onNodeDragStop}
+          onDelete={onDelete}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
+          onConnect={onConnect}
+          isValidConnection={isValidConnection}
+          onMoveEnd={(_, vp) => saveViewport(path, vp)}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={onDrop}
+          nodesDraggable={!locked}
+          nodesConnectable={!locked}
+          elementsSelectable
+          edgesFocusable={false}
+          selectionOnDrag={false}
+          deleteKeyCode={locked ? null : DELETE_KEYS}
+          nodeDragThreshold={3}
+          connectionLineStyle={CONNECTION_LINE}
+          minZoom={0.2}
+          maxZoom={2}
+          {...(viewport === null ? { fitView: true, fitViewOptions: FIT } : { defaultViewport: viewport })}
+          proOptions={PRO}
+          className={css.flow}
+          data-dropping={dropping}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--kb-canvas-dot)" />
+          <div className={css.corner}>
+            <ZoomBox />
+            <MiniMap
+              className={css.minimap}
+              style={MINIMAP_SIZE}
+              pannable
+              zoomable
+              ariaLabel="미니맵"
+              nodeColor="var(--kb-node-border)"
+              nodeStrokeColor="transparent"
+              bgColor="var(--kb-node-bg)"
+              maskColor="transparent"
+              maskStrokeColor="var(--kb-minimap-view)"
+              maskStrokeWidth={1}
+            />
+          </div>
+        </ReactFlow>
+      </ConnectingContext.Provider>
+      {empty && !dropping && <div className={css.emptyHint}>팔레트에서 노드를 끌어 놓으세요</div>}
+      {dropping && (
+        <div className={css.dropZone} data-part="drop-zone">
+          <span className={css.dropHint}>여기에 놓으면 노드를 더해요</span>
         </div>
-      </ReactFlow>
-      {empty && <div className={css.emptyHint}>팔레트에서 노드를 끌어 놓으세요</div>}
+      )}
     </CanvasPathContext.Provider>
   );
 }
@@ -204,6 +396,8 @@ export function GraphCanvas({ path }: { path: string }) {
       data-path={path}
       data-status={doc?.status ?? "loading"}
       data-dirty={doc?.dirty ?? false}
+      data-saves={doc?.saves ?? 0}
+      data-revision={doc?.baseRevision ?? ""}
     >
       {body}
     </div>

@@ -40,7 +40,7 @@ function input(value: GraphValue, extra: Partial<MappingInput> = {}): MappingInp
     shapes: {},
     types,
     diagnostics: [],
-    view: { expanded: new Set(), selected: null },
+    view: { expanded: new Set(), selected: new Set() },
     ...extra,
   };
 }
@@ -300,7 +300,7 @@ describe("접힌 그룹·주석", () => {
     expect(edge(flow, "x:n_entry:start")).toMatchObject({ target: groupNodeId("g_main"), targetHandle: "g:in" });
     expect(flow.edges.some((e) => e.id === E("x:n_log:done"))).toBe(false);
     // 보기 상태로 펼치면 구성원이 보이고 연결은 제자리로
-    const open = toFlow(input(value, { view: { expanded: new Set(["g_main"]), selected: null } }));
+    const open = toFlow(input(value, { view: { expanded: new Set(["g_main"]), selected: new Set() } }));
     expect(open.nodes.map((n) => n.id)).toEqual(expect.arrayContaining(["n_log", "n_pass", groupNodeId("g_main")]));
     expect(edge(open, "x:n_entry:start")).toMatchObject({ target: "n_log", targetHandle: EXEC_IN });
     expect(edge(open, "x:n_log:done")).toMatchObject({ source: "n_log", target: "n_pass" });
@@ -334,6 +334,22 @@ describe("열기는 값을 바꾸지 않는다 (2.6)", () => {
     for (const id of nodes) {
       expect(flow.nodes.some((n) => n.id === id) || flow.hiddenIn.has(id), id).toBe(true);
     }
+  });
+
+  test("열 때 정한 보기용 자리(view.auto)는 다른 노드를 더해도 그대로다 (T9)", () => {
+    const first = toFlow(input(linear));
+    const auto = new Map(first.nodes.map((n) => [n.id, n.position]));
+    // 노드 하나에 좌표가 생기면 자동 배치는 그 아래로 옮겨 가지만, 정해 둔 자리가 있으면 그대로
+    const placed: GraphValue = {
+      ...linear,
+      nodes: { ...(linear.nodes as object), n_new: { type: "core.flow.delay", version: 1 } },
+      layout: { nodes: { n_new: { x: 900, y: -500 } } },
+    };
+    const moved = toFlow(input(placed));
+    expect(moved.nodes.find((n) => n.id === "n_entry")!.position).not.toEqual(auto.get("n_entry"));
+    const stable = toFlow(input(placed, { view: { expanded: new Set(), selected: new Set(), auto } }));
+    for (const [id, p] of auto) expect(stable.nodes.find((n) => n.id === id)!.position, id).toEqual(p);
+    expect(stable.nodes.find((n) => n.id === "n_new")!.position).toEqual({ x: 900, y: -500 });
   });
 
   test("좌표 없는 노드는 보기용으로만 배치한다", () => {

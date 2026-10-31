@@ -135,3 +135,29 @@
   font-size: 12px;
   pointer-events: none;
 }
+
+/* 팔레트에서 노드를 끌어 캔버스 위에 있을 때 (시안 없음: 강조 색 점선 테두리와 안내 글자) */
+.dropZone {
+  position: absolute;
+  inset: 4px;
+  z-index: 4;
+  border: 1px dashed var(--kb-accent);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.dropHint {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  padding: 3px 10px;
+  border-radius: 2px;
+  background: var(--kb-banner-info-bg);
+  color: var(--kb-banner-info-fg);
+  font-size: 12px;
+}
+
+.flow :global(.react-flow__connectionline) {
+  z-index: 1001;
+}

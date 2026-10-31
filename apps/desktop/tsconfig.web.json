@@ -13,5 +13,5 @@
     "noImplicitOverride": true
   },
   "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx"],
-  "exclude": ["src/renderer/**/*.test.ts"]
+  "exclude": ["src/renderer/**/*.test.ts", "src/renderer/**/*.testutil.ts"]
 }

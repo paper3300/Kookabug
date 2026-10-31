@@ -35,9 +35,17 @@ export async function launchApp(options: LaunchOptions = {}): Promise<{ app: Ele
   return { app, userData };
 }
 
-/** 앱을 닫는다. 10초 안에 안 닫히면 프로세스를 끝낸다 (검사 정리가 멈추지 않게) */
+/**
+ * 앱을 닫는다. 10초 안에 안 닫히면 프로세스를 끝낸다 (검사 정리가 멈추지 않게). 검사 정리는 저장 안 된 편집을
+ * 버린다: 창을 destroy해 닫기 확인(close-guard)을 거치지 않는다. 닫기 확인 자체는 edit.spec.ts가 창 X로 검사한다
+ */
 export async function closeApp(app: ElectronApplication | undefined): Promise<void> {
   if (app === undefined) return;
+  await app
+    .evaluate(({ BrowserWindow }) => {
+      for (const w of BrowserWindow.getAllWindows()) w.destroy();
+    })
+    .catch(() => {});
   const closed = app.close().catch(() => {});
   const timer = new Promise((r) => setTimeout(r, 10_000));
   await Promise.race([closed, timer]);

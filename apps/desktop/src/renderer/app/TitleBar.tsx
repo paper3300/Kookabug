@@ -1,7 +1,9 @@
 // 타이틀 바 (시안 Main): 로고·메뉴·명령 검색 자리·창 버튼. 명령 검색은 파일 빠른 열기만 한다 (2.11).
 // 시안의 "플러그인" 메뉴는 M6까지 숨긴다 (2.10 "창", U3)
 import { useEffect, useRef, useState } from "react";
-import { closeTab, useTabs } from "../store/tabs";
+import { canRedo, canUndo, redoEdit, saveDoc, undoEdit, useDocuments } from "../store/documents";
+import { requestCloseTab } from "../store/editing";
+import { useTabs } from "../store/tabs";
 import { useTheme, type ThemeMode } from "../store/theme";
 import { useUi } from "../store/ui";
 import { closeWorkspace, openFolder, useWorkspace } from "../store/workspace";
@@ -23,6 +25,8 @@ function useMenus(): [string, MenuEntry[]][] {
   const setMode = useTheme((s) => s.setMode);
   const hasWorkspace = useWorkspace((s) => s.root !== null);
   const active = useTabs((s) => s.active);
+  const graph = useTabs((s) => (s.tabs.find((t) => t.path === s.active)?.kind === "graph" ? s.active : null));
+  const doc = useDocuments((s) => (graph === null ? undefined : s.docs.get(graph)));
   const theme = (value: ThemeMode, label: string): MenuItem => ({
     label: `테마: ${label}`,
     checked: mode === value,
@@ -35,7 +39,13 @@ function useMenus(): [string, MenuEntry[]][] {
         { label: "프로젝트 열기…", shortcut: "Ctrl+O", run: () => void openFolder() },
         { label: "파일 빠른 열기", shortcut: "Ctrl+P", disabled: !hasWorkspace, run: () => useUi.setState({ quickOpen: true }) },
         "separator",
-        { label: "탭 닫기", shortcut: "Ctrl+W", disabled: active === null, run: () => active && closeTab(active) },
+        {
+          label: "저장",
+          shortcut: "Ctrl+S",
+          disabled: doc?.status !== "ready",
+          run: () => graph !== null && void saveDoc(graph),
+        },
+        { label: "탭 닫기", shortcut: "Ctrl+W", disabled: active === null, run: () => active && void requestCloseTab(active) },
         {
           label: "프로젝트 닫기",
           disabled: !hasWorkspace,
@@ -48,8 +58,8 @@ function useMenus(): [string, MenuEntry[]][] {
     [
       "편집",
       [
-        { label: "실행 취소", shortcut: "Ctrl+Z", disabled: true },
-        { label: "다시 실행", shortcut: "Ctrl+Y", disabled: true },
+        { label: "실행 취소", shortcut: "Ctrl+Z", disabled: !canUndo(doc), run: () => graph !== null && undoEdit(graph) },
+        { label: "다시 실행", shortcut: "Ctrl+Y", disabled: !canRedo(doc), run: () => graph !== null && redoEdit(graph) },
       ],
     ],
     ["보기", [theme("system", "시스템"), theme("light", "라이트"), theme("dark", "다크")]],
