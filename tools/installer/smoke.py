@@ -72,6 +72,7 @@ NOTICE_SECTIONS: Final = (
     "# SPDX 밖 배포 조건 (LicenseRef)",
     "# 네이티브 파일 근거 원문",
     "# OCR 모델",
+    "# OS 구성요소 사용",
     "GNU LESSER GENERAL PUBLIC LICENSE",
     "install:LICENSES.chromium.html",
     "Electron contributors",

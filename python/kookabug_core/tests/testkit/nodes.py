@@ -273,6 +273,14 @@ def shot(
     return Result.ok("done", image=frame, saved=saved)
 
 
+@node(type="testkit.sleep", version=1, title="값 받고 기다리기", exits=[Exit("done", "ok")])
+def sleep_with(ctx: Context, ms: int = 100, value: Any | None = None) -> Result:
+    """`ms`만큼 기다린다. `value`(any)는 받기만 한다 (비밀값을 받은 채 시간이 걸리는 스텝,
+    M3 영상)."""
+    ctx.sleep(ms)
+    return Result.ok("done")
+
+
 COUNTS: Counter[str] = Counter()
 """`testkit.pure.count`가 계산된 횟수 (키별). 테스트마다 비운다."""
 
@@ -482,6 +490,7 @@ NODES = (
     config_value,
     mutate,
     shot,
+    sleep_with,
     pure_count,
     pure_capture,
     pure_log,

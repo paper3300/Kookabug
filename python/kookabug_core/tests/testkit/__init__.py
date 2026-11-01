@@ -17,6 +17,8 @@
 - `testkit.mutate`: 받은 목록을 안쪽까지 고쳐 출력 (입력 복사 확인용)
 - `testkit.shot`: 캡처·`ctx.artifacts.save`·예외를 골라 하는 노드, `value`(any)로 비밀값 입력 스텝을
   만든다 (기록 정책 확인용)
+- `testkit.sleep`: `ms`만큼 기다린다. `value`(any)는 받기만 한다 (비밀값을 받은 채 시간이 걸리는
+  스텝 — 영상 게이트 확인용)
 - `testkit.pure.count`: 계산될 때마다 `COUNTS[key]`를 올리는 순수 노드 (계산 횟수 확인용)
 - `testkit.pure.capture`·`testkit.pure.log`: 금지된 ctx 기능을 쓰는 순수 노드 (→ error)
 

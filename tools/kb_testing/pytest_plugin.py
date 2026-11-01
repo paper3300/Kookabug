@@ -23,7 +23,7 @@ from typing import Final
 
 import pytest
 
-from kb_testing import desktop
+from kb_testing import desktop, media
 from kb_testing.proc import Spawned
 from kookabug_core.win import Job
 
@@ -67,7 +67,13 @@ def pytest_configure(config: pytest.Config) -> None:
         f"soak: 장시간 안정성 검사 (desktop 포함). {desktop.SOAK_ENV}=1일 때만",
     ):
         config.addinivalue_line("markers", line)
+    config.addinivalue_line(
+        "markers",
+        "media: 실제 Media Foundation H.264 인코딩·디코딩 검사 (인코더가 등록돼 있지 않다는 "
+        f"명시적 탐지일 때만 건너뜀). {media.MODE_ENV}=off|auto|require",
+    )
     desktop.mode_from_env(os.environ)  # 잘못된 값이면 시작 때 바로 알린다
+    media.mode_from_env(os.environ)
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -88,6 +94,12 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         pytest.skip(decision.reason)
     if decision.action == "fail":
         pytest.fail(decision.reason, pytrace=False)
+    if media.MARKER in markers:
+        found = media.decide()
+        if found.action == "skip":
+            pytest.skip(found.reason)
+        if found.action == "fail":
+            pytest.fail(found.reason, pytrace=False)
 
 
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:

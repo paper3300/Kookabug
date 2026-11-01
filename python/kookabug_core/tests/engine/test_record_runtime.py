@@ -514,7 +514,8 @@ def test_bytes_only_capture_keeps_capture_policy_outside(
 
 
 def test_video_allowed_query(tmp_path: Path) -> None:
-    ws = make_workspace(tmp_path)
+    # 워크스페이스에서 on을 명시한다 (정하지 않으면 failed_only — 아래 기본값 검사)
+    ws = make_workspace(tmp_path, record={"video": "on"})
     sub_off(
         ws,
         lambda g: (
@@ -730,3 +731,21 @@ def test_sensitive_text_cannot_reach_string_only_pin(tmp_path: Path) -> None:
     g.write(ws, TEST_FILE)
     diags = [d for d in check(ws, TEST_FILE) if d.severity == "error"]
     assert [(d.code, d.node) for d in diags] == [("type_mismatch", "n_set")]
+
+
+def test_workspace_without_video_defaults_to_failed_only(tmp_path: Path) -> None:
+    # M3: 워크스페이스에 record.video가 없으면 영상은 failed_only (성공한 실행의 영상은 지운다)
+    ws = make_workspace(tmp_path)
+    g = (
+        tk()
+        .entry("n_plain")
+        .node("n_plain", "testkit.shot", next={"done": "n_pass"})
+        .node("n_pass", "core.test.pass")
+    )
+    ran = run(ws, g)
+    recorder = ran.result.recorder
+    assert recorder is not None
+    step = ran.step_of("n_plain")
+    assert recorder.video_policy(step) == "failed_only"
+    assert not recorder.video_allowed(step, run_failed=False)
+    assert recorder.policy(step).policy.sources.get("video") is None  # 정한 곳 없음(기본값)

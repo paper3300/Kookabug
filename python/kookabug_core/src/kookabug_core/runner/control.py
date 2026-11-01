@@ -123,6 +123,8 @@ class PauseGate:
         """마지막 재개 방식 (`debug.resume.mode`)."""
         self.count = 0
         """`debug.pause`를 남긴 횟수 (`run.json`의 `pause_count`)."""
+        self.on_pause: Callable[[bool, str], None] | None = None
+        """멈춤 확정(True)·재개(False) 알림 (주 스레드 — 녹화 게이트, M3 2.5)."""
 
     def request(self) -> ControlState:
         with self._cond:
@@ -236,6 +238,8 @@ class PauseGate:
         # 멈춤 확정: 이 순간부터 활성 시계가 머문다 (기록보다 먼저 — 쓰는 시간도 멈춘 시간이다)
         self.clock.pause()
         self.count += 1
+        if self.on_pause is not None:
+            self.on_pause(True, point.step)  # 멈춘 동안 영상을 쓰지 않는다 (사용자 결정 U7)
         try:
             emit(
                 {
@@ -255,6 +259,8 @@ class PauseGate:
                 self._point = None
                 mode = self._mode
             paused_ms = self.clock.resume()
+            if self.on_pause is not None:
+                self.on_pause(False, point.step)
         self._cancel.check()
         # 재개: 멈춘 동안 화면이 바뀌었을 수 있으니 이전 세대 관측값을 쓰지 않게 세대를 올린다
         epoch = self.epochs.advance()

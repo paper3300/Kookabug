@@ -79,10 +79,13 @@ from kookabug_core.loader import MAX_CALL_DEPTH, Program
 from kookabug_core.record.artifacts import FrameRegistry, Recorder
 from kookabug_core.record.policy import (
     RecordPolicy,
+    VideoMode,
     graph_source,
     node_inputs_source,
     node_source,
+    workspace_policy,
 )
+from kookabug_core.record.video import VideoGate
 from kookabug_core.registry import NodeDef, Registry, default_registry
 from kookabug_core.validate import validate
 from kookabug_core.validate.pins import COMMON_WINDOW, node_pins
@@ -177,6 +180,7 @@ class Executor:
         wall: Clock | None = None,
         pause_point: PausePoint | None = None,
         epochs: Epochs | None = None,
+        video: VideoGate | None = None,
     ) -> None:
         """`sink`는 이벤트를 더 보낼 곳이다 (`RunResult.events`에는 `collect_events`일 때 모인다).
 
@@ -193,6 +197,8 @@ class Executor:
         활성 시계, `wall`에 실제 단조 시계를 준다.
         `epochs`는 관측 세대다(M3 2.4) — runner는 멈춤 게이트가 재개할 때 올리는 것을 준다. 주지
         않으면 실행마다 새로 0에서 시작하고 오르지 않는다(멈춤 없는 실행 = M1 동작).
+        `video`는 녹화 게이트다(M3 2.5): 스텝마다 `step.start` 전에 보류로 바꾸고, 입력 계산·비밀값
+        분류 뒤 그 스텝의 영상 정책으로 정하고, 스텝이 닫히면(정상·예외·취소) 스택에서 뺀다.
         """
         self.registry = registry or default_registry()
         self.invoker: NodeInvoker = invoker or InProcessInvoker()
@@ -207,6 +213,7 @@ class Executor:
         self.wall = wall
         self.pause_point = pause_point
         self.epochs = epochs
+        self.video = video
 
     def run(self, program: Program, options: ExecOptions | None = None) -> RunResult:
         options = options or ExecOptions()
@@ -249,16 +256,15 @@ class Executor:
             epochs=self.epochs if self.epochs is not None else Epochs(),
         )
         workspace_record = program.workspace.config.get("record")
-        policy = (
-            RecordPolicy()
-            .layer(
-                workspace_record if isinstance(workspace_record, Mapping) else None,
-                graph_source(WORKSPACE_FILE),
-            )
-            .layer(root.record, graph_source(root.path))
-        )
+        # 워크스페이스에 record.video가 없으면 영상은 failed_only (M3)
+        policy = workspace_policy(
+            workspace_record if isinstance(workspace_record, Mapping) else None,
+            graph_source(WORKSPACE_FILE),
+        ).layer(root.record, graph_source(root.path))
         top = Frame(root, (), None, 0, {}, record_policy=policy)
-        judgement = _Run(runtime, options.graph_prefix, self.before_step).execute(top)
+        if self.video is not None:
+            self.video.set_base(policy.video)
+        judgement = _Run(runtime, options.graph_prefix, self.before_step, self.video).execute(top)
         cause = judgement.cause if judgement.verdict != "pass" else None
         return RunResult(
             run=run_id,
@@ -347,10 +353,12 @@ class _Run:
         runtime: Runtime,
         graph_prefix: str,
         before_step: Callable[[StepPoint], None] | None = None,
+        video: VideoGate | None = None,
     ) -> None:
         self.rt = runtime
         self.graph_prefix = graph_prefix
         self.before_step = before_step
+        self.video = video
         self.steps = 0
         self.assertions = 0
         self.scopes = LoopScopes(runtime.program, runtime.registry)
@@ -438,6 +446,26 @@ class _Run:
             except Cancelled as exc:
                 # 시작하지 않은 스텝: step.start·step.end 없이 위로 (원인 스텝 없음)
                 raise _Error(_cause_of(None, frame.path, _with_reason(rt.cancel, exc))) from exc
+        gate = self.video
+        if gate is None:
+            return self._open_step(frame, node, step, path, start, end)
+        # 녹화 게이트: step.start 전에 보류 차단, 스텝이 스택에서 빠질 때(정상·예외·취소) 뺀다
+        gate.hold(step)
+        try:
+            return self._open_step(frame, node, step, path, start, end)
+        finally:
+            gate.release(step)
+
+    def _open_step(
+        self,
+        frame: Frame,
+        node: Node,
+        step: str,
+        path: tuple[str, ...],
+        start: dict[str, Any],
+        end: dict[str, Any],
+    ) -> Node | FrameExit | None:
+        rt = self.rt
         rt.emit(start)
         rt.recorder.open_step(
             step,
@@ -465,11 +493,20 @@ class _Run:
                     inputs=origins,
                     values=inputs,
                 )
+                window, inputs = self._common_window(frame, node, nodedef, inputs)
+                if self.video is not None:
+                    # 비밀값 분류가 끝났다: 보류를 이 스텝의 영상 정책으로 정한다 (M3 2.5)
+                    policy = rt.recorder.policy(step)
+                    self.video.classify(
+                        step,
+                        self._video_mode(frame, node, policy.policy),
+                        secret=policy.secret is not None,
+                        window=window if window is not None else frame.current_window,
+                    )
                 # 스텝 입력 검사: 디버거 재개 전 관측에서 온 입력이면 노드를 부르지 않는다 (M3 2.4)
                 stale = trace.stale_inputs(rt.epoch)
                 if stale is not None:
                     raise StaleObservation(stale)
-                window, inputs = self._common_window(frame, node, nodedef, inputs)
                 rt.check()
                 outcome = self._dispatch(frame, node, nodedef, step, inputs, end, trace, window)
                 # 노드가 돌아온 뒤에도 본다: 실행 중 생긴 취소·기한 초과를 성공으로 확정하지 않는다
@@ -548,6 +585,15 @@ class _Run:
                 raise _Unhandled(cause)
             frame.pending.append(cause)
         return target
+
+    def _video_mode(self, frame: Frame, node: Node, policy: RecordPolicy) -> VideoMode:
+        """그 스텝 구간의 영상 정책. 호출 스텝이면 서브그래프 파일의 `record`까지 더한다 — 분류부터
+        서브그래프 첫 스텝까지의 순간에도 켜지지 않게 (`_graph_call`의 `restrict`와 같은 값)."""
+        if node.type == GRAPH_CALL:
+            callee = self.rt.program.callee(frame.graph.path, node.id)
+            if callee is not None:
+                return policy.layer(callee.record, graph_source(callee.path)).video
+        return policy.video
 
     def _target(self, frame: Frame, node: Node, outcome: _Outcome) -> Node | None:
         if not isinstance(outcome, Result) or outcome.exit is None:
@@ -753,6 +799,9 @@ class _Run:
         policy = self.rt.recorder.policy(step).policy.layer(
             callee.record, graph_source(callee.path)
         )
+        if self.video is not None:
+            # 서브그래프의 영상 끄기는 호출 스텝 구간 전체다 (자식 스텝 사이에도 켜지지 않는다)
+            self.video.restrict(step, policy.video)
         inner = Frame(
             callee,
             frame.node_path(node.id),

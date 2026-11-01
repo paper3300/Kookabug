@@ -1,5 +1,6 @@
 """기록 정책 (스키마 v0 6장 "화면에 찍힌 비밀값").
 
+- 워크스페이스에 `record.video`가 없으면 영상은 `failed_only`(`workspace_policy`, M3)
 - 실효 정책 = 워크스페이스 → 테스트 그래프 → (호출 노드 → 서브그래프)를 호출 깊이만큼 → 노드.
   항목마다 한 번이라도 `off`면 `off`이고 아래에서 다시 켤 수 없다. `video`는
   `on` < `failed_only` < `off`로 센 쪽이 이긴다
@@ -21,6 +22,7 @@ from kookabug_core.diagnostics import json_pointer
 from kookabug_sdk import Secret
 
 __all__ = [
+    "DEFAULT_VIDEO",
     "OmitReason",
     "RecordPolicy",
     "ScreenshotMode",
@@ -30,6 +32,7 @@ __all__ = [
     "graph_source",
     "node_inputs_source",
     "node_source",
+    "workspace_policy",
 ]
 
 type ScreenshotMode = Literal["on", "off"]
@@ -103,6 +106,18 @@ class StepPolicy:
     def video(self) -> VideoMode:
         """이 스텝 구간의 영상 정책. 비밀값 입력 스텝은 영상도 남기지 않는다."""
         return "off" if self.secret is not None else self.policy.video
+
+
+DEFAULT_VIDEO: Final[VideoMode] = "failed_only"
+"""워크스페이스가 `record.video`를 정하지 않았을 때의 영상 정책 (구현 계획 1장 M3: 실패 시 영상
+보관). `on`은 워크스페이스에서 명시한다 (아래 층은 더 세게만 바꿀 수 있다)."""
+
+
+def workspace_policy(record: Mapping[str, Any] | None, source: str) -> RecordPolicy:
+    """워크스페이스 층: `record`에 `video`가 없으면 기본값 `failed_only`(정한 곳 없음)."""
+    has_video = isinstance(record, Mapping) and record.get("video") in _VIDEO_MODES
+    base = RecordPolicy() if has_video else RecordPolicy(video=DEFAULT_VIDEO)
+    return base.layer(record if isinstance(record, Mapping) else None, source)
 
 
 def find_secret(value: Any, pointer: str = "") -> str | None:

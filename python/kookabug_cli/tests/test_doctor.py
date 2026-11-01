@@ -26,6 +26,7 @@ HEADLESS_IDS = [
     "ocr.models",
     "dpi",
     "smoke.fake",
+    "video.encoder",
 ]
 EXAMPLE_WORKSPACE = Path(__file__).resolve().parents[3] / "fixtures" / "sample-game" / "workspace"
 

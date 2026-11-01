@@ -22,6 +22,8 @@ SDK `fake_context(scenario=)`에도 그대로 넣는다(`kookabug_sdk.testing.Sc
 from __future__ import annotations
 
 import itertools
+import threading
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +34,7 @@ from kookabug_core.engine.errors import EngineError
 from kookabug_core.inputs.actor import ClientPoint
 from kookabug_core.inputs.service import InputService, InputSink
 from kookabug_core.record.artifacts import StagedFrame
+from kookabug_core.record.video import VideoFrame
 from kookabug_sdk.context import InputApi, Where
 from kookabug_sdk.errors import ObservationTimeout
 from kookabug_sdk.testing import FakeWindow, FakeWindows, InputCall
@@ -663,6 +666,8 @@ class ScenarioPlatform:
         self.decode = decode
         self.engines = engines
         self._decoded: dict[int, Any] = {}
+        self._video_decoded: dict[str, Any] = {}
+        self._video_lock = threading.Lock()
         self.service = InputService(ScenarioSink(scenario, sink), self)
 
     def attach_input(self, sink: InputSink) -> None:
@@ -723,6 +728,20 @@ class ScenarioPlatform:
             window=game.window,
             dpi=self.scenario.dpi,
         )
+
+    def video_frame(self, window: WindowRef, timeout_ms: int) -> VideoFrame:
+        """녹화 프레임 (M3 2.5, 녹화 스레드): 그 창 게임의 지금 장면. 캡처 차례(`after_frames`)를
+        세지 않는다 — 녹화가 장면 전이를 바꾸지 않게. `marker`는 장면 이름(검사용)."""
+        game = self.scenario.game_of(window)
+        scene = game.state.scene
+        pixels: Any = None
+        if self.decode is not None:
+            with self._video_lock:
+                pixels = self._video_decoded.get(scene)
+                if pixels is None:
+                    data = self.scenario.scene_path(scene).read_bytes()
+                    pixels = self._video_decoded[scene] = self.decode(data)
+        return VideoFrame(pixels, self.scenario.client_size, time.time(), marker=scene)
 
     # ------------------------------------------------------------ 찾기·비교·OCR
 

@@ -41,10 +41,13 @@
     },
     "Gap": {
       "additionalProperties": false,
-      "description": "영상을 쓰지 않은 구간과 이유. policy_off: 기록 끈 구간, secret_input: 비밀값을 받은 스텝(이 열린 동안), paused: 디버거로 멈춤, no_window: 대상 창 없음, capture_missed: 캡처가 2초 넘게 계속 실패, unavailable: 이 PC에서 영상 인코더를 쓸 수 없음, interrupted: 실행이 중단돼 쓰던 조각을 지움. step은 구간을 연 스텝 (policy_off·secret_input·paused)",
+      "description": "영상을 쓰지 않은 구간과 이유. policy_off: 기록 끈 구간, secret_input: 비밀값을 받은 스텝(이 열린 동안), paused: 디버거로 멈춤, no_window: 대상 창 없음, capture_missed: 캡처가 2초 넘게 계속 실패, unavailable: 이 PC에서 영상 인코더를 쓸 수 없음, failed: 녹화 중 쓰기가 실패해 영상을 멈춤, starting: 인코더 열기 시험을 기다린 실행 앞부분, interrupted: 실행이 중단돼 쓰던 조각을 지움. step은 구간을 연 스텝 (policy_off·secret_input·paused), reason은 unavailable·failed의 이유 (마무리가 index.json의 status·reason을 이것으로 정한다)",
       "properties": {
         "gap": {
           "$ref": "#/$defs/GapReason"
+        },
+        "reason": {
+          "$ref": "#/$defs/VideoReason"
         },
         "step": {
           "$ref": "#/$defs/StepId"
@@ -63,11 +66,13 @@
     "GapReason": {
       "enum": [
         "capture_missed",
+        "failed",
         "interrupted",
         "no_window",
         "paused",
         "policy_off",
         "secret_input",
+        "starting",
         "unavailable"
       ],
       "title": "GapReason",

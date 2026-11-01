@@ -5,7 +5,8 @@
 - `headless`(설치 스모크·헤드리스 CI 필수): Python 위치(설치본인가), 무거운 의존성 import(`numpy`·
   `cv2`·`onnxruntime`·`windows_capture`), 그 DLL을 어디서 읽었나(`msvcp140.dll` 등 — 설치본이면
   설치 폴더여야 함), OCR 모델(찾기·크기·SHA256), DPI 인식(Per-Monitor V2, 진입점이 정한 결과),
-  가짜 플랫폼 스모크 그래프(실제 매칭·OCR)
+  가짜 플랫폼 스모크 그래프(실제 매칭·OCR), 영상 인코더(Media Foundation H.264 열기 시험 — 쓸 수
+  없어도 실패가 아니라 "영상 사용 불가"와 이유, M3)
 - `desktop`(= headless + 데스크톱 증거): 입력 데스크톱(잠금 화면 아님), 임시 창 WGC 한 프레임,
   정지 화면 재사용(같은 화면의 두 번째 캡처), 포그라운드 가져오기. 입력은 보내지 않는다
 
@@ -473,6 +474,23 @@ def _desktop_checks() -> list[Check]:
     return checks
 
 
+def _video_encoder() -> tuple[bool, str]:
+    """영상 인코더 (M3 2.5): runner와 같은 공장으로 임시 폴더에서 열기 시험. 쓸 수 없어도 실행은
+    영상 없이 돌므로 실패로 보지 않고 이유를 적는다 (N·KN 판 등)."""
+    from kookabug_core.record.video import EncoderUnavailable, encoder_factory_from_env
+
+    factory, unavailable = encoder_factory_from_env()
+    try:
+        if unavailable is not None:
+            raise unavailable
+        assert factory is not None
+        with tempfile.TemporaryDirectory(prefix="kookabug-doctor-video-") as folder:
+            factory.probe(Path(folder))
+    except EncoderUnavailable as exc:
+        return True, f"영상 사용 불가 ({exc.reason}): {exc.detail} — 실행은 영상 없이 돈다"
+    return True, "영상 사용 가능: Media Foundation H.264 (OS 구성요소)"
+
+
 # ---------------------------------------------------------------- 실행
 
 
@@ -486,6 +504,7 @@ def run_checks(profile: Profile = "desktop", *, smoke: SmokeGraph | None = None)
     checks.append(_guard("ocr.models", "headless", _models))
     checks.append(_guard("dpi", "headless", _dpi))
     checks.append(_guard("smoke.fake", "headless", _smoke(smoke)))
+    checks.append(_guard("video.encoder", "headless", _video_encoder))
     if profile == "desktop":
         checks += _desktop_checks()
     return checks

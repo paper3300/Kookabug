@@ -1002,6 +1002,24 @@ def _rule(title: str) -> list[str]:
     return ["#" * 78, f"# {title}", "#" * 78, ""]
 
 
+OS_COMPONENTS_TITLE = "OS 구성요소 사용"
+OS_COMPONENTS: tuple[str, ...] = (
+    "Windows Media Foundation (H.264 인코더) — 실행 영상 녹화 (M3)",
+    "  사용자 PC의 운영체제 구성요소를 OpenCV MSMF 백엔드(위 cv2.pyd, Apache-2.0)로 부른다.",
+    "  배포물에 들지 않고, 설치 트리에 새 네이티브 파일을 더하지 않는다. FFmpeg 백엔드",
+    "  (opencv_videoio_ffmpeg*.dll)는 빼고 배포하며 쓰지 않는다.",
+    "  Media Foundation이 없는 Windows(N·KN 판에서 미디어 기능 팩 없음, Server Core)에서는",
+    "  영상 없이 실행하고 그 이유를 실행 기록에 남긴다.",
+    "  녹화 영상(H.264 MP4)의 재생은 앱(Electron)의 영상 디코더가 한다 — 위 Electron 배포물",
+    "  그대로이며 새 바이너리를 더하지 않는다.",
+)
+"""배포하지 않고 사용자 PC의 OS 구성요소를 부르는 기능 (NOTICES 절, 구현 계획 4장)."""
+
+
+def render_os_components() -> str:
+    return "\n".join([*_rule(OS_COMPONENTS_TITLE), *OS_COMPONENTS, ""])
+
+
 def render_notice_sections(
     files: Sequence[NativeFile],
     table: NativeTable,
@@ -1114,6 +1132,7 @@ def render_notice_sections(
             lines += ["=" * 78, f"{t.label} ({t.file})", "-" * 78]
             lines += [body if body is not None else f"원문: {t.url}", ""]
         sections.append("\n".join(lines))
+    sections.append(render_os_components())
     return sections
 
 

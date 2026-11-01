@@ -31,6 +31,7 @@ from kookabug_core.engine.errors import EngineError
 from kookabug_core.inputs import PlatformUnavailable
 from kookabug_core.inputs.service import InputService, InputSink
 from kookabug_core.record.artifacts import CaptureMeta, StagedFrame
+from kookabug_core.record.video import VideoFrame
 from kookabug_core.win import Job, Process
 from kookabug_platform import process as processes
 from kookabug_platform import windows as wins
@@ -216,6 +217,15 @@ class WindowsPlatform:
         width, height = frame.size
         image = Image(width=width, height=height, frame=info.frame_seq)
         return image, StagedFrame(frame.key, frame.pixels, meta)
+
+    def video_frame(self, window: WindowRef, timeout_ms: int) -> VideoFrame:
+        """녹화 프레임 (M3 2.5, 녹화 스레드): 그 창의 최신 프레임(캡처 서비스의 최신 프레임 재사용
+        규칙 그대로). 프레임 저장소·`capture_id`를 쓰지 않는다. 설정 기한 안에 못 받으면 예외."""
+        binding = self.resolve(window)
+        frame = self.capture_service.capture(
+            binding, None, deadline=ObservationDeadline(max(1, timeout_ms))
+        )
+        return VideoFrame(frame.pixels, frame.size, frame.info.pixels_at)
 
     def capture(self, window: WindowRef | None, region: Rect | None) -> Image:
         """저장소 없이 쓸 때(검사): PNG 바이트 이미지."""

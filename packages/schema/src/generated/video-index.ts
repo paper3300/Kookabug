@@ -20,12 +20,22 @@ export type SegmentMode = "failed_only" | "on";
  */
 export type GapReason =
   | "capture_missed"
+  | "failed"
   | "interrupted"
   | "no_window"
   | "paused"
   | "policy_off"
   | "secret_input"
+  | "starting"
   | "unavailable";
+/**
+ * 영상이 없거나 멈춘 이유. mf_missing: Media Foundation이 없음, backend_missing: OpenCV MSMF 백엔드 없음, encoder_open_failed: 인코더 열기 실패, write_failed: 녹화 중 쓰기 실패, encoder_stuck: 녹화 스레드가 3초 안에 끝나지 않아 영상을 포기
+ *
+ * This interface was referenced by `VideoIndex`'s JSON-Schema
+ * via the `definition` "VideoReason".
+ */
+export type VideoReason =
+  "backend_missing" | "encoder_open_failed" | "encoder_stuck" | "mf_missing" | "write_failed";
 /**
  * This interface was referenced by `VideoIndex`'s JSON-Schema
  * via the `definition` "StepId".
@@ -38,14 +48,6 @@ export type StepId = string;
  * via the `definition` "Timestamp".
  */
 export type Timestamp = string;
-/**
- * 영상이 없거나 멈춘 이유. mf_missing: Media Foundation이 없음, backend_missing: OpenCV MSMF 백엔드 없음, encoder_open_failed: 인코더 열기 실패, write_failed: 녹화 중 쓰기 실패, encoder_stuck: 녹화 스레드가 3초 안에 끝나지 않아 영상을 포기
- *
- * This interface was referenced by `VideoIndex`'s JSON-Schema
- * via the `definition` "VideoReason".
- */
-export type VideoReason =
-  "backend_missing" | "encoder_open_failed" | "encoder_stuck" | "mf_missing" | "write_failed";
 /**
  * video/ 안 닫은(재생할 수 있는) 조각 파일 이름 seg-NNNN.mp4. 쓰는 중 파일(.part.mp4)은 조각 목록에 올 수 없다
  *
@@ -102,13 +104,14 @@ export interface DeletedSegment {
   reason: "encoder_stuck" | "interrupted" | "run_cancelled" | "run_pass" | "run_skipped";
 }
 /**
- * 영상을 쓰지 않은 구간과 이유. policy_off: 기록 끈 구간, secret_input: 비밀값을 받은 스텝(이 열린 동안), paused: 디버거로 멈춤, no_window: 대상 창 없음, capture_missed: 캡처가 2초 넘게 계속 실패, unavailable: 이 PC에서 영상 인코더를 쓸 수 없음, interrupted: 실행이 중단돼 쓰던 조각을 지움. step은 구간을 연 스텝 (policy_off·secret_input·paused)
+ * 영상을 쓰지 않은 구간과 이유. policy_off: 기록 끈 구간, secret_input: 비밀값을 받은 스텝(이 열린 동안), paused: 디버거로 멈춤, no_window: 대상 창 없음, capture_missed: 캡처가 2초 넘게 계속 실패, unavailable: 이 PC에서 영상 인코더를 쓸 수 없음, failed: 녹화 중 쓰기가 실패해 영상을 멈춤, starting: 인코더 열기 시험을 기다린 실행 앞부분, interrupted: 실행이 중단돼 쓰던 조각을 지움. step은 구간을 연 스텝 (policy_off·secret_input·paused), reason은 unavailable·failed의 이유 (마무리가 index.json의 status·reason을 이것으로 정한다)
  *
  * This interface was referenced by `VideoIndex`'s JSON-Schema
  * via the `definition` "Gap".
  */
 export interface Gap {
   gap: GapReason;
+  reason?: VideoReason;
   step?: StepId;
   t_end: Timestamp;
   t_start: Timestamp;

@@ -416,10 +416,16 @@ def test_video_segment_line_has_grid_fields_and_gap_reasons() -> None:
         "no_window",
         "capture_missed",
         "unavailable",
+        "failed",  # T5: 녹화 중 쓰기 실패 (감독자 마무리도 status·reason을 알도록)
+        "starting",  # T5 2라운드: 인코더 열기 시험을 기다린 실행 앞부분
         "interrupted",
     }
     for reason in reasons:
         assert line_problems({**GAP, "gap": reason}, "SegmentsLine") == [], reason
+    # T5: unavailable·failed 빈 구간은 영상 이유를 싣는다
+    gap = {**GAP, "gap": "unavailable", "reason": "mf_missing"}
+    assert line_problems(gap, "SegmentsLine") == []
+    assert line_problems({**gap, "reason": "nope"}, "SegmentsLine")
     assert line_problems({**GAP, "gap": "pending"}, "SegmentsLine")
     # 조각과 빈 구간 필드를 섞은 줄은 어느 쪽도 아니다
     assert line_problems({**SEGMENT, "gap": "paused"}, "SegmentsLine")

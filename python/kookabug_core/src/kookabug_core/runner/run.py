@@ -17,11 +17,17 @@
    액터 시작 → 플랫폼의 입력 서비스에 붙임. `windows`는 SendInput 백엔드 + 입력 직전 확인
 9. `Executor.run` (주 스레드). 워커 노드의 `ctx` 요청도 주 스레드가 처리한다
 
-**정상 마무리** (주 스레드만): 종료 단계 진입(감시자 무장, 감독자에 `runner.stopping`) → 워커
-`shutdown` → 액터 `STOP`·`join`(유예의 절반) → (quiesced면) 플랫폼 닫기(캡처 세션·추적기 스레드)
-→ `run.end` → `run.json` 완료 → quiesced였으면 임대권
-깨끗하게 놓기(아니면 놓지 않고 끝남 — 감독자 복구 경로·다음 획득자가 처리) → 저널 닫기 →
-종료 코드 0.
+**정상 마무리** (주 스레드만): 종료 단계 진입(감시자 무장, 감독자에 `runner.stopping`) → 녹화
+멈춤 신호(M3) → 워커 `shutdown` → 액터 `STOP`·`join`(유예의 절반) → 녹화 스레드 종료 확인(신호부터
+실제 시간 3초) → (quiesced면) 플랫폼 닫기(캡처 세션·추적기 스레드) → `run.end`(녹화 스레드가 안
+끝났으면 `omitted` `video`/`encoder_stuck`) → 녹화 스레드가 끝났을 때만 영상 마무리
+(`finalize_video` — 안 끝났으면 `video/`를 건드리지 않고 감독자가 runner 종료 뒤 지운다) →
+`run.json` 완료(영상 요약) → quiesced였으면 임대권 깨끗하게 놓기(아니면 놓지 않고 끝남 — 감독자
+복구 경로·다음 획득자가 처리) → 저널 닫기 → 종료 코드 0.
+
+**영상** (M3 2.5): 녹화 프레임을 줄 수 있는 플랫폼(`windows`, 장면 `fake`)이면 시작 순서와 겹쳐
+인코더 열기 시험을 띄우고(`EncoderProbe`), 실행기를 시작할 때 녹화 게이트와 녹화 스레드를 붙인다.
+멈춤 게이트가 멈춘 동안 녹화 게이트를 off로 둔다.
 runner의 저널 쓰기는 `run.end`가 마지막이다.
 
 종료 코드: `0` 주 스레드 정상 마무리, `2` 시작 실패(사양·Job·제어 채널), `3` 기록 실패(`run.end`를
@@ -70,8 +76,19 @@ from kookabug_core.inputs.service import InputService, InputSink
 from kookabug_core.loader import Program
 from kookabug_core.record import FileArtifacts, Journal, write_run_json
 from kookabug_core.record.artifacts import FrameRegistry
+from kookabug_core.record.finalize import finalize_video, video_summary
 from kookabug_core.record.runfolder import RUN_FORMAT, RunFolder, finished_run_json
 from kookabug_core.record.snapshot import GRAPH_PREFIX, SnapshotError, take_snapshot
+from kookabug_core.record.video import (
+    STOP_GRACE_S,
+    EncoderFactory,
+    EncoderProbe,
+    EncoderUnavailable,
+    VideoGate,
+    VideoRecorder,
+    VideoSource,
+    encoder_factory_from_env,
+)
 from kookabug_core.registry import Registry, default_registry
 from kookabug_core.runner.clock import ActiveClock
 from kookabug_core.runner.control import Controller, PauseGate, PollPoint
@@ -310,6 +327,10 @@ class Runner:
         self.platform_missing: str | None = None
         """`windows`인데 플랫폼 패키지가 없는 사유 (입력 노드가 있으면 시작 때 그 사유로 끝낸다)."""
         self.registry: Registry | None = None
+        self.video: VideoRecorder | None = None
+        """녹화 스레드 (플랫폼이 녹화 프레임을 줄 때만, M3 2.5)."""
+        self._video_factory: EncoderFactory | None = None
+        self._video_probe: EncoderProbe | None = None
         self._run_json: dict[str, Any] = {}
 
     @property
@@ -438,6 +459,7 @@ class Runner:
         spec = self.spec
         assert self.controller is not None and self.journal is not None
         self._check()
+        self._begin_video_probe()
 
         # 4. 스냅샷
         try:
@@ -589,8 +611,41 @@ class Runner:
         self.platform.attach_input(self.actor)
         return None
 
+    def _begin_video_probe(self) -> None:
+        """인코더 열기 시험을 시작 순서와 겹쳐 띄운다 (녹화 프레임을 줄 수 있는 플랫폼만, M3 2.5).
+        Media Foundation을 쓸 수 없어도 기동은 계속한다 (결과는 녹화 스레드가 `unavailable`로)."""
+        kind = self.spec.platform.kind
+        if kind != "windows" and (kind != "fake" or self.spec.platform.scenario is None):
+            return
+        try:
+            factory, unavailable = encoder_factory_from_env()
+        except Exception as exc:
+            factory, unavailable = None, EncoderUnavailable("encoder_open_failed", str(exc))
+        self._video_factory = factory
+        self._video_probe = EncoderProbe(factory, unavailable)
+
+    def _start_video(self) -> VideoGate | None:
+        """녹화 스레드 (M3 2.5). 플랫폼이 녹화 프레임을 주지 못하면(프레임 파일·`none`) 영상 없음.
+        인코더를 쓸 수 없어도 실행은 영상 없이 돈다(녹화 스레드가 `unavailable`로 남긴다)."""
+        source = self.platform
+        probe = self._video_probe
+        if probe is None or not callable(getattr(source, "video_frame", None)):
+            return None
+        gate = VideoGate()
+        self.video = VideoRecorder(
+            self.folder.path,
+            gate,
+            cast(VideoSource, source),
+            self._video_factory,
+            probe=probe,
+            capture_timeout_ms=self.spec.capture_timeout_ms,
+        ).start()
+        self.pause.on_pause = gate.set_paused
+        return gate
+
     def _run_program(self, program: Program, registry: Registry) -> _End:
         assert self.journal is not None
+        gate = self._start_video()
         remaining_ms = max(1, self.deadline_at_ms - self.clock.now_ms())
         executor = Executor(
             registry,
@@ -608,7 +663,18 @@ class Runner:
             epochs=self.pause.epochs,
             on_setting=self._record_setting,
             frames=self.frames,
+            video=gate,
         )
+        try:
+            return self._run_executor(executor, program, remaining_ms)
+        finally:
+            if gate is not None and self.video is not None:
+                # 판정이 정해졌다: 녹화 멈춤까지 기본 정책으로 다시 켜지지 않게
+                # (취소로 비밀값 스텝이 풀린 뒤의 화면 포함)
+                gate.close()
+                self.video.request_stop()
+
+    def _run_executor(self, executor: Executor, program: Program, remaining_ms: int) -> _End:
         try:
             result = executor.run(
                 program,
@@ -673,6 +739,11 @@ class Runner:
             # (cancel.requested·cancel_reason·runner.stopping이 남는다. 이미 시작됐으면 그대로)
             self.controller.cancel("deadline_exceeded")
         self.controller.notify_stopping(self.controller.cancel_reason or "finish")
+        # 판정이 확정됐다: 녹화를 멈춘다 (신호만 먼저 — 유예 3초는 워커·액터 정리와 겹친다)
+        recorder = self.video
+        stop_at = time.monotonic()
+        if recorder is not None:
+            recorder.request_stop()
 
         _faults.fault_point("runner.before_worker_shutdown")
         if self.worker is not None:
@@ -681,6 +752,9 @@ class Runner:
         quiesced = True
         if self.actor is not None:
             quiesced = self.actor.stop(spec.shutdown_grace_ms / 2 / 1000)
+        # 녹화 스레드가 끝났는지 실제 시간 3초까지 본다. 안 끝났으면 그 실행의 영상을 포기하고
+        # video/ 파일을 건드리지 않는다 (runner 종료를 확인한 감독자가 지운다, 2차 검수 N2)
+        writer_done = recorder is None or recorder.join(STOP_GRACE_S - (time.monotonic() - stop_at))
         close = getattr(self.platform, "close", None)
         if close is not None and quiesced:
             # 액터가 멈춘 뒤에만 (멈춘 액터는 입력 직전 확인으로 추적기를 더 부르지 않는다).
@@ -694,6 +768,8 @@ class Runner:
             # 거부된다). 쓰기가 멈추면 run.end도 쓸 수 없으므로 기다림의 끝은 감시자의 자기 종료다
             self.controller.record_cancel()
             event = self._run_end_event(end)
+            if not writer_done:
+                event["omitted"] = [{"kind": "video", "reason": "encoder_stuck"}]
             try:
                 run_end = self.journal.emit(event)
             except Exception:
@@ -705,10 +781,13 @@ class Runner:
             self._close()
             return EXIT_RECORD_FAILED
 
+        video = self._finalize_video(run_end, writer_done)
         _faults.fault_point("runner.before_run_json_final")
         assert end is not None
         data = finished_run_json(self._run_json, run_end)
         data["pause_count"] = self.pause.count
+        if video is not None:
+            data["video"] = video
         try:
             write_run_json(self.folder.run_json, data)
         except Exception:
@@ -718,6 +797,28 @@ class Runner:
         self._release_lease(quiesced)
         self._close()
         return EXIT_OK
+
+    def _finalize_video(
+        self, run_end: Mapping[str, Any], writer_done: bool
+    ) -> dict[str, Any] | None:
+        """`run.json`의 영상 요약. 녹화 스레드가 끝났을 때만 마무리한다(`finalize_video`)."""
+        if self.video is None:
+            return None
+        if not writer_done:
+            # 파일은 건드리지 않는다: 감독자가 runner 종료를 확인한 뒤 지우고 요약을 고친다
+            return {
+                "bytes": 0,
+                "deleted": 0,
+                "kept": 0,
+                "reason": "encoder_stuck",
+                "status": "omitted",
+            }
+        try:
+            index = finalize_video(self.folder.path, run_end)
+        except Exception:
+            traceback.print_exc()
+            return None  # 감독자 복구 경로가 다시 마무리한다
+        return None if index is None else video_summary(index)
 
     def _run_end_event(self, end: _End) -> dict[str, Any]:
         duration_ms = int((time.monotonic() - self.started) * 1000)

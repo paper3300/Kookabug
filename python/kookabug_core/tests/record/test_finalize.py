@@ -397,3 +397,66 @@ def test_run_json_start_fields_kept(tmp_path: Path) -> None:
     assert data["conditions"] == start["conditions"] and data["plugins"] == start["plugins"]
     assert data["started_at"] == STARTED
     assert_valid(folder)
+
+
+# ---------------------------------------------------------------- 디버거 개입 (M3, T2 검수 Low)
+
+
+def debug_pause(step: str) -> dict[str, Any]:
+    return {
+        "event": "debug.pause",
+        "graph": "tests/t.graph.json",
+        "node": "n_b",
+        "path": ["n_b"],
+        "reason": "breakpoint",
+        "step": step,
+        "where": "boundary",
+    }
+
+
+def debug_resume(step: str, paused_ms: int) -> dict[str, Any]:
+    return {
+        "epoch": 1,
+        "event": "debug.resume",
+        "mode": "continue",
+        "paused_ms": paused_ms,
+        "step": step,
+    }
+
+
+def test_runner_died_after_pause_records_debug_intervened(tmp_path: Path) -> None:
+    # 멈췄다 재개한 뒤 runner가 죽었다: 감독자가 쓴 run.end에도 디버거 개입·멈춘 시간이 남는다
+    folder = make_run(
+        tmp_path,
+        run_start(),
+        debug_pause("s1"),
+        debug_resume("s1", 2500),
+        step_start("s1", "n_b"),
+    )
+    finalize_run(folder, runner_exit_code=1, now=lambda: NOW)
+    end = events_of(folder)[-1]
+    assert end["code"] == "runner_died"
+    assert (end["debug_intervened"], end["paused_ms"]) == (True, 2500)
+    assert end["active_duration_ms"] == end["duration_ms"] - 2500 == 7500
+    data = read_run_json(folder / "run.json")
+    assert data is not None
+    assert (data["debug_intervened"], data["paused_ms"], data["pause_count"]) == (True, 2500, 1)
+    assert_valid(folder)
+
+
+def test_runner_died_while_paused_counts_open_pause(tmp_path: Path) -> None:
+    # 멈춘 채 죽었다: 그 멈춤부터 마무리 시각까지가 멈춘 시간이다
+    folder = make_run(tmp_path, run_start(), debug_pause("s1"))
+    finalize_run(folder, runner_exit_code=1, now=lambda: NOW)
+    end = events_of(folder)[-1]
+    assert (end["debug_intervened"], end["paused_ms"]) == (True, 10_000)
+    assert end["active_duration_ms"] == 0
+    assert_valid(folder)
+
+
+def test_runner_died_without_pause_has_no_debug_fields(tmp_path: Path) -> None:
+    folder = make_run(tmp_path, run_start(), step_start("s1", "n_b"))
+    finalize_run(folder, runner_exit_code=1, now=lambda: NOW)
+    end = events_of(folder)[-1]
+    assert "debug_intervened" not in end and "paused_ms" not in end
+    assert_valid(folder)

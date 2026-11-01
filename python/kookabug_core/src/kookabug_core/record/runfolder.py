@@ -76,7 +76,8 @@ RUN_END_FIELDS: Final = (
 # run.end에 있을 때만 옮기는 필드 (없으면 run.json에도 없어야 한다)
 RUN_END_OPTIONAL_FIELDS: Final = (
     "runner_exit_code",
-    # M3 2.2: runner가 쓴 run.end에만 있다 (감독자가 대신 쓴 run.end에는 없다)
+    # M3 2.2: runner가 쓴 run.end에는 늘 있다. 감독자가 대신 쓴 run.end에는 저널에 멈춤이 있을 때만
+    # (`debug.pause`·`debug.resume`에서 센다, M3 T5)
     "active_duration_ms",
     "paused_ms",
     "debug_intervened",
