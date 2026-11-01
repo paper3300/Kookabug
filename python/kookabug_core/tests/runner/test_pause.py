@@ -1,8 +1,8 @@
 """경계 멈춤 (구현 계획 M0b 2.6 "멈춤", P8).
 
 `run.pause`는 노드 실행 중이어도 받는 즉시 답하고(`pausing`), 다음 스텝 시작 확인 지점에서 멈춘다
-(`debug.pause`). 멈춘 동안 취소가 바로 먹히고, 취소가 재개를 이긴다. 멈춘 시간은 기한에서 빼지
-않는다(M3부터).
+(`debug.pause`). 멈춘 동안 취소가 바로 먹히고, 취소가 재개를 이긴다. M3부터 멈춘 시간은 기한에서
+빠진다(활성 시계 — 자세한 검사는 `test_debugger_clock.py`).
 """
 
 from __future__ import annotations
@@ -97,21 +97,25 @@ def test_cancel_while_paused(tmp_path: Path, spawned: Spawned) -> None:
     done = h.finish()
     assert done.exit_code == 0, h.stderr()
     assert done.of("debug.resume") == []
-    assert [e for e in done.view.events if e.get("node") == "n_pass"] == []
+    # 멈춘 자리(n_pass 앞)의 debug.pause 말고는 n_pass 스텝이 없다
+    steps = [e for e in done.view.events if e.get("node") == "n_pass"]
+    assert [e["event"] for e in steps] == ["debug.pause"]
     assert done.run_end is not None and done.run_end["code"] == "cancelled"
 
 
-def test_deadline_expires_while_paused(tmp_path: Path, spawned: Spawned) -> None:
-    # 멈춘 시간은 기한에서 빼지 않는다: 멈춘 채 기한이 지나면 deadline_exceeded로 취소
+def test_pause_no_longer_counts_toward_deadline(tmp_path: Path, spawned: Spawned) -> None:
+    # M3부터 멈춘 시간은 기한에서 빠진다 (M0b의 "멈춘 채 전체 기한으로 끝남"을 뒤집음, 구현 계획
+    # M3 2.2): 전체 기한 5초인 실행이 경계에서 6초 멈췄다가 재개해도 기한 초과가 아니다
     h = paused(tmp_path, spawned, deadline_ms=5_000)
+    time.sleep(6.0)
+    assert h.pause() == "paused" and not h.has_event("cancel.requested")
+    assert h.resume() == "running"
     done = h.finish()
     assert done.exit_code == 0, h.stderr()
     run_end = done.run_end
-    assert run_end is not None
-    assert (
-        run_end["code"] == "deadline_exceeded" and run_end["cancel_reason"] == "deadline_exceeded"
-    )
-    assert done.of("debug.resume") == []
+    assert run_end is not None and run_end["verdict"] == "pass", run_end
+    assert "cancel_reason" not in run_end and done.of("cancel.requested") == []
+    assert run_end["paused_ms"] >= 5_500 and run_end["debug_intervened"] is True
 
 
 def test_cancel_and_resume_race_cancel_wins(tmp_path: Path, spawned: Spawned) -> None:

@@ -4,7 +4,7 @@
 
 1. Job에 자기 넣기(어떤 자식도 띄우기 전에), 제어 채널 연결·`runner.hello`
 2. 자기 종료 감시자 시작(감독자 프로세스 핸들) → 제어 스레드 시작. 이때부터 취소·감독자 사망·
-   전체 기한(runner 시작부터) 감시가 동작한다
+   전체 기한(runner 시작부터, 멈춘 시간을 뺀 활성 시계 — M3 2.2) 감시가 동작한다
 3. `run.json`(`running`)·저널, `run.start` → 고장 지점 `runner.after_hello`
 4. 스냅샷 (파일 참조만 따라가므로 레지스트리가 필요 없다)
 5. `plugin_modules`가 있으면 워커를 띄우고 hello → 원격 노드 등록
@@ -52,6 +52,7 @@ from kookabug_core.engine import (
     GraphInvalid,
     RoutingInvoker,
     RunResult,
+    SystemClock,
 )
 from kookabug_core.engine.context import InputObserver, ObservationLimits
 from kookabug_core.engine.errors import EngineError
@@ -72,7 +73,8 @@ from kookabug_core.record.artifacts import FrameRegistry
 from kookabug_core.record.runfolder import RUN_FORMAT, RunFolder, finished_run_json
 from kookabug_core.record.snapshot import GRAPH_PREFIX, SnapshotError, take_snapshot
 from kookabug_core.registry import Registry, default_registry
-from kookabug_core.runner.control import Controller, PauseGate
+from kookabug_core.runner.clock import ActiveClock
+from kookabug_core.runner.control import Controller, PauseGate, PollPoint
 from kookabug_core.runner.spec import MIB, PROTOCOL, RunSpec, ident_to_json
 from kookabug_core.runner.watchdog import Watchdog
 from kookabug_core.validate import validate
@@ -285,9 +287,14 @@ class Runner:
         self.folder = RunFolder(spec.run_dir, spec.run_id)
         self.ident = current()
         self.started = time.monotonic()
-        self.deadline_at = self.started + spec.deadline_ms / 1000
+        """시작 시각 (실제 단조 시간 — `run.end.duration_ms`)."""
         self.token = CancelToken()
-        self.pause = PauseGate(self.token)
+        self.clock = ActiveClock(self.token)
+        """활성 시계: 멈춘 시간을 뺀 기한 시계 (제어 스레드·실행기 런타임이 같이 본다, M3 2.2)."""
+        self.started_ms = self.clock.now_ms()
+        self.deadline_at_ms = self.started_ms + spec.deadline_ms
+        """전체 기한 시각 (활성 시계 ms, runner 시작부터)."""
+        self.pause = PauseGate(self.token, self.clock)
         self.peer: RpcPeer | None = None
         self.watchdog: Watchdog | None = None
         self.controller: Controller | None = None
@@ -356,7 +363,7 @@ class Runner:
             cancel=self.token,
             watchdog=self.watchdog,
             pause=self.pause,
-            deadline_at=self.deadline_at,
+            deadline_at_ms=self.deadline_at_ms,
             peer=self.peer,
         ).start()
 
@@ -415,7 +422,7 @@ class Runner:
     def _check(self) -> None:
         """시작 순서 사이의 취소·기한 확인 (주 스레드)."""
         assert self.controller is not None
-        if time.monotonic() >= self.deadline_at:
+        if self.clock.now_ms() >= self.deadline_at_ms:
             self.controller.cancel("deadline_exceeded")
         self.token.check()
 
@@ -584,15 +591,19 @@ class Runner:
 
     def _run_program(self, program: Program, registry: Registry) -> _End:
         assert self.journal is not None
-        remaining_ms = max(1, int((self.deadline_at - time.monotonic()) * 1000))
+        remaining_ms = max(1, self.deadline_at_ms - self.clock.now_ms())
         executor = Executor(
             registry,
             platform=self.platform,
+            # 기한은 활성 시계(제어 스레드와 같은 시계), 경과는 실제 단조 시계 (M3 2.2)
+            clock=self.clock,
+            wall=SystemClock(self.token),
             cancel=self.token,
             artifacts=FileArtifacts(self.folder.path),
             sink=_JournalSink(self.journal),
             invoker=RoutingInvoker(None if self.worker is None else WorkerInvoker(self.worker)),
-            before_step=lambda step: self.pause.at_boundary(step, self._emit),
+            before_step=lambda point: self.pause.at_boundary(point, self._emit),
+            pause_point=PollPoint(self.pause, self._emit),
             on_setting=self._record_setting,
             frames=self.frames,
         )
@@ -707,6 +718,8 @@ class Runner:
         return EXIT_OK
 
     def _run_end_event(self, end: _End) -> dict[str, Any]:
+        duration_ms = int((time.monotonic() - self.started) * 1000)
+        paused_ms = self.clock.paused_ms
         event: dict[str, Any] = {
             "event": "run.end",
             "verdict": end.verdict,
@@ -714,7 +727,11 @@ class Runner:
             "reason": end.reason,
             "failure_step": end.failure_step,
             "failure_path": end.failure_path,
-            "duration_ms": int((time.monotonic() - self.started) * 1000),
+            "duration_ms": duration_ms,
+            # 실제 경과에서 멈춘 시간을 뺀 경과 (M3 2.2). run.json에도 옮긴다
+            "active_duration_ms": max(0, duration_ms - paused_ms),
+            "paused_ms": paused_ms,
+            "debug_intervened": self.pause.intervened,
             "finalized_by": "runner",
         }
         assert self.controller is not None

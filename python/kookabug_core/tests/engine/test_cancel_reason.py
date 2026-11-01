@@ -23,6 +23,7 @@ from kookabug_core.engine import (
     SystemClock,
 )
 from kookabug_core.engine.cancel import CancelReason
+from kookabug_core.engine.debug import StepPoint
 from kookabug_core.loader import load_program
 
 
@@ -127,11 +128,17 @@ def test_before_step_called_before_step_start(tmp_path: Path) -> None:
     tk().entry("n_pass").node("n_pass", "core.test.pass").write(ws, TEST)
     sink = MemoryEventSink()
     seen: list[tuple[str, int]] = []
-    Executor(sink=sink, before_step=lambda step: seen.append((step, len(sink.events)))).run(
-        load_program(ws, TEST)
-    )
-    # 스텝마다 step.start를 쓰기 전에 불린다
+    points: list[StepPoint] = []
+
+    def boundary(point: StepPoint) -> None:
+        points.append(point)
+        seen.append((point.step, len(sink.events)))
+
+    Executor(sink=sink, before_step=boundary).run(load_program(ws, TEST))
+    # 스텝마다 step.start를 쓰기 전에 불린다. 위치(노드·그래프·호출 경로)도 같이 받는다 (M3 2.2)
     assert seen == [("s1", 0), ("s2", 2)]
+    assert points[1] == StepPoint("s2", "n_pass", TEST, ("n_pass",))
+    assert points[1].depth == 1
 
 
 def test_before_step_cancel_ends_run_without_starting_step(tmp_path: Path) -> None:
@@ -140,8 +147,8 @@ def test_before_step_cancel_ends_run_without_starting_step(tmp_path: Path) -> No
     sink = MemoryEventSink()
     token = CancelToken()
 
-    def boundary(step: str) -> None:
-        if step == "s2":
+    def boundary(point: StepPoint) -> None:
+        if point.step == "s2":
             token.cancel("deadline_exceeded")
             token.check()
 

@@ -27,6 +27,7 @@ from typing import Any, Final, Protocol, cast, runtime_checkable
 
 from kookabug_core.canonical import loads_strict
 from kookabug_core.engine.cancel import CancelToken, DeadlineExceeded
+from kookabug_core.engine.debug import PauseCounter, PausePoint, StepPoint
 from kookabug_core.engine.errors import EngineError
 from kookabug_core.engine.frame import Frame
 from kookabug_core.engine.invoker import NodeInvoker
@@ -79,6 +80,8 @@ DEFAULT_CAPTURE_TIMEOUT_MS: Final = 2000
 """`run.capture_timeout_ms` 기본값 (조율자 결정 Q2)."""
 OBSERVATIONS_KEPT: Final = 256
 """캡처 시점 관측을 기억하는 최근 캡처 수 (OCR 결과에 실을 때 찾는다)."""
+_WAIT_SLICE_MS: Final = 50
+"""멈출 수 있는 기다림의 한 조각 (요청·취소는 조건 변수로 바로 깨우고, 이것은 안전판이다)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,7 +119,8 @@ class StepInputPlatform(Protocol):
 
     플랫폼이 이것을 구현하면 `ctx.input`은 `input`이 아니라 `input_for(스텝, 그 스텝의 창, 관측)`
     으로 간다. 창은 그 스텝 ctx를 만들 때 정한 것이라 요청 뒤에 바뀌지 않는다. `observer`는
-    재검증의 다시 찾기·기록에 쓴다. `sleep`은 누르고 있기의 기다림(취소로 깬다).
+    재검증의 다시 찾기·기록에 쓴다. `sleep`은 누르고 있기의 기다림(런타임 `wait_hold` — 취소로만
+    깨고 멈춤 요청은 보지 않는다).
     """
 
     def input_for(
@@ -189,10 +193,23 @@ class _StatePlatform(Protocol):
     def state(self, window: WindowRef) -> _WindowState: ...
 
 
+@dataclass(frozen=True, slots=True)
+class Mark:
+    """경과를 재기 시작한 자리: 실제 시계·기한 시계 값과 그때까지 멈춘 횟수."""
+
+    wall: int
+    active: int
+    pauses: int
+
+
 @dataclass(eq=False)
 class Runtime:
     """한 실행의 공용 상태: 프로그램, 레지스트리, 노드 실행 경계, 플랫폼, 시계, 취소, 전체 기한,
-    이벤트, 기록 정책(`recorder`), 관측의 설정 기한(`capture_timeout_ms`)."""
+    이벤트, 기록 정책(`recorder`), 관측의 설정 기한(`capture_timeout_ms`).
+
+    **시계 둘** (M3 2.2): `clock`은 기한 시계(노드 기한·전체 기한·기다림 — runner에서는 멈춘 시간을
+    뺀 활성 시계), `wall`은 경과 시계(`duration_ms`, 없으면 `clock`). `pause_point`가 있으면 코어
+    노드의 `ctx.sleep`이 폴링 확인 지점이 된다(`wait_pausable`)."""
 
     run: str
     program: Program
@@ -213,6 +230,27 @@ class Runtime:
     )
     """캡처 번호 → 그 캡처 시점의 관측(캡처 방식·클라이언트 크기·DPI, 창). 최근
     `OBSERVATIONS_KEPT`개 — OCR 결과에 실어 줄 `Match`의 재검증에 쓴다."""
+    wall: Clock | None = None
+    pause_point: PausePoint | None = None
+
+    @property
+    def wall_clock(self) -> Clock:
+        """경과 시계 (따로 주지 않았으면 기한 시계)."""
+        return self.clock if self.wall is None else self.wall
+
+    def _pauses(self) -> int:
+        clock = self.clock
+        return clock.pauses if isinstance(clock, PauseCounter) else 0
+
+    def mark(self) -> Mark:
+        return Mark(self.wall_clock.now_ms(), self.clock.now_ms(), self._pauses())
+
+    def elapsed(self, mark: Mark) -> tuple[int, int | None]:
+        """`mark`부터의 (실제 경과, 멈춘 시간을 뺀 경과). 그 사이 멈춤이 없었으면 뒤는 None."""
+        wall = max(0, self.wall_clock.now_ms() - mark.wall)
+        if self._pauses() == mark.pauses:
+            return wall, None
+        return wall, max(0, min(wall, self.clock.now_ms() - mark.active))
 
     def note_observation(self, capture_id: int, frame: FrameRef, window: WindowRef | None) -> None:
         self.observations[capture_id] = (frame, window)
@@ -241,8 +279,10 @@ class Runtime:
         if self.deadline.passed:
             raise DeadlineExceeded(f"테스트 전체 기한 {self.deadline_ms}ms를 넘었다")
 
-    def sleep(self, ms: int) -> None:
-        """기다린다. 전체 기한을 넘는 만큼은 기다리지 않고 기한에서 멈춘다."""
+    def wait_hold(self, ms: int) -> None:
+        """멈춤 요청을 보지 않는 기다림 (입력 서비스의 누르고 있기·드래그 지속). 취소로만 깬다 —
+        키를 누른 채 멈추지 않는다. 그 사이 온 멈춤 요청은 다음 확인 지점에서 확정된다. 전체
+        기한을 넘는 만큼은 기다리지 않고 기한에서 멈춘다."""
         self.check()
         if ms < 0:
             raise ValueError(f"sleep 시간은 0 이상이다: {ms}")
@@ -253,6 +293,30 @@ class Runtime:
             raise DeadlineExceeded(f"테스트 전체 기한 {self.deadline_ms}ms를 넘었다")
         self.clock.sleep(ms)
         self.check()
+
+    def wait_pausable(self, ms: int, point: StepPoint) -> None:
+        """멈출 수 있는 기다림 (코어 노드의 `ctx.sleep`: 대기 폴링·`flow.delay`). 취소·멈춤
+        요청으로 바로 깬다. 멈춤 요청이면 이 자리에서 멈춤을 확정하고(`debug.pause where: poll`),
+        재개 뒤 남은 활성 시간만큼 마저 기다린다. 확인 지점이 없는 실행이면 `wait_hold`와 같다."""
+        gate = self.pause_point
+        if gate is None:
+            self.wait_hold(ms)
+            return
+        self.check()
+        if ms < 0:
+            raise ValueError(f"sleep 시간은 0 이상이다: {ms}")
+        end = self.clock.now_ms() + ms
+        while True:
+            left = end - self.clock.now_ms()
+            if left <= 0:
+                return
+            # 기한 시계로 남은 만큼(전체 기한까지). 멈춘 동안 기한 시계는 머물므로 재개 뒤
+            # 남은 활성 시간만 기다린다. 조각은 짧게 끊어 늦은 깨움을 놓치지 않는다
+            span = min(left, self.deadline.remaining_ms, _WAIT_SLICE_MS)
+            if gate.wait_request(span / 1000):
+                self.check()
+                gate.at_poll(point)
+            self.check()
 
 
 class FrameVars:
@@ -325,7 +389,7 @@ class CheckedInput:
         self._runtime = runtime
         platform = runtime.platform
         self._input: InputApi = (
-            platform.input_for(ctx.step, ctx.window, ctx, runtime.sleep)
+            platform.input_for(ctx.step, ctx.window, ctx, runtime.wait_hold)
             if isinstance(platform, StepInputPlatform)
             else platform.input
         )
@@ -669,8 +733,16 @@ class StepContext:
     def deadline(self, ms: int) -> Deadline:
         return Deadline(self._runtime.clock, self._runtime.clock.now_ms() + ms)
 
+    @property
+    def point(self) -> StepPoint:
+        """이 스텝의 확인 지점 위치 (폴링 멈춤의 `debug.pause`)."""
+        frame = self._frame
+        node = self._node.id
+        return StepPoint(self._step, node, frame.graph.path, frame.node_path(node))
+
     def sleep(self, ms: int) -> None:
-        self._runtime.sleep(ms)
+        """코어 노드의 기다림 = 폴링 확인 지점 (M3 2.2)."""
+        self._runtime.wait_pausable(ms, self.point)
 
     def check_cancel(self) -> None:
         self._runtime.check()

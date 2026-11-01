@@ -74,7 +74,13 @@ RUN_END_FIELDS: Final = (
     "finalized_by",
 )
 # run.end에 있을 때만 옮기는 필드 (없으면 run.json에도 없어야 한다)
-RUN_END_OPTIONAL_FIELDS: Final = ("runner_exit_code",)
+RUN_END_OPTIONAL_FIELDS: Final = (
+    "runner_exit_code",
+    # M3 2.2: runner가 쓴 run.end에만 있다 (감독자가 대신 쓴 run.end에는 없다)
+    "active_duration_ms",
+    "paused_ms",
+    "debug_intervened",
+)
 _END_ONLY: Final = (
     *RUN_END_FIELDS,
     *RUN_END_OPTIONAL_FIELDS,

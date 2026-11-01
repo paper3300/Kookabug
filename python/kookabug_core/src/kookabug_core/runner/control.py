@@ -1,7 +1,8 @@
 """runner 제어: 제어 스레드, 취소 순서, 경계 멈춤 (구현 계획 M0b 2.6).
 
 **제어 스레드**는 감독자의 제어 요청(`run.cancel`·`run.pause`·`run.resume`)을 받는 즉시 답하고,
-감독자 사망(자기 종료 감시자가 세운 값)과 테스트 전체 기한을 20ms마다 본다. 노드를 실행하지 않고,
+감독자 사망(자기 종료 감시자가 세운 값)과 테스트 전체 기한을 20ms마다 본다. 전체 기한은 실행기
+런타임과 같은 활성 시계(멈춘 시간을 뺀 시계, M3 2.2)로 본다. 노드를 실행하지 않고,
 `run.end`·`run.json`·임대권 놓기·입력 백엔드 호출을 하지 않는다. 저널에는 `cancel.requested`·
 `control.lost`만 쓴다(`run.end` 뒤에는 작성기가 거부하므로 버려진다).
 
@@ -10,7 +11,8 @@
 1. 자기 종료 감시자에 종료 단계 진입 시각을 알린다 (저널 쓰기보다 먼저)
 2. 취소 토큰을 세운다 — 주 스레드가 다음 확인 지점에서 `Cancelled`(기한이면 `DeadlineExceeded`)로
    풀려 나온다. 액터 게이트보다 먼저 세워, 게이트가 돌려보낸 입력 요청의 `Cancelled`도 같은 사유로
-   기록되게 한다. 경계 멈춤에서 기다리던 주 스레드도 깨운다
+   기록되게 한다. 멈춤(경계·폴링)에서 기다리던 주 스레드도 깨운다. 취소 뒤의 유예(워커 취소
+   유예·마무리 유예·자기 종료 감시자)는 실제 시간이다
 3. 입력 액터 게이트를 닫는다 — 새 입력 거부, 대기 요청 취소, 큐 맨 앞 `RELEASE_ALL`. 제어 스레드는
    백엔드를 부르지 않는다
 4. 워커에 `cancel`(송신 큐) + 유예 타이머 (만료 시 워커 종료, 송신 성공과 무관)
@@ -33,17 +35,26 @@ from __future__ import annotations
 import contextlib
 import queue
 import threading
-import time
 from collections.abc import Callable, Mapping
 from typing import Any, Final, Literal
 
 from kookabug_core.engine.cancel import CancelReason, CancelToken
+from kookabug_core.engine.debug import StepPoint
 from kookabug_core.inputs import InputActor
+from kookabug_core.runner.clock import ActiveClock
 from kookabug_core.runner.watchdog import Watchdog
 from kookabug_core.workerhost import WorkerProcess
 from kookabug_sdk.rpc import METHOD_NOT_FOUND, Incoming, PeerLost, RpcPeer
 
-__all__ = ["CONTROL_THREAD_NAME", "ControlState", "Controller", "PauseGate", "StopReason"]
+__all__ = [
+    "CONTROL_THREAD_NAME",
+    "ControlState",
+    "Controller",
+    "PauseGate",
+    "PauseWhere",
+    "PollPoint",
+    "StopReason",
+]
 
 CONTROL_THREAD_NAME: Final = "kookabug-runner-control"
 _POLL_S: Final = 0.02
@@ -53,17 +64,27 @@ type StopReason = Literal["finish"] | CancelReason
 type Emit = Callable[[Mapping[str, Any]], object]
 
 
-class PauseGate:
-    """경계 멈춤 (M0b 최소, P8). `run.pause`를 받으면 다음 스텝 시작 확인 지점에서 멈춘다.
+type PauseWhere = Literal["boundary", "poll"]
 
-    멈춘 동안 취소는 바로 먹힌다(취소가 재개를 이긴다). 멈춘 시간은 기한에서 빼지 않는다(M3부터).
+
+class PauseGate:
+    """멈춤 게이트 (M0b 경계 멈춤 + M3 2.2 폴링 멈춤·활성 시계).
+
+    `run.pause`를 받으면 주 스레드가 다음 확인 지점에서 멈춘다: 스텝 시작 직전(`at_boundary`), 또는
+    코어 노드의 멈출 수 있는 기다림 안(`at_poll` — 일시정지 요청만). 멈춤을 확정하면 활성 시계를
+    세우고(`debug.pause`), 재개하면 다시 돌린다(`debug.resume`의 `paused_ms`). 그래서 멈춘 시간은
+    노드 기한·전체 기한에서 빠진다.
+
+    멈춘 동안 취소는 바로 먹힌다(취소가 재개를 이긴다). 멈춘 동안 입력 임대권은 그대로 쥔다.
     """
 
-    def __init__(self, cancel: CancelToken) -> None:
+    def __init__(self, cancel: CancelToken, clock: ActiveClock) -> None:
         self._cancel = cancel
+        self.clock = clock
         self._cond = threading.Condition()
         self._requested = False
         self._paused = False
+        self._where: PauseWhere | None = None
         self.count = 0
         """`debug.pause`를 남긴 횟수 (`run.json`의 `pause_count`)."""
 
@@ -74,6 +95,7 @@ class PauseGate:
             if self._paused:
                 return "paused"
             self._requested = True
+            self._cond.notify_all()  # 폴링 확인 지점의 기다림을 깨운다
             return "pausing"
 
     def resume(self) -> ControlState:
@@ -96,22 +118,85 @@ class PauseGate:
                 return "paused"
             return "pausing" if self._requested else "running"
 
-    def at_boundary(self, step: str, emit: Emit) -> None:
+    @property
+    def paused_where(self) -> PauseWhere | None:
+        """멈춰 있으면 그 자리(`boundary`·`poll`), 아니면 None."""
+        with self._cond:
+            return self._where if self._paused else None
+
+    @property
+    def intervened(self) -> bool:
+        """한 번이라도 멈췄다 (`debug_intervened`)."""
+        return self.count > 0
+
+    def wait_request(self, timeout_s: float) -> bool:
+        """주 스레드(폴링 확인 지점): 멈춤 요청·취소까지 최대 `timeout_s`초 기다린다. 요청이 있으면
+        True (소비하지 않는다 — `at_poll`이 확정한다)."""
+        with self._cond:
+            if not self._requested and not self._cancel.cancelled and timeout_s > 0:
+                self._cond.wait(timeout_s)
+            return self._requested and not self._cancel.cancelled
+
+    def at_boundary(self, point: StepPoint, emit: Emit) -> None:
         """주 스레드: 스텝 시작 직전. 멈춤 요청이 있으면 `debug.pause` 뒤 재개·취소를 기다린다."""
         self._cancel.check()
+        self._hold(point, "boundary", emit)
+
+    def at_poll(self, point: StepPoint, emit: Emit) -> None:
+        """주 스레드: 코어 노드의 멈출 수 있는 기다림 안. 멈춤 요청이 있으면 그 자리에서 멈춘다."""
+        self._cancel.check()
+        self._hold(point, "poll", emit)
+
+    def _hold(self, point: StepPoint, where: PauseWhere, emit: Emit) -> None:
         with self._cond:
             if not self._requested:
                 return
             self._requested = False
             self._paused = True
+            self._where = where
+        # 멈춤 확정: 이 순간부터 활성 시계가 머문다 (기록보다 먼저 — 쓰는 시간도 멈춘 시간이다)
+        self.clock.pause()
         self.count += 1
-        emit({"event": "debug.pause", "step": step})
-        with self._cond:
-            while self._paused and not self._cancel.cancelled:
-                self._cond.wait()
-            self._paused = False
+        try:
+            emit(
+                {
+                    "event": "debug.pause",
+                    **point.to_event(),
+                    "reason": "request",
+                    "where": where,
+                }
+            )
+            with self._cond:
+                while self._paused and not self._cancel.cancelled:
+                    self._cond.wait()
+        finally:
+            with self._cond:
+                self._paused = False
+                self._where = None
+            paused_ms = self.clock.resume()
         self._cancel.check()
-        emit({"event": "debug.resume", "step": step})
+        emit(
+            {
+                "event": "debug.resume",
+                "step": point.step,
+                "mode": "continue",
+                "paused_ms": paused_ms,
+            }
+        )
+
+
+class PollPoint:
+    """실행기의 폴링 확인 지점(`engine.debug.PausePoint`) → 멈춤 게이트 + 저널 쓰기."""
+
+    def __init__(self, gate: PauseGate, emit: Emit) -> None:
+        self._gate = gate
+        self._emit = emit
+
+    def wait_request(self, timeout_s: float) -> bool:
+        return self._gate.wait_request(timeout_s)
+
+    def at_poll(self, point: StepPoint) -> None:
+        self._gate.at_poll(point, self._emit)
 
 
 class Controller:
@@ -124,13 +209,15 @@ class Controller:
         cancel: CancelToken,
         watchdog: Watchdog,
         pause: PauseGate,
-        deadline_at: float,
+        deadline_at_ms: int,
         peer: RpcPeer | None,
     ) -> None:
         self.token = cancel
         self.watchdog = watchdog
         self.pause = pause
-        self.deadline_at = deadline_at
+        self.clock = pause.clock
+        self.deadline_at_ms = deadline_at_ms
+        """전체 기한 시각 (활성 시계 ms — 실행기 런타임의 전체 기한과 같은 시계, M3 2.2)."""
         self.peer = peer
         self._lock = threading.Lock()
         self._reason: CancelReason | None = None
@@ -244,7 +331,7 @@ class Controller:
             if self._reason is None:
                 if self.watchdog.supervisor_lost:
                     self.cancel("supervisor_lost")
-                elif time.monotonic() >= self.deadline_at:
+                elif self.clock.now_ms() >= self.deadline_at_ms:
                     self.cancel("deadline_exceeded")
             peer = self.peer
             if peer is None or self._channel_lost:

@@ -47,10 +47,12 @@ from kookabug_core.engine.clock import Clock, SystemClock
 from kookabug_core.engine.context import (
     DEFAULT_CAPTURE_TIMEOUT_MS,
     ArtifactStore,
+    Mark,
     Platform,
     Runtime,
     StepContext,
 )
+from kookabug_core.engine.debug import PausePoint, StepPoint
 from kookabug_core.engine.errors import EngineError, error_code
 from kookabug_core.engine.events import EventSink, event_value
 from kookabug_core.engine.frame import Frame, FrameExit
@@ -164,20 +166,25 @@ class Executor:
         artifacts: ArtifactStore | None = None,
         sink: EventSink | None = None,
         invoker: NodeInvoker | None = None,
-        before_step: Callable[[str], None] | None = None,
+        before_step: Callable[[StepPoint], None] | None = None,
         on_setting: Callable[[SettingLookup], None] | None = None,
         frames: FrameRegistry | None = None,
+        wall: Clock | None = None,
+        pause_point: PausePoint | None = None,
     ) -> None:
         """`sink`는 이벤트를 더 보낼 곳이다 (`RunResult.events`에는 `collect_events`일 때 모인다).
 
         `invoker`는 노드 함수 실행 경계다 (기본: 같은 프로세스, M0b: 워커 프로세스).
-        `before_step(스텝)`은 스텝을 시작하기 직전(`step.start` 전) 확인 지점에서 불린다 — runner의
+        `before_step(위치)`는 스텝을 시작하기 직전(`step.start` 전) 확인 지점에서 불린다 — runner의
         경계 멈춤이 여기서 기다린다. `Cancelled`를 던지면 그 스텝은 시작하지 않고 실행이 끝난다.
+        `pause_point`가 있으면 코어 노드의 `ctx.sleep`이 폴링 확인 지점이다(M3 2.2).
         `on_setting(조회 결과)`는 노드가 `ctx.setting()`으로 설정을 읽을 때마다 불린다
         (실행 조건 기록).
         `frames`는 프레임 저장소다(M1 2.7). 주면 캡처 픽셀을 저장소에 두고 노드에는 참조 이미지를
         준다(플랫폼이 `PixelPlatform`일 때).
-        시계를 주지 않으면 취소로 깨는 `SystemClock`이다.
+        시계를 주지 않으면 취소로 깨는 `SystemClock`이다. `clock`은 기한 시계, `wall`은 경과
+        (`duration_ms`) 시계다 — 주지 않으면 `clock`으로 잰다. runner는 `clock`에 멈춘 시간을 뺀
+        활성 시계, `wall`에 실제 단조 시계를 준다.
         """
         self.registry = registry or default_registry()
         self.invoker: NodeInvoker = invoker or InProcessInvoker()
@@ -189,6 +196,8 @@ class Executor:
         self.before_step = before_step
         self.on_setting = on_setting
         self.frames = frames
+        self.wall = wall
+        self.pause_point = pause_point
 
     def run(self, program: Program, options: ExecOptions | None = None) -> RunResult:
         options = options or ExecOptions()
@@ -226,6 +235,8 @@ class Executor:
             emit_to=emit,
             on_setting=self.on_setting,
             capture_timeout_ms=options.capture_timeout_ms,
+            wall=self.wall,
+            pause_point=self.pause_point,
         )
         workspace_record = program.workspace.config.get("record")
         policy = (
@@ -325,7 +336,7 @@ class _Run:
         self,
         runtime: Runtime,
         graph_prefix: str,
-        before_step: Callable[[str], None] | None = None,
+        before_step: Callable[[StepPoint], None] | None = None,
     ) -> None:
         self.rt = runtime
         self.graph_prefix = graph_prefix
@@ -413,7 +424,7 @@ class _Run:
             start["iteration"] = end["iteration"] = iteration
         if self.before_step is not None:
             try:
-                self.before_step(step)
+                self.before_step(StepPoint(step, node.id, frame.graph.path, path))
             except Cancelled as exc:
                 # 시작하지 않은 스텝: step.start·step.end 없이 위로 (원인 스텝 없음)
                 raise _Error(_cause_of(None, frame.path, _with_reason(rt.cancel, exc))) from exc
@@ -423,7 +434,7 @@ class _Run:
             frame.record_policy.layer(node.record, node_source(frame.graph.path, node.id)),
             call=node.type == GRAPH_CALL,
         )
-        began = rt.clock.now_ms()
+        began = rt.mark()
 
         try:
             try:
@@ -547,7 +558,7 @@ class _Run:
                 }
             )
 
-    def _finish(self, end: dict[str, Any], began: int, frame: Frame, node: Node) -> None:
+    def _finish(self, end: dict[str, Any], began: Mark, frame: Frame, node: Node) -> None:
         step = end["step"]
         self._evidence(node, step, "OCR 글자 기록", self.rt.recorder.ocr_artifact)
         # 서브그래프 안 스텝의 마지막 캡처는 부른 스텝의 증거로 넘어간다 (실패 증거, M1 2.15)
@@ -556,7 +567,10 @@ class _Run:
             end["artifacts"] = artifacts
         if omitted:
             end["omitted"] = omitted
-        end["duration_ms"] = self.rt.clock.now_ms() - began
+        # duration_ms는 실제 경과, 그 구간에 멈춤이 있었으면 멈춘 시간을 뺀 경과도 (M3 2.2)
+        end["duration_ms"], active = self.rt.elapsed(began)
+        if active is not None:
+            end["active_duration_ms"] = active
         self.rt.emit(end)
 
     def _common_window(
@@ -629,7 +643,7 @@ class _Run:
             if attempt > 1:
                 # 시도 사이(이벤트 싱크 처리 포함)에 생긴 취소·기한 초과면 다시 부르지 않는다
                 rt.check()
-            began = rt.clock.now_ms()
+            began = rt.wall_clock.now_ms()
             ctx = StepContext(rt, frame, node, step, config, step_window)
             result = rt.invoker.invoke(nodedef, node, ctx, copy.deepcopy(dict(inputs)))
             if ctx.stale is not None:
@@ -641,7 +655,7 @@ class _Run:
             rt.check()
             record: dict[str, Any] = {
                 "attempt": attempt,
-                "duration_ms": rt.clock.now_ms() - began,
+                "duration_ms": rt.wall_clock.now_ms() - began,
                 "event": "attempt.end",
                 "exit": result.exit,
                 "outputs": event_value(result.outputs),

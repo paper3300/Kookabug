@@ -49,7 +49,7 @@ def make_runner(tmp_path: Path) -> tuple[Runner, Controller]:
         cancel=runner.token,
         watchdog=runner.watchdog,
         pause=runner.pause,
-        deadline_at=runner.deadline_at,
+        deadline_at_ms=runner.deadline_at_ms,
         peer=None,
     )
     return runner, runner.controller

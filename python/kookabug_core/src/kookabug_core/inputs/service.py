@@ -21,7 +21,9 @@
 - 대상 창이 없는 요청(창을 정하지 않은 가짜·없음 플랫폼)은 창 확인 없이 싱크로 간다. Windows
   싱크는 입력 직전 확인에서 "대상 창이 정해지지 않았다"로 거부한다
 - **누르고 있기** `key(hold_ms>0)` = 누르기 요청 → 취소로 깨는 기다림 → 떼기 요청. 기다리다 취소되면
-  떼기 요청도 막히므로 키는 액터의 `RELEASE_ALL`이 뗀다(게이트)
+  떼기 요청도 막히므로 키는 액터의 `RELEASE_ALL`이 뗀다(게이트). 이 기다림은 런타임 `wait_hold`라
+  멈춤 요청을 보지 않는다 — 키를 누른 채 멈추지 않고, 그 사이 온 일시정지는 떼기 뒤 다음 확인
+  지점에서 확정된다 (M3 2.2)
 """
 
 from __future__ import annotations
@@ -161,7 +163,7 @@ class InputService:
         sleep: Callable[[int], None] | None = None,
     ) -> ServiceInput:
         """그 스텝의 `ctx.input`. `window`는 그 스텝의 대상 창(불변), `sleep`은 누르고 있기의
-        기다림(취소로 깨는 것)."""
+        기다림(취소로만 깨고 멈춤 요청은 보지 않는 것 — 런타임 `wait_hold`)."""
         wait = sleep or self._sleep
         if wait is None:
             raise ValueError("누르고 있기에 쓸 기다림(sleep)이 없다")
