@@ -408,7 +408,12 @@ def test_wait_for_absent_target_through_executor_is_timeout_not_capture_error(
     end = ran.end("n_wait")
     step = ran.step("n_wait")
     assert (end["status"], end["exit"]) == ("fail", "timeout") and "error" not in end
-    assert end["artifacts"] == [f"steps/{step}_timeout.png", f"steps/{step}_fail.png"]
+    # 실패 스텝 증거(M3 2.6): 노드의 _timeout, 실행기의 첫·중간 캡처와 _fail
+    # (FakeClock 100 ms 폴링이라 캡처가 여럿: 첫 캡처는 따로 파일, 중간 표본도 있다)
+    first, mid, fail = (f"steps/{step}_{name}.png" for name in ("first", "mid", "fail"))
+    assert end["artifacts"] == [f"steps/{step}_timeout.png", first, mid, fail]
+    evidence = end["evidence"]
+    assert (evidence["first"], evidence["mid"], evidence["last"]) == (first, mid, fail)
     assert end["duration_ms"] <= 1500
     title = ran.png(f"steps/{step}_timeout.png")
     assert title.shape[:2] == (640, 1024)

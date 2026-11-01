@@ -12,6 +12,7 @@ from kookabug_core.record.artifacts import (
     FileArtifacts,
     Recorder,
     StagedFrame,
+    StepFrames,
     is_reference_image,
 )
 from kookabug_core.record.policy import RecordPolicy
@@ -135,8 +136,17 @@ class FakeFrames:
         self.closed: list[str] = []
         self.encoded: list[int] = []
 
-    def register(self, capture_id: int, staged: StagedFrame, step: str) -> None:
+    def register(
+        self, capture_id: int, staged: StagedFrame, step: str, *, at_ms: int | None = None
+    ) -> None:
         self.registered[capture_id] = (staged, step)
+
+    def step_frames(self, step: str) -> StepFrames | None:
+        return None
+
+    def encode_jpeg(self, capture_id: int, long_side: int) -> bytes:
+        staged, _step = self.registered[capture_id]
+        return b"JPEG" + str(staged.key).encode()
 
     def close_step(self, step: str, *, parent: str | None = None) -> None:
         self.closed.append(step)

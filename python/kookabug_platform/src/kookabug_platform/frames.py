@@ -17,9 +17,13 @@
      빠진다(`close_step`, 부모를 주면 마지막 것을 부모 증거로 넘긴다 — 부모의 지금 증거보다
      나중 것만)
   3. **출력 참조**: 스텝 출력으로 나간 캡처(`mark_output`). 최근 `output_refs`(32)개
-- **바이트 예산**(`budget_bytes`, 512 MiB): 1·2등급은 예산과 무관하게 지킨다(열린 스텝 수의
-  두 배). 넘으면 3등급을 오래된 것부터 버린다 — 1·2등급만으로 넘으면 출력 참조는 전부
-  버려진다
+  4. **증거 표본** (M3 2.6, 캡처 시각 `at_ms`를 주고 등록할 때만): 열린 스텝마다 **첫 캡처**와
+     시간 간격이 고른 **표본 최대 `SAMPLES`(8)장**. 실패 스텝의 `_first`·`_mid` 증거용이다.
+     표본이 8장을 넘으면 첫 표본을 뺀 나머지를 하나 걸러 버리고 붙잡는 간격을 두 배로 한다
+     (끝 시각을 모르는 폴링에서 고른 간격을 유지하는 근사). 스텝이 닫히면 빠진다
+- **바이트 예산**(`budget_bytes`, 512 MiB): 1·2등급과 첫 캡처는 예산과 무관하게 지킨다(열린
+  스텝 수의 세 배). 넘으면 표본을 오래된 것부터, 그다음 3등급을 오래된 것부터 버린다 — 1·2등급만으로
+  넘으면 표본·출력 참조는 전부 버려진다
 - 버린(또는 모르는) 캡처를 쓰면 `frame_expired`
 
 모든 메서드는 여러 스레드에서 불러도 된다(워커 RPC 스레드).
@@ -37,7 +41,7 @@ from typing import TYPE_CHECKING, Final
 import cv2
 import numpy as np
 
-from kookabug_core.record.artifacts import CaptureMeta, StagedFrame
+from kookabug_core.record.artifacts import CaptureMeta, StagedFrame, StepFrames, TimedCapture
 from kookabug_platform.errors import FRAME_EXPIRED, PlatformError
 
 if TYPE_CHECKING:
@@ -46,9 +50,11 @@ if TYPE_CHECKING:
 __all__ = [
     "DEFAULT_BUDGET_BYTES",
     "DEFAULT_OUTPUT_REFS",
+    "SAMPLES",
     "STEP_RECENT",
     "FrameStore",
     "decode_image",
+    "encode_jpeg",
     "encode_png",
 ]
 
@@ -59,6 +65,9 @@ DEFAULT_OUTPUT_REFS: Final = 32
 """`run.frame_output_refs` 기본값."""
 STEP_RECENT: Final = 2
 """열린 스텝마다 남기는 최근 캡처 수 (증거 1 + 연속 비교용 직전 1)."""
+SAMPLES: Final = 8
+"""열린 스텝마다 붙잡는 증거 표본 최대 수 (첫 캡처 제외, M3 2.6)."""
+JPEG_QUALITY: Final = 80
 
 type Pixels = NDArray[np.uint8]
 
@@ -85,6 +94,30 @@ def encode_png(pixels: Pixels) -> bytes:
     return buffer.tobytes()
 
 
+def encode_jpeg(pixels: Pixels, long_side: int | None = None) -> bytes:
+    """JPEG로. `long_side`를 주면 긴 변이 그보다 클 때 비율을 지켜 줄인다(썸네일)."""
+    height, width = int(pixels.shape[0]), int(pixels.shape[1])
+    longest = max(width, height)
+    if long_side is not None and longest > long_side:
+        scale = long_side / longest
+        size = (max(1, round(width * scale)), max(1, round(height * scale)))
+        pixels = np.asarray(cv2.resize(pixels, size, interpolation=cv2.INTER_AREA), np.uint8)
+    ok, buffer = cv2.imencode(".jpg", pixels, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
+    if not ok:
+        raise ValueError(f"JPEG로 인코딩할 수 없다: {pixels.shape}")
+    return buffer.tobytes()
+
+
+@dataclass(eq=False, slots=True)
+class _Samples:
+    """열린 스텝 하나의 증거 표본 (첫 캡처와 고른 간격의 표본)."""
+
+    first: TimedCapture | None = None
+    samples: list[TimedCapture] = field(default_factory=list[TimedCapture])
+    interval_ms: float = 0.0
+    """새 캡처를 표본으로 붙잡는 최소 간격 (표본이 넘칠 때마다 두 배)."""
+
+
 @dataclass(eq=False, slots=True)
 class _Entry:
     pixels: Pixels
@@ -99,6 +132,8 @@ class _Ref:
     working: int = 0
     recent: int = 0
     """이 캡처를 최근 목록에 둔 열린 스텝 수."""
+    held: int = 0
+    """이 캡처를 첫 캡처·표본으로 붙잡은 수 (증거 표본 등급)."""
     output: bool = False
 
 
@@ -119,6 +154,7 @@ class FrameStore:
         self._entries: dict[Hashable, _Entry] = {}
         self._refs: dict[int, _Ref] = {}
         self._steps: dict[str, list[int]] = {}
+        self._samples: dict[str, _Samples] = {}
         self._outputs: OrderedDict[int, None] = OrderedDict()
         self._expired: dict[int, str] = {}
         self.bytes_held = 0
@@ -126,8 +162,13 @@ class FrameStore:
 
     # ------------------------------------------------------------ 등록·등급
 
-    def register(self, capture_id: int, staged: StagedFrame, step: str) -> None:
-        """캡처 하나를 그 스텝의 최근 캡처로 둔다. 같은 키의 픽셀이 있으면 그것을 같이 쓴다."""
+    def register(
+        self, capture_id: int, staged: StagedFrame, step: str, *, at_ms: int | None = None
+    ) -> None:
+        """캡처 하나를 그 스텝의 최근 캡처로 둔다. 같은 키의 픽셀이 있으면 그것을 같이 쓴다.
+
+        `at_ms`(캡처 시각, 실행기 벽시계 ms)를 주면 그 스텝의 첫 캡처·증거 표본도 정한다 (M3
+        2.6). 주지 않으면 최근 캡처만이다(M1)."""
         pixels = staged.pixels
         if (
             not isinstance(pixels, np.ndarray)
@@ -155,8 +196,40 @@ class FrameStore:
             entry.refs.add(capture_id)
             self._refs[capture_id] = _Ref(staged.key, staged.meta)
             self._push_recent(step, capture_id)
+            if at_ms is not None:
+                self._sample(step, TimedCapture(capture_id, at_ms))
             self._enforce_budget()
             self.peak_bytes = max(self.peak_bytes, self.bytes_held)
+
+    def _sample(self, step: str, capture: TimedCapture) -> None:
+        """첫 캡처면 붙잡고, 아니면 간격이 됐을 때 표본으로 붙잡는다. 넘치면 하나 걸러 버린다."""
+        held = self._samples.setdefault(step, _Samples())
+        if held.first is None:
+            held.first = capture
+            self._refs[capture.capture_id].held += 1
+            return
+        samples = held.samples
+        if samples and capture.at_ms - samples[-1].at_ms < held.interval_ms:
+            return
+        samples.append(capture)
+        self._refs[capture.capture_id].held += 1
+        if len(samples) <= SAMPLES:
+            return
+        # 첫 표본을 뺀 나머지를 하나 걸러 버리고 간격을 두 배로 (고른 간격 유지)
+        kept = [samples[0], *samples[2::2]]
+        dropped = [s for s in samples if s not in kept]
+        span = (kept[-1].at_ms - kept[0].at_ms) / max(1, len(kept) - 1)
+        # 같은 ms에 몰린 캡처도 간격이 늘게 1 ms 아래로 두지 않는다
+        held.interval_ms = max(held.interval_ms * 2, span, 1.0)
+        held.samples = kept
+        for sample in dropped:
+            self._unhold(sample.capture_id, "증거 표본에서 걸러짐")
+
+    def _unhold(self, capture_id: int, reason: str) -> None:
+        ref = self._refs.get(capture_id)
+        if ref is not None:
+            ref.held -= 1
+            self._maybe_drop(capture_id, reason)
 
     def _push_recent(self, step: str, capture_id: int) -> None:
         recent = self._steps.setdefault(step, [])
@@ -190,8 +263,24 @@ class FrameStore:
             self._maybe_drop(capture_id, reason)
 
     def _enforce_budget(self) -> None:
+        # 증거 표본(첫 캡처 제외)을 먼저, 그다음 출력 참조 (M3 2.6: 첫 장·최근 두 장은 남김)
+        while self.bytes_held > self.budget_bytes and self._drop_sample():
+            pass
         while self.bytes_held > self.budget_bytes and self._outputs:
             self._drop_output(next(iter(self._outputs)), "프레임 바이트 예산을 넘음")
+
+    def _drop_sample(self) -> bool:
+        """가장 오래된 증거 표본 하나를 버린다. 버릴 표본이 없으면 False."""
+        oldest: tuple[_Samples, TimedCapture] | None = None
+        for held in self._samples.values():
+            if held.samples and (oldest is None or held.samples[0].at_ms < oldest[1].at_ms):
+                oldest = held, held.samples[0]
+        if oldest is None:
+            return False
+        held, sample = oldest
+        held.samples.remove(sample)
+        self._unhold(sample.capture_id, "프레임 바이트 예산을 넘음 (증거 표본)")
+        return True
 
     def close_step(self, step: str, *, parent: str | None = None) -> None:
         """스텝이 닫혔다. `parent`를 주면 마지막 캡처를 부모의 증거로 넘긴다(부모 것보다 나중일
@@ -205,10 +294,22 @@ class FrameStore:
                     self._push_recent(parent, last)
             for capture_id in recent:
                 self._unrecent(capture_id, "스텝이 닫힘")
+            held = self._samples.pop(step, None)
+            if held is not None:
+                for sample in [*([held.first] if held.first else []), *held.samples]:
+                    self._unhold(sample.capture_id, "스텝이 닫힘")
+
+    def step_frames(self, step: str) -> StepFrames | None:
+        """열린 스텝의 첫 캡처와 남아 있는 증거 표본 (시각 순). 시각 없이 등록했으면 None."""
+        with self._lock:
+            held = self._samples.get(step)
+            if held is None or held.first is None:
+                return None
+            return StepFrames(held.first, tuple(held.samples))
 
     def _maybe_drop(self, capture_id: int, reason: str) -> None:
         ref = self._refs[capture_id]
-        if ref.working or ref.recent or ref.output:
+        if ref.working or ref.recent or ref.held or ref.output:
             return
         del self._refs[capture_id]
         self._expired[capture_id] = reason
@@ -259,6 +360,11 @@ class FrameStore:
     def encode_png(self, capture_id: int) -> bytes:
         with self.pinned(capture_id) as (pixels,):
             return encode_png(pixels)
+
+    def encode_jpeg(self, capture_id: int, long_side: int) -> bytes:
+        """그 캡처를 긴 변 `long_side` 이하 JPEG로 (스텝 썸네일, M3 2.6)."""
+        with self.pinned(capture_id) as (pixels,):
+            return encode_jpeg(pixels, long_side)
 
     # ------------------------------------------------------------ 상태 (검사·진단)
 

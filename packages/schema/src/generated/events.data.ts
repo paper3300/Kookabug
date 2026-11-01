@@ -241,7 +241,7 @@ export const eventsSchema: unknown = {
     },
     "EvidenceCandidate": {
       "additionalProperties": false,
-      "description": "매칭 후보 하나. rect는 그 스텝 마지막 증거 이미지(_fail) 좌표",
+      "description": "매칭 후보 하나. rect는 찾은 이미지 좌표(코어 노드는 창 전체 캡처라 _fail과 같다). 후보끼리는 서로 다른 자리다(겹치지 않는다)",
       "properties": {
         "rect": {
           "description": "[x, y, w, h] 픽셀",
@@ -964,7 +964,7 @@ export const eventsSchema: unknown = {
     },
     "StepEvidence": {
       "additionalProperties": false,
-      "description": "fail·error·stale_observation으로 끝난 스텝의 증거 (스키마 v0 6장). 파일은 artifacts에도 있다. 시각(*_at_ms)은 스텝 시작 기준 벽시계 ms. mid는 표본 중 (시작 + 끝)/2에 가장 가까운 캡처이고 최선 노력이다: 편차가 경과의 1/4을 넘거나 첫·마지막 말고 표본이 없으면 null과 mid_missing. 매칭 후보(target·threshold·candidates)는 찾기·대기 노드가 fail 출구로 끝났을 때 마지막 찾기의 상위 3개",
+      "description": "fail·error·stale_observation으로 끝난 스텝의 증거 (스키마 v0 6장). 파일은 artifacts에도 있다. 시각(*_at_ms)은 스텝 시작 기준 벽시계 ms. mid는 표본 중 (시작 + 끝)/2에 가장 가까운 캡처이고 최선 노력이다: 편차가 경과의 1/4을 넘거나 첫·마지막 말고 표본이 없으면 null과 mid_missing. 매칭 후보(target·threshold·candidates)는 찾기·대기 노드가 fail 출구로 끝났을 때 그 스텝이 마지막으로 찾은 캡처의 서로 다른 자리 점수 상위 3개(그 캡처에서 여러 target을 찾았으면 최고점이 가장 높은 target)",
       "else": {
         "if": {
           "required": [

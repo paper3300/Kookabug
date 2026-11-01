@@ -30,7 +30,12 @@ from kookabug_core.engine.context import InputObserver, ObservationLimits
 from kookabug_core.engine.errors import EngineError
 from kookabug_core.inputs import PlatformUnavailable
 from kookabug_core.inputs.service import InputService, InputSink
-from kookabug_core.record.artifacts import CaptureMeta, StagedFrame
+from kookabug_core.record.artifacts import (
+    CaptureMeta,
+    FindEvidence,
+    StagedFrame,
+    find_with_report,
+)
 from kookabug_core.record.video import VideoFrame
 from kookabug_core.win import Job, Process
 from kookabug_platform import process as processes
@@ -238,6 +243,12 @@ class WindowsPlatform:
         self, image: Image, target: Target, *, region: Rect | None, limits: ObservationLimits
     ) -> Match | None:
         return self.engines.find(image, target, region=region, limits=limits)
+
+    def find_report(
+        self, image: Image, target: Target, *, region: Rect | None, limits: ObservationLimits
+    ) -> tuple[Match | None, FindEvidence | None]:
+        """찾기 + 매칭 후보 (M3 2.6)."""
+        return find_with_report(self.engines, image, target, region=region, limits=limits)
 
     def diff(self, a: Image, b: Image, *, region: Rect | None) -> float:
         return self.engines.diff(a, b, region=region)

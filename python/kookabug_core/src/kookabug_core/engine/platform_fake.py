@@ -20,6 +20,7 @@ from kookabug_core.record.artifacts import (
     StagedFrame,
     artifact_path,
     image_artifact_path,
+    thumbnail_path,
 )
 from kookabug_sdk.testing import FakeInput
 from kookabug_sdk.types import Image, Rect, WindowRef
@@ -143,6 +144,16 @@ class MemoryArtifacts:
     def __init__(self) -> None:
         self.saved: dict[str, Image] = {}
         self.texts: dict[str, str] = {}
+        self.thumbs: dict[str, bytes] = {}
+        """썸네일 (`thumbs/<스텝>.jpg` → JPEG 바이트, M3 2.6)."""
+
+    def save_thumbnail(self, step: str, data: bytes) -> str:
+        path = thumbnail_path(step)
+        self.thumbs[path] = data
+        return path
+
+    def delete_thumbnail(self, rel: str) -> None:
+        self.thumbs.pop(rel, None)
 
     def _taken(self, path: str) -> bool:
         return path in self.saved or path in self.texts

@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -20,6 +21,8 @@ from kookabug_sdk.result import ExitKind
 from kookabug_sdk.types import WindowRef
 
 __all__ = ["Frame", "FrameExit", "LoopState"]
+
+_LOOP_SERIAL = itertools.count(1)
 
 
 @dataclass(eq=False)
@@ -35,6 +38,8 @@ class LoopState:
     """시작한 회차 수. 지금 회차의 `index`는 `started - 1`."""
     returning: bool = False
     """본문이 끝나 이 반복 노드로 돌아가는 중 (암묵적 귀환)."""
+    serial: int = field(default_factory=lambda: next(_LOOP_SERIAL))
+    """반복 실행 하나의 일련번호 (같은 반복 노드에 다시 들어오면 새 번호 — 썸네일 정리 열쇠)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,9 +81,17 @@ class Frame:
     """출력 표의 핀별 관측 출처."""
     var_origins: dict[str, Origin | None] = field(default_factory=dict[str, Origin | None])
     """변수의 관측 출처 (값과 같이 저장한다)."""
+    outer_loops: tuple[tuple[int, int], ...] = ()
+    """이 프레임을 부른 호출 스텝을 감싼 반복 회차들 `(일련번호, 회차)` (바깥부터)."""
 
     def node_path(self, node: str) -> tuple[str, ...]:
         return (*self.path, node)
+
+    def loop_chain(self, node: str) -> tuple[tuple[int, int], ...]:
+        """`node` 스텝을 감싼 반복 회차들 (호출 경계를 넘어 바깥부터). 반복 노드 자신의 스텝은 그
+        반복 바깥이다 (`loops.iteration`과 같다)."""
+        own = tuple((s.serial, s.started - 1) for s in self.loops if s.node != node)
+        return (*self.outer_loops, *own)
 
     def record(
         self,

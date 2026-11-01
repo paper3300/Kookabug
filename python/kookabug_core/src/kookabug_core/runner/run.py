@@ -75,7 +75,7 @@ from kookabug_core.inputs import (
 from kookabug_core.inputs.service import InputService, InputSink
 from kookabug_core.loader import Program
 from kookabug_core.record import FileArtifacts, Journal, write_run_json
-from kookabug_core.record.artifacts import FrameRegistry
+from kookabug_core.record.artifacts import FindEvidence, FrameRegistry, find_with_report
 from kookabug_core.record.finalize import finalize_video, video_summary
 from kookabug_core.record.runfolder import RUN_FORMAT, RunFolder, finished_run_json
 from kookabug_core.record.snapshot import GRAPH_PREFIX, SnapshotError, take_snapshot
@@ -102,7 +102,7 @@ from kookabug_sdk import _faults
 from kookabug_sdk.context import InputApi
 from kookabug_sdk.pipe import connect
 from kookabug_sdk.rpc import RpcPeer
-from kookabug_sdk.types import Image, Match, OcrResult, Rect, Target, WindowRef
+from kookabug_sdk.types import FrameRef, Image, Match, OcrResult, Rect, Target, WindowRef
 
 if TYPE_CHECKING:
     from kookabug_platform.tracker import WindowTracker
@@ -208,6 +208,12 @@ class RunnerPlatform:
     ) -> Match | None:
         return self._engines().find(image, target, region=region, limits=limits)
 
+    def find_report(
+        self, image: Image, target: Target, *, region: Rect | None, limits: ObservationLimits
+    ) -> tuple[Match | None, FindEvidence | None]:
+        """찾기 + 매칭 후보 (M3 2.6)."""
+        return find_with_report(self._engines(), image, target, region=region, limits=limits)
+
     def diff(self, a: Image, b: Image, *, region: Rect | None) -> float:
         return self._engines().diff(a, b, region=region)
 
@@ -286,13 +292,16 @@ class _RecordBroken(Exception):
 
 class _JournalSink:
     """실행기 이벤트 → 저널. 쓰기 실패는 그대로 던져 실행을 멈춘다 (기록 없이 노드를 돌리지
-    않는다)."""
+    않는다). 재시도 끝에 성공한 스텝(`step.end.retried`)을 센다 (`run.json.retried_steps`, M3)."""
 
     def __init__(self, journal: Journal) -> None:
         self._journal = journal
+        self.retried_steps = 0
 
     def emit(self, event: Mapping[str, Any]) -> None:
         self._journal.emit(event)
+        if event.get("event") == "step.end" and event.get("retried") is True:
+            self.retried_steps += 1
 
 
 # ---------------------------------------------------------------- runner
@@ -332,6 +341,7 @@ class Runner:
         self._video_factory: EncoderFactory | None = None
         self._video_probe: EncoderProbe | None = None
         self._run_json: dict[str, Any] = {}
+        self._sink: _JournalSink | None = None
 
     @property
     def window_tracker(self) -> WindowTracker | None:
@@ -647,6 +657,7 @@ class Runner:
         assert self.journal is not None
         gate = self._start_video()
         remaining_ms = max(1, self.deadline_at_ms - self.clock.now_ms())
+        sink = self._sink = _JournalSink(self.journal)
         executor = Executor(
             registry,
             platform=self.platform,
@@ -655,13 +666,14 @@ class Runner:
             wall=SystemClock(self.token),
             cancel=self.token,
             artifacts=FileArtifacts(self.folder.path),
-            sink=_JournalSink(self.journal),
+            sink=sink,
             invoker=RoutingInvoker(None if self.worker is None else WorkerInvoker(self.worker)),
             before_step=lambda point: self.pause.at_boundary(point, self._emit),
             pause_point=PollPoint(self.pause, self._emit),
             # 관측 세대: 멈춤 게이트가 재개할 때 올리고 실행기가 읽는다 (M3 2.4)
             epochs=self.pause.epochs,
             on_setting=self._record_setting,
+            on_observed=self._record_observed,
             frames=self.frames,
             video=gate,
         )
@@ -720,6 +732,16 @@ class Runner:
             return
         settings[lookup.key] = use
         self._run_json["conditions"]["settings"] = dict(sorted(settings.items()))
+        self._save_running()
+
+    def _record_observed(self, seen: FrameRef) -> None:
+        """실행에서 처음 관측한 창 (주 스레드, 한 번): 캡처 방식·클라이언트 크기·DPI를 바로
+        남긴다 — runner가 죽어도 감독자가 다시 만드는 `run.json`에 남는다 (M3 2.6)."""
+        self._run_json["observed"] = {
+            "backend": seen.backend or "unknown",
+            "client_size": [max(0, int(seen.client_size[0])), max(0, int(seen.client_size[1]))],
+            "dpi": max(1, int(seen.dpi)),
+        }
         self._save_running()
 
     # ------------------------------------------------------------ 정상 마무리
@@ -786,6 +808,7 @@ class Runner:
         assert end is not None
         data = finished_run_json(self._run_json, run_end)
         data["pause_count"] = self.pause.count
+        data["retried_steps"] = 0 if self._sink is None else self._sink.retried_steps
         if video is not None:
             data["video"] = video
         try:

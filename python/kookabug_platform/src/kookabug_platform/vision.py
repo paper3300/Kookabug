@@ -712,6 +712,76 @@ class Vision:
             elapsed_ms=(time.perf_counter() - started) * 1000,
         )
 
+    def peaks_capture(
+        self,
+        capture_id: int,
+        meta: FrameMeta,
+        target: Target | TargetSpec,
+        *,
+        scale: float,
+        method: str = "template_multiscale",
+        region: Rect | Sequence[int] | None = None,
+        count: int = 3,
+    ) -> tuple[Candidate, ...]:
+        """저장소 캡처에서 `peaks` (버렸으면 `frame_expired`)."""
+        with self._need_store().pinned(capture_id) as (pixels,):
+            return self.peaks(
+                pixels, meta, target, scale=scale, method=method, region=region, count=count
+            )
+
+    def peaks(
+        self,
+        pixels: Pixels,
+        meta: FrameMeta,
+        target: Target | TargetSpec,
+        *,
+        scale: float,
+        method: str = "template_multiscale",
+        region: Rect | Sequence[int] | None = None,
+        count: int = 3,
+    ) -> tuple[Candidate, ...]:
+        """매칭 후보 증거용 (M3 2.6): 그 배율의 점수 지도에서 **서로 다른 자리** 상위 `count`개.
+        봉우리를 하나 고를 때마다 그 상자와 겹치는 자리를 지운다(겹침 억제) — 그래서 상자끼리
+        겹치지 않는다. 색 확인은 하지 않는다(점수만). 실패 증거를 남길 때만 부른다."""
+        spec = TargetSpec.of(target)
+        image = self.target_image(spec)
+        search = self._search_box(spec, meta, pixels, region)
+        ox, oy = meta.origin
+        sx, sy, sw, sh = search
+        area = pixels[sy - oy : sy - oy + sh, sx - ox : sx - ox + sw]
+        if not area.size:
+            return ()
+        if not spec.rgb and area.ndim == 3:
+            area = _u8(cv2.cvtColor(area, cv2.COLOR_BGR2GRAY))
+        template = _resize(image.bgr if spec.rgb else image.gray, scale)
+        th, tw = template.shape[:2]
+        if tw < MIN_TEMPLATE_PX or th < MIN_TEMPLATE_PX or tw > area.shape[1] or th > area.shape[0]:
+            return ()
+        mask = None if image.mask is None else _resize(image.mask, scale, cv2.INTER_NEAREST)
+        scores = _scores(area, template, mask)
+        found: list[Candidate] = []
+        while len(found) < count:
+            _, score, _, loc = cv2.minMaxLoc(scores)
+            if score <= -1.0:
+                break
+            x, y = int(loc[0]), int(loc[1])
+            value = float(min(max(score, -1.0), 1.0))
+            accepted = value >= spec.threshold
+            found.append(
+                Candidate(
+                    method,
+                    scale,
+                    (sx + x, sy + y, tw, th),
+                    value,
+                    None,
+                    accepted,
+                    "" if accepted else "threshold",
+                )
+            )
+            # 이 상자와 겹치는 모든 자리(왼쪽 위가 ±상자 크기 안)를 지운다
+            scores[max(0, y - th + 1) : y + th, max(0, x - tw + 1) : x + tw] = -1.0
+        return tuple(found)
+
     @staticmethod
     def _attempts(spec: TargetSpec, s0: float) -> list[tuple[str, float]]:
         attempts: list[tuple[str, float]] = []

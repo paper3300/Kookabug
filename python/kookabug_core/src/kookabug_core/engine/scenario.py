@@ -33,7 +33,7 @@ from kookabug_core.canonical import loads_strict
 from kookabug_core.engine.errors import EngineError
 from kookabug_core.inputs.actor import ClientPoint
 from kookabug_core.inputs.service import InputService, InputSink
-from kookabug_core.record.artifacts import StagedFrame
+from kookabug_core.record.artifacts import FindEvidence, StagedFrame, find_with_report
 from kookabug_core.record.video import VideoFrame
 from kookabug_sdk.context import InputApi, Where
 from kookabug_sdk.errors import ObservationTimeout
@@ -756,6 +756,12 @@ class ScenarioPlatform:
         self, image: Image, target: Target, *, region: Rect | None, limits: Any
     ) -> Match | None:
         return self._engines().find(image, target, region=region, limits=limits)
+
+    def find_report(
+        self, image: Image, target: Target, *, region: Rect | None, limits: Any
+    ) -> tuple[Match | None, FindEvidence | None]:
+        """찾기 + 매칭 후보 (엔진이 주면, M3 2.6)."""
+        return find_with_report(self._engines(), image, target, region=region, limits=limits)
 
     def diff(self, a: Image, b: Image, *, region: Rect | None) -> float:
         return self._engines().diff(a, b, region=region)

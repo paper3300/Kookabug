@@ -257,12 +257,15 @@ def shot(
     image: Image | None = None,
     boom: bool = False,
     value: Any | None = None,
+    gap_ms: int = 0,
 ) -> Result:
-    """기록 정책 시나리오용. `captures`번 캡처(마지막 것을 출력), `save`면 저장(`image`를 주면
-    그것을), `boom`이면 그 뒤 예외. `value`는 받기만 한다(비밀값 입력 스텝 만들기). 출력 `saved`는
-    `ctx.artifacts.save`의 반환값(생략이면 null)."""
+    """기록 정책 시나리오용. `captures`번 캡처(마지막 것을 출력, 캡처 사이 `gap_ms` 기다림),
+    `save`면 저장(`image`를 주면 그것을), `boom`이면 그 뒤 예외. `value`는 받기만 한다(비밀값 입력
+    스텝 만들기). 출력 `saved`는 `ctx.artifacts.save`의 반환값(생략이면 null)."""
     frame: Image | None = None
-    for _ in range(captures):
+    for n in range(captures):
+        if n and gap_ms:
+            ctx.sleep(gap_ms)
         frame = ctx.capture()
     saved: str | None = None
     target = image if image is not None else frame

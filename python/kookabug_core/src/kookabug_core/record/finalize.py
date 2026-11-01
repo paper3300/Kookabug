@@ -169,6 +169,8 @@ def finalize_run(
         pauses = _pause_count(view)
         if pauses:
             data["pause_count"] = pauses
+        # 재시도 끝 성공 스텝 수는 저널에서 센다 ("불안정" 배지, M3 2.6)
+        data["retried_steps"] = _retried_steps(view)
         if summary is not None:
             data["video"] = summary
         write_run_json(folder / RUN_JSON_FILE, data)
@@ -255,6 +257,10 @@ def _runner_died(
 
 def _pause_count(view: RunView) -> int:
     return sum(1 for e in view.events if e.get("event") == "debug.pause")
+
+
+def _retried_steps(view: RunView) -> int:
+    return sum(1 for e in view.events if e.get("event") == "step.end" and e.get("retried") is True)
 
 
 def _paused_ms(view: RunView, now: datetime) -> int:

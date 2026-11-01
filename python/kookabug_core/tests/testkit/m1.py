@@ -243,13 +243,15 @@ def diff(ctx: Context, click: list[int] | None = None) -> Result:
     effects={"capture"},
 )
 def expired(ctx: Context, target: Target, catch: bool = False) -> Result:
-    """캡처 세 번 뒤 첫 캡처에서 찾는다 (스텝 최근 두 개만 남으므로 버려졌다). `catch`면 그 오류의
-    코드를 출력한다."""
-    first = ctx.capture()
+    """캡처를 여러 번 한 뒤 세 번째 캡처에서 찾는다 (스텝 최근 두 개에서 밀려났고, 첫 캡처가 아니며,
+    증거 표본이 넘쳐 하나 걸러 버릴 때 빠졌다 — M3 2.6). `catch`면 그 오류의 코드를 출력한다."""
     ctx.capture()
     ctx.capture()
+    victim = ctx.capture()
+    for _ in range(10):
+        ctx.capture()
     try:
-        ctx.vision.find(first, target)
+        ctx.vision.find(victim, target)
     except RunnerError as exc:
         if not catch:
             raise

@@ -34,7 +34,7 @@ from kookabug_core.engine.invoker import NodeInvoker
 from kookabug_core.engine.provenance import CaptureEpochs, Epochs, Origin, StepTrace
 from kookabug_core.ir import Node
 from kookabug_core.loader import Program
-from kookabug_core.record.artifacts import ArtifactStore, Recorder, StagedFrame
+from kookabug_core.record.artifacts import ArtifactStore, FindEvidence, Recorder, StagedFrame
 from kookabug_core.registry import Registry
 from kookabug_core.workspace import SettingLookup
 from kookabug_sdk.context import (
@@ -68,6 +68,7 @@ from kookabug_sdk.types import (
 __all__ = [
     "DEFAULT_CAPTURE_TIMEOUT_MS",
     "ArtifactStore",
+    "FindReportingPlatform",
     "ObservationLimits",
     "ObservingPlatform",
     "PixelPlatform",
@@ -147,6 +148,16 @@ class PixelPlatform(Protocol):
     def capture_staged(
         self, window: WindowRef | None, region: Rect | None, limits: ObservationLimits
     ) -> tuple[Image, StagedFrame]: ...
+
+
+@runtime_checkable
+class FindReportingPlatform(Protocol):
+    """찾기 결과와 함께 상위 후보·임계값을 주는 플랫폼 (매칭 후보 증거, M3 2.6). 후보를 모르면
+    두 번째 값이 None."""
+
+    def find_report(
+        self, image: Image, target: Target, *, region: Rect | None, limits: ObservationLimits
+    ) -> tuple[Match | None, FindEvidence | None]: ...
 
 
 @runtime_checkable
@@ -240,6 +251,11 @@ class Runtime:
     """관측 세대 (재개마다 1 오름, M3 2.4). runner는 멈춤 게이트와 같은 것을 준다."""
     capture_epochs: CaptureEpochs = field(default_factory=CaptureEpochs)
     """캡처 번호 → 세대 (입력 서비스의 재검증이 찾는다)."""
+    on_observed: Callable[[FrameRef], None] | None = None
+    """실행에서 처음 관측한 창(캡처 방식·클라이언트 크기·DPI)을 받는다 (`run.json.observed`, M3
+    2.6). 한 번만 불린다."""
+    observed: FrameRef | None = None
+    """처음 관측."""
 
     @property
     def epoch(self) -> int:
@@ -276,6 +292,10 @@ class Runtime:
         self.observations[capture_id] = (frame, window)
         while len(self.observations) > OBSERVATIONS_KEPT:
             self.observations.popitem(last=False)
+        if self.observed is None:
+            self.observed = frame
+            if self.on_observed is not None:
+                self.on_observed(frame)
 
     def limits(self, deadline: Deadline | None) -> ObservationLimits:
         """관측 호출 하나의 기한. 노드 기한이 이미 지났으면 `ObservationTimeout`(시작하지 않음)."""
@@ -501,7 +521,14 @@ class _StepVision:
     ) -> Match | None:
         runtime = self._ctx.runtime
         limits = runtime.limits(deadline)
-        found = self._platform.find(image, target, region=region, limits=limits)
+        platform = self._platform
+        if isinstance(platform, FindReportingPlatform):
+            # 매칭 후보: 그 스텝의 마지막 찾기를 남긴다 (fail 출구 증거, M3 2.6)
+            found, report = platform.find_report(image, target, region=region, limits=limits)
+            if report is not None:
+                runtime.recorder.found(self._ctx.step, report)
+        else:
+            found = platform.find(image, target, region=region, limits=limits)
         runtime.check()
         return found
 

@@ -20,6 +20,7 @@ from kookabug_core.workspace import MemorySecrets
 from kookabug_platform.errors import FRAME_EXPIRED, PlatformError
 from kookabug_platform.frames import (
     MIB,
+    SAMPLES,
     STEP_RECENT,
     FrameStore,
     decode_image,
@@ -220,7 +221,8 @@ def test_thousands_of_polls_in_one_step_bounded_and_last_kept() -> None:
             store.mark_output(last.capture_id or 0)  # 출력으로 나간 것도 섞는다
     assert last is not None and last.capture_id == 3000
     assert store.peak_bytes <= budget
-    assert len(store.held()) <= STEP_RECENT + 6
+    # 최근 둘 + 출력 참조 + 첫 캡처·증거 표본 (M3 2.6) — 예산 안에서
+    assert len(store.held()) <= STEP_RECENT + 6 + 1 + SAMPLES
     # 스텝 끝 증거는 마지막 프레임이고 PNG로 저장된다
     assert store.evidence("s1") == 3000
     path = recorder.error_screenshot("s1")

@@ -21,15 +21,30 @@ from __future__ import annotations
 
 import contextlib
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
-from kookabug_core.record.artifacts import CaptureMeta, is_reference_image
+from kookabug_core.record.artifacts import (
+    CANDIDATES_KEPT,
+    CaptureMeta,
+    EvidenceCandidate,
+    FindEvidence,
+    is_reference_image,
+)
 from kookabug_platform.deadline import ObservationDeadline
 from kookabug_platform.frames import decode_image
 from kookabug_platform.ocr.engine import DEFAULT_ENGINE, Ocr, OcrEngine, create_engine
-from kookabug_platform.vision import FrameMeta, Pixels, Vision, VisionMatch, diff_pixels
+from kookabug_platform.vision import (
+    Candidate,
+    FindResult,
+    FrameMeta,
+    Pixels,
+    Vision,
+    VisionMatch,
+    diff_pixels,
+)
 from kookabug_sdk.types import (
     FrameRef,
     Image,
@@ -46,7 +61,7 @@ if TYPE_CHECKING:
     from kookabug_core.engine.context import ObservationLimits
     from kookabug_platform.frames import FrameStore
 
-__all__ = ["RunEngines", "deadline_of", "frame_meta", "to_match"]
+__all__ = ["RunEngines", "deadline_of", "find_evidence", "frame_meta", "to_match"]
 
 
 def deadline_of(limits: ObservationLimits | None) -> ObservationDeadline | None:
@@ -89,6 +104,61 @@ def to_match(found: VisionMatch) -> Match:
         ),
         target=found.target,
         click=Point(*found.click),
+    )
+
+
+SAME_PLACE_IOU: Final = 0.3
+"""두 후보 상자가 이만큼 넘게 겹치면 같은 자리로 본다 (점수 높은 것만 남긴다)."""
+
+
+def iou(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> float:
+    x0, y0 = max(a[0], b[0]), max(a[1], b[1])
+    x1, y1 = min(a[0] + a[2], b[0] + b[2]), min(a[1] + a[3], b[1] + b[3])
+    inter = max(0, x1 - x0) * max(0, y1 - y0)
+    union = a[2] * a[3] + b[2] * b[3] - inter
+    return inter / union if union > 0 else 0.0
+
+
+def distinct_places(candidates: Iterable[Candidate], count: int) -> list[Candidate]:
+    """점수 순으로 서로 다른 자리 최대 `count`개 (겹치는 후보는 점수 높은 것 하나만)."""
+    kept: list[Candidate] = []
+    for c in sorted(candidates, key=lambda c: c.score, reverse=True):
+        if all(iou(c.rect, k.rect) <= SAME_PLACE_IOU for k in kept):
+            kept.append(c)
+            if len(kept) == count:
+                break
+    return kept
+
+
+def find_evidence(
+    result: FindResult | Iterable[Candidate],
+    target: str,
+    origin: tuple[int, int] = (0, 0),
+    *,
+    threshold: float | None = None,
+    capture_id: int | None = None,
+) -> FindEvidence:
+    """찾기 결과 → 매칭 후보 증거: 서로 다른 자리 점수 상위 3개(상자는 이미지 좌표)와 임계값.
+    방법·배율별 최고점은 대개 같은 자리의 배율 변형이라 겹치는 것은 하나로 줄인다."""
+    ox, oy = origin
+    if isinstance(result, FindResult):
+        threshold = float(result.threshold)
+        candidates: Iterable[Candidate] = result.candidates
+    else:
+        candidates = result
+    top = distinct_places(candidates, CANDIDATES_KEPT)
+    return FindEvidence(
+        target=target,
+        threshold=float(threshold if threshold is not None else 0.0),
+        candidates=tuple(
+            EvidenceCandidate(
+                (c.rect[0] - ox, c.rect[1] - oy, c.rect[2], c.rect[3]),
+                round(float(c.score), 4),
+                round(float(c.scale), 4),
+            )
+            for c in top
+        ),
+        capture_id=capture_id,
     )
 
 
@@ -172,6 +242,22 @@ class RunEngines:
         region: Rect | None = None,
         limits: ObservationLimits | None = None,
     ) -> Match | None:
+        return self.find_report(image, target, region=region, limits=limits)[0]
+
+    def find_report(
+        self,
+        image: Image,
+        target: Target,
+        *,
+        region: Rect | None = None,
+        limits: ObservationLimits | None = None,
+    ) -> tuple[Match | None, FindEvidence]:
+        """찾기 + 매칭 후보 증거 (서로 다른 자리 상위 3개·임계값, M3 2.6). 후보 상자는 찾은 이미지
+        좌표다(클라이언트 좌표에서 그 이미지 원점을 뺀 것).
+
+        찾기마다 내는 후보는 시도(방법·배율)별 최고점을 자리로 줄인 것이고, 저장소 캡처면 증거를
+        남길 때 한 번 `refine`이 가장 높은 시도의 점수 지도에서 겹침 억제로 서로 다른 자리 봉우리를
+        다시 고른다 — 찾기 경로의 비용은 그대로다."""
         deadline = deadline_of(limits)
         stored = self._stored(image)
         if stored is not None:
@@ -181,14 +267,33 @@ class RunEngines:
             )
         else:
             pixels = self._pixels(image)
-            result = self.vision.find(
-                pixels,
-                self._file_meta(image, pixels),
+            meta = self._file_meta(image, pixels)
+            result = self.vision.find(pixels, meta, target, region=_box(region), deadline=deadline)
+        found = None if result.match is None else to_match(result.match)
+        evidence = find_evidence(result, target.name, meta.origin, capture_id=image.capture_id)
+        best = result.best
+        if stored is None or best is None:
+            return found, evidence
+        capture_id, meta = stored
+        threshold = float(result.threshold)
+
+        def refine() -> FindEvidence:
+            peaks = self.vision.peaks_capture(
+                capture_id,
+                meta,
                 target,
+                scale=best.scale,
+                method=best.method,
                 region=_box(region),
-                deadline=deadline,
+                count=CANDIDATES_KEPT,
             )
-        return None if result.match is None else to_match(result.match)
+            if not peaks:
+                return evidence
+            return find_evidence(
+                peaks, target.name, meta.origin, threshold=threshold, capture_id=capture_id
+            )
+
+        return found, replace(evidence, refine=refine)
 
     def diff(self, a: Image, b: Image, *, region: Rect | None = None) -> float:
         """두 이미지의 차이 (0~1). `region`이 없으면 두 이미지 전체(크기가 다르면 1.0).

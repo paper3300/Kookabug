@@ -35,6 +35,9 @@
   확정되든, 연결된 분기가 경로 끝에서 확정되든. 연결된 fail 분기가 뒤에서 처리돼도 그 스텝의
   증거는 남는다(fail 출구로 나간 사실의 증거). 안쪽에서 확정돼 올라오는 fail은 지나가는 호출
   스텝이 다시 남기지 않는다
+- 증거 프레임·썸네일 (M3 2.6, `Recorder`): 실패·예외 증거를 남기는 스텝은 첫·중간 캡처와
+  `step.end.evidence`(코어 찾기·대기 노드의 fail 출구면 매칭 후보도), 직접 캡처한 스텝은 닫을 때
+  썸네일. 반복이 새 회차를 시작하면 그 범위의 두 회차 전 썸네일을 지운다
 """
 
 from __future__ import annotations
@@ -76,7 +79,7 @@ from kookabug_core.engine.retry import retry_policy
 from kookabug_core.engine.verdict import Cause, Facts, Judgement, Terminal, Verdict, judge
 from kookabug_core.ir import GRAPH_CALL, GRAPH_ENTRY, Node
 from kookabug_core.loader import MAX_CALL_DEPTH, Program
-from kookabug_core.record.artifacts import FrameRegistry, Recorder
+from kookabug_core.record.artifacts import CANDIDATE_NODES, FrameRegistry, Recorder
 from kookabug_core.record.policy import (
     RecordPolicy,
     VideoMode,
@@ -93,7 +96,7 @@ from kookabug_core.workspace import WORKSPACE_FILE, SettingLookup
 from kookabug_sdk import Result, Secret
 from kookabug_sdk.context import Deadline
 from kookabug_sdk.errors import StaleObservation
-from kookabug_sdk.types import WindowRef
+from kookabug_sdk.types import FrameRef, WindowRef
 
 __all__ = [
     "DEFAULT_DEADLINE_MS",
@@ -181,6 +184,7 @@ class Executor:
         pause_point: PausePoint | None = None,
         epochs: Epochs | None = None,
         video: VideoGate | None = None,
+        on_observed: Callable[[FrameRef], None] | None = None,
     ) -> None:
         """`sink`는 이벤트를 더 보낼 곳이다 (`RunResult.events`에는 `collect_events`일 때 모인다).
 
@@ -199,6 +203,8 @@ class Executor:
         않으면 실행마다 새로 0에서 시작하고 오르지 않는다(멈춤 없는 실행 = M1 동작).
         `video`는 녹화 게이트다(M3 2.5): 스텝마다 `step.start` 전에 보류로 바꾸고, 입력 계산·비밀값
         분류 뒤 그 스텝의 영상 정책으로 정하고, 스텝이 닫히면(정상·예외·취소) 스택에서 뺀다.
+        `on_observed(관측)`은 실행에서 처음 창을 관측했을 때 한 번 불린다(캡처 방식·클라이언트
+        크기·DPI — runner가 `run.json.observed`로 남긴다, M3 2.6).
         """
         self.registry = registry or default_registry()
         self.invoker: NodeInvoker = invoker or InProcessInvoker()
@@ -214,6 +220,7 @@ class Executor:
         self.pause_point = pause_point
         self.epochs = epochs
         self.video = video
+        self.on_observed = on_observed
 
     def run(self, program: Program, options: ExecOptions | None = None) -> RunResult:
         options = options or ExecOptions()
@@ -236,7 +243,9 @@ class Executor:
                 self.sink.emit(event)
 
         run_id = options.run_id or uuid.uuid4().hex[:8]
-        recorder = Recorder(self.artifacts, self.frames)
+        # 증거 시각은 경과 시계로 잰다 (스텝 시작·캡처·끝 모두 같은 벽시계, M3 2.6)
+        wall = self.wall if self.wall is not None else self.clock
+        recorder = Recorder(self.artifacts, self.frames, clock=wall.now_ms)
         runtime = Runtime(
             run=run_id,
             program=program,
@@ -254,6 +263,7 @@ class Executor:
             wall=self.wall,
             pause_point=self.pause_point,
             epochs=self.epochs if self.epochs is not None else Epochs(),
+            on_observed=self.on_observed,
         )
         workspace_record = program.workspace.config.get("record")
         # 워크스페이스에 record.video가 없으면 영상은 failed_only (M3)
@@ -471,6 +481,7 @@ class _Run:
             step,
             frame.record_policy.layer(node.record, node_source(frame.graph.path, node.id)),
             call=node.type == GRAPH_CALL,
+            loops=frame.loop_chain(node.id),
         )
         began = rt.mark()
 
@@ -571,8 +582,15 @@ class _Run:
             end["message"] = outcome.message
         if outcome.kind == "fail":
             # fail 출구로 나간 스텝은 연결과 상관없이 자기(와 안쪽) 프레임으로 증거를 남긴다 —
-            # 연결된 분기가 경로 끝에서 처리되지 않은 fail이 되면 이 스텝이 실패 위치다 (M1 2.15)
-            self._evidence(node, step, "실패 증거", self.rt.recorder.fail_screenshot)
+            # 연결된 분기가 경로 끝에서 처리되지 않은 fail이 되면 이 스텝이 실패 위치다 (M1 2.15).
+            # 코어 찾기·대기 노드는 마지막 찾기의 매칭 후보도 (M3 2.6)
+            candidates = node.type in CANDIDATE_NODES
+            self._evidence(
+                node,
+                step,
+                "실패 증거",
+                lambda s: self.rt.recorder.fail_screenshot(s, candidates=candidates),
+            )
         self._finish(end, began, frame, node)
         if outcome.kind == "fail":
             cause = Cause(
@@ -627,13 +645,18 @@ class _Run:
 
     def _finish(self, end: dict[str, Any], began: Mark, frame: Frame, node: Node) -> None:
         step = end["step"]
-        self._evidence(node, step, "OCR 글자 기록", self.rt.recorder.ocr_artifact)
+        recorder = self.rt.recorder
+        self._evidence(node, step, "썸네일", recorder.thumbnail)
+        self._evidence(node, step, "OCR 글자 기록", recorder.ocr_artifact)
+        evidence = recorder.evidence(step)
         # 서브그래프 안 스텝의 마지막 캡처는 부른 스텝의 증거로 넘어간다 (실패 증거, M1 2.15)
-        artifacts, omitted = self.rt.recorder.close_step(step, parent=frame.parent)
+        artifacts, omitted = recorder.close_step(step, parent=frame.parent)
         if artifacts:
             end["artifacts"] = artifacts
         if omitted:
             end["omitted"] = omitted
+        if evidence is not None:
+            end["evidence"] = evidence
         # duration_ms는 실제 경과, 그 구간에 멈춤이 있었으면 멈춘 시간을 뺀 경과도 (M3 2.2)
         end["duration_ms"], active = self.rt.elapsed(began)
         if active is not None:
@@ -760,7 +783,11 @@ class _Run:
         engine = nodedef.engine
         assert engine is not None
         scope = self.scopes.of(frame.graph).get(node.id, frozenset[str]())
-        return enter(frame, node, engine, inputs, scope)
+        result = enter(frame, node, engine, inputs, scope)
+        if result.exit == "body":
+            # 새 회차: 그 반복 범위의 두 회차 전 썸네일을 지운다 (첫·마지막 두 회차만, M3 2.6)
+            self.rt.recorder.loop_iteration(frame.loops[-1].serial, result.outputs["index"])
+        return result
 
     # ------------------------------------------------------------ 그래프 경계
 
@@ -811,6 +838,7 @@ class _Run:
             current_window=window if window is not None else frame.current_window,
             record_policy=policy,
             input_origins=origins,
+            outer_loops=frame.loop_chain(node.id),
         )
         done = self._run_frame(inner)
         if done is None:
