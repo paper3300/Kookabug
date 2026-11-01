@@ -498,7 +498,8 @@ class RunIndex:
             self._frame_graphs[frame] = graph
         return graph
 
-    def _calls(self, row: StepRow) -> str | None:
+    def callee_of(self, row: StepRow) -> str | None:
+        """호출 스텝이면 부른 그래프 (`step.end.graph`, 끝나지 않았으면 스냅샷에서), 아니면 None."""
         if row.calls is not None:
             return row.calls
         return self.snapshot.callee(self.graph_of(row), row.node)
@@ -536,14 +537,15 @@ class RunIndex:
             out["retried"] = True
         if row.message is not None:
             out["message"] = row.message
-        calls = self._calls(row)
+        calls = self.callee_of(row)
         if calls is not None:
             out["calls"] = calls
         if row.loop:
-            out["iterations"] = self._iterations(row.step, state)
+            out["iterations"] = self.iterations(row.step, state)
         return out
 
-    def _iterations(self, loop_step: str, state: RunState) -> list[dict[str, Any]]:
+    def iterations(self, loop_step: str, state: RunState = "ended") -> list[dict[str, Any]]:
+        """반복 스텝의 회차 요약 (`IterationSummary`, 회차 순). 끝나지 않은 회차는 경과가 None."""
         found: list[dict[str, Any]] = []
         for iteration in sorted(self._iters.get(loop_step, {})):
             item = self._iters[loop_step][iteration]
@@ -563,6 +565,10 @@ class RunIndex:
                 }
             )
         return found
+
+    def iteration_steps(self, loop_step: str, iteration: int) -> list[StepRow]:
+        """반복 스텝의 한 회차 바로 아래 스텝 (본문 스텝과 되돌아옴, step 순)."""
+        return [self.rows[s] for s in self._iter_children.get((loop_step, iteration), ())]
 
     def failure_chain(self) -> list[str]:
         """루트부터 `run.end.failure_step`까지 (실패 스텝이 색인에 없으면 빈 목록)."""

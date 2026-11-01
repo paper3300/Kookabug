@@ -36,7 +36,7 @@ export const runIndexSchema: unknown = {
     },
     "CompareGraph": {
       "additionalProperties": false,
-      "description": "스냅샷 비교: 스냅샷 폴더의 상대 경로·바이트를 정렬해 만든 sha256",
+      "description": "스냅샷 비교. 해시 = 스냅샷 폴더 파일마다 sha256을 내고, 상대 경로('/' 구분) 순으로 '경로\\0파일 sha256\\n' 줄을 이어 낸 sha256. 한쪽이라도 스냅샷 폴더가 없으면(예전 실행) CompareResult에 graph가 없다",
       "properties": {
         "baseline_hash": {
           "$ref": "#/$defs/Sha256"
@@ -135,7 +135,7 @@ export const runIndexSchema: unknown = {
     },
     "CompareScreen": {
       "additionalProperties": false,
-      "description": "화면 차이: 실패 스텝(또는 고른 스텝)의 증거와 기준 실행의 같은 호출 경로·같은 노드 썸네일을 같은 크기 회색조로 줄여 비교. 한쪽이 없으면 reason",
+      "description": "화면 차이: 실패 스텝(또는 고른 스텝)의 증거와 기준 실행의 같은 호출 경로·같은 노드 썸네일(남은 마지막 회차)을 같은 크기 회색조로 줄여 비교. 호출 스텝이면 그 증거를 캡처한 안쪽 스텝의 경로로 찾고(그 스텝에 기준 썸네일이 없으면 다른 노드로 넘어가지 않고 reason), 안쪽 스텝을 모를 때만 기준 실행에서 그 호출 경로 아래의 마지막 썸네일을 쓴다(baseline_step은 실제로 쓴 스텝). 비교하지 못하면 reason. reason도 diff_ratio도 없으면 이 환경에서 화면 차이를 계산할 수 없다(플랫폼 없음)",
       "properties": {
         "baseline_file": {
           "description": "기준 실행 폴더 기준 파일 (thumbs/<스텝>.jpg)",
@@ -168,8 +168,9 @@ export const runIndexSchema: unknown = {
           ]
         },
         "reason": {
-          "description": "비교하지 못한 이유. policy_omitted: 정책으로 남기지 않음, no_thumbnail: 기준 실행에 썸네일 없음, no_evidence: 이 실행에 증거 없음, no_matching_step: 기준 실행에 같은 노드 스텝 없음",
+          "description": "비교하지 못한 이유. policy_omitted: 정책으로 남기지 않음, no_thumbnail: 기준 실행에 썸네일 없음, no_evidence: 이 실행에 증거 없음, no_matching_step: 기준 실행에 같은 노드 스텝 없음, image_unreadable: 두 이미지 중 하나를 읽지 못함(파일이 깨졌거나 사라짐)",
           "enum": [
+            "image_unreadable",
             "no_evidence",
             "no_matching_step",
             "no_thumbnail",
@@ -199,19 +200,40 @@ export const runIndexSchema: unknown = {
     },
     "CompareTime": {
       "additionalProperties": false,
+      "description": "시간 비교. 경과는 멈춤을 뺀 값(스텝에 active_duration_ms가 있으면 그것)",
       "properties": {
+        "debug_intervened": {
+          "description": "이 실행이 디버거로 멈췄던 실행: 회차 경과가 벽시계라 변곡을 내지 않는다(inflections는 빈 목록)",
+          "type": "boolean"
+        },
         "inflections": {
-          "description": "반복 노드(step)에서 앞 절반 중앙값의 2배를 넘는 경과가 이어지기 시작한 첫 회차",
+          "description": "반복 스텝(step, 노드는 반복 노드)의 회차 전체 경과에서 앞 절반 중앙값의 2배를 넘는 경과가 3회차(남은 회차가 적으면 남은 전부, 최소 2) 이어지기 시작한 첫 회차. 회차 4개 이상만, 최대 20개. 앞 1/4쯤 안에서 늦어지기 시작하면 앞 절반 중앙값이 이미 늦은 값이라 잡지 못한다. body_*는 그 반복 본문(회차 바로 아래 스텝)에서 변곡 전·후 평균이 가장 많이 는 노드",
           "items": {
             "additionalProperties": false,
             "properties": {
               "after_ms": {
+                "description": "변곡 회차부터의 회차 경과 중앙값",
                 "minimum": 0,
                 "type": "number"
               },
               "before_ms": {
+                "description": "앞 절반 회차 경과 중앙값",
                 "minimum": 0,
                 "type": "number"
+              },
+              "body_after_ms": {
+                "description": "body_node의 변곡 회차부터 평균 경과",
+                "minimum": 0,
+                "type": "number"
+              },
+              "body_before_ms": {
+                "description": "body_node의 변곡 전 평균 경과",
+                "minimum": 0,
+                "type": "number"
+              },
+              "body_node": {
+                "description": "본문에서 가장 많이 늦어진 노드 (반복 노드와 같은 그래프)",
+                "type": "string"
               },
               "from_iteration": {
                 "minimum": 0,

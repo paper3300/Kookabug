@@ -1,5 +1,5 @@
 """`run.start/cancel/status/list/subscribe/unsubscribe` (M2 계획 2.8), 기록 읽기
-`run.index/children/step/file`과 `run.export` (M3 계획 2.7).
+`run.index/children/step/file`과 `run.export` (M3 계획 2.7), 지난 성공과 비교 `run.compare` (2.8).
 
 실행 관리는 `runs.RunManager`가, 기록 읽기는 `run_index.RunRecords`가 한다. 기록 읽기의 대표 인자는
 실행 ID다. `run.export`는 `ui_only`이고 `AGENT_DENIED`라 에이전트 연결은 전송이 판정 전에 거부한다.
@@ -109,6 +109,17 @@ async def _file(call: Call) -> dict[str, Any]:
     )
 
 
+async def _compare(call: Call) -> dict[str, Any]:
+    params = call.params
+    baseline, step = params.get("baseline"), params.get("step")
+    return await asyncio.to_thread(
+        call.daemon.run_manager.records.compare,
+        _run_id(call),
+        None if baseline is None else str(baseline),
+        None if step is None else str(step),
+    )
+
+
 async def _export(call: Call) -> dict[str, Any]:
     return await asyncio.to_thread(
         call.daemon.run_manager.records.export, _run_id(call), str(call.params["dest"])
@@ -138,5 +149,6 @@ METHODS: Final = {
     "run.children": MethodSpec(_children, _run_id),
     "run.step": MethodSpec(_step, _run_id),
     "run.file": MethodSpec(_file, _run_id),
+    "run.compare": MethodSpec(_compare, _run_id),
     "run.export": MethodSpec(_export, _run_id),
 }

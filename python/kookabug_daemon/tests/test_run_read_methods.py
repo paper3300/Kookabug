@@ -22,6 +22,7 @@ from helpers.run import tk
 
 from kb_testing.proc import wait_until
 from kookabug_core.record.index import index_cache_file
+from kookabug_daemon import run_index
 from kookabug_daemon.client import DaemonClient, DaemonError
 from kookabug_daemon.protocol import INVALID_PARAMS
 
@@ -408,6 +409,219 @@ def test_run_export_agent_denied_creates_nothing_at_dest(tmp_path: Path) -> None
             agent.call("run.export", {"run_id": run_id, "dest": str(dest)})
         assert caught.value.kind == "permission_denied"
     assert list(out.iterdir()) == []
+
+
+# ---------------------------------------------------------------- run.compare (M3 2.8, T8)
+
+
+def compare_events(failed: bool) -> list[dict[str, Any]]:
+    """n_a(성공) → n_w(찾기). 실패 실행이면 n_w가 시간 초과로 실패하고 `_fail` 증거를 남긴다."""
+    end_w: dict[str, Any] = {
+        "event": "step.end",
+        "attempt": 1,
+        "duration_ms": 30 if failed else 10,
+        "exit": "timeout" if failed else "found",
+        "outputs": {},
+        "status": "fail" if failed else "success",
+        "step": "s2",
+    }
+    if failed:
+        end_w["artifacts"] = ["steps/s2_fail.png"]
+        end_w["evidence"] = {
+            "last": "steps/s2_fail.png",
+            "mid": None,
+            "mid_missing": "no_sample_near_mid",
+        }
+    events: list[dict[str, Any]] = [
+        {"event": "run.start", "graph": TEST, "protocol": 1, "runner": {"pid": 1}},
+    ]
+    for step, node in (("s1", "n_a"), ("s2", "n_w")):
+        events.append(
+            {
+                "event": "step.start",
+                "attempt": 1,
+                "node": node,
+                "parent": None,
+                "path": [node],
+                "step": step,
+            }
+        )
+        events.append(
+            end_w
+            if step == "s2"
+            else {
+                "event": "step.end",
+                "attempt": 1,
+                "duration_ms": 5,
+                "exit": "done",
+                "outputs": {},
+                "status": "success",
+                "step": step,
+            }
+        )
+    events.append(
+        {
+            "event": "run.end",
+            "verdict": "fail" if failed else "pass",
+            "code": "unhandled_fail" if failed else "passed",
+            "reason": "",
+            "failure_step": "s2" if failed else None,
+            "failure_path": ["n_w"] if failed else None,
+            "finalized_by": "runner",
+            "duration_ms": 50,
+        }
+    )
+    return events
+
+
+def png_scene(popup: bool, *, jpeg: bool = False) -> bytes:
+    import cv2
+    import numpy as np
+
+    img = np.zeros((360, 640, 3), np.uint8)
+    img[:] = (60, 40, 20)
+    cv2.rectangle(img, (0, 0), (639, 30), (120, 90, 60), -1)
+    if popup:
+        cv2.rectangle(img, (220, 110), (420, 250), (235, 235, 235), -1)
+    ok, buffer = cv2.imencode(".jpg" if jpeg else ".png", img)
+    assert ok
+    return buffer.tobytes()
+
+
+def test_run_compare_with_explicit_baseline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rig = RunRig.make(tmp_path)
+    conditions = {"deadline_ms": 1000, "platform": "fake", "profile": None, "settings": {}}
+    common = {"conditions": conditions, "packages": {"kookabug-core": "0.3.0"}}
+    observed = {"backend": "fake", "client_size": [640, 360], "dpi": 96}
+    auto = plant_events(
+        rig,
+        "auto0001",
+        compare_events(False),
+        started_at="2026-11-02T01:00:00.100Z",
+        verdict="pass",
+        observed=observed,
+        **common,
+    )
+    # 디버거가 개입한 pass: 자동 기준에서는 빠지지만 사용자가 고를 수 있다
+    user = plant_events(
+        rig,
+        "user0001",
+        compare_events(False),
+        started_at="2026-11-02T01:00:00.200Z",
+        verdict="pass",
+        debug_intervened=True,
+        observed={**observed, "dpi": 120},
+        **common,
+    )
+    run = plant_events(
+        rig,
+        "fail0001",
+        compare_events(True),
+        started_at="2026-11-02T01:00:00.300Z",
+        verdict="fail",
+        observed={**observed, "dpi": 144},
+        **common,
+    )
+    for folder in (auto, user, run):
+        (folder / "snapshot" / "tests").mkdir(parents=True)
+        (folder / "snapshot" / TEST).write_text('{"nodes": {}}', encoding="utf-8")
+    (user / "snapshot" / TEST).write_text('{"nodes": {"n_w": {}}}', encoding="utf-8")
+    for folder in (auto, user):
+        (folder / "thumbs").mkdir()
+        (folder / "thumbs" / "s2.jpg").write_bytes(png_scene(False, jpeg=True))
+    (run / "steps").mkdir()
+    (run / "steps" / "s2_fail.png").write_bytes(png_scene(True))
+
+    with rig.daemon() as d, d.client() as client:
+        got = client.call("run.compare", {"run_id": "fail0001", "baseline": "user0001"})
+        assert got["run_id"] == "fail0001" and got["baseline"] == "user0001"
+        assert got["baseline_picked"] == "user"
+        assert got["graph"]["same"] is False
+        assert got["graph"]["changed"] == [{"path": TEST, "change": "modified"}]
+        assert got["env"] == [{"key": "observed.dpi", "run": 144, "baseline": 120}]
+        nodes = {n["node"]: n for n in got["time"]["nodes"]}
+        assert nodes["n_w"]["mean_ms"] == 30 and nodes["n_w"]["baseline_mean_ms"] == 10
+        screen = got["screen"]
+        assert screen["step"] == "s2" and screen["file"] == "steps/s2_fail.png"
+        assert screen["baseline_step"] == "s2" and screen["baseline_file"] == "thumbs/s2.jpg"
+        assert screen["diff_ratio"] > 0.05
+        x, y, w, h = screen["regions"][0]
+        assert x <= 230 and y <= 120 and x + w >= 410 and y + h >= 240
+
+        # 기준을 빼면 자동으로 고른다 (디버거 개입 실행은 건너뜀)
+        picked = client.call("run.compare", {"run_id": "fail0001"})
+        assert picked["baseline"] == "auto0001" and picked["baseline_picked"] == "auto"
+        assert picked["graph"]["same"] is True
+        assert picked["env"] == [{"key": "observed.dpi", "run": 144, "baseline": 96}]
+        # 끝난 두 실행의 결과는 색인 캐시 옆에 두고 다시 쓴다
+        cache = rig.root / ".kookabug" / "cache" / "runs" / "fail0001.compare.json"
+        assert cache.is_file()
+        assert (rig.root / ".kookabug" / "cache" / "runs" / "auto0001.snapshot.json").is_file()
+        # 캐시를 실제로 읽는다: 다시 계산하면 실패하게 막아 둔다 (daemon은 같은 프로세스 스레드)
+        with monkeypatch.context() as patched:
+
+            def recompute(*_: Any, **__: Any) -> Any:
+                raise AssertionError("캐시가 있는데 다시 계산했다")
+
+            patched.setattr(run_index, "prepare_compare", recompute)
+            patched.setattr(run_index, "finish_compare", recompute)
+            assert client.call("run.compare", {"run_id": "fail0001"}) == picked
+            # 기준이 다르면 캐시 열쇠가 달라 다시 계산한다 (막아 둔 함수가 불림)
+            with pytest.raises(DaemonError):
+                client.call("run.compare", {"run_id": "fail0001", "baseline": "user0001"})
+
+        # 고른 스텝 (실패 스텝이 아닌 것)
+        step = client.call(
+            "run.compare", {"run_id": "fail0001", "baseline": "auto0001", "step": "s1"}
+        )
+        assert step["screen"]["step"] == "s1" and step["screen"]["reason"] == "no_evidence"
+        # 가장 먼저 시작한 실행은 비교할 성공 실행이 없다
+        none = client.call("run.compare", {"run_id": "auto0001"})
+        assert none == {
+            "run_id": "auto0001",
+            "baseline": None,
+            "baseline_picked": "auto",
+            "message": "비교할 성공 실행 없음",
+        }
+
+        with pytest.raises(DaemonError) as caught:
+            client.call("run.compare", {"run_id": "fail0001", "baseline": "fail0001"})
+        assert caught.value.code == INVALID_PARAMS
+        with pytest.raises(DaemonError) as caught:
+            client.call("run.compare", {"run_id": "fail0001", "baseline": "zzzzzzzz"})
+        assert caught.value.kind == "run_not_found"
+        with pytest.raises(DaemonError) as caught:
+            client.call("run.compare", {"run_id": "fail0001", "step": "s77"})
+        assert caught.value.code == INVALID_PARAMS
+
+
+def test_run_compare_refuses_running_baseline(tmp_path: Path) -> None:
+    """진행 중인 실행은 기준으로 쓸 수 없다 (`run_active`). 끝나면 쓸 수 있다."""
+    signal = tmp_path / "go"
+    rig = RunRig.make(tmp_path, gate_graph(signal))
+    plant_events(
+        rig,
+        "fail0001",
+        compare_events(True),
+        started_at="2026-11-02T01:00:00.300Z",
+        verdict="fail",
+    )
+    with rig.daemon() as d, d.client() as client:
+        started = client.call("run.start", {"path": TEST})
+        run_id = started["run_id"]
+        client.call("run.subscribe", {"run_id": run_id, "after_seq": 0})
+        log = EventLog(client, run_id)
+        log.until_event(lambda e: e.get("event") == "step.start" and e.get("node") == "n_gate")
+        with pytest.raises(DaemonError) as caught:
+            client.call("run.compare", {"run_id": "fail0001", "baseline": run_id})
+        assert caught.value.kind == "run_active"
+        signal.write_text("go", encoding="utf-8")
+        log.until_ended()
+        wait_ended(client, run_id)
+        got = client.call("run.compare", {"run_id": "fail0001", "baseline": run_id})
+        assert got["baseline"] == run_id and got["baseline_picked"] == "user"
 
 
 # ---------------------------------------------------------------- graph.open 읽기 전용

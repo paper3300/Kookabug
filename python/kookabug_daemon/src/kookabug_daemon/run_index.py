@@ -1,4 +1,5 @@
-"""기록 읽기 (M3 계획 2.7): `run.index`·`run.children`·`run.step`·`run.file`·`run.export`.
+"""기록 읽기 (M3 계획 2.7): `run.index`·`run.children`·`run.step`·`run.file`·`run.export`, 지난
+성공과 비교 `run.compare` (2.8, 코어 `record.compare`에 화면 차이 함수를 넘긴다).
 
 - 색인은 코어 `record.index`가 만든다. 끝난 실행은 `.kookabug/cache/runs/<run_id>.index.json`
   캐시(이벤트 파일 크기·수정 시각이 같으면 다시 쓰지 않음)를, 진행 중 실행은 메모리 색인을 쓰고
@@ -18,11 +19,24 @@ import threading
 import zipfile
 from collections import OrderedDict
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
 from kookabug_core.record import read_run_json
+from kookabug_core.record.compare import (
+    Picked,
+    RunSide,
+    ScreenDiffer,
+    compare_cache_file,
+    finish_compare,
+    pick_baseline,
+    prepare_compare,
+    read_compare_cache,
+    snapshot_cache_file,
+    write_compare_cache,
+)
 from kookabug_core.record.index import (
     MAX_PAGE,
     RunIndex,
@@ -34,6 +48,7 @@ from kookabug_core.record.index import (
     write_cache,
 )
 from kookabug_core.record.runfolder import EVENTS_FILE, RUN_JSON_FILE
+from kookabug_daemon.documents import RUNS_NAME
 from kookabug_daemon.protocol import InvalidParams, RequestFailed
 
 __all__ = ["FILE_LIMIT", "Located", "RunRecords"]
@@ -171,6 +186,67 @@ class RunRecords:
             "thumbnail": f"thumbs/{step}.jpg" if step in thumbs else None,
         }
 
+    # ---------------------------------------------------------------- 비교 (M3 2.8)
+
+    def compare(self, run_id: str, baseline: str | None, step: str | None) -> dict[str, Any]:
+        """`run.compare`: 지난 성공(또는 고른 실행)과의 차이. 두 실행이 다 끝났으면 결과를
+        `.kookabug/cache/runs/<run_id>.compare.json`에 두고 다시 쓴다."""
+        where, entry = self._index(run_id)
+        run_json = read_run_json(where.folder / RUN_JSON_FILE) or {}
+        picked: Picked
+        if baseline is not None:
+            if baseline == run_id:
+                raise InvalidParams("기준 실행은 비교할 실행과 달라야 한다")
+            base_where: Located | None = self.locate(baseline)
+            picked = "user"
+        else:
+            found = pick_baseline(self.root / RUNS_NAME, run_json)
+            base_where = None if found is None else self.locate(found[0])
+            picked = "auto"
+        if base_where is not None and base_where.state == "running":
+            raise RequestFailed(
+                "run_active",
+                f"진행 중인 실행 {base_where.run_id}은(는) 기준으로 쓸 수 없다",
+                run_id=base_where.run_id,
+            )
+        base_id = None if base_where is None else base_where.run_id
+        base_folder = None if base_where is None else base_where.folder
+        cache = compare_cache_file(self.root, run_id)
+        cacheable = where.state == "ended"
+        if cacheable:
+            hit = read_compare_cache(cache, where.folder, base_folder, base_id, step, picked)
+            if hit is not None:
+                return hit
+        base_entry = None if base_id is None else self._index(base_id)[1]
+        entries = sorted(
+            [(run_id, entry)] + ([] if base_entry is None else [(str(base_id), base_entry)]),
+            key=lambda item: item[0],
+        )
+        base_json = None if base_where is None else read_run_json(base_where.folder / RUN_JSON_FILE)
+        with ExitStack() as stack:
+            # 두 색인을 실행 ID 순으로 잠근다 (반대쪽 비교와 엇갈려 막히지 않게). 잠금 안에서는
+            # 색인에서 꺼낼 것만 하고 스냅샷 해시·이미지 읽기·화면 차이는 잠금 밖에서 한다
+            for _, held in entries:
+                stack.enter_context(held.lock)
+            run = RunSide(run_id, where.folder, run_json, entry.index)
+            base = None
+            if base_where is not None and base_entry is not None:
+                base = RunSide(
+                    base_where.run_id, base_where.folder, base_json or {}, base_entry.index
+                )
+            try:
+                prepared = prepare_compare(run, base, picked=picked, step=step)
+            except KeyError as exc:
+                raise InvalidParams(f"실행 {run_id}에 스텝 {step}이(가) 없다") from exc
+        result = finish_compare(
+            prepared,
+            differ=_screen_differ(),
+            snapshot_cache=lambda rid: snapshot_cache_file(self.root, rid),
+        )
+        if cacheable:
+            write_compare_cache(cache, where.folder, base_folder, base_id, step, picked, result)
+        return result
+
     # ---------------------------------------------------------------- 파일
 
     def file(self, run_id: str, name: str) -> dict[str, Any]:
@@ -226,6 +302,15 @@ class RunRecords:
                 raise RequestFailed("io_error", str(exc), message=str(exc)) from exc
             raise
         return {"path": str(target), "bytes": target.stat().st_size}
+
+
+def _screen_differ() -> ScreenDiffer | None:
+    """화면 차이 함수 (플랫폼의 OpenCV). 플랫폼이 없는 환경이면 None — 화면 비교는 파일만 준다."""
+    try:
+        from kookabug_platform.imagediff import screen_diff
+    except ImportError:
+        return None
+    return screen_diff
 
 
 def _zip_folder(archive: zipfile.ZipFile, folder: Path) -> None:
