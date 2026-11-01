@@ -96,6 +96,7 @@ class WorkerHarness:
         platform: Platform | None = None,
         frames_store: FrameRegistry | None = None,
         capture_timeout_ms: int = 2000,
+        debugger: Any = None,
     ) -> None:
         self.ws = ws
         self.rel = rel
@@ -106,6 +107,8 @@ class WorkerHarness:
         """실행기에 주는 플랫폼 (기본: `platform` 가짜 프레임)."""
         self.frames_store = frames_store
         self.capture_timeout_ms = capture_timeout_ms
+        self.debugger = debugger
+        """멈춤 흉내 (`helpers.epoch.Debugger`): 경계·폴링 멈춤과 관측 세대, 그 가짜 시계."""
         self.secrets = MemorySecrets(dict(secrets or {}))
         self.modules = tuple(modules)
         self.start_timeout_ms = start_timeout_ms
@@ -157,6 +160,7 @@ class WorkerHarness:
 
     def run(self) -> RunResult:
         assert self.program is not None
+        dbg = self.debugger
         executor = Executor(
             self.registry,
             platform=self.exec_platform,
@@ -165,6 +169,10 @@ class WorkerHarness:
             sink=self.events,
             invoker=RoutingInvoker(self.remote, local=self.local),
             frames=self.frames_store,
+            clock=None if dbg is None else dbg.clock,
+            before_step=None if dbg is None else dbg.before_step,
+            pause_point=dbg,
+            epochs=None if dbg is None else dbg.epochs,
         )
         return executor.run(
             self.program,

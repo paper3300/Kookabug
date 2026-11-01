@@ -8,13 +8,16 @@
 - `region`은 찾기 대상(`$target` — 지금 화면에서 찾은 상자) 또는 사각형(클라이언트 픽셀
   `[x, y, w, h]`), 없으면 화면 전체다. `sensitive: true` target이면 그 영역에서 읽은 글자는
   `Secret`이다
+- 폴링 사이(`ctx.sleep`)에서 디버거로 멈췄다 재개하면 들고 있던 관측(직전 프레임·후보·안정 시간)을
+  버리고 재개 뒤 프레임으로 처음부터 다시 본다 (구현 계획 M3 2.4 "폴링 재개"). 받은 입력이 재개 전
+  관측이면 `ctx.sleep`이 `StaleObservation`으로 끝낸다
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 from kookabug_sdk import Context, ObservationTimeout
 from kookabug_sdk.context import Deadline
@@ -26,9 +29,11 @@ __all__ = [
     "check_region",
     "line_match",
     "locate",
+    "observations_reset",
     "plain",
     "poll",
     "read_area",
+    "reset_observations",
     "save_last",
     "sensitive",
 ]
@@ -38,11 +43,18 @@ POLL_MS: Final = 100
 
 
 def poll[T](
-    ctx: Context, timeout_ms: int, look: Callable[[Image, Deadline | None], T | None]
+    ctx: Context,
+    timeout_ms: int,
+    look: Callable[[Image, Deadline | None], T | None],
+    on_reset: Callable[[], None] | None = None,
 ) -> tuple[T | None, Image | None]:
     """`look(프레임, 노드 기한)`이 값을 줄 때까지 `timeout_ms` 동안 캡처해 본다. `(값, 마지막
     프레임)`이고, 기한 안에 못 얻으면 값이 None이다. `timeout_ms`가 0이면 기다리지 않고 지금 화면을
-    한 번만 본다(노드 기한 없이 — 설정 기한·전체 기한만)."""
+    한 번만 본다(노드 기한 없이 — 설정 기한·전체 기한만).
+
+    `look`이 폴링을 넘어 관측을 쥐면(읽은 글자 등) `on_reset`으로 그것을 버린다 — 디버거로 멈췄다
+    재개하면 직전 프레임과 함께 부른 뒤 버렸다고 알린다. 쥔 관측을 버리지 않고 알리면 재개 전 값이
+    재개 뒤 관측으로 세탁된다."""
     if timeout_ms == 0:
         ctx.check_cancel()
         now = ctx.capture()
@@ -59,9 +71,41 @@ def poll[T](
             if deadline.passed:
                 break
             ctx.sleep(min(POLL_MS, deadline.remaining_ms))
+            if observations_reset(ctx):
+                # 디버거로 멈췄다 재개: 재개 전 프레임·노드가 쥔 관측은 버리고 처음부터 다시 본다
+                frame = None
+                if on_reset is not None:
+                    on_reset()
+                reset_observations(ctx)
     except ObservationTimeout:
         pass  # 관측이 노드 기한에 걸렸다 = timeout
     return None, frame
+
+
+def _runtime(ctx: Context) -> Any:
+    """노드가 받은 ctx(SDK 제한 래퍼) 안쪽의 실행 ctx. 관측 무효화를 아는 ctx가 없으면 None."""
+    seen: Any = ctx
+    while seen is not None:
+        if callable(getattr(type(seen), "observations_reset", None)):
+            return seen
+        seen = getattr(seen, "inner", None)
+    return None
+
+
+def observations_reset(ctx: Context) -> bool:
+    """디버거로 폴링 중 멈췄다 재개해 노드 안 관측(이전 프레임·후보·안정 시간)이 무효가 됐나
+    (구현 계획 M3 2.4). 그러면 노드는 들고 있던 관측을 버리고 `reset_observations`로 알린다.
+    가짜 ctx(노드 단위 테스트)는 늘 False."""
+    runtime = _runtime(ctx)
+    return runtime is not None and bool(runtime.observations_reset())
+
+
+def reset_observations(ctx: Context) -> None:
+    """들고 있던 관측을 버렸다고 알린다: 출력의 관측 출처가 재개 뒤 관측부터 다시 정해진다.
+    알리지 않으면 출력이 재개 전 관측으로 남는다(뒤 분기·검증이 `stale_observation` — 안전한 쪽)."""
+    runtime = _runtime(ctx)
+    if runtime is not None:
+        runtime.reset_observations()
 
 
 def save_last(ctx: Context, frame: Image | None, name: str) -> None:

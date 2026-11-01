@@ -11,23 +11,27 @@
   포함)은 실행 전 검증이 못 막기 때문이다
 - 점·사각형 배열 상수(`[x, y]`, `[x, y, w, h]`)는 대조한 뒤 핀 타입대로 `Point`·`Rect`로 바꿔
   준다. 노드는 상수 모양을 따로 바꾸지 않는다
+- 관측 출처 (M3 2.4, `resolve_traced`): 핀마다 기댄 가장 오래된 관측의 세대를 같이 낸다. 순수
+  노드 출력은 그 계산의 입력·읽은 변수 중 가장 오래된 것이다(순수 `var.get`은 오래된 값을 거부하지
+  않고 출처만 남긴다 — 받는 스텝의 입력 검사가 정한다)
 """
 
 from __future__ import annotations
 
 import copy
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from kookabug_core.engine.context import Runtime, StepContext
 from kookabug_core.engine.errors import EngineError, error_code
 from kookabug_core.engine.frame import Frame
+from kookabug_core.engine.provenance import Origin, StepTrace, oldest
 from kookabug_core.ir import LinkRef, Node, Unresolved
 from kookabug_core.registry import NodeDef
 from kookabug_core.validate.pins import node_pins
 from kookabug_core.validate.types import coerce, pin_type, value_problems
 
-__all__ = ["check_inputs", "nodedef_of", "resolve_inputs"]
+__all__ = ["check_inputs", "nodedef_of", "resolve_inputs", "resolve_traced"]
 
 
 def nodedef_of(runtime: Runtime, node: Node) -> NodeDef:
@@ -52,6 +56,18 @@ def resolve_inputs(
     only: frozenset[str] | None = None,
 ) -> dict[str, Any]:
     """`node`의 입력을 계산한다 (소비 한 번). `only`를 주면 그 핀만 계산·대조한다."""
+    return _Evaluation(runtime, frame, step).inputs(node, only)[0]
+
+
+def resolve_traced(
+    runtime: Runtime,
+    frame: Frame,
+    node: Node,
+    step: str,
+    only: frozenset[str] | None = None,
+) -> tuple[dict[str, Any], dict[str, Origin | None]]:
+    """`resolve_inputs` + 핀별 관측 출처 (M3 2.4). exec 노드 출력은 출력 표의 출처, 순수 노드
+    출력은 그 계산의 바닥(입력·읽은 변수 중 가장 오래된 것), 상수·설정·비밀값은 출처 없음."""
     return _Evaluation(runtime, frame, step).inputs(node, only)
 
 
@@ -86,16 +102,21 @@ class _Evaluation:
         self.runtime = runtime
         self.frame = frame
         self.step = step
-        self.memo: dict[str, Mapping[str, Any]] = {}
+        self.memo: dict[str, tuple[Mapping[str, Any], Origin | None]] = {}
         self.stack: list[str] = []
 
-    def inputs(self, node: Node, only: frozenset[str] | None = None) -> dict[str, Any]:
-        values = {
-            pin: self.value(v) for pin, v in node.inputs.items() if only is None or pin in only
-        }
-        return check_inputs(self.runtime, self.frame, node, values)
+    def inputs(
+        self, node: Node, only: frozenset[str] | None = None
+    ) -> tuple[dict[str, Any], dict[str, Origin | None]]:
+        values: dict[str, Any] = {}
+        origins: dict[str, Origin | None] = {}
+        for pin, v in node.inputs.items():
+            if only is None or pin in only:
+                values[pin], origins[pin] = self.value(v)
+        return check_inputs(self.runtime, self.frame, node, values), origins
 
-    def value(self, value: Any) -> Any:
+    def value(self, value: Any) -> tuple[Any, Origin | None]:
+        """값과 그 관측 출처 (목록·객체는 안의 링크 중 가장 오래된 것)."""
         if isinstance(value, LinkRef):
             return self.link(value)
         if isinstance(value, Unresolved):
@@ -104,27 +125,31 @@ class _Evaluation:
             )
         if isinstance(value, list):
             items: list[Any] = value
-            return [self.value(v) for v in items]
+            pairs = [self.value(v) for v in items]
+            return [v for v, _ in pairs], _oldest_of(o for _, o in pairs)
         if isinstance(value, dict):
             mapping: dict[str, Any] = value
-            return {k: self.value(v) for k, v in mapping.items()}
-        return copy.deepcopy(value)
+            entries = {k: self.value(v) for k, v in mapping.items()}
+            return {k: v for k, (v, _) in entries.items()}, _oldest_of(
+                o for _, o in entries.values()
+            )
+        return copy.deepcopy(value), None
 
-    def link(self, ref: LinkRef) -> Any:
+    def link(self, ref: LinkRef) -> tuple[Any, Origin | None]:
         producer = self.frame.graph.nodes.get(ref.node)
         if producer is None:
             raise EngineError("link_bad_node", f"'{ref}': 노드 '{ref.node}'이(가) 없다")
         nodedef = nodedef_of(self.runtime, producer)
         if not nodedef.pure:
-            return copy.deepcopy(self.frame.read(ref))
-        outputs = self.pure(producer, nodedef)
+            return copy.deepcopy(self.frame.read(ref)), self.frame.origin_of(ref)
+        outputs, origin = self.pure(producer, nodedef)
         if ref.output not in outputs:
             raise EngineError(
                 "link_bad_output", f"'{ref}': 순수 노드가 '{ref.output}'을(를) 주지 않았다"
             )
-        return copy.deepcopy(outputs[ref.output])
+        return copy.deepcopy(outputs[ref.output]), origin
 
-    def pure(self, node: Node, nodedef: NodeDef) -> Mapping[str, Any]:
+    def pure(self, node: Node, nodedef: NodeDef) -> tuple[Mapping[str, Any], Origin | None]:
         if node.id in self.memo:
             return self.memo[node.id]
         if node.id in self.stack:
@@ -136,9 +161,13 @@ class _Evaluation:
             )
         self.stack.append(node.id)
         try:
-            values = self.inputs(node)
+            values, origins = self.inputs(node)
             config = nodedef.effective_config(node.config)
-            ctx = StepContext(self.runtime, self.frame, node, self.step, config)
+            # 순수 노드의 변수 읽기(`var.get`)는 거부하지 않고 출처만 남긴다 (받는 스텝이 정한다)
+            trace = StepTrace(node.type, inputs=origins, values=values)
+            ctx = StepContext(
+                self.runtime, self.frame, node, self.step, config, trace=trace, pure=True
+            )
             try:
                 result = self.runtime.invoker.invoke(nodedef, node, ctx, values)
             except EngineError:
@@ -149,8 +178,15 @@ class _Evaluation:
                 ) from exc
         finally:
             self.stack.pop()
-        self.memo[node.id] = result.outputs
-        return result.outputs
+        self.memo[node.id] = (result.outputs, trace.floor)
+        return self.memo[node.id]
+
+
+def _oldest_of(origins: Iterable[Origin | None]) -> Origin | None:
+    found: Origin | None = None
+    for origin in origins:
+        found = oldest(found, origin)
+    return found
 
 
 def _describe(exc: BaseException) -> str:

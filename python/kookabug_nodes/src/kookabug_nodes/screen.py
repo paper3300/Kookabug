@@ -6,12 +6,19 @@
 정도(약 0.006)도 변화로 보는 값이다 — 작은 깜박임까지 무시하려면 `region`을 좁힌다.
 
 직전 프레임과 지금 프레임 둘만 쥐고 있다 — 프레임 저장소는 열린 스텝의 최근 캡처 두 개를 남긴다
-(구현 계획 M1 2.7).
+(구현 계획 M1 2.7). 폴링 사이에서 디버거로 멈췄다 재개하면 직전 프레임을 버리고 안정 시간을 재개
+뒤 프레임만으로 다시 잰다 (M3 2.4).
 """
 
 from typing import Annotated
 
-from kookabug_nodes._observe import POLL_MS, check_region, save_last
+from kookabug_nodes._observe import (
+    POLL_MS,
+    check_region,
+    observations_reset,
+    reset_observations,
+    save_last,
+)
 from kookabug_sdk import Context, Exit, Input, ObservationTimeout, Result, Retry, node
 from kookabug_sdk.types import Image, Rect
 
@@ -57,6 +64,10 @@ def wait_stable(
             if deadline.passed:
                 break
             ctx.sleep(min(POLL_MS, deadline.remaining_ms))
+            if observations_reset(ctx):
+                # 디버거로 멈췄다 재개: 재개 전 프레임과 비교하지 않고 안정 시간도 처음부터 잰다
+                previous, since = None, None
+                reset_observations(ctx)
     except ObservationTimeout:
         pass
     save_last(ctx, previous, "timeout")

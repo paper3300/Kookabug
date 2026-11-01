@@ -36,6 +36,9 @@ M1 runner 연결 검사용 (`testkit.m1.*`, `testkit/m1.py`): 찾기·클릭·�
 띄우기·창 기다리기, 기한 있는 캡처, 참조 캡처, 두 캡처 비교, 버린 프레임 쓰기, 선언 없는 찾기,
 ctx 한 바퀴(`tour`).
 
+M3 관측 세대 검사용 (`testkit.epoch.*`, `testkit/epoch.py`): 값 쓰기, 관측을 버리지 않는 폴링, SDK
+변수 읽기·가공, 캡처 번호 위조 클릭, 출처 없는 `Match`.
+
 그래프의 `plugins`에 `"testkit"`을 넣고 `registry_with_testkit()`으로 검증·실행한다.
 """
 

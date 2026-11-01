@@ -604,6 +604,8 @@ class Runner:
             invoker=RoutingInvoker(None if self.worker is None else WorkerInvoker(self.worker)),
             before_step=lambda point: self.pause.at_boundary(point, self._emit),
             pause_point=PollPoint(self.pause, self._emit),
+            # 관측 세대: 멈춤 게이트가 재개할 때 올리고 실행기가 읽는다 (M3 2.4)
+            epochs=self.pause.epochs,
             on_setting=self._record_setting,
             frames=self.frames,
         )

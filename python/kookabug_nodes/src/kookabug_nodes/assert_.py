@@ -105,7 +105,8 @@ def text(
         last[:] = [result]
         return result if _matches(plain(result.text), equals, contains, regex) else None
 
-    found, _ = poll(ctx, timeout_ms, look)
+    # 디버거 재개 전 읽은 글자는 fail 출력(`text`)으로 내지 않는다 (재개 뒤 관측으로 세탁됨)
+    found, _ = poll(ctx, timeout_ms, look, on_reset=last.clear)
     if found is not None:
         return Result.ok("ok", text=found.text)
     if not last:

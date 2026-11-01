@@ -31,6 +31,7 @@ from kookabug_core.engine.debug import PauseCounter, PausePoint, StepPoint
 from kookabug_core.engine.errors import EngineError
 from kookabug_core.engine.frame import Frame
 from kookabug_core.engine.invoker import NodeInvoker
+from kookabug_core.engine.provenance import CaptureEpochs, Epochs, Origin, StepTrace
 from kookabug_core.ir import Node
 from kookabug_core.loader import Program
 from kookabug_core.record.artifacts import ArtifactStore, Recorder, StagedFrame
@@ -55,6 +56,7 @@ from kookabug_sdk.types import (
     Image,
     Match,
     OcrResult,
+    Point,
     ProcessRef,
     Rect,
     Secret,
@@ -111,6 +113,8 @@ class InputObserver(Protocol):
 
     def rematch(self, match: Match) -> Match | None: ...
     def note(self, message: str) -> None: ...
+    def observation_stale(self, match: Match) -> str | None: ...
+    def coordinate_stale(self, at: Point | Rect) -> str | None: ...
 
 
 @runtime_checkable
@@ -232,6 +236,22 @@ class Runtime:
     `OBSERVATIONS_KEPT`개 — OCR 결과에 실어 줄 `Match`의 재검증에 쓴다."""
     wall: Clock | None = None
     pause_point: PausePoint | None = None
+    epochs: Epochs = field(default_factory=Epochs)
+    """관측 세대 (재개마다 1 오름, M3 2.4). runner는 멈춤 게이트와 같은 것을 준다."""
+    capture_epochs: CaptureEpochs = field(default_factory=CaptureEpochs)
+    """캡처 번호 → 세대 (입력 서비스의 재검증이 찾는다)."""
+
+    @property
+    def epoch(self) -> int:
+        """지금 관측 세대."""
+        return self.epochs.current
+
+    def note_capture(self, capture_id: int | None, source: str) -> Origin:
+        """캡처 하나: 그 번호의 세대를 표에 적고 그 관측의 출처를 돌려준다."""
+        epoch = self.epochs.current
+        if capture_id is not None:
+            self.capture_epochs.note(capture_id, epoch)
+        return Origin(epoch, source)
 
     @property
     def wall_clock(self) -> Clock:
@@ -294,10 +314,16 @@ class Runtime:
         self.clock.sleep(ms)
         self.check()
 
-    def wait_pausable(self, ms: int, point: StepPoint) -> None:
+    def wait_pausable(
+        self, ms: int, point: StepPoint, on_resume: Callable[[], None] | None = None
+    ) -> None:
         """멈출 수 있는 기다림 (코어 노드의 `ctx.sleep`: 대기 폴링·`flow.delay`). 취소·멈춤
         요청으로 바로 깬다. 멈춤 요청이면 이 자리에서 멈춤을 확정하고(`debug.pause where: poll`),
-        재개 뒤 남은 활성 시간만큼 마저 기다린다. 확인 지점이 없는 실행이면 `wait_hold`와 같다."""
+        재개 뒤 남은 활성 시간만큼 마저 기다린다. 확인 지점이 없는 실행이면 `wait_hold`와 같다.
+
+        재개(세대가 오름) 직후 `on_resume()`을 부른다 — 다음 관측·입력·출구 선택 전에 그 스텝의
+        입력을 다시 검사하고 노드 안 관측을 무효로 표시한다(M3 2.4 "폴링 재개"). 던지면 기다림도
+        거기서 끝난다."""
         gate = self.pause_point
         if gate is None:
             self.wait_hold(ms)
@@ -315,28 +341,51 @@ class Runtime:
             span = min(left, self.deadline.remaining_ms, _WAIT_SLICE_MS)
             if gate.wait_request(span / 1000):
                 self.check()
+                before = self.epochs.current
                 gate.at_poll(point)
+                if on_resume is not None and self.epochs.current != before:
+                    on_resume()
             self.check()
 
 
 class FrameVars:
-    """호출 프레임 변수."""
+    """호출 프레임 변수. 값과 관측 출처를 같이 저장한다 (M3 2.4 "변수").
 
-    def __init__(self, values: dict[str, Any]) -> None:
-        self._values = values
+    읽은 값의 출처는 그 스텝 바닥에 합친다. `refuse_stale`이면(예외 목록이 아닌 exec 노드 — 코어든
+    워커 RPC든) 지금 세대보다 오래된 관측값을 돌려주지 않고 `StaleObservation`(처리되지 않은 fail).
+    순수 노드(`var.get`)는 돌려주고 출처만 남긴다 — 그 값을 받는 스텝의 입력 검사가 정한다.
+    쓰는 값에는 지금 스텝 바닥을 출처로 붙인다(변수에서 읽은 관측을 가공해 다시 써도 옛 값이다).
+    """
+
+    def __init__(self, ctx: StepContext, *, refuse_stale: bool) -> None:
+        self._ctx = ctx
+        self._frame = ctx.frame
+        self._refuse = refuse_stale
 
     def get(self, name: str, default: Any = ...) -> Any:
-        if name in self._values:
-            return self._values[name]
-        if default is ...:
-            raise KeyError(f"변수 '{name}'이(가) 없다")
-        return default
+        values = self._frame.vars
+        if name not in values:
+            if default is ...:
+                raise KeyError(f"변수 '{name}'이(가) 없다")
+            return default
+        origin = self._frame.var_origins.get(name)
+        current = self._ctx.runtime.epoch
+        if self._refuse and origin is not None and origin.stale(current):
+            exc = StaleObservation(
+                f"변수 '{name}'은(는) 디버거 재개 전 관측('{origin.source}', 세대 {origin.epoch} "
+                f"< 지금 {current})이다 — 멈춘 동안 화면이 바뀌었을 수 있어 쓰지 않는다"
+            )
+            self._ctx.stale = exc
+            raise exc
+        self._ctx.trace.note(origin)
+        return values[name]
 
     def has(self, name: str) -> bool:
-        return name in self._values
+        return name in self._frame.vars
 
     def set(self, name: str, value: Any) -> None:
-        self._values[name] = value
+        self._frame.vars[name] = value
+        self._frame.var_origins[name] = self._ctx.trace.floor
 
 
 class StepLog:
@@ -589,6 +638,9 @@ class StepContext:
         step: str,
         config: Mapping[str, Any],
         window: WindowRef | EllipsisType | None = ...,
+        *,
+        trace: StepTrace | None = None,
+        pure: bool = False,
     ) -> None:
         self._runtime = runtime
         self._frame = frame
@@ -596,12 +648,19 @@ class StepContext:
         self._step = step
         self._config = config
         self._window = frame.current_window if isinstance(window, EllipsisType) else window
+        self.trace: StepTrace = trace if trace is not None else StepTrace(node.type)
+        """이 스텝(순수 노드면 그 계산 한 번)의 관측 출처 (M3 2.4)."""
+        self._pure = pure
         self.stale: StaleObservation | None = None
         """이 스텝의 입력이 재검증으로 거부됐다 (노드가 삼켜도 처리되지 않은 fail)."""
 
     @property
     def runtime(self) -> Runtime:
         return self._runtime
+
+    @property
+    def frame(self) -> Frame:
+        return self._frame
 
     @property
     def config(self) -> Mapping[str, Any]:
@@ -623,7 +682,7 @@ class StepContext:
 
     @property
     def vars(self) -> VarsApi:
-        return FrameVars(self._frame.vars)
+        return FrameVars(self, refuse_stale=not self._pure and not self.trace.exempt)
 
     @property
     def log(self) -> LogApi:
@@ -686,8 +745,15 @@ class StepContext:
         else:
             image = recorder.captured(self._step, platform.capture(self._window, region))
             self._note_state(image)
+        # 관측 세대: 캡처 번호 → 지금 세대, 이 스텝의 바닥에 합친다 (M3 2.4)
+        self.trace.note(runtime.note_capture(image.capture_id, self._source))
         runtime.check()
         return image
+
+    @property
+    def _source(self) -> str:
+        """관측 출처의 이름: 노드 경로 (서브그래프 안이면 호출 노드부터)."""
+        return "/".join(self._frame.node_path(self._node.id))
 
     def _note_state(self, image: Image) -> None:
         """관측 조건을 주지 않는 캡처: 플랫폼이 창 상태를 알면 캡처 직후 그것을 관측으로 둔다."""
@@ -718,6 +784,51 @@ class StepContext:
     def note(self, message: str) -> None:
         self.log.info(message)
 
+    def observation_stale(self, match: Match) -> str | None:
+        """그 `Match`가 디버거 재개 전 관측이면 그 설명 (M3 2.4 "입력 서비스 재검증"). 멈추지 않은
+        실행(세대 0)은 늘 None — M1 그대로다.
+
+        세대는 runner 표(`capture_id` → 세대)로만 정한다. 표에 없는 번호(출처 없음)도 오래된
+        것으로 본다. 이 스텝이 재개 전 관측에서 온 입력을 받았으면(`input` 효과 노드의 `Match`
+        예외) 그 스텝의 모든 `Match`를 다시 찾는다 — 워커가 옛 `Match`의 캡처 번호를 새 것으로
+        바꿔 보내도 세탁되지 않는다."""
+        current = self._runtime.epoch
+        if current == 0:
+            return None
+        info = match.frame_info
+        capture_id = info.capture_id if info is not None else None
+        epoch = self._runtime.capture_epochs.epoch_of(capture_id)
+        if epoch is None:
+            return f"이 실행의 관측 출처를 알 수 없다 (캡처 번호 {capture_id})"
+        if epoch < current:
+            return f"디버거 재개 전 관측이다 (캡처 {capture_id}, 세대 {epoch} < 지금 {current})"
+        return self.step_stale()
+
+    def step_stale(self) -> str | None:
+        """이 스텝이 디버거 재개 전 관측을 입력으로 받았으면(`input` 노드의 `Match` 예외) 그 설명.
+        입력 서비스가 이 스텝의 `Match`를 모두 다시 찾는다."""
+        current = self._runtime.epoch
+        floor = self.trace.input_floor
+        if current == 0 or floor is None or not floor.stale(current):
+            return None
+        return (
+            f"디버거 재개 전 관측('{floor.source}', 세대 {floor.epoch} < 지금 {current})을 "
+            "입력으로 받은 스텝이다"
+        )
+
+    def coordinate_stale(self, at: Point | Rect) -> str | None:
+        """그 좌표 입력을 거절할 이유 (M3 2.4). 재개 전 관측을 입력으로 받은 스텝에서, 출처가 없는
+        입력 핀 값(상수·설정 — 관측과 무관)과 같지 않은 좌표는 `Match`에서 뽑았을 수 있고 다시 찾을
+        출처가 없다. 출처 없는 핀 값 그대로의 좌표(예: `input.drag`의 상수 끝점)는 받는다."""
+        stale = self.step_stale()
+        if stale is None:
+            return None
+        trace = self.trace
+        for pin, value in trace.values.items():
+            if trace.inputs.get(pin) is None and _holds(value, at):
+                return None
+        return stale
+
     def _load_target(self, rel: str) -> Target:
         path = self._runtime.program.workspace.resolve(rel)
         if path is None:
@@ -741,8 +852,29 @@ class StepContext:
         return StepPoint(self._step, node, frame.graph.path, frame.node_path(node))
 
     def sleep(self, ms: int) -> None:
-        """코어 노드의 기다림 = 폴링 확인 지점 (M3 2.2)."""
-        self._runtime.wait_pausable(ms, self.point)
+        """코어 노드의 기다림 = 폴링 확인 지점 (M3 2.2). 그 자리에서 멈췄다 재개하면 입력을 다시
+        검사하고 노드 안 관측을 무효로 표시한다 (M3 2.4 "폴링 재개")."""
+        self._runtime.wait_pausable(ms, self.point, self._poll_resumed)
+
+    def _poll_resumed(self) -> None:
+        """폴링 재개 직후 (다음 관측·입력·출구 선택 전): 시작 때 통과한 입력도 이제 오래된 관측일
+        수 있다. 그러면 `StaleObservation` — 노드가 삼켜도 실행기가 처리되지 않은 fail로 본다."""
+        self.trace.poll_resumed()
+        problem = self.trace.stale_inputs(self._runtime.epoch)
+        if problem is not None:
+            exc = StaleObservation(problem)
+            self.stale = exc
+            raise exc
+
+    def observations_reset(self) -> bool:
+        """폴링 재개로 노드 안 관측(이전 프레임·후보·안정 시간)이 무효가 됐나. 코어 폴링 노드가
+        보고 들고 있던 관측을 버린 뒤 `reset_observations()`로 알린다."""
+        return self.trace.reset_pending
+
+    def reset_observations(self) -> None:
+        """노드가 관측을 버렸다: 스텝 바닥을 입력 출처로 되돌린다. 알리지 않으면 바닥이 옛 세대로
+        남아 출력이 오래된 값이 된다(안전한 쪽)."""
+        self.trace.reset()
 
     def check_cancel(self) -> None:
         self._runtime.check()
@@ -762,3 +894,16 @@ class StepContext:
         if path is None:
             raise ValueError(f"'{rel}'은(는) 워크스페이스 기준 경로가 아니다")
         return path
+
+
+def _holds(value: Any, at: Point | Rect) -> bool:
+    """핀 값이 그 좌표이거나 (목록·객체 안에) 그 좌표를 담고 있나."""
+    if type(value) is type(at) and value == at:
+        return True
+    if isinstance(value, (list, tuple)):
+        items = cast(Sequence[Any], value)
+        return any(_holds(item, at) for item in items)
+    if isinstance(value, Mapping):
+        entries = cast(Mapping[str, Any], value)
+        return any(_holds(item, at) for item in entries.values())
+    return False

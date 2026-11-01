@@ -495,7 +495,7 @@ def test_pause_records_active_duration_and_run_json_fields(
     (resume,) = done.of("debug.resume")
     assert (resume["step"], resume["mode"]) == (start1["step"], "continue")
     assert 950 <= resume["paused_ms"] < 3_000
-    assert "epoch" not in resume  # 관측 세대는 T4
+    assert resume["epoch"] == 1  # 재개마다 관측 세대가 오른다 (M3 2.4)
     assert end1 is not None and end2 is not None
     assert end1["duration_ms"] - end1["active_duration_ms"] >= resume["paused_ms"] - 50
     assert "active_duration_ms" not in end2

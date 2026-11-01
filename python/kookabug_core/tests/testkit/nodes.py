@@ -11,6 +11,14 @@ from kookabug_sdk import Config, Context, DynamicExits, Exit, Output, Result, Re
 from kookabug_sdk.types import Image, Match, Point, Rect, Secret
 
 # 워커는 이 모듈의 이름공간에서 노드를 모은다 (`collect_plugins`): M1 노드도 여기 이름으로 둔다
+from testkit.epoch import EPOCH_NODES
+from testkit.epoch import forge as epoch_forge  # noqa: F401
+from testkit.epoch import hold_poll as epoch_hold_poll  # noqa: F401
+from testkit.epoch import offset_input as epoch_offset_input  # noqa: F401
+from testkit.epoch import unknown_match as epoch_unknown_match  # noqa: F401
+from testkit.epoch import use as epoch_use  # noqa: F401
+from testkit.epoch import vars_read as epoch_vars_read  # noqa: F401
+from testkit.epoch import vars_write as epoch_vars_write  # noqa: F401
 from testkit.m1 import M1_NODES
 from testkit.m1 import capture_ref as m1_capture_ref  # noqa: F401
 from testkit.m1 import capture_wait as m1_capture_wait  # noqa: F401
@@ -488,4 +496,5 @@ NODES = (
     ctx_replay,
     liar,
     *M1_NODES,
+    *EPOCH_NODES,
 )

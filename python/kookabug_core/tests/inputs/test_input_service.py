@@ -95,6 +95,12 @@ class Observer:
     def note(self, message: str) -> None:
         self.notes.append(message)
 
+    def observation_stale(self, match: Match) -> str | None:
+        return None  # 멈춘 적 없는 실행 (관측 세대는 test_revalidate_epoch.py)
+
+    def coordinate_stale(self, at: Point | Rect) -> str | None:
+        return None
+
 
 def match_at(rect: Rect, *, window: WindowRef | None = A, target: str | None = TARGET) -> Match:
     return Match(

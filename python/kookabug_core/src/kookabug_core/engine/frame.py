@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from kookabug_core.engine.errors import EngineError
+from kookabug_core.engine.provenance import Origin
 from kookabug_core.engine.verdict import Cause
 from kookabug_core.ir import Graph, LinkRef
 from kookabug_core.record.policy import RecordPolicy
@@ -43,6 +44,8 @@ class FrameExit:
     exit: str
     kind: ExitKind
     outputs: Mapping[str, Any]
+    origins: Mapping[str, Origin | None] = field(default_factory=dict[str, Origin | None])
+    """출력별 관측 출처 (`core.graph.exit` 입력의 출처 — 호출 노드 출력으로 넘어간다)."""
 
 
 @dataclass(eq=False)
@@ -65,17 +68,36 @@ class Frame:
     """연결된 fail 출구로 나간 스텝 (종료 노드·공개 exit에 닿으면 해소)."""
     loops: list[LoopState] = field(default_factory=list[LoopState])
     """반복 스택 (맨 끝이 가장 안쪽)."""
+    input_origins: Mapping[str, Origin | None] = field(default_factory=dict[str, Origin | None])
+    """`inputs`의 핀별 관측 출처 (부른 호출 노드 입력의 출처, M3 2.4)."""
+    origins: dict[str, dict[str, Origin | None]] = field(
+        default_factory=dict[str, dict[str, Origin | None]]
+    )
+    """출력 표의 핀별 관측 출처."""
+    var_origins: dict[str, Origin | None] = field(default_factory=dict[str, Origin | None])
+    """변수의 관측 출처 (값과 같이 저장한다)."""
 
     def node_path(self, node: str) -> tuple[str, ...]:
         return (*self.path, node)
 
-    def record(self, node: str, outputs: Mapping[str, Any]) -> None:
+    def record(
+        self,
+        node: str,
+        outputs: Mapping[str, Any],
+        origins: Mapping[str, Origin | None] | None = None,
+    ) -> None:
         self.outputs[node] = dict(outputs)
+        self.origins[node] = dict(origins or {})
 
     def invalidate(self, nodes: Iterable[str]) -> None:
         """출력을 지운다 (반복이 다음 회차로 갈 때 그 범위의 출력)."""
         for node in nodes:
             self.outputs.pop(node, None)
+            self.origins.pop(node, None)
+
+    def origin_of(self, ref: LinkRef) -> Origin | None:
+        """출력 표 값의 관측 출처 (`read`가 성공한 참조)."""
+        return self.origins.get(ref.node, {}).get(ref.output)
 
     def read(self, ref: LinkRef) -> Any:
         outputs = self.outputs.get(ref.node)

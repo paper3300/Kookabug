@@ -16,6 +16,12 @@
      캡처에서 한 번 다시 찾고 그 클릭 지점으로 입력한다(원래 출력은 그대로, `log` 이벤트에 남김)
   3. 다시 찾지 못했거나 `target`이 없으면 `StaleObservation` — 처리되지 않은 fail
      (`stale_observation`, 출구 없음)
+  - (M3 2.4) 1 다음, 2 앞에서 관측 세대를 본다: `Match`의 캡처 번호가 디버거 재개 전 세대이거나
+    이 실행의 번호가 아니거나(출처 없음), 요청한 스텝이 재개 전 관측을 입력으로 받았으면
+    **크기·DPI가 같아도** 2·3처럼 다시 찾는다(창이 없는 플랫폼도). 그런 스텝(재개 전 관측을 입력으로
+    받음)의 `Point`·`Rect` 입력은 `Match`에서 뽑은 좌표일 수 있고 다시 찾을 출처가 없으므로
+    `StaleObservation`이다 — 그 스텝의 출처 없는 입력 핀 값(상수·설정) 그대로인 좌표만 받는다
+    (`input.drag`의 상수 끝점 등). 멈추지 않은 실행은 M1 그대로다
   4. 클릭 지점은 `Match.click_point`. `Rect`는 중심, `Point`는 그대로(출처가 없어 재검증 없음).
      창이 움직이기만 한 것은 다시 찾지 않는다(좌표가 클라이언트 기준이다)
 - 대상 창이 없는 요청(창을 정하지 않은 가짜·없음 플랫폼)은 창 확인 없이 싱크로 간다. Windows
@@ -131,6 +137,17 @@ class Observer(Protocol):
         """그 스텝의 `log` 이벤트로 남긴다."""
         ...
 
+    def observation_stale(self, match: Match) -> str | None:
+        """그 `Match`가 디버거 재개 전(또는 출처를 모르는) 관측이면 그 설명, 아니면 None
+        (M3 2.4). 멈추지 않은 실행은 늘 None이다."""
+        ...
+
+    def coordinate_stale(self, at: Point | Rect) -> str | None:
+        """그 좌표 입력을 거절할 이유, 아니면 None (M3 2.4). 요청한 스텝이 디버거 재개 전 관측을
+        입력으로 받았고(`input` 노드의 `Match` 예외) 좌표가 그 스텝의 출처 없는 입력 핀 값(상수·
+        설정)이 아니면 거절한다 — `Match`에서 뽑은 좌표일 수 있다."""
+        ...
+
 
 def same_window(a: WindowRef, b: WindowRef) -> bool:
     """같은 창인가: HWND가 같고, 둘 다 가진 PID·생성 시각·바인딩이 같다."""
@@ -178,6 +195,16 @@ class InputService:
 
     def point(self, at: Where, window: WindowRef | None, observer: Observer) -> ClientPoint:
         """입력 위치 → 클라이언트 점. `Match`는 재검증한다 (모듈 설명)."""
+        if isinstance(at, (Point, Rect)):
+            stale = observer.coordinate_stale(at)
+            if stale is not None:
+                # 재개 전 Match를 받은 스텝(예외 ②)이 뽑아 낸 좌표일 수 있다: 출처가 없어 다시 찾을
+                # 수 없으므로 입력하지 않는다 (M3 2.4). 상수 핀 그대로의 좌표는 관측자가 통과시킨다
+                raise StaleObservation(
+                    f"{stale}. 이 좌표(point·rect)는 입력 핀의 상수가 아니라 재개 전 관측에서 "
+                    "나왔을 수 있고 다시 찾을 수 없어 입력하지 않았다 — 노드가 Match에서 좌표를 "
+                    "뽑지 말고 Match를 그대로 입력에 넘기면 target으로 다시 찾는다"
+                )
         if isinstance(at, Point):
             return ClientPoint(at.x, at.y)
         if isinstance(at, Rect):
@@ -187,9 +214,9 @@ class InputService:
         return ClientPoint(point.x, point.y)
 
     def _revalidated(self, match: Match, window: WindowRef | None, observer: Observer) -> Match:
-        if window is None or self.windows is None:
-            return match
-        if match.window is not None:
+        checks_window = window is not None and self.windows is not None
+        if checks_window and match.window is not None:
+            assert window is not None and self.windows is not None
             # 두 참조를 모두 이 실행의 바인딩으로 확정해 비교한다 (빈 필드를 와일드카드로 두지
             # 않는다): 관측한 창이 닫혔으면 window_gone, 같은 HWND의 다른 창이면 window_mismatch
             request = self.windows.identify(window)
@@ -201,6 +228,13 @@ class InputService:
                     f"입력할 창(hwnd {request.handle:#x} {request.title!r}, {request.binding})이 "
                     "다르다 — in.window로 맞추거나 그 창으로 대상 창을 바꾼다",
                 )
+        stale = observer.observation_stale(match)
+        if stale is not None:
+            # 디버거 재개 전 관측: 크기·DPI가 같아도 다시 찾는다 (M3 2.4)
+            return self._rematch(match, observer, stale)
+        if not checks_window:
+            return match
+        assert window is not None and self.windows is not None
         seen = match.frame_info
         if seen is None:
             return match
@@ -211,6 +245,12 @@ class InputService:
             f"찾은 뒤 창이 바뀌었다 (크기 {seen.client_size} → {now.client_size}, "
             f"DPI {seen.dpi} → {now.dpi}, 캡처 {seen.backend} → {now.backend})"
         )
+        return self._rematch(match, observer, change)
+
+    @staticmethod
+    def _rematch(match: Match, observer: Observer, change: str) -> Match:
+        """`match.target`으로 새 캡처에서 한 번 다시 찾는다. 못 찾거나 target이 없으면
+        `StaleObservation` — 입력은 나가지 않는다."""
         if match.target is None:
             raise StaleObservation(f"{change}. 다시 찾을 target이 없어 입력하지 않았다")
         found = observer.rematch(match)

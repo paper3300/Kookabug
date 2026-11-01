@@ -74,7 +74,12 @@ def observed(platform: WindowsPlatform, window: WindowRef) -> Match:
 
 
 def send(platform: WindowsPlatform, window: WindowRef, match: Match) -> str | None:
-    observer = SimpleNamespace(rematch=lambda m: None, note=lambda message: None)
+    observer = SimpleNamespace(
+        rematch=lambda m: None,
+        note=lambda message: None,
+        observation_stale=lambda m: None,  # 멈춘 적 없는 실행 (관측 세대 M3)
+        coordinate_stale=lambda at: None,
+    )
     try:
         platform.service.for_step("s2", window, observer, sleep=lambda ms: None).click(match)  # pyright: ignore[reportArgumentType]
     except EngineError as exc:

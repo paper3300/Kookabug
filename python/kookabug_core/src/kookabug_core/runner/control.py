@@ -41,6 +41,7 @@ from typing import Any, Final, Literal
 
 from kookabug_core.engine.cancel import CancelReason, CancelToken
 from kookabug_core.engine.debug import RESUME_MODES, Breakpoint, ResumeMode, StepPoint, step_limit
+from kookabug_core.engine.provenance import Epochs
 from kookabug_core.inputs import InputActor
 from kookabug_core.runner.clock import ActiveClock
 from kookabug_core.runner.watchdog import Watchdog
@@ -99,10 +100,16 @@ class PauseGate:
     """
 
     def __init__(
-        self, cancel: CancelToken, clock: ActiveClock, breakpoints: Iterable[Breakpoint] = ()
+        self,
+        cancel: CancelToken,
+        clock: ActiveClock,
+        breakpoints: Iterable[Breakpoint] = (),
+        epochs: Epochs | None = None,
     ) -> None:
         self._cancel = cancel
         self.clock = clock
+        self.epochs = epochs if epochs is not None else Epochs()
+        """관측 세대: 재개할 때마다(Step 포함) 1 올린다 (M3 2.4, 사용자 결정 U4)."""
         self._cond = threading.Condition()
         self._requested = False
         self._paused = False
@@ -249,11 +256,14 @@ class PauseGate:
                 mode = self._mode
             paused_ms = self.clock.resume()
         self._cancel.check()
+        # 재개: 멈춘 동안 화면이 바뀌었을 수 있으니 이전 세대 관측값을 쓰지 않게 세대를 올린다
+        epoch = self.epochs.advance()
         emit(
             {
                 "event": "debug.resume",
                 "step": point.step,
                 "mode": mode,
+                "epoch": epoch,
                 "paused_ms": paused_ms,
             }
         )

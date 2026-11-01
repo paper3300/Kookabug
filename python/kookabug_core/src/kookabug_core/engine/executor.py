@@ -23,6 +23,10 @@
   현재 창을 다음 스텝부터 바꾼다
 - 입력 직전 재검증 실패(`StaleObservation`)는 출구 없는 처리되지 않은 fail(`stale_observation`)이다.
   노드가 삼키고 끝내도 같다
+- 관측 세대 (M3 2.4, `engine.provenance`): 값 옆에 출처(가장 오래된 관측의 세대)를 붙여 출력 표·
+  순수 노드 계산·변수·호출 경계로 옮긴다. 스텝 입력을 계산한 직후 노드를 부르기 전에 디버거 재개
+  전 관측에서 온 입력이 있으면(예외 목록·`input` 노드의 `Match` 제외) 노드를 부르지 않고
+  `stale_observation`이다. 출력 출처는 그 스텝의 관측 바닥이다
 - 프레임 저장소 (M1 2.7): 스텝 출력에 든 캡처는 출력 참조로 표시하고, 서브그래프 안 스텝이 닫힐 때
   그 마지막 캡처를 부른 스텝의 증거로 넘긴다
 - 실패 증거 (M1 2.15): fail 출구로 나간 스텝(서브그래프 호출이면 그 호출 스텝)과 재검증 실패
@@ -66,7 +70,8 @@ from kookabug_core.engine.loops import (
     resuming,
 )
 from kookabug_core.engine.platform_fake import FakePlatform, MemoryArtifacts
-from kookabug_core.engine.pure import nodedef_of, resolve_inputs
+from kookabug_core.engine.provenance import Epochs, Origin, StepTrace
+from kookabug_core.engine.pure import nodedef_of, resolve_traced
 from kookabug_core.engine.retry import retry_policy
 from kookabug_core.engine.verdict import Cause, Facts, Judgement, Terminal, Verdict, judge
 from kookabug_core.ir import GRAPH_CALL, GRAPH_ENTRY, Node
@@ -171,6 +176,7 @@ class Executor:
         frames: FrameRegistry | None = None,
         wall: Clock | None = None,
         pause_point: PausePoint | None = None,
+        epochs: Epochs | None = None,
     ) -> None:
         """`sink`는 이벤트를 더 보낼 곳이다 (`RunResult.events`에는 `collect_events`일 때 모인다).
 
@@ -185,6 +191,8 @@ class Executor:
         시계를 주지 않으면 취소로 깨는 `SystemClock`이다. `clock`은 기한 시계, `wall`은 경과
         (`duration_ms`) 시계다 — 주지 않으면 `clock`으로 잰다. runner는 `clock`에 멈춘 시간을 뺀
         활성 시계, `wall`에 실제 단조 시계를 준다.
+        `epochs`는 관측 세대다(M3 2.4) — runner는 멈춤 게이트가 재개할 때 올리는 것을 준다. 주지
+        않으면 실행마다 새로 0에서 시작하고 오르지 않는다(멈춤 없는 실행 = M1 동작).
         """
         self.registry = registry or default_registry()
         self.invoker: NodeInvoker = invoker or InProcessInvoker()
@@ -198,6 +206,7 @@ class Executor:
         self.frames = frames
         self.wall = wall
         self.pause_point = pause_point
+        self.epochs = epochs
 
     def run(self, program: Program, options: ExecOptions | None = None) -> RunResult:
         options = options or ExecOptions()
@@ -237,6 +246,7 @@ class Executor:
             capture_timeout_ms=options.capture_timeout_ms,
             wall=self.wall,
             pause_point=self.pause_point,
+            epochs=self.epochs if self.epochs is not None else Epochs(),
         )
         workspace_record = program.workspace.config.get("record")
         policy = (
@@ -445,13 +455,23 @@ class _Run:
                         "exec_into_pure",
                         f"'{node.id}'은(는) 순수 노드라 exec 흐름으로 실행할 수 없다",
                     )
-                inputs = resolve_inputs(
+                inputs, origins = resolve_traced(
                     rt, frame, node, step, self._recompute(frame, node, nodedef)
                 )
                 rt.recorder.note_inputs(step, inputs, node_inputs_source(frame.graph.path, node.id))
+                trace = StepTrace(
+                    node.type,
+                    input_effect="input" in nodedef.effects,
+                    inputs=origins,
+                    values=inputs,
+                )
+                # 스텝 입력 검사: 디버거 재개 전 관측에서 온 입력이면 노드를 부르지 않는다 (M3 2.4)
+                stale = trace.stale_inputs(rt.epoch)
+                if stale is not None:
+                    raise StaleObservation(stale)
                 window, inputs = self._common_window(frame, node, nodedef, inputs)
                 rt.check()
-                outcome = self._dispatch(frame, node, nodedef, step, inputs, end, window)
+                outcome = self._dispatch(frame, node, nodedef, step, inputs, end, trace, window)
                 # 노드가 돌아온 뒤에도 본다: 실행 중 생긴 취소·기한 초과를 성공으로 확정하지 않는다
                 rt.check()
                 target = self._target(frame, node, outcome)
@@ -497,7 +517,8 @@ class _Run:
             self._finish(end, began, frame, node)
             return outcome
 
-        frame.record(node.id, outcome.outputs)
+        # 출력 출처 = 스텝 관측 바닥 (끝난 시각의 세대가 아니다, M3 2.4)
+        frame.record(node.id, outcome.outputs, trace.output_origins(outcome.outputs))
         rt.recorder.note_outputs(outcome.outputs)
         if nodedef.assertion and outcome.kind == "ok":
             self.assertions += 1
@@ -596,23 +617,27 @@ class _Run:
         step: str,
         inputs: dict[str, Any],
         end: dict[str, Any],
+        trace: StepTrace,
         window: WindowRef | None = None,
     ) -> _Outcome:
         engine = nodedef.engine
         if engine is None:
-            return self._attempt(frame, node, nodedef, step, inputs, end, window)
+            return self._attempt(frame, node, nodedef, step, inputs, end, trace, window)
         if engine == "graph_entry":
+            # 서브그래프 입력의 출처를 핀별로 옮긴다
+            trace.outputs = frame.input_origins
             return Result("start", "ok", copy.deepcopy(dict(frame.inputs)))
         if engine == "graph_exit":
-            return self._graph_exit(frame, node, inputs)
+            return self._graph_exit(frame, node, inputs, trace)
         if engine == "graph_call":
-            return self._graph_call(frame, node, step, inputs, end, window)
+            return self._graph_call(frame, node, step, inputs, end, trace, window)
         if engine in _TERMINALS:
             reason = inputs.get("reason")
             if isinstance(reason, Secret):
                 reason = str(reason)  # 판정 사유·기록에는 가린 값만 (P12)
             return _TerminalEnd(_TERMINALS[engine], reason if isinstance(reason, str) else None)
         if engine in _LOOPS:
+            trace.outputs = {}  # 회차 번호(`index`)는 관측과 무관하다
             return self._loop(frame, node, nodedef, step, inputs)
         raise EngineError("unknown_engine", f"'{node.id}': 실행기가 모르는 engine '{engine}'")
 
@@ -624,6 +649,7 @@ class _Run:
         step: str,
         inputs: Mapping[str, Any],
         end: dict[str, Any],
+        trace: StepTrace,
         window: WindowRef | None = None,
     ) -> Result:
         """노드 함수를 실행한다. 재시도 출구로 나오면 출구를 확정하기 전에 다시 부른다.
@@ -644,7 +670,8 @@ class _Run:
                 # 시도 사이(이벤트 싱크 처리 포함)에 생긴 취소·기한 초과면 다시 부르지 않는다
                 rt.check()
             began = rt.wall_clock.now_ms()
-            ctx = StepContext(rt, frame, node, step, config, step_window)
+            trace.begin_attempt()
+            ctx = StepContext(rt, frame, node, step, config, step_window, trace=trace)
             result = rt.invoker.invoke(nodedef, node, ctx, copy.deepcopy(dict(inputs)))
             if ctx.stale is not None:
                 # 노드가 재검증 실패를 삼키고 끝났어도 그 입력은 하지 않았다
@@ -698,6 +725,7 @@ class _Run:
         step: str,
         inputs: Mapping[str, Any],
         end: dict[str, Any],
+        trace: StepTrace,
         window: WindowRef | None = None,
     ) -> Result:
         callee = self.rt.program.callee(frame.graph.path, node.id)
@@ -709,9 +737,11 @@ class _Run:
             )
         interface = callee.interface or {}
         values: dict[str, Any] = {}
+        origins: dict[str, Origin | None] = {}
         for name, decl in interface.get("inputs", {}).items():
             if name in inputs:
                 values[name] = inputs[name]
+                origins[name] = trace.inputs.get(name)
             elif "default" in decl:
                 values[name] = copy.deepcopy(decl["default"])
             else:
@@ -731,6 +761,7 @@ class _Run:
             values,
             current_window=window if window is not None else frame.current_window,
             record_policy=policy,
+            input_origins=origins,
         )
         done = self._run_frame(inner)
         if done is None:
@@ -739,6 +770,7 @@ class _Run:
                 f"서브그래프 '{callee.path}'이(가) 공개 exit 없이 끝났다 "
                 "(어느 출구로 나갈지 모른다)",
             )
+        trace.outputs = done.origins  # exit 입력의 출처가 호출 노드 출력으로
         message = (
             f"서브그래프 '{callee.path}'이(가) fail 출구 '{done.exit}'로 나갔다"
             if done.kind == "fail"
@@ -746,7 +778,9 @@ class _Run:
         )
         return Result(done.exit, done.kind, dict(done.outputs), message)
 
-    def _graph_exit(self, frame: Frame, node: Node, inputs: Mapping[str, Any]) -> FrameExit:
+    def _graph_exit(
+        self, frame: Frame, node: Node, inputs: Mapping[str, Any], trace: StepTrace
+    ) -> FrameExit:
         graph = frame.graph
         if graph.kind != "subgraph":
             raise EngineError(
@@ -770,4 +804,5 @@ class _Run:
                     "exit_missing_required_output",
                     f"'{node.id}': nullable 아닌 출력 '{out}'을(를) 주지 않았다",
                 )
-        return FrameExit(name, decl["kind"], outputs)
+        origins = {out: trace.inputs.get(out) for out in outputs}
+        return FrameExit(name, decl["kind"], outputs, origins)
