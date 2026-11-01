@@ -4,36 +4,51 @@ import { useTabs } from "../store/tabs";
 import { useUi } from "../store/ui";
 import { useWorkspace } from "../store/workspace";
 import { PlayIcon, StopIcon } from "../theme/icons";
+import { runAvailability, type RunAvailability } from "./commands";
 import css from "./run.module.css";
 import { runModel, useRun } from "./runStore";
 
-/** 지금 탭이 실행할 수 있는 그래프면 그 경로 (서브그래프는 테스트에서 불러 실행한다) */
-export function runnablePath(): string | null {
+/** 실행·정지 활성 조건 (툴바·메뉴가 같이 쓴다) */
+export function useRunAvailability(): RunAvailability {
+  const tab = useTabs((s) => s.tabs.find((t) => t.path === s.active));
+  const connected = useWorkspace((s) => s.daemon.status === "connected");
+  const running = useRun((s) => s.current?.phase === "running");
+  const starting = useRun((s) => s.starting);
+  return runAvailability({ tab, connected, running, starting });
+}
+
+function availabilityNow(): RunAvailability {
   const { active, tabs } = useTabs.getState();
-  const tab = tabs.find((t) => t.path === active);
-  return tab?.kind === "graph" && tab.graphKind !== "subgraph" ? tab.path : null;
+  const run = useRun.getState();
+  return runAvailability({
+    tab: tabs.find((t) => t.path === active),
+    connected: useWorkspace.getState().daemon.status === "connected",
+    running: run.current?.phase === "running",
+    starting: run.starting,
+  });
+}
+
+/** 실행 명령 (툴바 ▶·메뉴 실행·F5): 활성 조건이 맞을 때만 지금 탭을 실행한다 */
+export function runActive(): void {
+  const now = availabilityNow();
+  if (now.canRun && now.path !== null) void runModel.start(now.path);
+}
+
+/** 정지 명령 (툴바 ■·메뉴 정지·Shift+F5) */
+export function stopActive(): void {
+  if (availabilityNow().canStop) void runModel.cancel();
 }
 
 export function RunToolbar() {
   const tab = useTabs((s) => s.tabs.find((t) => t.path === s.active));
-  const connected = useWorkspace((s) => s.daemon.status === "connected");
   const profiles = useWorkspace((s) => s.info?.profiles);
   const current = useRun((s) => s.current);
-  const starting = useRun((s) => s.starting);
   const blocked = useRun((s) => s.blocked);
   const profile = useRun((s) => s.profile);
   const running = current?.phase === "running";
+  const starting = useRun((s) => s.starting);
   const graph = tab?.kind === "graph" ? tab : undefined;
-  const subgraph = graph?.graphKind === "subgraph";
-  const canRun = graph !== undefined && !subgraph && connected && !running && starting === null;
-  const runTitle =
-    graph === undefined
-      ? "그래프 탭에서 실행해요"
-      : subgraph
-        ? "서브그래프는 테스트에서 불러 실행해요"
-        : running
-          ? "실행이 끝나면 다시 실행할 수 있어요"
-          : "실행 (F5)";
+  const { canRun, canStop, runTitle } = useRunAvailability();
   return (
     <div
       role="toolbar"
@@ -82,19 +97,17 @@ export function RunToolbar() {
         title={runTitle}
         className={`${css.toolButton} ${css.play}`}
         disabled={!canRun}
-        onClick={() => {
-          if (graph !== undefined) void runModel.start(graph.path);
-        }}
+        onClick={runActive}
       >
         <PlayIcon />
       </button>
       <button
         type="button"
         aria-label="정지"
-        title="실행 취소"
+        title="실행 취소 (Shift+F5)"
         className={`${css.toolButton} ${css.stop}`}
-        disabled={!running}
-        onClick={() => void runModel.cancel()}
+        disabled={!canStop}
+        onClick={stopActive}
       >
         <StopIcon />
       </button>

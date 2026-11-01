@@ -3,7 +3,7 @@
 //   palette-drag-<테마>   1440×900  팔레트 노드를 캔버스 위로 끄는 중 (시안 없음 → 시안 언어로 그림)
 //   connect-drag-<테마>   1440×900  핀을 끌어 잇는 중의 호환 표시 (시안 없음)
 //   close-confirm-<테마>  1440×900  저장 안 된 그래프가 있을 때 창 닫기 확인 대화 상자 (시안 없음)
-// 결과 build/ui-shots/<id>-<테마>.png → node tools/design-ref/compare.mjs main-palette palette-drag connect-drag
+// 결과 build/ui-shots/<id>-<테마>.png → node tools/design-ref/compare.mjs main-palette palette-drag connect-drag close-confirm
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test, type ElectronApplication, type Page } from "@playwright/test";

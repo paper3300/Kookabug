@@ -2,8 +2,7 @@
 // 오른쪽 에이전트 패널 자리는 속성 편집기(T10)가 쓴다
 import { useEffect } from "react";
 import { Inspector } from "../inspector/Inspector";
-import { runModel } from "../run/runStore";
-import { runnablePath } from "../run/Toolbar";
+import { runActive, stopActive } from "../run/Toolbar";
 import { getTarget, saveBlocker, saveTarget, targetDirty } from "../target/targetStore";
 import { useDialog } from "../store/dialog";
 import { redoEdit, saveDoc, undoEdit } from "../store/documents";
@@ -47,12 +46,8 @@ function useShortcuts(): void {
       // F5 실행, Shift+F5 정지 (시안 툴바 "실행 F5")
       if (e.key === "F5" && !e.ctrlKey && !e.altKey && !e.metaKey) {
         e.preventDefault();
-        if (e.shiftKey) {
-          void runModel.cancel();
-        } else {
-          const path = runnablePath();
-          if (path !== null && useWorkspace.getState().daemon.status === "connected") void runModel.start(path);
-        }
+        if (e.shiftKey) stopActive();
+        else runActive();
         return;
       }
       if (!e.ctrlKey || e.altKey || e.metaKey) return;

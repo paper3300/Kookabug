@@ -1,6 +1,7 @@
 // 타이틀 바 (시안 Main): 로고·메뉴·명령 검색 자리·창 버튼. 명령 검색은 파일 빠른 열기만 한다 (2.11).
 // 시안의 "플러그인" 메뉴는 M6까지 숨긴다 (2.10 "창", U3)
 import { useEffect, useRef, useState } from "react";
+import { runActive, stopActive, useRunAvailability } from "../run/Toolbar";
 import { canRedo, canUndo, redoEdit, saveDoc, undoEdit, useDocuments } from "../store/documents";
 import { requestCloseTab } from "../store/editing";
 import { useTabs } from "../store/tabs";
@@ -28,7 +29,8 @@ function useMenus(): [string, MenuEntry[]][] {
   const graph = useTabs((s) => (s.tabs.find((t) => t.path === s.active)?.kind === "graph" ? s.active : null));
   const doc = useDocuments((s) => (graph === null ? undefined : s.docs.get(graph)));
   const inspectorOpen = useUi((s) => s.inspectorOpen);
-  const theme = (value: ThemeMode, label: string): MenuItem => ({
+  const runs = useRunAvailability();
+  const theme =(value: ThemeMode, label: string): MenuItem => ({
     label: `테마: ${label}`,
     checked: mode === value,
     run: () => void setMode(value),
@@ -76,8 +78,9 @@ function useMenus(): [string, MenuEntry[]][] {
     [
       "실행",
       [
-        { label: "실행", shortcut: "F5", disabled: true },
-        { label: "정지", shortcut: "Shift+F5", disabled: true },
+        // 툴바 ▶·■와 같은 명령·같은 활성 조건 (run/commands.ts)
+        { label: "실행", shortcut: "F5", disabled: !runs.canRun, run: runActive },
+        { label: "정지", shortcut: "Shift+F5", disabled: !runs.canStop, run: stopActive },
       ],
     ],
     ["도움말", [{ label: "Kookabug 0.1", disabled: true }]],

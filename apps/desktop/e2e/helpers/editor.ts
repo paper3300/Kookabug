@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { wireStringify } from "@kookabug/schema";
 import { expect, type ElectronApplication, type Locator, type Page } from "@playwright/test";
 import { closeApp, launchApp, REPO_ROOT, setContentSize, stubOpenDialog } from "./app";
 import { cleanupWorkspace, copySampleWorkspace, waitConnected } from "./daemon";
@@ -205,12 +206,15 @@ function python(args: string[]): unknown {
   return JSON.parse(out.trim().split("\n").at(-1)!);
 }
 
-/** 파일 값이 기대 값과 Python `json_equal`로 같은가 */
+/**
+ * 파일 값이 기대 값과 Python `json_equal`로 같은가. 기대 값은 전송 코덱으로 쓴다(2.6: E2E가 Python으로 넘기는 값).
+ * `JSON.stringify`면 1.2345678901234567e19 같은 큰 실수가 근사한 정수 토큰이 되어 Python에서 다른 수가 된다
+ */
 export function pyEqual(file: string, expected: unknown): boolean {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kb-expect-"));
   try {
     const exp = path.join(dir, "expected.json");
-    fs.writeFileSync(exp, JSON.stringify(expected));
+    fs.writeFileSync(exp, wireStringify(expected));
     return (python(["equal", file, exp]) as { equal: boolean }).equal;
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -220,4 +224,17 @@ export function pyEqual(file: string, expected: unknown): boolean {
 /** 포인터 자리 값의 Python 타입 이름 */
 export function pyTypes(file: string, pointers: string[]): Record<string, string> {
   return (python(["types", file, ...pointers]) as { types: Record<string, string> }).types;
+}
+
+/** 진단 한 건 [severity, code, node, pointer] */
+export type PyDiagnostic = [string, string, string | null, string | null];
+
+/** 디스크 그래프 파일의 실행 전 검증 진단 (Python `check_graph`) */
+export function pyDiagnostics(workspace: string, rel: string): PyDiagnostic[] {
+  return (python(["diagnostics", workspace, rel]) as { diagnostics: PyDiagnostic[] }).diagnostics;
+}
+
+/** 저장한 target 파일을 Python이 다시 읽어 그 PNG에서 찾은 상자 (runner와 같은 매칭) */
+export function pyFind(targetFile: string, png: string): number[] | null {
+  return (python(["find", targetFile, png]) as { rect: number[] | null }).rect;
 }
