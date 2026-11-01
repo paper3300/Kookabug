@@ -4,8 +4,10 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   cspHeaderValue,
+  fileResponse,
   isExternalOpenAllowed,
   lockedWebPreferences,
+  parseRange,
   resolveAppFile,
   resolveKbimgPath,
 } from "./security";
@@ -24,10 +26,10 @@ test("test_web_preferences_locked", () => {
 });
 
 test("test_csp_header_value", () => {
-  // 계획 2.10 문자열 그대로. 렌더러는 소켓을 열지 않는다 (connect-src 'none')
+  // 계획 2.10 문자열 + M3 2.7 media-src. 렌더러는 소켓을 열지 않는다 (connect-src 'none')
   expect(cspHeaderValue()).toBe(
-    "default-src 'self'; img-src 'self' kbimg: data:; style-src 'self' 'unsafe-inline'; " +
-      "font-src 'self'; connect-src 'none'",
+    "default-src 'self'; img-src 'self' kbimg: data:; media-src kbimg:; " +
+      "style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'none'",
   );
   const directives = new Map(
     cspHeaderValue()
@@ -248,3 +250,102 @@ describe("kbimg dot-dot names", () => {
 function link(target: string, at: string): void {
   fs.symlinkSync(target, at, "junction");
 }
+
+// ---------------------------------------------------------------- 실행 영상 (M3 계획 2.7)
+
+describe("kbimg run video", () => {
+  let tmp: string;
+  let ws: string;
+  const RUN = "2026-11-01T09-02-04_t_abcd1234";
+  const BYTES = Buffer.from(Array.from({ length: 1000 }, (_, i) => i % 251));
+
+  beforeAll(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kb-kbimg-video-"));
+    ws = path.join(tmp, "ws");
+    const video = path.join(ws, "runs", RUN, "video");
+    fs.mkdirSync(video, { recursive: true });
+    fs.mkdirSync(path.join(ws, "runs", RUN, "thumbs"), { recursive: true });
+    fs.mkdirSync(path.join(ws, "media"), { recursive: true });
+    fs.mkdirSync(path.join(ws, ".kookabug", "runs", RUN, "video"), { recursive: true });
+    fs.mkdirSync(path.join(tmp, "elsewhere", "video"), { recursive: true });
+    fs.writeFileSync(path.join(video, "seg-0001.mp4"), BYTES);
+    fs.writeFileSync(path.join(ws, "runs", RUN, "thumbs", "s3.jpg"), "jpg");
+    fs.writeFileSync(path.join(ws, "runs", RUN, "a.mp4"), "mp4");
+    fs.writeFileSync(path.join(ws, "media", "clip.mp4"), "mp4");
+    fs.writeFileSync(path.join(ws, ".kookabug", "runs", RUN, "video", "seg-0001.mp4"), "mp4");
+    fs.writeFileSync(path.join(tmp, "elsewhere", "video", "seg-0001.mp4"), "mp4");
+    // runs/<폴더>/video 자리지만 실제로는 루트 밖 폴더를 가리키는 정션
+    fs.mkdirSync(path.join(ws, "runs", "linked"), { recursive: true });
+    link(path.join(tmp, "elsewhere", "video"), path.join(ws, "runs", "linked", "video"));
+    // 실제 video 폴더를 다른 이름으로 가리키는 정션 (요청 경로가 video/ 자리가 아님)
+    link(video, path.join(ws, "runs", RUN, "clips"));
+  });
+
+  afterAll(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  test("test_kbimg_mp4_only_in_run_video_dir", () => {
+    const ok = resolveKbimgPath(`kbimg://ws/runs/${RUN}/video/seg-0001.mp4`, ws);
+    expect(ok).toEqual({ ok: true, file: fs.realpathSync.native(path.join(ws, "runs", RUN, "video", "seg-0001.mp4")) });
+    expect(resolveKbimgPath(`kbimg://ws/RUNS/${RUN}/VIDEO/seg-0001.mp4`, ws).ok).toBe(true);
+    // 썸네일(.jpg)은 이미지로 열린다
+    expect(resolveKbimgPath(`kbimg://ws/runs/${RUN}/thumbs/s3.jpg`, ws).ok).toBe(true);
+    for (const [url, reason] of [
+      [`kbimg://ws/runs/${RUN}/a.mp4`, "not_image"],
+      ["kbimg://ws/media/clip.mp4", "not_image"],
+      [`kbimg://ws/runs/${RUN}/video/sub/seg-0001.mp4`, "not_image"],
+      [`kbimg://ws/runs/${RUN}/clips/seg-0001.mp4`, "not_image"],
+      [`kbimg://ws/.kookabug/runs/${RUN}/video/seg-0001.mp4`, "private_path"],
+      ["kbimg://ws/runs/linked/video/seg-0001.mp4", "path_outside_workspace"],
+      [`kbimg://ws/runs/${RUN}/video/missing.mp4`, "not_found"],
+      [`kbimg://ws/runs/${RUN}/video/../a.mp4`, "path_outside_workspace"],
+      [`kbimg://cache/seg-0001.mp4`, "bad_url"],
+    ] as const) {
+      expect(resolveKbimgPath(url, ws), url).toEqual({ ok: false, reason });
+    }
+  });
+
+  test("test_kbimg_range_returns_206", async () => {
+    const file = path.join(ws, "runs", RUN, "video", "seg-0001.mp4");
+    const part = fileResponse(file, "bytes=100-199");
+    expect(part.status).toBe(206);
+    expect(part.headers.get("content-range")).toBe("bytes 100-199/1000");
+    expect(part.headers.get("content-length")).toBe("100");
+    expect(part.headers.get("accept-ranges")).toBe("bytes");
+    expect(part.headers.get("content-type")).toBe("video/mp4");
+    expect(Buffer.from(await part.arrayBuffer())).toEqual(BYTES.subarray(100, 200));
+
+    const open = fileResponse(file, "bytes=990-");
+    expect(open.status).toBe(206);
+    expect(open.headers.get("content-range")).toBe("bytes 990-999/1000");
+    expect(Buffer.from(await open.arrayBuffer())).toEqual(BYTES.subarray(990));
+
+    const suffix = fileResponse(file, "bytes=-10");
+    expect(suffix.headers.get("content-range")).toBe("bytes 990-999/1000");
+
+    const whole = fileResponse(file, null);
+    expect(whole.status).toBe(200);
+    expect(whole.headers.get("accept-ranges")).toBe("bytes");
+    expect(Buffer.from(await whole.arrayBuffer())).toEqual(BYTES);
+
+    const beyond = fileResponse(file, "bytes=5000-");
+    expect(beyond.status).toBe(416);
+    expect(beyond.headers.get("content-range")).toBe("bytes */1000");
+
+    expect(parseRange("bytes=0-1,5-6", 1000)).toBeNull();
+    expect(parseRange("items=0-1", 1000)).toBeNull();
+    expect(parseRange("bytes=10-5000", 1000)).toEqual({ start: 10, end: 999 });
+  });
+
+  test("test_csp_media_src_kbimg", () => {
+    const directives = new Map(
+      cspHeaderValue()
+        .split(";")
+        .map((d) => d.trim().split(/\s+/))
+        .map(([k, ...v]) => [k, v]),
+    );
+    expect(directives.get("media-src")).toEqual(["kbimg:"]);
+    expect(directives.get("img-src")).toEqual(["'self'", "kbimg:", "data:"]);
+  });
+});

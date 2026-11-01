@@ -18,6 +18,7 @@
 - **직렬화**: 같은 경로의 읽기·저장은 **경로 잠금** 하나로 줄 세운다. 경로 잠금은 문서 항목과 따로
   두고 지우지 않는다 — 연결이 끊겨 항목이 사라져도 진행 중인 저장은 같은 잠금을 쥐고 있으므로 새
   항목의 저장과 갈라지지 않는다. 파일 감시도 그 잠금을 잡을 수 있을 때만 디스크를 읽는다
+- **실행 기록**: `runs/` 아래 그래프(실행 스냅샷)는 열 수 있지만 저장·만들기는 `read_only`다 (M3)
 - **검증 풀**: `check_graph_value`·노드 모양 계산은 전용 스레드 풀에서 돈다. 이벤트 루프와 다른
   막히는 호출(`asyncio.to_thread`)을 막지 않는다
 """
@@ -46,6 +47,7 @@ from kookabug_daemon.protocol import InvalidParams, RequestFailed
 __all__ = [
     "GRAPH_SUFFIX",
     "PRIVATE_NAME",
+    "RUNS_NAME",
     "Checked",
     "DocumentTable",
     "GraphChecker",
@@ -53,12 +55,16 @@ __all__ = [
     "Opened",
     "WsPath",
     "document_failed",
+    "is_run_record",
     "read_graph",
+    "read_only_failed",
     "recheck_path",
     "resolve_path",
 ]
 
 PRIVATE_NAME: Final = ".kookabug"
+RUNS_NAME: Final = "runs"
+"""실행 폴더가 모이는 곳 (워크스페이스 루트 기준)."""
 GRAPH_SUFFIX: Final = ".graph.json"
 VALIDATE_WORKERS: Final = 2
 
@@ -119,6 +125,15 @@ def resolve_path(root: Path, given: str, *, graph: bool = False) -> WsPath:
     ):
         raise InvalidParams(f"'{given}'은(는) 그래프 파일(*{GRAPH_SUFFIX})이 아니다", path=given)
     return WsPath(given, "/".join(rel_parts), resolved)
+
+
+def is_run_record(rel: str) -> bool:
+    """실행 폴더(`runs/` 아래)의 파일이다: 스냅샷 그래프는 읽기만 한다 (M3 계획 2.10)."""
+    return rel.split("/", 1)[0].casefold() == RUNS_NAME
+
+
+def read_only_failed(rel: str) -> RequestFailed:
+    return RequestFailed("read_only", f"'{rel}'은(는) 실행 기록(runs/)이라 고칠 수 없다", path=rel)
 
 
 def recheck_path(root: Path, where: WsPath) -> WsPath:
@@ -278,6 +293,8 @@ class DocumentTable:
         검사한다."""
         with self.path_lock(where.key):
             where = recheck_path(self.root, where)
+            if is_run_record(where.rel):
+                raise read_only_failed(where.rel)
             try:
                 doc = documents.create(where.path, kind, title)
                 if not isinstance(doc.value, dict):  # 틀은 항상 객체다 (read_graph와 같은 규칙)
@@ -337,6 +354,8 @@ class DocumentTable:
         파일을 쓰지 않는다)."""
         with entry.lock:
             where = self.path_for(entry, connection)
+            if is_run_record(where.rel) or is_run_record(entry.rel):
+                raise read_only_failed(where.rel)
             with self._lock:
                 base = entry.bases.get(connection)
             doc = base if base is not None else copy.copy(entry.latest)

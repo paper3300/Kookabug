@@ -492,8 +492,12 @@ def test_runner_start_validation_error_visible_in_status(tmp_path: Path) -> None
         status = wait_ended(client, started["run_id"])
         assert status["outcome"] == {"verdict": "error", "exit_code": 4, "finalized_by": "runner"}
         (listed,) = client.call("run.list", {"limit": 5})["runs"]
-        # run.status = 목록 요약 + 스냅샷 호출 관계(calls, M2 T11)
-        assert listed == {k: v for k, v in status.items() if k != "calls"}
+        # run.status = 목록 요약 + 스냅샷 호출 관계(calls, M2 T11). M3 목록 요약은 run.json의
+        # 결과·배지 필드를 더 싣는다 (M3 계획 2.7)
+        assert {k: listed[k] for k in status if k != "calls"} == {
+            k: v for k, v in status.items() if k != "calls"
+        }
+        assert listed["code"] == "graph_invalid"
 
 
 # ---------------------------------------------------------------- 동시 시작·중복 방지 키

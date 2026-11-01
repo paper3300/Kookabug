@@ -6,6 +6,8 @@
 - 권한 대표 인자는 링크를 해석한 그래프 경로다. `doc_id` 메서드는 문서 표에서 경로를 찾아 지금
   다시 해석한다(판정 경로 = 실제 대상)
 - 저장의 기준 원문은 요청한 연결의 것이다 (`DocumentTable.save`)
+- 실행 폴더(`runs/` 아래)의 스냅샷 그래프는 읽기 전용으로 열고(`read_only: true`), 저장·만들기는
+  `read_only`로 거부한다 (M3 계획 2.10)
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ import asyncio
 from collections.abc import Mapping
 from typing import Any, Final
 
-from kookabug_daemon.documents import Opened, WsPath, resolve_path
+from kookabug_daemon.documents import Opened, WsPath, is_run_record, resolve_path
 from kookabug_daemon.methods import Call, MethodSpec
 
 __all__ = ["METHODS", "graph_path", "request_int"]
@@ -45,7 +47,7 @@ def _doc_arg(call: Call) -> str:
 
 async def _opened_result(call: Call, opened: Opened) -> dict[str, Any]:
     checked = await call.daemon.checker.check(opened.entry.rel, opened.value)
-    return {
+    result: dict[str, Any] = {
         "doc_id": opened.entry.doc_id,
         "revision": opened.revision,
         "value": opened.value,
@@ -53,6 +55,10 @@ async def _opened_result(call: Call, opened: Opened) -> dict[str, Any]:
         "diagnostics": checked.diagnostics,
         "shapes": checked.shapes,
     }
+    if is_run_record(opened.entry.rel):
+        # 실행 폴더의 스냅샷 그래프: 읽기만 한다 (graph.save는 read_only, M3 2.10)
+        result["read_only"] = True
+    return result
 
 
 async def _open(call: Call) -> dict[str, Any]:

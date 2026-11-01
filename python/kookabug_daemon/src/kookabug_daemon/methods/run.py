@@ -1,6 +1,8 @@
-"""`run.start/cancel/status/list/subscribe/unsubscribe` (M2 계획 2.8).
+"""`run.start/cancel/status/list/subscribe/unsubscribe` (M2 계획 2.8), 기록 읽기
+`run.index/children/step/file`과 `run.export` (M3 계획 2.7).
 
-실행 관리는 `runs.RunManager`가 한다.
+실행 관리는 `runs.RunManager`가, 기록 읽기는 `run_index.RunRecords`가 한다. 기록 읽기의 대표 인자는
+실행 ID다. `run.export`는 `ui_only`이고 `AGENT_DENIED`라 에이전트 연결은 전송이 판정 전에 거부한다.
 
 - `run.start`는 판정을 전송이 아니라 시작 잠금 안의 ② 단계에서 한다 (`MethodSpec.self_authorized`).
   대표 인자는 링크를 해석한 그래프 경로다
@@ -63,11 +65,54 @@ async def _status(call: Call) -> dict[str, Any]:
 
 
 async def _list(call: Call) -> dict[str, Any]:
-    limit = call.params.get("limit")
-    runs = await asyncio.to_thread(
-        call.daemon.run_manager.recent, None if limit is None else request_int(limit)
+    params = call.params
+    limit = params.get("limit")
+    before, graph, verdict = params.get("before"), params.get("graph"), params.get("verdict")
+    return await asyncio.to_thread(
+        call.daemon.run_manager.list_runs,
+        None if limit is None else request_int(limit),
+        before=None if before is None else str(before),
+        graph=None if graph is None else str(graph),
+        verdict=None if verdict is None else str(verdict),
     )
-    return {"runs": runs}
+
+
+# ---------------------------------------------------------------- 기록 읽기 (M3 2.7)
+
+
+async def _index(call: Call) -> dict[str, Any]:
+    return await asyncio.to_thread(call.daemon.run_manager.records.index, _run_id(call))
+
+
+async def _children(call: Call) -> dict[str, Any]:
+    params = call.params
+    iteration = params.get("iteration")
+    return await asyncio.to_thread(
+        call.daemon.run_manager.records.children,
+        _run_id(call),
+        str(params["parent"]),
+        None if iteration is None else request_int(iteration),
+        request_int(params["offset"]),
+        request_int(params["limit"]),
+    )
+
+
+async def _step(call: Call) -> dict[str, Any]:
+    return await asyncio.to_thread(
+        call.daemon.run_manager.records.step, _run_id(call), str(call.params["step"])
+    )
+
+
+async def _file(call: Call) -> dict[str, Any]:
+    return await asyncio.to_thread(
+        call.daemon.run_manager.records.file, _run_id(call), str(call.params["name"])
+    )
+
+
+async def _export(call: Call) -> dict[str, Any]:
+    return await asyncio.to_thread(
+        call.daemon.run_manager.records.export, _run_id(call), str(call.params["dest"])
+    )
 
 
 async def _subscribe(call: Call) -> dict[str, Any]:
@@ -89,4 +134,9 @@ METHODS: Final = {
     "run.list": MethodSpec(_list),
     "run.subscribe": MethodSpec(_subscribe, _run_id),
     "run.unsubscribe": MethodSpec(_unsubscribe),
+    "run.index": MethodSpec(_index, _run_id),
+    "run.children": MethodSpec(_children, _run_id),
+    "run.step": MethodSpec(_step, _run_id),
+    "run.file": MethodSpec(_file, _run_id),
+    "run.export": MethodSpec(_export, _run_id),
 }

@@ -270,14 +270,25 @@ class StepNode(BaseModel):
             description="노드가 든 그래프 (워크스페이스 기준. 실행 때 쓴 스냅샷은 실행 폴더 snapshot/ 아래 같은 경로)"
         ),
     ]
-    iteration: Annotated[int | None, Field(ge=0)] = None
+    iteration: Annotated[
+        int | None,
+        Field(
+            description="parent가 반복 스텝일 때 그 회차 (본문 스텝은 events의 iteration, 되돌아옴은 방금 끝난 회차)",
+            ge=0,
+        ),
+    ] = None
     iterations: Annotated[
         list[IterationSummary] | None, Field(description="반복 스텝이면 회차별 요약 (회차 순)")
     ] = None
     message: str | None = None
     node: str
     omitted: list[Any] | None = None
-    parent: StepId | None
+    parent: Annotated[
+        StepId | None,
+        Field(
+            description="색인 부모: 호출 스텝, 또는 반복 스텝(반복 노드에 처음 도착한 스텝). 반복은 실행기에서 깊이를 더하지 않아 events의 parent와 다를 수 있다: 본문 스텝과 본문이 끝나 반복 노드로 되돌아온 스텝이 반복 스텝 아래 회차로 묶인다. 최상위는 null"
+        ),
+    ]
     path: CallPath
     retried: Annotated[bool | None, Field(description="재시도 끝에 성공 (step.end.retried)")] = None
     status: StepStatus

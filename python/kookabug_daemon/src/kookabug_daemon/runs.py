@@ -58,25 +58,37 @@
 - **UI 없이 멈춘 실행**: 멈춘 UI 실행에 UI 연결이 하나도 없는 상태가 `unattended_pause_s`(10분)
   이어지면 취소한다. 기한에서 멈춘 시간을 빼므로 이것이 없으면 앱을 끈 채 멈춘 실행이 입력 임대권을
   영영 쥔다. 취소 뒤 마무리는 실제 시간 M0b 경로 그대로다
+
+**목록·기록 읽기** (M3 계획 2.7)
+
+- `run.list`는 최신순(폴더 이름의 시작 초, 같은 초 안은 `started_at`)이고 `before` 커서로 다음 쪽을
+  준다. 요약의 배지·결과 필드는 `run.json`에서 읽는다(없으면 뺀다). 끝난 실행은 `events.jsonl`을
+  다 읽지 않고 끝부분만 읽는다(마지막 seq·`run.end` 경과)
+- 기록 읽기 메서드는 `run_index.RunRecords`가 하고, 실행이 끝났는지는 `locate`가 정한다
 """
 
 from __future__ import annotations
 
 import itertools
+import json
 import logging
+import os
 import threading
 import time
 from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Final, Protocol
+from typing import Any, Final, Protocol, cast
 
 from kookabug_core.canonical import canonical_dumps, loads_strict
 from kookabug_core.engine.debug import ResumeMode
 from kookabug_core.permissions import Decision, Principal
 from kookabug_core.record import follow, read_run, read_run_json
+from kookabug_core.record.index import node_titles
 from kookabug_core.record.runfolder import (
+    EVENTS_FILE,
     RUN_JSON_FILE,
     SNAPSHOT_DIR,
     new_run_id,
@@ -101,7 +113,8 @@ from kookabug_core.workspace import RunOptions, Workspace, WorkspaceError
 from kookabug_daemon.breakpoints import BreakpointStore
 from kookabug_daemon.documents import WsPath, recheck_path, resolve_path
 from kookabug_daemon.methods.tools import Authorizer
-from kookabug_daemon.protocol import RequestFailed
+from kookabug_daemon.protocol import InvalidParams, RequestFailed
+from kookabug_daemon.run_index import Located, RunRecords
 
 __all__ = [
     "IDEMPOTENCY_TTL_S",
@@ -130,6 +143,10 @@ KEEP_FINISHED: Final = 16
 UNATTENDED_PAUSE_S: Final = 600.0
 """멈춘 UI 실행에 UI 연결이 하나도 없는 채 이만큼 지나면 취소한다 (사용자 결정 U13, 실제 시간)."""
 UNATTENDED_CHECK_S: Final = 0.5
+RUNS_BYTES_TTL_S: Final = 60.0
+"""`run.list`의 `runs/` 합계 크기를 다시 재는 간격."""
+TAIL_READ: Final = 64 * 1024
+"""끝난 실행 요약이 읽는 `events.jsonl` 끝부분 바이트."""
 _VERDICTS: Final = frozenset({"error", "fail", "pass", "skipped"})
 
 
@@ -289,6 +306,11 @@ class RunManager:
         self._lag_listening: set[int] = set()
         self._order = itertools.count()
         self._closed = threading.Event()
+        self.records = RunRecords(root, self.locate)
+        """기록 읽기 (`run.index`·`run.children`·`run.step`·`run.file`·`run.export`)."""
+        self._runs_bytes: tuple[float, int] | None = None
+        """(잰 시각, `runs/` 합계 크기)."""
+        self._runs_bytes_lock = threading.Lock()
 
     # ---------------------------------------------------------------- 수명 (RunsLike)
 
@@ -887,63 +909,128 @@ class RunManager:
             raise RequestFailed("run_not_found", f"실행 {run_id}이(가) 없다", run_id=run_id)
         return {**summary, "calls": snapshot_calls(folder)}
 
-    def recent(self, limit: int | None) -> list[dict[str, Any]]:
+    def list_runs(
+        self,
+        limit: int | None = None,
+        *,
+        before: str | None = None,
+        graph: str | None = None,
+        verdict: str | None = None,
+    ) -> dict[str, Any]:
+        """`run.list` (막히는 호출). 최신순 쪽 하나와 다음 쪽 커서(`next`, 마지막 쪽이면 None).
+
+        순서 열쇠는 (폴더 이름의 시작 초, `started_at`, 폴더 이름)이고 커서는 그 열쇠다. 폴더 이름은
+        시작 시각(초)으로 시작하므로 커서보다 뒤 초의 폴더는 읽지 않고 건너뛴다."""
         count = DEFAULT_LIST_LIMIT if limit is None else limit
+        cursor = None if before is None else _parse_cursor(before)
         runs = self.root / RUNS_DIR
         try:
             folders = sorted((p for p in runs.iterdir() if p.is_dir()), key=lambda p: p.name)
         except OSError:
-            return []
-        found: list[dict[str, Any]] = []
-        # 폴더 이름은 시작 시각(초)으로 시작한다: 최근 초부터 묶어서 보고, 같은 초 안에서는
-        # `started_at`(밀리초)으로 정렬한다
-        for _, group in itertools.groupby(reversed(folders), key=lambda p: p.name.split("_")[0]):
-            if len(found) >= count:
+            folders = []
+        found: list[tuple[tuple[str, str, str], dict[str, Any]]] = []
+        more = False
+        for second, group in itertools.groupby(
+            reversed(folders), key=lambda p: p.name.split("_")[0]
+        ):
+            if len(found) > count:
                 break
-            summaries: list[dict[str, Any]] = []
+            if cursor is not None and second > cursor[0]:
+                continue
+            keyed: list[tuple[tuple[str, str, str], dict[str, Any]]] = []
             for folder in group:
                 run_id = run_id_of_folder(folder)
                 if run_id is None:
                     continue
                 with self._lock:
                     run = self._runs.get(run_id)
-                summary = self._summary(folder, run)
-                if summary is not None:
-                    summaries.append(summary)
-            summaries.sort(key=lambda s: s["started_at"] or "", reverse=True)
-            found.extend(summaries)
-        return found[:count]
+                summary = self._summary(folder, run, extended=True)
+                if summary is None or not _listed(summary, graph, verdict):
+                    continue
+                key = (second, summary["started_at"] or "", folder.name)
+                if cursor is None or key < cursor:
+                    keyed.append((key, summary))
+            keyed.sort(key=lambda item: item[0], reverse=True)
+            found.extend(keyed)
+        if len(found) > count:
+            more = True
+            found = found[:count]
+        result: dict[str, Any] = {
+            "runs": [summary for _, summary in found],
+            "next": _cursor(found[-1][0]) if more and found else None,
+        }
+        size = self.runs_bytes()
+        if size is not None:
+            result["runs_bytes"] = size
+        return result
 
-    def _summary(self, folder: Path, run: _Run | None) -> dict[str, Any] | None:
+    def runs_bytes(self) -> int | None:
+        """`runs/` 합계 크기 (`RUNS_BYTES_TTL_S`마다 다시 잰다). 잴 수 없으면 None."""
+        with self._runs_bytes_lock:
+            now = time.monotonic()
+            if self._runs_bytes is not None and now - self._runs_bytes[0] < RUNS_BYTES_TTL_S:
+                return self._runs_bytes[1]
+            size = _tree_size(self.root / RUNS_DIR)
+            self._runs_bytes = None if size is None else (now, size)
+            return size
+
+    def locate(self, run_id: str) -> Located:
+        """실행 폴더와 상태 (기록 읽기). 이 daemon이 띄운 실행은 감독자 마무리가 끝나야 `ended`,
+        아니면 `run.json`이 `finished`이거나 runner가 없으면 `ended`."""
+        with self._lock:
+            run = self._runs.get(run_id)
+        folder = run.folder if run is not None else self._find_folder(run_id)
+        if folder is None:
+            raise RequestFailed("run_not_found", f"실행 {run_id}이(가) 없다", run_id=run_id)
+        if run is not None and run.managed:
+            running = not run.done.is_set()
+        else:
+            data = read_run_json(folder / RUN_JSON_FILE) or {}
+            running = data.get("status") != "finished" and _runner_alive(_first_event(folder))
+        return Located(run_id, folder, "running" if running else "ended")
+
+    def _summary(
+        self, folder: Path, run: _Run | None, *, extended: bool = False
+    ) -> dict[str, Any] | None:
         run_id = run_id_of_folder(folder)
         if run_id is None:
             return None
-        view = read_run(folder)
         data = read_run_json(folder / RUN_JSON_FILE) or {}
-        graph = run.graph if run is not None else _graph_of(folder, data, view.run_start)
-        started = data.get("started_at") or (view.run_start or {}).get("t")
+        managed_running = run is not None and run.managed and not run.done.is_set()
+        if data.get("status") == "finished" and not managed_running:
+            # 끝난 실행: 이벤트 파일을 다 읽지 않는다 (마지막 seq·run.end만 끝부분에서)
+            last_seq, tail_end = _tail(folder)
+            run_start = None
+            run_end = tail_end or data
+        else:
+            view = read_run(folder)
+            last_seq, run_start, run_end = view.last_seq, view.run_start, view.run_end
+        graph = run.graph if run is not None else _graph_of(folder, data, run_start)
+        started = data.get("started_at") or (run_start or {}).get("t")
         if started is None and run is not None and run.handle is not None:
             started = run.handle.started_at
         outcome: dict[str, Any] | None = None
         if run is not None and run.managed:
-            running = not run.done.is_set()
+            running = managed_running
             if not running:
                 recover_error = None if run.outcome is None else run.outcome.recover_error
-                run_end = view.run_end if run.outcome is None else run.outcome.run_end
-                outcome = _outcome(run_end, recover_error)
+                ended = run_end if run.outcome is None else run.outcome.run_end
+                outcome = _outcome(ended, recover_error)
         else:
-            running = view.run_end is None and _runner_alive(view.run_start)
-            if view.run_end is not None:
-                outcome = _outcome(view.run_end, None)
-        summary = {
+            running = run_end is None and _runner_alive(run_start)
+            if run_end is not None:
+                outcome = _outcome(run_end, None)
+        summary: dict[str, Any] = {
             "run_id": run_id,
             "run_dir": str(folder),
             "graph": graph,
             "state": "running" if running else "ended",
             "started_at": started,
-            "last_seq": view.last_seq,
+            "last_seq": last_seq,
             "outcome": outcome,
         }
+        if extended:
+            summary.update(_badges(folder, data, run_end if not running else None))
         if check_shape(summary, "daemon-rpc", ref="#/$defs/RunSummary"):
             log.warning("실행 폴더 %s를 요약할 수 없다 (형식이 틀린 기록)", folder)
             return None
@@ -970,6 +1057,144 @@ def _open_workspace(root: Path) -> Workspace:
         return Workspace.open(root)
     except WorkspaceError as exc:
         raise RequestFailed("io_error", str(exc), message=str(exc)) from exc
+
+
+def _cursor(key: tuple[str, str, str]) -> str:
+    """목록 커서: `started_at|폴더 이름` (시작 초는 폴더 이름 앞부분)."""
+    return f"{key[1]}|{key[2]}"
+
+
+def _parse_cursor(text: str) -> tuple[str, str, str]:
+    started, sep, name = text.partition("|")
+    if not sep or not name:
+        raise InvalidParams(f"before 커서를 읽을 수 없다: {text!r}")
+    return (name.split("_")[0], started, name)
+
+
+def _listed(summary: Mapping[str, Any], graph: str | None, verdict: str | None) -> bool:
+    if graph is not None and summary.get("graph") != graph:
+        return False
+    if verdict is not None:
+        outcome = summary.get("outcome")
+        if summary.get("state") != "ended" or not isinstance(outcome, dict):
+            return False
+        return outcome.get("verdict") == verdict
+    return True
+
+
+def _badges(
+    folder: Path, data: Mapping[str, Any], run_end: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """`run.list` 요약에 더하는 결과·배지 필드 (`run.json`에서. 없는 필드는 뺀다)."""
+    out: dict[str, Any] = {}
+    for key in ("code", "reason"):
+        if isinstance(data.get(key), str):
+            out[key] = data[key]
+    if isinstance(data.get("debug_intervened"), bool):
+        out["debug_intervened"] = data["debug_intervened"]
+    duration = None if run_end is None else run_end.get("duration_ms")
+    if isinstance(duration, int) and not isinstance(duration, bool) and duration >= 0:
+        out["duration_ms"] = duration
+    elif isinstance(data.get("started_at"), str) and isinstance(data.get("ended_at"), str):
+        try:
+            span = _iso_ms(data["ended_at"]) - _iso_ms(data["started_at"])
+        except ValueError:
+            span = -1
+        if span >= 0:
+            out["duration_ms"] = span
+    if "failure_path" in data:
+        path = data["failure_path"]
+        if isinstance(path, list) and path and all(isinstance(p, str) for p in path):
+            nodes = [str(p) for p in path]
+            out["failure_path"] = nodes
+            graph = data.get("graph")
+            if isinstance(graph, str):
+                out["failure_title"] = " > ".join(node_titles(folder, graph, nodes))
+        elif path is None:
+            out["failure_path"] = None
+    retried = data.get("retried_steps")
+    if isinstance(retried, int) and not isinstance(retried, bool):
+        out["flaky"] = data.get("verdict") == "pass" and retried > 0
+    if "game_build" in data and (data["game_build"] is None or isinstance(data["game_build"], str)):
+        out["game_build"] = data["game_build"]
+    conditions: Any = data.get("conditions")
+    if isinstance(conditions, dict) and "profile" in conditions:
+        profile: Any = conditions["profile"]
+        if profile is None or isinstance(profile, str):
+            out["profile"] = profile
+    return out
+
+
+def _iso_ms(t: str) -> int:
+    return int(datetime.fromisoformat(t).timestamp() * 1000 + 0.5)
+
+
+def _tail(folder: Path) -> tuple[int, dict[str, Any] | None]:
+    """(마지막 seq, `run.end`) — `events.jsonl` 끝부분의 완전한 줄만 본다. 끝부분에 seq가 없으면
+    파일 전체를 읽는다."""
+    path = folder / EVENTS_FILE
+    try:
+        with path.open("rb") as f:
+            size = os.fstat(f.fileno()).st_size
+            start = max(0, size - TAIL_READ)
+            f.seek(start)
+            data = f.read()
+    except OSError:
+        return 0, None
+    lines = data.split(b"\n")[:-1]  # 마지막 \n 뒤는 잘린 줄이거나 빈 바이트
+    if start > 0 and lines:
+        lines = lines[1:]  # 앞이 잘린 줄
+    last_seq: int | None = None
+    run_end: dict[str, Any] | None = None
+    for raw in reversed(lines):
+        event = _json_object(raw)
+        if event is None:
+            continue
+        seq = event.get("seq")
+        if last_seq is None and isinstance(seq, int) and not isinstance(seq, bool):
+            last_seq = seq
+        if event.get("event") == "run.end":
+            run_end = event
+            break
+    if last_seq is None:
+        view = read_run(folder)
+        return view.last_seq, view.run_end
+    return last_seq, run_end
+
+
+def _first_event(folder: Path) -> dict[str, Any] | None:
+    """`events.jsonl` 첫 줄의 `run.start` (없으면 None)."""
+    try:
+        with (folder / EVENTS_FILE).open("rb") as f:
+            line = f.readline(TAIL_READ)
+    except OSError:
+        return None
+    event = _json_object(line)
+    return event if event is not None and event.get("event") == "run.start" else None
+
+
+def _json_object(raw: bytes) -> dict[str, Any] | None:
+    try:
+        value: Any = json.loads(raw)
+    except ValueError:
+        return None
+    return cast(dict[str, Any], value) if isinstance(value, dict) else None
+
+
+def _tree_size(folder: Path) -> int | None:
+    if not folder.is_dir():
+        return 0
+    total = 0
+    try:
+        for current, _, files in os.walk(folder):
+            for name in files:
+                try:
+                    total += os.stat(os.path.join(current, name)).st_size
+                except OSError:
+                    continue
+    except OSError:
+        return None
+    return total
 
 
 def _covering(tail: deque[dict[str, Any]], after_seq: int) -> list[dict[str, Any]] | None:

@@ -5,17 +5,20 @@ import { net, protocol } from "electron";
 import {
   APP_SCHEME,
   cspHeaderValue,
+  fileResponse,
   isAppUrl,
   KBIMG_SCHEME,
   resolveAppFile,
   resolveKbimgPath,
+  VIDEO_EXTENSION,
 } from "./security";
 
 /** app.whenReady 전에 부른다 */
 export function registerSchemes(): void {
   protocol.registerSchemesAsPrivileged([
     { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
-    { scheme: KBIMG_SCHEME, privileges: { standard: true, secure: true } },
+    // stream: <video>가 kbimg 영상을 Range로 나눠 읽는다 (M3 2.7)
+    { scheme: KBIMG_SCHEME, privileges: { standard: true, secure: true, stream: true } },
   ]);
 }
 
@@ -36,6 +39,10 @@ export function handleProtocols(rendererRoot: string, workspaceRoot: () => strin
   protocol.handle(KBIMG_SCHEME, async (request) => {
     const result = resolveKbimgPath(request.url, workspaceRoot());
     if (!result.ok) return new Response(result.reason, { status: 404 });
+    if (result.file.toLowerCase().endsWith(VIDEO_EXTENSION)) {
+      // 영상 탐색: Range 요청은 206 부분 응답 (net.fetch는 file: Range를 넘기지 않는다)
+      return fileResponse(result.file, request.headers.get("range"));
+    }
     const res = await net.fetch(pathToFileURL(result.file).toString());
     const headers = new Headers(res.headers);
     // 편집기 캐시 PNG는 같은 이름으로 다시 쓰이지 않지만, 워크스페이스 PNG는 바뀔 수 있다

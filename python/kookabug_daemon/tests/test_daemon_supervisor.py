@@ -85,9 +85,13 @@ def test_run_list_includes_cli_runs(tmp_path: Path) -> None:
         # 최근 실행부터: daemon 실행 → CLI 실행
         assert [r["run_id"] for r in runs] == [started["run_id"], cli_run["run_id"]]
         listed = runs[1]
-        # run.status = 목록 요약 + 스냅샷 호출 관계(calls, M2 T11)
+        # run.status = 목록 요약 + 스냅샷 호출 관계(calls, M2 T11). M3 목록 요약은 run.json의
+        # 결과·배지 필드를 더 싣는다 (M3 계획 2.7)
         status = client.call("run.status", {"run_id": cli_run["run_id"]})
-        assert listed == {k: v for k, v in status.items() if k != "calls"}
+        assert {k: listed[k] for k in status if k != "calls"} == {
+            k: v for k, v in status.items() if k != "calls"
+        }
+        assert listed["code"] == "test_pass" and listed["debug_intervened"] is False
         assert (listed["graph"], listed["state"], listed["run_dir"]) == (
             TEST,
             "ended",
