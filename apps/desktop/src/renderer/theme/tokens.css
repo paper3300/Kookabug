@@ -129,6 +129,11 @@
   --kb-cat-judge: #f0883e;
   --kb-cat-plugin: #e2c08d;
   --kb-palette-item-fg: #bbbbbb;
+  /* target 편집기 (시안 Recorder 오른쪽: 정지 화면 판·안내 줄·점수 배지·클릭 십자) */
+  --kb-target-frame-bg: #141414;
+  --kb-target-toolbar-bg: #252526;
+  --kb-target-score-fg: #181818;
+  --kb-target-click: #f14c4c;
 
   /* 시안에 없는 상태 */
   --kb-statusbar-idle-bg: #181818; /* 대기 상태 바: 실행 중(파랑)과 구분되는 무채색 = 타이틀 바 색 */
@@ -261,6 +266,11 @@
   --kb-cat-judge: #b85c00;
   --kb-cat-plugin: #7a5600;
   --kb-palette-item-fg: #4d4d4d;
+  /* target 편집기 (Recorder는 다크 시안뿐: 라이트는 같은 자리의 MainLight 판·패널 색과 라이트 경고·빨강) */
+  --kb-target-frame-bg: #f3f3f3;
+  --kb-target-toolbar-bg: #f8f8f8;
+  --kb-target-score-fg: #ffffff;
+  --kb-target-click: #e51400;
 
   /* 시안에 없는 상태 */
   --kb-statusbar-idle-bg: #f8f8f8;

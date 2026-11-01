@@ -6,6 +6,7 @@ import type { TreeEntry } from "../explorer/tree";
 import { client, toRpcError } from "../rpc/client";
 import { SessionRecovery } from "../rpc/recovery";
 import { runModel } from "../run/runStore";
+import { framesHost, onWorkspaceChanged as onTargetFilesChanged, resetTargets } from "../target/targetStore";
 import {
   documentsHost,
   onGraphChanged,
@@ -96,6 +97,7 @@ export async function refreshInfo(): Promise<void> {
 function switchProject(root: string | null): void {
   // 문서 표를 먼저 비운다: 앞 연결은 이미 놓았으므로 탭을 닫으며 graph.close를 보내지 않는다
   resetDocuments();
+  resetTargets();
   resetRegistry();
   closeAllTabs();
   useUi.setState({ expanded: null, selected: null, quickOpen: false });
@@ -151,11 +153,13 @@ let treeTimer: ReturnType<typeof setTimeout> | null = null;
 export async function initWorkspace(): Promise<void> {
   window.kookabug.on("daemon.state", (data) => void onDaemonState(data as DaemonState));
   window.kookabug.on("daemon.log", (data) => pushOutput(data as OutputLine));
-  client().on("workspace.changed", () => {
+  client().on("workspace.changed", (p) => {
     if (treeTimer !== null) clearTimeout(treeTimer);
     treeTimer = setTimeout(() => void refreshTree(), 150);
     // 서브그래프·target·화면 파일이 바뀌면 열린 그래프의 검증 결과도 바뀐다
     revalidateOpenDocs();
+    // 편집하지 않은 TARGET 탭은 디스크 버전으로 다시 연다
+    onTargetFilesChanged(p.paths);
   });
   // 열린 문서의 디스크가 바뀜: 편집하지 않았으면 다시 열고, 편집 중이면 충돌 띠 (2.6)
   client().on("graph.changed", (p) => onGraphChanged(p.doc_id, p.revision ?? null));
@@ -173,6 +177,7 @@ export async function initWorkspace(): Promise<void> {
   client().on("lease.changed", (p) => runModel.lease(p));
   recovery.addRuns(runModel.cursors);
   recovery.addDocs(documentsHost);
+  recovery.addFrames(framesHost);
   const [recent, output, state] = await Promise.all([app().recent(), app().daemonLog(), app().daemonState()]);
   useWorkspace.setState({ recent, output });
   await onDaemonState(state);

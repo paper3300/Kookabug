@@ -32,7 +32,8 @@ export const SCREENS = {
   "inspector-link": { dark: "Main", light: "MainLight" },
   // 실행 중간 시점(강조 노드·상태 줄·실행 로그·파란 상태 바), T11
   "main-running": { dark: "Main", light: "MainLight" },
-  target: { dark: "Recorder" },
+  // target 편집기, T12. Recorder는 다크 시안뿐이라 라이트 앱 화면도 다크 Recorder와 나란히 본다(배치·요소 대조)
+  target: { dark: "Recorder", light: "Recorder" },
 };
 
 function pngSize(file) {

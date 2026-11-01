@@ -30,6 +30,8 @@ export interface EditorContext {
   titleOf(id: string): string;
   /** false면 특수 값을 해석하지 않는다 (config 칸과 그 안쪽 원소). 없으면 true */
   specials?: boolean;
+  /** 고치는 그래프 경로 ("새 대상 만들기"가 저장 뒤 그 핀을 채운다) */
+  graph?: string;
 }
 
 /** 고치는 중인 글자 (null이면 값에서 만든 글자를 보인다) */
@@ -250,19 +252,19 @@ export function JsonInput({
   );
 }
 
-/** 대상 고르기: 워크스페이스의 *.target.json. "새 대상 만들기"는 target 편집기(T12)가 붙인다 */
+/** 대상 고르기: 워크스페이스의 *.target.json. onCreate가 있으면 "새 대상 만들기" (target 편집기, TargetField.tsx) */
 export function TargetSelect({
   label,
   value,
   onCommit,
   ctx,
-  withCreate,
+  onCreate,
 }: {
   label: string;
   value: string;
   onCommit(path: string): void;
   ctx: EditorContext;
-  withCreate?: boolean;
+  onCreate?: () => void;
 }) {
   const entries = useWorkspace((s) => s.entries);
   const targets = entries.filter((e) => e.type === "file" && e.kind === "target").map((e) => e.path);
@@ -287,13 +289,14 @@ export function TargetSelect({
           ))}
         </select>
       </label>
-      {withCreate === true && (
+      {onCreate !== undefined && (
         <button
           type="button"
           className={css.button}
           data-part="new-target"
-          disabled
-          title="target 편집기에서 새 대상을 만들어요 (준비 중)"
+          disabled={ctx.locked}
+          title="target 편집기에서 새 대상을 만들고, 저장하면 이 칸에 넣어요"
+          onClick={onCreate}
         >
           새 대상 만들기
         </button>

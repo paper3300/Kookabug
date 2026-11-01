@@ -10,6 +10,28 @@ export const E2E_HOOKS_GLOBAL = "__kookabugE2E";
 
 export interface E2EHooks {
   dropDaemonConnection(): boolean;
+  /**
+   * 그 메서드의 다음 응답들을 차례로 늦춘다 (ms, 응답을 받은 뒤 렌더러에 넘기기 전). 응답이 요청 순서와
+   * 다르게 도착하는 경우를 만든다 (T12 target.preview 역순 응답 검사)
+   */
+  delayResponses(method: string, delaysMs: number[]): void;
+}
+
+/** 메서드별 남은 응답 지연 (delayResponses). 꺼낼 때마다 하나씩 줄어든다 */
+export class ResponseDelays {
+  private readonly queues = new Map<string, number[]>();
+
+  set(method: string, delaysMs: readonly number[]): void {
+    this.queues.set(method, delaysMs.map((d) => Math.max(0, Math.min(30_000, Number(d) || 0))));
+  }
+
+  /** 이 응답을 늦출 시간 (없으면 0) */
+  next(method: string): number {
+    const queue = this.queues.get(method);
+    const d = queue?.shift() ?? 0;
+    if (queue !== undefined && queue.length === 0) this.queues.delete(method);
+    return d;
+  }
 }
 
 /** 훅을 켤 수 있는가: 패키징되지 않은 앱이고 환경 변수가 "1" */

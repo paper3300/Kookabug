@@ -1,0 +1,419 @@
+/* target 편집기 (시안 Recorder 오른쪽 "에디터: 캡처"): 안내 줄(252526·12px) → 정지 화면 판(16:9, 최대 920px,
+   141414·3C3C3C 테두리) → 매칭 미리보기·클릭 지점 패널(2B2B2B 테두리, 머리 11px 굵게). 색은 토큰만 쓴다 */
+
+.editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--kb-editor-bg);
+  color: var(--kb-fg);
+}
+
+.toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 16px;
+  background: var(--kb-target-toolbar-bg);
+  border-bottom: 1px solid var(--kb-border);
+  font-size: 12px;
+  position: relative;
+}
+
+.source {
+  color: var(--kb-fg-strong);
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hint {
+  color: var(--kb-fg-muted);
+}
+
+.spacer {
+  flex: 1 1 20px;
+}
+
+.button {
+  height: 24px;
+  padding: 0 10px;
+  background: var(--kb-input-bg);
+  color: var(--kb-fg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--kb-accent);
+}
+
+.button:disabled {
+  opacity: 0.5;
+}
+
+.primary {
+  background: var(--kb-button-primary-bg);
+  color: var(--kb-button-primary-fg);
+  border-color: var(--kb-button-primary-bg);
+}
+
+.pickerWrap {
+  position: relative;
+}
+
+.picker {
+  position: absolute;
+  top: 28px;
+  right: 0;
+  z-index: 20;
+  width: 360px;
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  background: var(--kb-menu-bg);
+  border: 1px solid var(--kb-input-border);
+  box-shadow: 0 4px 12px var(--kb-shadow);
+}
+
+.pickerItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 10px;
+  background: none;
+  border: 0;
+  color: var(--kb-fg);
+  text-align: left;
+  font-size: 12px;
+}
+
+.pickerItem:hover {
+  background: var(--kb-list-active-bg);
+  color: var(--kb-list-active-fg);
+}
+
+.pickerSub {
+  color: var(--kb-fg-muted);
+  font-size: 11px;
+}
+
+.pickerNote {
+  padding: 6px 10px;
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+}
+
+.pickerRow {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--kb-border);
+}
+
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  background: var(--kb-input-bg);
+  color: var(--kb-fg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  font-size: 12px;
+}
+
+.input:focus {
+  outline: 1px solid var(--kb-accent);
+  outline-offset: -1px;
+}
+
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* 정지 화면 판: 시안은 16:9(최대 920px)다. 하단 패널이 열려 높이가 모자라면 판이 남은 높이에 맞춰 줄어든다
+   (패널은 늘 보이고 판이 스크롤로 밀려나지 않게) */
+.frame {
+  position: relative;
+  flex: 0 1 auto;
+  width: 100%;
+  max-width: 920px;
+  aspect-ratio: 16 / 9;
+  min-height: 200px;
+  background: var(--kb-target-frame-bg);
+  border: 1px solid var(--kb-input-border);
+  overflow: hidden;
+  cursor: crosshair;
+  user-select: none;
+  touch-action: none;
+}
+
+.frame:focus-visible {
+  outline: 1px solid var(--kb-accent);
+  outline-offset: -1px;
+}
+
+.frameImage {
+  position: absolute;
+  max-width: none;
+  pointer-events: none;
+}
+
+.pixelated {
+  image-rendering: pixelated;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.frameEmpty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--kb-fg-subtle);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.frameMessage {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  background: var(--kb-banner-warn-bg);
+  color: var(--kb-banner-warn-fg);
+  font-size: 12px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.searchRect {
+  fill: none;
+  stroke: var(--kb-kind-target);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.searchLabel {
+  fill: var(--kb-kind-target);
+  font-size: 11px;
+}
+
+.templateRect {
+  fill: none;
+  stroke: var(--kb-status-warn);
+  stroke-width: 2;
+}
+
+.selecting {
+  fill: none;
+  stroke: var(--kb-accent);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+
+.matchRect {
+  fill: none;
+  stroke: var(--kb-status-warn);
+  stroke-width: 2;
+}
+
+.bestRect {
+  fill: none;
+  stroke: var(--kb-target-click);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.scoreBadge {
+  fill: var(--kb-status-warn);
+}
+
+.scoreText {
+  fill: var(--kb-target-score-fg);
+  font-family: var(--kb-font-mono);
+  font-size: 11px;
+}
+
+.missText {
+  fill: var(--kb-target-click);
+  font-family: var(--kb-font-mono);
+  font-size: 11px;
+}
+
+.cross {
+  stroke: var(--kb-target-click);
+  stroke-width: 2;
+}
+
+.handle {
+  fill: var(--kb-editor-bg);
+  stroke: var(--kb-status-warn);
+  stroke-width: 1;
+  cursor: pointer;
+}
+
+.handleSearch {
+  stroke: var(--kb-kind-target);
+}
+
+/* 패널 */
+.panels {
+  flex: 0 0 auto;
+  max-width: 920px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.panel {
+  border: 1px solid var(--kb-border);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.previewPanel {
+  flex: 2 1 320px;
+}
+
+.clickPanel {
+  flex: 1 1 200px;
+  gap: 10px;
+}
+
+.panelHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.panelTitle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.found {
+  color: var(--kb-status-ok);
+  font-size: 12px;
+}
+
+.missing {
+  color: var(--kb-status-error);
+  font-size: 12px;
+}
+
+.note {
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+}
+
+.slider {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.sliderHead {
+  display: flex;
+  justify-content: space-between;
+}
+
+.mono {
+  font-family: var(--kb-font-mono);
+  color: var(--kb-fg-strong);
+}
+
+.range {
+  width: 100%;
+  accent-color: var(--kb-accent);
+}
+
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 12px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.check input {
+  accent-color: var(--kb-accent);
+}
+
+.anchors {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3px;
+  width: 120px;
+}
+
+.anchor {
+  height: 28px;
+  background: var(--kb-input-bg);
+  border: 1px solid var(--kb-input-border);
+  padding: 0;
+}
+
+.anchor[aria-pressed="true"] {
+  background: var(--kb-accent);
+  border-color: var(--kb-accent);
+}
+
+.offset {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--kb-fg-muted);
+}
+
+.offsetInput {
+  width: 56px;
+  height: 22px;
+  padding: 0 4px;
+  background: var(--kb-input-bg);
+  color: var(--kb-fg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  font-family: var(--kb-font-mono);
+  font-size: 12px;
+}
+
+.status {
+  font-size: 12px;
+  color: var(--kb-fg-muted);
+}

@@ -125,6 +125,8 @@ async function openShell(): Promise<void> {
   await tree.locator('[data-path="targets/title/start_button.target.json"]').click();
   await tree.locator('[data-path="tests/inventory_open.graph.json"]').click();
   await expect(page.locator('[data-part="tabs"] [role="tab"]')).toHaveCount(2);
+  // 그래프가 그려질 때까지 (노드 색 역할을 읽는다. TARGET 탭도 daemon에 열기를 보내므로 그래프 열기가 늦을 수 있다)
+  await expect(page.locator('[data-part="node-head"]').first()).toBeVisible();
 }
 
 test("test_shell_metrics_match_sian", async () => {

@@ -20,9 +20,9 @@ import {
   KeyInput,
   LinkView,
   LiteralView,
-  TargetSelect,
   type EditorContext,
 } from "./editors";
+import { TargetField } from "./TargetField";
 import { editorFor, formatJson, parseJsonObject, valueModeFor, type FieldSpec } from "./fields";
 import css from "./inspector.module.css";
 import { inspectNode, type NodeInspector } from "./model";
@@ -117,12 +117,14 @@ function Field({ spec, field, value, node, diagnostics, edit, ctx: outer, extra 
   } else if (shown === "target") {
     const inner = mode === "target" ? own(value, "$target") : "";
     body = (
-      <TargetSelect
+      <TargetField
         label={label}
         value={typeof inner === "string" ? inner : ""}
         onCommit={(p) => commit({ $target: p })}
         ctx={ctx}
-        withCreate
+        node={node}
+        pin={spec.name}
+        title={ctx.titleOf(node)}
       />
     );
   } else if (shown === "setting" || shown === "secret") {
@@ -349,7 +351,7 @@ function Body({ path }: { path: string }) {
   const node = nodes.find((n) => n.id === doc.view.selected);
   if (node === undefined) return <div className={css.empty}>노드를 고르면 속성이 보여요</div>;
   const titles = new Map(nodes.map((n) => [n.id, n.title ?? types.get(n.type)?.title ?? n.id]));
-  const ctx: EditorContext = { locked, titleOf: (id) => titles.get(id) ?? id };
+  const ctx: EditorContext = { locked, titleOf: (id) => titles.get(id) ?? id, graph: path };
   const view = inspectNode(node, doc.shapes, types, doc.diagnostics, path);
   return (
     <div className={css.body} data-part="inspector-body" data-node={node.id}>

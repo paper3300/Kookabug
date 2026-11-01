@@ -4,9 +4,9 @@
 import * as esbuild from "esbuild";
 import { describe, expect, test } from "vitest";
 import { mainOptions } from "../../scripts/build-options.mjs";
-import { E2E_HOOKS_ENV, E2E_HOOKS_GLOBAL, e2eHooksEnabled, installE2EHooks } from "./e2e-hooks";
+import { E2E_HOOKS_ENV, E2E_HOOKS_GLOBAL, e2eHooksEnabled, installE2EHooks, ResponseDelays } from "./e2e-hooks";
 
-const hooks = { dropDaemonConnection: () => true };
+const hooks = { dropDaemonConnection: () => true, delayResponses: () => {} };
 
 describe("훅 등록 조건", () => {
   test("test_packaged_app_never_installs_hook_even_with_env", () => {
@@ -32,12 +32,25 @@ async function mainBundle(release: boolean): Promise<string> {
   return out.text;
 }
 
+describe("응답 지연 (delayResponses)", () => {
+  test("메서드별로 차례로 꺼내고 다 쓰면 0", () => {
+    const d = new ResponseDelays();
+    d.set("target.preview", [1500, 0, 20]);
+    expect([d.next("target.preview"), d.next("graph.open"), d.next("target.preview"), d.next("target.preview")]).toEqual([1500, 0, 0, 20]);
+    expect(d.next("target.preview")).toBe(0);
+    d.set("x", [-5, 99_999]);
+    expect([d.next("x"), d.next("x")]).toEqual([0, 30_000]);
+  });
+});
+
 describe("배포 빌드 번들", () => {
   test("test_release_main_bundle_has_no_e2e_hook", async () => {
     const text = await mainBundle(true);
     expect(text).not.toContain(E2E_HOOKS_GLOBAL);
     expect(text).not.toContain(E2E_HOOKS_ENV);
     expect(text).not.toContain("dropDaemonConnection");
+    expect(text).not.toContain("delayResponses");
+    expect(text).not.toContain("ResponseDelays");
     // 번들 자체는 정상 (연결 관리는 그대로 있다)
     expect(text).toContain("dropConnection");
   }, 30_000);

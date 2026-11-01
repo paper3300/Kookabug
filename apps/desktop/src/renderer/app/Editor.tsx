@@ -1,8 +1,10 @@
 // 에디터 영역 (시안 Main): 탭(TEST·SUB·TARGET 글자, 저장 안 됨 ●)·경로 표시줄·문서 띠(저장 충돌·저장 실패)·
-// 내용. 그래프 탭은 캔버스(T8), target 편집기는 T12가 탭 내용으로 붙인다. 탭 줄 오른쪽은 실행 툴바(T11)
+// 내용. 그래프 탭은 캔버스(T8), TARGET 탭은 target 편집기(T12). 탭 줄 오른쪽은 실행 툴바(T11)
 import type { ReactNode } from "react";
 import { GraphCanvas } from "../graph/Canvas";
 import { RunToolbar } from "../run/Toolbar";
+import { TargetEditor } from "../target/TargetEditor";
+import { targetDirty, useTargets } from "../target/targetStore";
 import { useRun } from "../run/runStore";
 import { editedSinceRun } from "../run/view";
 import { requestCloseTab } from "../store/editing";
@@ -24,12 +26,13 @@ function Tabs() {
   const tabs = useTabs((s) => s.tabs);
   const active = useTabs((s) => s.active);
   const docs = useDocuments((s) => s.docs);
+  const targets = useTargets((s) => s.docs);
   return (
     <div role="tablist" aria-label="열린 파일" className={css.tabs} data-part="tabs">
       {tabs.map((tab) => {
         const badge = tabBadge(tab);
         const selected = tab.path === active;
-        const dirty = docs.get(tab.path)?.dirty === true;
+        const dirty = tab.kind === "target" ? targetDirty(targets.get(tab.path)) : docs.get(tab.path)?.dirty === true;
         return (
           <div
             key={tab.path}
@@ -163,6 +166,8 @@ export function Editor({ children }: { children?: ReactNode }) {
         </div>
       ) : activeTab?.kind === "graph" ? (
         <GraphCanvas key={active} path={active} />
+      ) : activeTab?.kind === "target" ? (
+        <TargetEditor key={active} path={active} />
       ) : (
         <div className={css.canvas} data-part="canvas" data-path={active} />
       )}

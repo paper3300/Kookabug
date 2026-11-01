@@ -6,8 +6,8 @@ import type { OpenResult, OutputLine, ThemeMode, ThemeState } from "../preload/b
 import { locateCli } from "./cli-locate";
 import { CloseGuard } from "./close-guard";
 import { DaemonManager, nodeDeps, parseExtraArgs, sameWorkspacePath } from "./daemon";
-import { installE2EHooks } from "./e2e-hooks";
-import { createNotificationForwarder, createRpcHandler } from "./ipc";
+import { installE2EHooks, ResponseDelays } from "./e2e-hooks";
+import { createNotificationForwarder, createRpcHandler, type DaemonCall } from "./ipc";
 import { APP_CHANNEL, checkAppAction, checkSender, EVENT_CHANNEL, IpcGuardError, RPC_CHANNEL } from "./ipc-guard";
 import { handleProtocols, registerSchemes } from "./protocols";
 import { APP_ORIGIN, isExternalOpenAllowed, lockedWebPreferences } from "./security";
@@ -96,18 +96,32 @@ function start(): void {
     },
   );
 
+  let daemonCall: DaemonCall = (method, params, text) => manager.call(method, params, text);
   // E2E 검사 전용 훅 (e2e-hooks.ts): 배포 빌드에서는 이 분기가 통째로 빠지고, 패키징된 앱에서는 켜지지 않는다
   if (__KOOKABUG_E2E_HOOKS__) {
-    installE2EHooks(globalThis, {
+    const delays = new ResponseDelays();
+    const installed = installE2EHooks(globalThis, {
       packaged: app.isPackaged,
       env: process.env,
-      hooks: { dropDaemonConnection: () => manager.dropConnection() },
+      hooks: {
+        dropDaemonConnection: () => manager.dropConnection(),
+        delayResponses: (method, delaysMs) => delays.set(method, delaysMs),
+      },
     });
+    if (installed) {
+      const direct = daemonCall;
+      daemonCall = async (method, params, text) => {
+        const result = await direct(method, params, text);
+        const wait = delays.next(method);
+        if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+        return result;
+      };
+    }
   }
 
   handleProtocols(RENDERER_ROOT, () => manager.root);
 
-  const rpc = createRpcHandler((method, params, text) => manager.call(method, params, text));
+  const rpc = createRpcHandler(daemonCall);
   ipcMain.handle(RPC_CHANNEL, (event, method: unknown, params: unknown) => {
     guardSender(event);
     return rpc(method, params);

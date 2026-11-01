@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { Inspector } from "../inspector/Inspector";
 import { runModel } from "../run/runStore";
 import { runnablePath } from "../run/Toolbar";
+import { getTarget, saveBlocker, saveTarget, targetDirty } from "../target/targetStore";
 import { useDialog } from "../store/dialog";
 import { redoEdit, saveDoc, undoEdit } from "../store/documents";
 import { confirmLeaveDirty, requestCloseTab } from "../store/editing";
@@ -30,6 +31,12 @@ function inTextField(target: EventTarget | null): boolean {
 export function activeGraph(): string | null {
   const { active, tabs } = useTabs.getState();
   return tabs.find((t) => t.path === active)?.kind === "graph" ? active : null;
+}
+
+/** 지금 탭이 TARGET이면 그 경로 */
+function activeTarget(): string | null {
+  const { active, tabs } = useTabs.getState();
+  return tabs.find((t) => t.path === active)?.kind === "target" ? active : null;
 }
 
 function useShortcuts(): void {
@@ -64,6 +71,11 @@ function useShortcuts(): void {
         e.preventDefault();
         const path = activeGraph();
         if (path !== null) void saveDoc(path);
+        const target = activeTarget();
+        if (target !== null) {
+          const doc = getTarget(target);
+          if (doc !== undefined && saveBlocker(doc) === null && (targetDirty(doc) || doc.conflict !== null)) void saveTarget(target);
+        }
       } else if ((key === "z" || key === "y") && !inTextField(e.target)) {
         const path = activeGraph();
         if (path === null) return;

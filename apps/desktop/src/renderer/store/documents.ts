@@ -28,6 +28,7 @@ import { problemNode } from "../problems/locate";
 import { client, toRpcError, type RpcError } from "../rpc/client";
 import type { DocHost, GraphOpenResult, OpenDocRef } from "../rpc/recovery";
 import { editsLocked } from "./dialog";
+import { sameStamp, stampOf } from "./generations";
 import { useTabs } from "./tabs";
 
 /** 충돌 띠의 디스크 revision 자리: 파일이 지워짐 */
@@ -344,9 +345,23 @@ function keepSelection(view: DocView, value: GraphValue, select?: readonly strin
  * 하나를 남기고 검증을 요청한다. select를 주면 편집 뒤 그 노드들을 고른다
  */
 export function applyEdit(path: string, fn: (value: GraphValue) => GraphValue, select?: readonly string[]): boolean {
-  const doc = getDoc(path);
   // 대화 상자·저장하고 닫기 중에는 고치지 않는다 (store/dialog 편집 잠금)
-  if (!editable(doc) || editsLocked()) return false;
+  if (editsLocked()) return false;
+  return commitEdit(path, fn, select);
+}
+
+/**
+ * 앱이 스스로 하는 편집 (사용자 입력 아님): 새 target을 저장한 뒤 그 핀에 `$target`을 넣기. 사용자 편집 잠금은
+ * "저장하고 닫기·모두 저장" 중의 사용자 입력을 막는 것이라 이 편집은 막지 않는다 (T12 검수 1차 High 1).
+ * 실행 취소 기록 하나를 남기고 검증을 요청한다. 문서가 열려 있지 않으면 false
+ */
+export function applySystemEdit(path: string, fn: (value: GraphValue) => GraphValue): boolean {
+  return commitEdit(path, fn);
+}
+
+function commitEdit(path: string, fn: (value: GraphValue) => GraphValue, select?: readonly string[]): boolean {
+  const doc = getDoc(path);
+  if (!editable(doc)) return false;
   const next = fn(doc.value);
   if (next === doc.value) {
     if (select !== undefined) setSelection(path, select);
@@ -501,9 +516,11 @@ export async function reloadDoc(path: string): Promise<void> {
   const edits = doc.edits;
   const on = connection;
   update(path, () => ({ reloadSeq: seq }), instance);
+  // 더 새 다시 열기 요청·닫았다 다시 연 문서면 이 응답은 버린다 (store/generations.ts)
+  const request = stampOf({ instance, reloadSeq: seq }, ["instance", "reloadSeq"]);
   const current = () => {
     const d = getDoc(path);
-    return d !== undefined && d.instance === instance && d.reloadSeq === seq ? d : undefined;
+    return sameStamp(d, request) ? d : undefined;
   };
   let result: GraphOpenResult;
   try {
