@@ -42,6 +42,22 @@
 - 이 daemon이 띄우지 않은 실행(CLI `run`)도 구독할 수 있다: `run.json`이 끝날 때까지 파일을 따라
   읽는다. runner가 죽고 아무도 마무리하지 않으면 잠시 뒤 읽기를 멈춘다(그 실행에는 `run.ended`가
   없다)
+
+**디버거** (M3 계획 2.1·2.3)
+
+- 실행마다 시작한 연결 종류(`client.kind == "ui"`)와 원래 `StartRequest`를 `_Run`에 둔다. 주체
+  `kind`로 가리지 않는다(UI 주체는 `user`). 브레이크포인트(`.kookabug/breakpoints.json`)는 UI
+  실행에만 넣는다: 시작 순간의 파일 값을 사양에 넣고, 실행 중 바뀌면 runner에 밀어 넣는다(항상
+  지금 파일 값을 보내므로 엇갈려도 마지막 값이 남는다). 에이전트·CLI 실행은 빈 목록이다
+- 일시정지·재개는 이 daemon이 띄운 UI 실행에만 (`run_not_debuggable`). 멈춤 상태는 따라 읽는
+  이벤트(`debug.pause`·`debug.resume`)로 안다
+- **다시 시작** (`restart`): ① 시작 잠금 안에서 그 실행이 UI 실행인지 보고 **재시작 예약**을 건다
+  (시작 예약과 같은 자리라 그동안 `run.start`·`run.restart`는 `run_busy`, 일반 종료는 `run_active`)
+  ② 잠금 밖에서 취소하고 마무리를 기다린다 ③ 잠금 안에서 그 예약으로 시작 경로(②④⑤⑥, 중복
+  방지 키 없음)를 원래 인자로 부른다. 실패하면 예약을 푼다
+- **UI 없이 멈춘 실행**: 멈춘 UI 실행에 UI 연결이 하나도 없는 상태가 `unattended_pause_s`(10분)
+  이어지면 취소한다. 기한에서 멈춘 시간을 빼므로 이것이 없으면 앱을 끈 채 멈춘 실행이 입력 임대권을
+  영영 쥔다. 취소 뒤 마무리는 실제 시간 M0b 경로 그대로다
 """
 
 from __future__ import annotations
@@ -51,12 +67,13 @@ import logging
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Final, Protocol
 
 from kookabug_core.canonical import canonical_dumps, loads_strict
+from kookabug_core.engine.debug import ResumeMode
 from kookabug_core.permissions import Decision, Principal
 from kookabug_core.record import follow, read_run, read_run_json
 from kookabug_core.record.runfolder import (
@@ -66,14 +83,22 @@ from kookabug_core.record.runfolder import (
     run_id_of_folder,
 )
 from kookabug_core.registry import Registry
+from kookabug_core.runner.control import ControlState
 from kookabug_core.runner.run import unix_micros
 from kookabug_core.runner.spec import PlatformSpec
 from kookabug_core.schema import check_shape
 from kookabug_core.service import WorkspaceService, start_options
-from kookabug_core.supervisor import RunHandle, RunOutcome, run_exit_code
+from kookabug_core.supervisor import (
+    ControlError,
+    ResumeRefused,
+    RunHandle,
+    RunOutcome,
+    run_exit_code,
+)
 from kookabug_core.validate import check_graph
 from kookabug_core.win import identify, is_alive
 from kookabug_core.workspace import RunOptions, Workspace, WorkspaceError
+from kookabug_daemon.breakpoints import BreakpointStore
 from kookabug_daemon.documents import WsPath, recheck_path, resolve_path
 from kookabug_daemon.methods.tools import Authorizer
 from kookabug_daemon.protocol import RequestFailed
@@ -102,6 +127,9 @@ UNMANAGED_DEAD_GRACE_S: Final = 10.0
 CLOSE_WAIT_S: Final = 30.0
 KEEP_FINISHED: Final = 16
 """구독이 없는 끝난 실행을 메모리에 남기는 수 (나머지는 다시 구독할 때 파일에서 읽는다)."""
+UNATTENDED_PAUSE_S: Final = 600.0
+"""멈춘 UI 실행에 UI 연결이 하나도 없는 채 이만큼 지나면 취소한다 (사용자 결정 U13, 실제 시간)."""
+UNATTENDED_CHECK_S: Final = 0.5
 _VERDICTS: Final = frozenset({"error", "fail", "pass", "skipped"})
 
 
@@ -124,6 +152,10 @@ class RunSink(Protocol):
         """송신 큐가 넘쳐 실행 구독이 끊길 때 부를 함수를 그 연결에 단다. 연결이 없으면 False."""
         ...
 
+    def ui_attached(self) -> bool:
+        """인증된 UI 연결이 하나라도 있다 (어느 스레드에서나)."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class StartRequest:
@@ -133,6 +165,9 @@ class StartRequest:
     settings: Mapping[str, Any] = field(default_factory=dict[str, Any])
     deadline_ms: int | None = None
     idempotency_key: str | None = None
+    ui: bool = False
+    """사람이 UI 연결(`client.kind: ui`)에서 시작했다. 이 실행만 브레이크포인트·디버그 메서드를
+    받는다 (M3 2.1)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,10 +223,23 @@ class _Run:
     """따라 읽기가 끝났다."""
     outcome: RunOutcome | None = None
     order: int = 0
+    request: StartRequest | None = None
+    """이 daemon이 띄운 실행의 원래 시작 인자 (다시 시작에 쓴다)."""
+    breakpoints_version: int = -1
+    """시작 때 사양에 넣은 브레이크포인트 판 (UI 실행만)."""
+    push_lock: threading.Lock = field(default_factory=threading.Lock)
+    """브레이크포인트 밀어 넣기를 한 번에 하나씩 (늘 지금 파일 값을 보낸다)."""
+    paused: bool = False
+    """따라 읽은 이벤트로 본 멈춤 (`debug.pause` 뒤 `debug.resume`·`run.end` 전)."""
 
     @property
     def managed(self) -> bool:
         return self.handle is not None
+
+    @property
+    def ui(self) -> bool:
+        """이 daemon이 사람의 UI 연결에서 띄운 실행 (디버그 대상)."""
+        return self.handle is not None and self.request is not None and self.request.ui
 
 
 class RunManager:
@@ -206,6 +254,7 @@ class RunManager:
         *,
         platform: PlatformSpec | None = None,
         plugin_modules: tuple[str, ...] = (),
+        breakpoints: BreakpointStore | None = None,
     ) -> None:
         self.root = root
         self.service = service
@@ -213,6 +262,10 @@ class RunManager:
         self._registry = registry
         self.platform = platform or PlatformSpec("windows")
         self.plugin_modules = tuple(plugin_modules)
+        self.breakpoints = breakpoints or BreakpointStore(root)
+        self.unattended_pause_s = UNATTENDED_PAUSE_S
+        """멈춘 UI 실행을 UI 연결 없이 두는 한도 (검사가 줄인다)."""
+        self.unattended_check_s = UNATTENDED_CHECK_S
         self.sink: RunSink | None = None
         self.catchup_hook: Callable[[str, int], None] | None = None
         """검사용: 따라잡기 스레드가 과거분을 다 보낸 뒤, 보류분을 합치기 전에 부른다
@@ -226,6 +279,8 @@ class RunManager:
         self._active: str | None = None
         self._reserved: str | None = None
         """시작 예약(③~⑥ 사이)의 실행 ID."""
+        self._restarting: str | None = None
+        """재시작 예약: 다시 시작하는 실행의 ID (취소·마무리 기다림부터 새 시작 예약까지)."""
         self._closing = False
         """종료가 정해졌다: 새 시작 예약을 받지 않는다."""
         self._keys: dict[tuple[str, str, str], _Key] = {}
@@ -239,11 +294,15 @@ class RunManager:
 
     def active_run(self) -> str | None:
         with self._lock:
-            return self._active or self._reserved
+            return self._busy()
+
+    def _busy(self) -> str | None:
+        """진행 중·시작 예약·재시작 예약 중인 실행 ID (상태 잠금 안)."""
+        return self._active or self._reserved or self._restarting
 
     def reserve_shutdown(self, *, force: bool) -> str | None:
         with self._lock:
-            busy = self._active or self._reserved
+            busy = self._busy()
             if busy is not None and not force:
                 return busy
             self._closing = True
@@ -273,19 +332,26 @@ class RunManager:
             run.done.wait(CLOSE_WAIT_S)
         self._closed.set()
 
-    def _reserve(self) -> str:
-        """③ 시작 예약 (시작 잠금 안). 겹치지 않는 실행 ID를 미리 뽑는다."""
+    def _reserve(self, *, restarting: str | None = None) -> str:
+        """③ 시작 예약 (시작 잠금 안). 겹치지 않는 실행 ID를 미리 뽑는다. `restarting`이면 그
+        재시작 예약을 이 시작 예약으로 바꾼다(그 사이 빈틈 없이)."""
         with self._lock:
             if self._closing:
+                if restarting is not None and self._restarting == restarting:
+                    self._restarting = None
                 text = "daemon이 끝나는 중이다"
                 raise RequestFailed("shutting_down", text, message=text)
             busy = self._active or self._reserved
+            if restarting is None or self._restarting != restarting:
+                busy = busy or self._restarting
             if busy is not None:
                 raise RequestFailed("run_busy", f"진행 중인 실행 {busy}이(가) 있다", run_id=busy)
             run_id = new_run_id()
             while run_id in self._runs or self._find_folder(run_id) is not None:
                 run_id = new_run_id()
             self._reserved = run_id
+            if restarting is not None:
+                self._restarting = None
             return run_id
 
     def _unreserve(self, run_id: str) -> None:
@@ -332,31 +398,63 @@ class RunManager:
                 return dict(previous.result)
             # ③ 시작 예약 (실행 중·종료 결정과 같은 잠금)
             reserved = self._reserve()
-            try:
-                handle, current = self._prepare_and_launch(request, where, decision, reserved)
-            except BaseException:
-                self._unreserve(reserved)
-                raise
-            # ⑥ 등록 (예약 → 진행 중)
-            run = _Run(handle.run_id, handle.run_dir, current, handle, order=next(self._order))
-            result = {"run_id": run.run_id, "run_dir": str(run.folder), "graph": run.graph}
-            with self._lock:
-                self._runs[run.run_id] = run
-                self._active = run.run_id
-                self._reserved = None
-                if scope is not None:
-                    self._keys[scope] = _Key(
-                        args, run.run_id, dict(result), time.monotonic() + IDEMPOTENCY_TTL_S
-                    )
-            log.info("실행 %s 시작: %s (%s)", run.run_id, run.graph, principal.id)
-            _thread(self._wait, run, name=f"kb-run-wait-{run.run_id}")
-            _thread(self._follow, run, self._managed_stop(run), name=f"kb-run-follow-{run.run_id}")
-            self._prune()
-            return result
+            key = None if scope is None else (scope, args)
+            return self._launch_reserved(request, where, decision, reserved, key)
+
+    def _launch_reserved(
+        self,
+        request: StartRequest,
+        where: WsPath,
+        decision: Decision,
+        reserved: str,
+        key: tuple[tuple[str, str, str], str] | None,
+    ) -> dict[str, Any]:
+        """④~⑥ (시작 잠금 안, 예약을 쥔 채). 실패하면 예약을 푼다."""
+        try:
+            handle, current, version = self._prepare_and_launch(request, where, decision, reserved)
+        except BaseException:
+            self._unreserve(reserved)
+            raise
+        # ⑥ 등록 (예약 → 진행 중)
+        run = _Run(
+            handle.run_id,
+            handle.run_dir,
+            current,
+            handle,
+            order=next(self._order),
+            request=request,
+            breakpoints_version=version,
+        )
+        result = {"run_id": run.run_id, "run_dir": str(run.folder), "graph": run.graph}
+        with self._lock:
+            self._runs[run.run_id] = run
+            self._active = run.run_id
+            self._reserved = None
+            if key is not None:
+                scope, args = key
+                self._keys[scope] = _Key(
+                    args, run.run_id, dict(result), time.monotonic() + IDEMPOTENCY_TTL_S
+                )
+        log.info(
+            "실행 %s 시작: %s (%s%s)",
+            run.run_id,
+            run.graph,
+            request.principal.id,
+            ", UI" if request.ui else "",
+        )
+        _thread(self._wait, run, name=f"kb-run-wait-{run.run_id}")
+        _thread(self._follow, run, self._managed_stop(run), name=f"kb-run-follow-{run.run_id}")
+        if run.ui:
+            # 시작 때 넣은 목록이 그 사이 바뀌었으면 지금 값을 밀어 넣는다
+            if self.breakpoints.version != version:
+                _thread(self._push_breakpoints, run, name=f"kb-run-bp-{run.run_id}")
+            _thread(self._watch_unattended, run, name=f"kb-run-unattended-{run.run_id}")
+        self._prune()
+        return result
 
     def _prepare_and_launch(
         self, request: StartRequest, where: WsPath, decision: Decision, run_id: str
-    ) -> tuple[RunHandle, str]:
+    ) -> tuple[RunHandle, str, int]:
         """④ 사전 검증 → ⑤ 시작. (핸들, 실행한 그래프 경로)."""
         # ④ 사전 검증 (경로는 잠금 뒤·연산 직전에 다시 해석한다)
         current = recheck_path(self.root, where)
@@ -377,7 +475,7 @@ class RunManager:
                 f"실행 전 검증 오류 {len(errors)}개",
                 diagnostics=[d.to_dict() for d in diagnostics],
             )
-        # ⑤ 시작 (②의 판정과 예약한 ID를 넘긴다)
+        # ⑤ 시작 (②의 판정과 예약한 ID를 넘긴다). 브레이크포인트는 UI 실행에만, 시작 순간의 파일 값
         start = start_options(
             workspace.run_conditions(),
             deadline_ms=request.deadline_ms,
@@ -386,14 +484,15 @@ class RunManager:
             plugin_modules=self.plugin_modules,
             platform=self.platform,
         )
+        breakpoints, version = self.breakpoints.snapshot() if request.ui else ((), -1)
         try:
             handle = self.service.start_decided(
-                decision, current.rel, replace(start, run_id=run_id)
+                decision, current.rel, replace(start, run_id=run_id, breakpoints=breakpoints)
             )
         except (OSError, RuntimeError) as exc:  # 실행 폴더·Job·파이프를 만들지 못함
             text = f"실행을 시작할 수 없다: {exc}"
             raise RequestFailed("io_error", text, message=text) from exc
-        return handle, current.rel
+        return handle, current.rel, version
 
     def _key(self, scope: tuple[str, str, str], now: float) -> _Key | None:
         with self._lock:
@@ -451,6 +550,11 @@ class RunManager:
                 with run.lock:
                     run.last_seq = seq
                     run.tail.append(event)
+                    kind = event.get("event")
+                    if kind == "debug.pause":
+                        run.paused = True
+                    elif kind in ("debug.resume", "run.end"):
+                        run.paused = False
                     for sub in list(run.subs):
                         with sub.lock:
                             if sub.done:
@@ -653,6 +757,127 @@ class RunManager:
         if not run.done.is_set():
             run.handle.cancel()
 
+    # ---------------------------------------------------------------- 디버거 (M3 2.1·2.3)
+
+    def _debuggable(self, run_id: str) -> _Run:
+        """이 daemon이 UI 연결에서 띄운 실행. 이 daemon이 기억하지 않는 실행(다른 daemon·끝나 잊은
+        실행·없는 ID)이면 `run_not_found`, 기억하지만 UI 실행이 아니면 `run_not_debuggable`."""
+        with self._lock:
+            run = self._runs.get(run_id)
+        if run is None:
+            raise RequestFailed(
+                "run_not_found", f"이 daemon이 기억하는 실행이 아니다: {run_id}", run_id=run_id
+            )
+        if not run.ui:
+            raise RequestFailed(
+                "run_not_debuggable",
+                f"이 daemon이 UI에서 시작한 실행이 아니다: {run_id}",
+                run_id=run_id,
+            )
+        return run
+
+    def pause(self, run_id: str) -> ControlState:
+        """일시정지 요청 (막히는 호출). 끝난 실행이면 `run_not_found`."""
+        run = self._debuggable(run_id)
+        assert run.handle is not None
+        if run.done.is_set():
+            raise _ended(run_id)
+        try:
+            return run.handle.pause()
+        except ControlError as exc:
+            raise _ended(run_id) from exc
+
+    def resume(self, run_id: str, mode: ResumeMode = "continue") -> ControlState:
+        """재개 (막히는 호출). Step을 멈추지 않은 실행에 보내면 `not_paused`."""
+        run = self._debuggable(run_id)
+        assert run.handle is not None
+        if run.done.is_set():
+            raise _not_paused(run_id, "실행이 이미 끝났다")
+        try:
+            return run.handle.resume(mode)
+        except ResumeRefused as exc:
+            raise _not_paused(run_id, f"멈춰 있지 않다 ({exc.state})") from exc
+        except ControlError as exc:
+            raise _not_paused(run_id, "실행이 끝나는 중이다") from exc
+
+    def set_breakpoints(self, items: Sequence[Mapping[str, Any]]) -> list[dict[str, str]]:
+        """브레이크포인트 목록 전체를 바꾸고(파일), 진행 중인 UI 실행에 밀어 넣는다(막히는
+        호출)."""
+        written = self.breakpoints.replace(items)
+        with self._lock:
+            run = None if self._active is None else self._runs.get(self._active)
+        if run is not None and run.ui and not run.done.is_set():
+            self._push_breakpoints(run)
+        return [bp.to_json() for bp in written]
+
+    def _push_breakpoints(self, run: _Run) -> None:
+        """그 실행에 **지금 파일 값**을 보낸다. 한 실행에는 한 번에 하나씩 보내므로, 시작과 변경이
+        엇갈려도 마지막에 받은 값이 마지막 파일 값이다. 실행이 끝나는 중이면 버린다."""
+        assert run.handle is not None
+        with run.push_lock:
+            if run.done.is_set():
+                return
+            try:
+                run.handle.set_breakpoints(self.breakpoints.current())
+            except ControlError as exc:
+                log.info("실행 %s에 브레이크포인트를 넣지 못했다 (끝나는 중): %s", run.run_id, exc)
+
+    def _watch_unattended(self, run: _Run) -> None:
+        """멈춘 UI 실행에 UI 연결이 `unattended_pause_s` 동안 하나도 없으면 취소한다."""
+        assert run.handle is not None
+        since: float | None = None
+        while not run.done.wait(self.unattended_check_s):
+            sink = self.sink
+            alone = run.paused and (sink is None or not sink.ui_attached())
+            if not alone:
+                since = None
+                continue
+            now = time.monotonic()
+            if since is None:
+                since = now
+            elif now - since >= self.unattended_pause_s:
+                minutes = self.unattended_pause_s / 60
+                log.warning("실행 %s: 디버거 연결 없이 %g분 멈춰 있어 취소", run.run_id, minutes)
+                run.handle.cancel()
+                return
+
+    def restart(self, run_id: str) -> dict[str, Any]:
+        """다시 시작 (막히는 호출, M3 2.3 원자적 재시작). 새 실행의 `run.start` 결과를 돌려준다."""
+        # ① 재시작 예약 (시작 잠금 안): UI 실행인지 보고 시작 예약과 같은 자리를 차지한다
+        with self._start_lock:
+            run = self._debuggable(run_id)
+            request = run.request
+            assert request is not None and run.handle is not None
+            with self._lock:
+                if self._closing:
+                    text = "daemon이 끝나는 중이다"
+                    raise RequestFailed("shutting_down", text, message=text)
+                busy = self._reserved or self._restarting
+                if busy is None and self._active not in (None, run_id):
+                    busy = self._active
+                if busy is not None:
+                    raise RequestFailed(
+                        "run_busy", f"진행 중인 실행 {busy}이(가) 있다", run_id=busy
+                    )
+                self._restarting = run_id
+        try:
+            # ② 잠금 밖: 진행 중이면 취소하고 감독자 마무리를 기다린다
+            if not run.done.is_set():
+                run.handle.cancel()
+                run.done.wait()
+            # ③ 잠금 안: 그 예약으로 시작 경로(②④⑤⑥). 중복 방지 키는 넘기지 않는다
+            with self._start_lock:
+                where = resolve_path(self.root, request.path, graph=True)
+                decision = self.authorizer.require(request.principal, "run.start", where.rel)
+                assert decision is not None
+                reserved = self._reserve(restarting=run_id)
+                fresh = replace(request, idempotency_key=None)
+                return self._launch_reserved(fresh, where, decision, reserved, None)
+        finally:
+            with self._lock:
+                if self._restarting == run_id:
+                    self._restarting = None
+
     def status(self, run_id: str) -> dict[str, Any]:
         with self._lock:
             run = self._runs.get(run_id)
@@ -730,6 +955,14 @@ class RunManager:
 
 def _thread(target: Callable[..., None], *args: Any, name: str) -> None:
     threading.Thread(target=target, args=args, name=name, daemon=True).start()
+
+
+def _ended(run_id: str) -> RequestFailed:
+    return RequestFailed("run_not_found", f"진행 중인 실행이 아니다: {run_id}", run_id=run_id)
+
+
+def _not_paused(run_id: str, why: str) -> RequestFailed:
+    return RequestFailed("not_paused", f"실행 {run_id}을(를) Step할 수 없다: {why}", run_id=run_id)
 
 
 def _open_workspace(root: Path) -> Workspace:

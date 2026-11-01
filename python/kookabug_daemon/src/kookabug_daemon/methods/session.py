@@ -45,6 +45,9 @@ class HelloOutcome:
     principal: Principal
     result: dict[str, Any] | None
     mismatch: RequestFailed | None = None
+    client_kind: str = "agent"
+    """`client.kind` (`ui`·`agent`). 사람이 UI에서 시작한 실행을 가리는 데 쓴다(M3 2.1) — 주체
+    `kind`(`user`)로 판정하지 않는다."""
 
 
 def hello(
@@ -68,7 +71,8 @@ def hello(
             "daemon.shutdown만 받는다",
             protocol=PROTOCOL,
         )
-        return HelloOutcome(principal, None, mismatch)
+        kind = str(client["kind"]) if valid_client else "agent"
+        return HelloOutcome(principal, None, mismatch, client_kind=kind)
     if problems := params_problems("session.hello", fields):
         raise InvalidHello(problems)
     principal = principal_of(fields["client"], connection)
@@ -81,6 +85,7 @@ def hello(
             "workspace": workspace,
             "principal": principal_json(principal),
         },
+        client_kind=str(fields["client"]["kind"]),
     )
 
 

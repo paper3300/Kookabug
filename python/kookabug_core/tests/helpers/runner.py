@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import subprocess
 import threading
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
@@ -28,6 +28,7 @@ from typing import Any, Final
 from helpers.graphs import GraphBuilder, make_workspace
 from helpers.worker import PLUGIN_MODULES, worker_env
 from kb_testing.proc import Spawned, direct_env, python_cmd, read_fake_input_log, wait_until
+from kookabug_core.engine.debug import Breakpoint, ResumeMode
 from kookabug_core.inputs.lease import LEASE_NAME_ENV, STATE_DIR_ENV, read_lease_file
 from kookabug_core.record import RunView, read_run, read_run_json
 from kookabug_core.record.runfolder import RunFolder
@@ -102,6 +103,8 @@ class RunnerHarness:
     windows: bool = False
     """`platform.kind: windows` (실제 캡처·입력)."""
     capture_timeout_ms: int = 2_000
+    breakpoints: Sequence[Breakpoint] = ()
+    """시작할 때의 브레이크포인트 (`StartOptions.breakpoints`)."""
 
     # 실행 중 상태
     handle: RunHandle | None = None
@@ -219,6 +222,7 @@ class RunnerHarness:
             shutdown_grace_ms=self.shutdown_grace_ms,
             self_kill_margin_ms=self.self_kill_margin_ms,
             capture_timeout_ms=self.capture_timeout_ms,
+            breakpoints=tuple(self.breakpoints),
         )
 
     # ------------------------------------------------------------ 시작
@@ -264,8 +268,11 @@ class RunnerHarness:
     def pause(self) -> ControlState:
         return self._h.pause()
 
-    def resume(self) -> ControlState:
-        return self._h.resume()
+    def resume(self, mode: ResumeMode = "continue") -> ControlState:
+        return self._h.resume(mode)
+
+    def set_breakpoints(self, breakpoints: Iterable[Breakpoint]) -> ControlState:
+        return self._h.set_breakpoints(breakpoints)
 
     def hard_stop_now(self) -> None:
         """`TerminateProcess(runner, 4)` (살아 있을 때만)."""

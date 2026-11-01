@@ -1,18 +1,81 @@
-"""디버거 확인 지점 (구현 계획 M3 2.2).
+"""디버거 확인 지점·브레이크포인트·Step 목표 (구현 계획 M3 2.2·2.3).
 
 멈출지는 runner가 정하고, 실행기는 두 곳에서 묻기만 한다.
 
-1. **스텝 경계**: 스텝을 시작하기 직전(`step.start` 전). 실행기의 `before_step(StepPoint)`
+1. **스텝 경계**: 스텝을 시작하기 직전(`step.start` 전). 실행기의 `before_step(StepPoint)`.
+   브레이크포인트·Step 목표·일시정지 요청을 본다
 2. **폴링 확인 지점**: 코어 노드의 멈출 수 있는 기다림(`ctx.sleep` → 런타임 `wait_pausable`) 안.
    일시정지 요청만 본다. 워커 노드·입력 동작·관측 호출 안에서는 멈추지 않는다
+
+**브레이크포인트 열쇠**는 (워크스페이스 기준 그래프 경로, 노드 ID)다. 서브그래프 파일에 건 것은
+어느 호출에서든, 반복 본문 노드에 건 것은 회차마다 적중한다.
+
+**Step 목표**는 재개할 때 멈춘 자리의 호출 깊이 `d`(그 스텝 `path` 길이)로 정한다. 반복은 깊이를
+더하지 않는다.
+
+- `continue`: 목표 없음 (다음 브레이크포인트·일시정지 요청까지)
+- `step_over`: 깊이 ≤ `d`인 다음 경계
+- `step_into`: 다음 경계 (깊이 무관)
+- `step_out`: 깊이 < `d`인 다음 경계 (맨 바깥에서는 `continue`와 같다)
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Any, Final, Literal, Protocol, runtime_checkable
 
-__all__ = ["PauseCounter", "PausePoint", "StepPoint"]
+__all__ = [
+    "RESUME_MODES",
+    "Breakpoint",
+    "PauseCounter",
+    "PausePoint",
+    "ResumeMode",
+    "StepPoint",
+    "breakpoint_graph",
+    "step_limit",
+]
+
+type ResumeMode = Literal["continue", "step_over", "step_into", "step_out"]
+RESUME_MODES: Final[frozenset[str]] = frozenset({"continue", "step_over", "step_into", "step_out"})
+
+_SNAPSHOT_PREFIX: Final = "snapshot/"
+
+
+def breakpoint_graph(graph: str) -> str:
+    """비교용 그래프 경로: 스냅샷 접두(`snapshot/`)를 뗀 워크스페이스 기준 경로."""
+    return graph.removeprefix(_SNAPSHOT_PREFIX)
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class Breakpoint:
+    """브레이크포인트 하나 (`breakpoints.schema.json#/$defs/Breakpoint`)."""
+
+    graph: str
+    node: str
+
+    @classmethod
+    def from_json(cls, data: Mapping[str, Any]) -> Breakpoint:
+        return cls(breakpoint_graph(str(data["graph"])), str(data["node"]))
+
+    @classmethod
+    def many(cls, items: Iterable[Mapping[str, Any]]) -> tuple[Breakpoint, ...]:
+        """목록 → 겹치지 않고 정렬된 튜플 (순서 무관, 같은 항목은 하나)."""
+        return tuple(sorted({cls.from_json(item) for item in items}))
+
+    def to_json(self) -> dict[str, str]:
+        return {"graph": self.graph, "node": self.node}
+
+
+def step_limit(mode: ResumeMode, depth: int) -> int | None:
+    """재개 방식 → 다음에 멈출 경계의 최대 깊이 (`None`이면 Step 목표 없음)."""
+    if mode == "step_into":
+        return 1 << 30
+    if mode == "step_over":
+        return depth
+    if mode == "step_out":
+        return depth - 1 if depth > 1 else None
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +92,11 @@ class StepPoint:
     def depth(self) -> int:
         """호출 깊이 (`path` 길이)."""
         return len(self.path)
+
+    @property
+    def key(self) -> Breakpoint:
+        """이 자리의 브레이크포인트 열쇠."""
+        return Breakpoint(breakpoint_graph(self.graph), self.node)
 
     def to_event(self) -> dict[str, object]:
         """`debug.pause`에 싣는 위치 필드."""

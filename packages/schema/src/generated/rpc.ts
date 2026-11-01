@@ -536,7 +536,7 @@ export interface RunBreakpointsParams {
   breakpoints: import("./breakpoints.js").BreakpointList;
 }
 /**
- * run.resume (감독자 → runner) params. mode를 빼거나 params가 없으면 continue (M0b 호출과 같다). Step 목표는 멈춘 자리의 호출 깊이로 정한다 (M3)
+ * run.resume (감독자 → runner) params. mode를 빼거나 params가 없으면 continue (M0b 호출과 같다). Step 목표는 멈춘 자리의 호출 깊이로 정한다 (M3). 멈춰 있지 않은데 step_*이면 runner는 아무것도 바꾸지 않고 invalid_params 오류(data {reason: not_paused, state})로 답한다
  *
  * This interface was referenced by `RpcMessageDefs`'s JSON-Schema
  * via the `definition` "RunResumeParams".

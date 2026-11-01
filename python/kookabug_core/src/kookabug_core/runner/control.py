@@ -1,6 +1,7 @@
 """runner 제어: 제어 스레드, 취소 순서, 경계 멈춤 (구현 계획 M0b 2.6).
 
-**제어 스레드**는 감독자의 제어 요청(`run.cancel`·`run.pause`·`run.resume`)을 받는 즉시 답하고,
+**제어 스레드**는 감독자의 제어 요청(`run.cancel`·`run.pause`·`run.resume {mode}`·
+`run.breakpoints`)을 받는 즉시 답하고,
 감독자 사망(자기 종료 감시자가 세운 값)과 테스트 전체 기한을 20ms마다 본다. 전체 기한은 실행기
 런타임과 같은 활성 시계(멈춘 시간을 뺀 시계, M3 2.2)로 본다. 노드를 실행하지 않고,
 `run.end`·`run.json`·임대권 놓기·입력 백엔드 호출을 하지 않는다. 저널에는 `cancel.requested`·
@@ -35,22 +36,26 @@ from __future__ import annotations
 import contextlib
 import queue
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any, Final, Literal
 
 from kookabug_core.engine.cancel import CancelReason, CancelToken
-from kookabug_core.engine.debug import StepPoint
+from kookabug_core.engine.debug import RESUME_MODES, Breakpoint, ResumeMode, StepPoint, step_limit
 from kookabug_core.inputs import InputActor
 from kookabug_core.runner.clock import ActiveClock
 from kookabug_core.runner.watchdog import Watchdog
+from kookabug_core.schema import check_shape
 from kookabug_core.workerhost import WorkerProcess
-from kookabug_sdk.rpc import METHOD_NOT_FOUND, Incoming, PeerLost, RpcPeer
+from kookabug_sdk.rpc import INVALID_PARAMS, METHOD_NOT_FOUND, Incoming, PeerLost, RpcPeer
 
 __all__ = [
     "CONTROL_THREAD_NAME",
+    "NOT_PAUSED",
     "ControlState",
     "Controller",
+    "NotPaused",
     "PauseGate",
+    "PauseReason",
     "PauseWhere",
     "PollPoint",
     "StopReason",
@@ -65,26 +70,50 @@ type Emit = Callable[[Mapping[str, Any]], object]
 
 
 type PauseWhere = Literal["boundary", "poll"]
+type PauseReason = Literal["breakpoint", "step", "request"]
+
+NOT_PAUSED: Final = "not_paused"
+"""`run.resume`(Step)을 멈추지 않은 runner가 거절할 때 오류 `data.reason` (code invalid_params)."""
+
+
+class NotPaused(Exception):
+    """멈추지 않은 실행에 Step(`step_*`)으로 재개하려 했다. 아무것도 바꾸지 않았다."""
+
+    def __init__(self, state: ControlState) -> None:
+        super().__init__(f"멈춰 있지 않다 ({state})")
+        self.state: ControlState = state
 
 
 class PauseGate:
-    """멈춤 게이트 (M0b 경계 멈춤 + M3 2.2 폴링 멈춤·활성 시계).
+    """멈춤 게이트 (M0b 경계 멈춤 + M3 2.2 폴링 멈춤·활성 시계 + 2.3 브레이크포인트·Step).
 
-    `run.pause`를 받으면 주 스레드가 다음 확인 지점에서 멈춘다: 스텝 시작 직전(`at_boundary`), 또는
-    코어 노드의 멈출 수 있는 기다림 안(`at_poll` — 일시정지 요청만). 멈춤을 확정하면 활성 시계를
-    세우고(`debug.pause`), 재개하면 다시 돌린다(`debug.resume`의 `paused_ms`). 그래서 멈춘 시간은
-    노드 기한·전체 기한에서 빠진다.
+    주 스레드가 확인 지점에서 멈춘다: 스텝 시작 직전(`at_boundary` — 브레이크포인트·Step 목표·
+    일시정지 요청), 또는 코어 노드의 멈출 수 있는 기다림 안(`at_poll` — 일시정지 요청만). 멈춤을
+    확정하면 활성 시계를 세우고(`debug.pause`), 재개하면 다시 돌린다(`debug.resume`의 `paused_ms`).
+    그래서 멈춘 시간은 노드 기한·전체 기한에서 빠진다.
+
+    재개 방식(`resume(mode)`)이 Step이면 멈춘 자리의 호출 깊이로 다음에 멈출 경계를 정한다
+    (`engine.debug.step_limit`). 멈추면(어떤 이유로든) 목표·요청은 사라진다.
 
     멈춘 동안 취소는 바로 먹힌다(취소가 재개를 이긴다). 멈춘 동안 입력 임대권은 그대로 쥔다.
     """
 
-    def __init__(self, cancel: CancelToken, clock: ActiveClock) -> None:
+    def __init__(
+        self, cancel: CancelToken, clock: ActiveClock, breakpoints: Iterable[Breakpoint] = ()
+    ) -> None:
         self._cancel = cancel
         self.clock = clock
         self._cond = threading.Condition()
         self._requested = False
         self._paused = False
         self._where: PauseWhere | None = None
+        self._point: StepPoint | None = None
+        """멈춘 자리 (멈춰 있을 때만)."""
+        self._breakpoints: frozenset[Breakpoint] = frozenset(breakpoints)
+        self._limit: int | None = None
+        """Step 목표: 이 깊이 이하인 다음 경계에서 멈춘다 (None이면 목표 없음)."""
+        self._mode: ResumeMode = "continue"
+        """마지막 재개 방식 (`debug.resume.mode`)."""
         self.count = 0
         """`debug.pause`를 남긴 횟수 (`run.json`의 `pause_count`)."""
 
@@ -98,12 +127,30 @@ class PauseGate:
             self._cond.notify_all()  # 폴링 확인 지점의 기다림을 깨운다
             return "pausing"
 
-    def resume(self) -> ControlState:
+    def resume(self, mode: ResumeMode = "continue") -> ControlState:
+        """재개한다. `continue`는 멈추지 않았어도 받는다(일시정지 요청을 거둔다, M0b). Step은
+        멈춰 있을 때만 받고, 아니면 `NotPaused`."""
         with self._cond:
+            if mode != "continue" and not self._paused:
+                raise NotPaused(self._state())
+            point = self._point
+            self._limit = None if point is None else step_limit(mode, point.depth)
+            self._mode = mode
             self._requested = False
             self._paused = False
             self._cond.notify_all()
             return "cancelling" if self._cancel.cancelled else "running"
+
+    def set_breakpoints(self, breakpoints: Iterable[Breakpoint]) -> ControlState:
+        """브레이크포인트 목록 전체를 바꾼다 (다음 경계부터)."""
+        with self._cond:
+            self._breakpoints = frozenset(breakpoints)
+            return self._state()
+
+    @property
+    def breakpoints(self) -> frozenset[Breakpoint]:
+        with self._cond:
+            return self._breakpoints
 
     def wake(self) -> None:
         with self._cond:
@@ -112,11 +159,14 @@ class PauseGate:
     @property
     def state(self) -> ControlState:
         with self._cond:
-            if self._cancel.cancelled:
-                return "cancelling"
-            if self._paused:
-                return "paused"
-            return "pausing" if self._requested else "running"
+            return self._state()
+
+    def _state(self) -> ControlState:
+        if self._cancel.cancelled:
+            return "cancelling"
+        if self._paused:
+            return "paused"
+        return "pausing" if self._requested else "running"
 
     @property
     def paused_where(self) -> PauseWhere | None:
@@ -138,22 +188,44 @@ class PauseGate:
             return self._requested and not self._cancel.cancelled
 
     def at_boundary(self, point: StepPoint, emit: Emit) -> None:
-        """주 스레드: 스텝 시작 직전. 멈춤 요청이 있으면 `debug.pause` 뒤 재개·취소를 기다린다."""
+        """주 스레드: 스텝 시작 직전. 브레이크포인트·Step 목표·일시정지 요청 중 하나라도 맞으면
+        `debug.pause` 뒤 재개·취소를 기다린다. 이유는 브레이크포인트 > Step > 요청 순으로 하나."""
         self._cancel.check()
-        self._hold(point, "boundary", emit)
+        with self._cond:
+            reason: PauseReason | None
+            if point.key in self._breakpoints:
+                reason = "breakpoint"
+            elif self._limit is not None and point.depth <= self._limit:
+                reason = "step"
+            elif self._requested:
+                reason = "request"
+            else:
+                reason = None
+            if reason is not None:
+                self._enter(point, "boundary")
+        if reason is not None:
+            self._hold(point, "boundary", reason, emit)
 
     def at_poll(self, point: StepPoint, emit: Emit) -> None:
-        """주 스레드: 코어 노드의 멈출 수 있는 기다림 안. 멈춤 요청이 있으면 그 자리에서 멈춘다."""
+        """주 스레드: 코어 노드의 멈출 수 있는 기다림 안. 일시정지 요청만 본다(브레이크포인트·Step
+        목표는 경계에서만). 요청이 있으면 그 자리에서 멈춘다."""
         self._cancel.check()
-        self._hold(point, "poll", emit)
-
-    def _hold(self, point: StepPoint, where: PauseWhere, emit: Emit) -> None:
         with self._cond:
             if not self._requested:
                 return
-            self._requested = False
-            self._paused = True
-            self._where = where
+            self._enter(point, "poll")
+        self._hold(point, "poll", "request", emit)
+
+    def _enter(self, point: StepPoint, where: PauseWhere) -> None:
+        """멈춤 확정 (잠금 안): 요청·Step 목표는 이 멈춤으로 끝난다."""
+        self._requested = False
+        self._limit = None
+        self._paused = True
+        self._where = where
+        self._point = point
+        self._mode = "continue"
+
+    def _hold(self, point: StepPoint, where: PauseWhere, reason: PauseReason, emit: Emit) -> None:
         # 멈춤 확정: 이 순간부터 활성 시계가 머문다 (기록보다 먼저 — 쓰는 시간도 멈춘 시간이다)
         self.clock.pause()
         self.count += 1
@@ -162,7 +234,7 @@ class PauseGate:
                 {
                     "event": "debug.pause",
                     **point.to_event(),
-                    "reason": "request",
+                    "reason": reason,
                     "where": where,
                 }
             )
@@ -173,13 +245,15 @@ class PauseGate:
             with self._cond:
                 self._paused = False
                 self._where = None
+                self._point = None
+                mode = self._mode
             paused_ms = self.clock.resume()
         self._cancel.check()
         emit(
             {
                 "event": "debug.resume",
                 "step": point.step,
-                "mode": "continue",
+                "mode": mode,
                 "paused_ms": paused_ms,
             }
         )
@@ -357,7 +431,23 @@ class Controller:
         elif method == "run.pause":
             self._respond(peer, request, self.pause.request())
         elif method == "run.resume":
-            self._respond(peer, request, self.pause.resume())
+            mode = request.params.get("mode", "continue")
+            if mode not in RESUME_MODES:
+                self._reject(peer, request, f"모르는 재개 방식 {mode!r}")
+                return
+            try:
+                state = self.pause.resume(mode)
+            except NotPaused as exc:
+                self._reject(peer, request, str(exc), {"reason": NOT_PAUSED, "state": exc.state})
+                return
+            self._respond(peer, request, state)
+        elif method == "run.breakpoints":
+            params = request.params
+            if check_shape(params, "rpc", ref="#/$defs/RunBreakpointsParams"):
+                self._reject(peer, request, "run.breakpoints params 형식이 틀렸다")
+                return
+            state = self.pause.set_breakpoints(Breakpoint.many(params["breakpoints"]))
+            self._respond(peer, request, state)
         elif not request.is_notification:
             with contextlib.suppress(PeerLost):
                 peer.respond_error(request, METHOD_NOT_FOUND, f"모르는 제어 메서드 {method}")
@@ -368,3 +458,14 @@ class Controller:
             return
         with contextlib.suppress(PeerLost):
             peer.respond(request, {"state": state})
+
+    @staticmethod
+    def _reject(
+        peer: RpcPeer, request: Incoming, message: str, data: Mapping[str, Any] | None = None
+    ) -> None:
+        if request.is_notification:
+            return
+        with contextlib.suppress(PeerLost):
+            peer.respond_error(
+                request, INVALID_PARAMS, message, None if data is None else dict(data)
+            )

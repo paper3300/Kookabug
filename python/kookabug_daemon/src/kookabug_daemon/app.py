@@ -264,6 +264,19 @@ class Daemon:
         conn.lag_listeners.append(listener)
         return True
 
+    def ui_attached(self) -> bool:
+        # 이벤트 루프 밖(감시 스레드)에서 읽는다: 연결 집합을 복사해 본다
+        return any(
+            c.authenticated and not c.mismatch and c.client_kind == "ui"
+            for c in list(self.transport.connections)
+        )
+
+    def breakpoints_changed(self, connection: int, breakpoints: list[dict[str, str]]) -> None:
+        params = {"breakpoints": breakpoints}
+        for conn in self.transport.ui_connections():
+            if conn.number != connection:
+                self.transport.notify(conn, "debug.breakpoints.changed", params)
+
     def _publish_lease(self, owner: dict[str, Any] | None) -> None:
         self.transport.broadcast("lease.changed", {"owner": owner})
 

@@ -192,6 +192,8 @@ class Connection:
         self.outbox = Outbox(limits)
         self.principal: Principal | None = None
         """`session.hello`가 정한 주체 (인증 전에는 None)."""
+        self.client_kind = "agent"
+        """`session.hello`의 `client.kind` (인증 전에는 `agent` — 가장 좁게 본다)."""
         self.mismatch = False
         self.tasks: set[asyncio.Task[None]] = set()
         self.lag_listeners: list[Callable[[str], None]] = []
@@ -362,6 +364,14 @@ class Transport:
         """연결 번호로 찾는다 (끝난 연결이면 None)."""
         return next((c for c in self.connections if c.number == number), None)
 
+    def ui_connections(self) -> list[Connection]:
+        """인증된 UI 연결 (`client.kind: ui`, 판이 맞는 것)."""
+        return [
+            c
+            for c in self.connections
+            if c.authenticated and not c.mismatch and c.client_kind == "ui"
+        ]
+
     async def handler(self, ws: ServerConnection) -> None:
         conn = Connection(ws, next(self._numbers), self.limits)
         self.connections.add(conn)
@@ -453,6 +463,7 @@ class Transport:
                 CLOSE_POLICY,
             )
         conn.principal = outcome.principal
+        conn.client_kind = outcome.client_kind
         if outcome.mismatch is not None:
             conn.mismatch = True
             log.warning("연결 %d: 프로토콜 판이 다르다. daemon.shutdown만 받는다", conn.number)
@@ -524,7 +535,14 @@ class Transport:
             if self.host.shutting_down:
                 raise _shutting_down()
             assert conn.principal is not None
-            call = Call(self.host.context, conn.principal, conn.number, method, params)
+            call = Call(
+                self.host.context,
+                conn.principal,
+                conn.number,
+                method,
+                params,
+                client_kind=conn.client_kind,
+            )
             arg = spec.arg(call)
             if not spec.self_authorized:
                 await asyncio.to_thread(self.host.authorizer.require, conn.principal, method, arg)

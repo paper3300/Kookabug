@@ -47,19 +47,20 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
+from kookabug_core.engine.debug import Breakpoint, ResumeMode
 from kookabug_core.inputs.lease import LEASE_NAME_ENV, STATE_DIR_ENV
 from kookabug_core.permissions import Decision
 from kookabug_core.record import read_run, read_run_json
 from kookabug_core.record.journal import format_t
 from kookabug_core.record.runfolder import RunFolder, create_run_folder
 from kookabug_core.recovery import RecoverResult, recover, supervisor_backend
-from kookabug_core.runner.control import ControlState
+from kookabug_core.runner.control import NOT_PAUSED, ControlState
 from kookabug_core.runner.spec import (
     DEFAULT_CAPTURE_TIMEOUT_MS,
     DEFAULT_FRAME_BUDGET_MIB,
@@ -87,6 +88,7 @@ __all__ = [
     "EXIT_SKIPPED",
     "HARD_STOP_EXIT_CODE",
     "ControlError",
+    "ResumeRefused",
     "RunHandle",
     "RunOutcome",
     "StartOptions",
@@ -134,7 +136,15 @@ _POLL_S: Final = 0.02
 
 
 class ControlError(Exception):
-    """제어 요청(`run.pause`·`run.resume`)의 답을 받지 못했다."""
+    """제어 요청(`run.pause`·`run.resume`·`run.breakpoints`)의 답을 받지 못했다."""
+
+
+class ResumeRefused(ControlError):
+    """runner가 Step 재개를 거절했다: 멈춰 있지 않다 (`state`는 그때 runner 상태)."""
+
+    def __init__(self, message: str, state: ControlState | None) -> None:
+        super().__init__(message)
+        self.state = state
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,6 +168,9 @@ class StartOptions:
     capture_timeout_ms: int = DEFAULT_CAPTURE_TIMEOUT_MS
     frame_budget_mib: int = DEFAULT_FRAME_BUDGET_MIB
     frame_output_refs: int = DEFAULT_FRAME_OUTPUT_REFS
+    breakpoints: tuple[Breakpoint, ...] = ()
+    """시작할 때의 브레이크포인트 (M3 2.1). daemon이 사람이 UI에서 시작한 실행에만 채운다. CLI·
+    에이전트 실행은 비워 둔다."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,6 +267,7 @@ class Supervisor:
             capture_timeout_ms=opts.capture_timeout_ms,
             frame_budget_mib=opts.frame_budget_mib,
             frame_output_refs=opts.frame_output_refs,
+            breakpoints=tuple(opts.breakpoints),
         )
         handle = RunHandle(self, spec, folder, job, started_at)
         handle._launch(listener, key)
@@ -465,13 +479,18 @@ class RunHandle:
                 with contextlib.suppress(PeerLost):
                     peer.respond_error(item, METHOD_NOT_FOUND, f"모르는 메서드 {item.method}")
 
-    def _call(self, method: str) -> ControlState:
+    def _call(self, method: str, params: dict[str, Any] | None = None) -> ControlState:
         peer = self.peer
         if peer is None:
             raise ControlError("제어 채널이 없다 (runner가 시작하지 못했다)")
         try:
-            reply = peer.call(method, timeout=CONTROL_CALL_TIMEOUT_S)
-        except (PeerLost, TimeoutError, RpcError) as exc:
+            reply = peer.call(method, params, timeout=CONTROL_CALL_TIMEOUT_S)
+        except RpcError as exc:
+            data = exc.data if isinstance(exc.data, dict) else {}
+            if exc.code == INVALID_PARAMS and data.get("reason") == NOT_PAUSED:
+                raise ResumeRefused(f"{method}: {exc.message}", data.get("state")) from exc
+            raise ControlError(f"{method}: {exc}") from exc
+        except (PeerLost, TimeoutError) as exc:
             raise ControlError(f"{method}: {exc}") from exc
         return reply["state"]
 
@@ -487,8 +506,17 @@ class RunHandle:
     def pause(self) -> ControlState:
         return self._call("run.pause")
 
-    def resume(self) -> ControlState:
-        return self._call("run.resume")
+    def resume(self, mode: ResumeMode = "continue") -> ControlState:
+        """재개 (M3 2.3). `continue`는 M0b 호출과 같다(params 없이 보낸다). Step(`step_*`)을 멈추지
+        않은 runner가 거절하면 `ResumeRefused`."""
+        if mode == "continue":
+            return self._call("run.resume")
+        return self._call("run.resume", {"mode": mode})
+
+    def set_breakpoints(self, breakpoints: Iterable[Breakpoint]) -> ControlState:
+        """브레이크포인트 목록 전체를 바꾼다 (runner가 다음 경계부터 쓴다)."""
+        items = [bp.to_json() for bp in sorted(set(breakpoints))]
+        return self._call("run.breakpoints", {"breakpoints": items})
 
     def _arm(self) -> None:
         if not self._hard_stop:

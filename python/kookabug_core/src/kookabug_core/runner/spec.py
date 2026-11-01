@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Literal
 
+from kookabug_core.engine.debug import Breakpoint
 from kookabug_core.schema import check_shape
 from kookabug_core.win import ProcessId
 
@@ -126,6 +127,8 @@ class RunSpec:
     capture_timeout_ms: int = DEFAULT_CAPTURE_TIMEOUT_MS
     frame_budget_mib: int = DEFAULT_FRAME_BUDGET_MIB
     frame_output_refs: int = DEFAULT_FRAME_OUTPUT_REFS
+    breakpoints: tuple[Breakpoint, ...] = ()
+    """시작할 때의 브레이크포인트 (M3 2.1). 사람이 UI에서 시작한 실행만 daemon이 채운다."""
 
     @classmethod
     def from_json(cls, data: Any) -> RunSpec:
@@ -170,6 +173,7 @@ class RunSpec:
                 hooks={h: dict(n) for h, n in platform.get("hooks", {}).items()},
                 scenario=platform.get("scenario"),
             ),
+            breakpoints=Breakpoint.many(spec.get("breakpoints", ())),
             **optional,
         )
 
@@ -202,4 +206,5 @@ class RunSpec:
             "capture_timeout_ms": self.capture_timeout_ms,
             "frame_budget_mib": self.frame_budget_mib,
             "frame_output_refs": self.frame_output_refs,
+            "breakpoints": [bp.to_json() for bp in self.breakpoints],
         }

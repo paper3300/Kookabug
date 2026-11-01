@@ -90,6 +90,11 @@ class DaemonContext(Protocol):
 
     def request_shutdown(self, *, force: bool, reason: str) -> None: ...
 
+    def breakpoints_changed(self, connection: int, breakpoints: list[dict[str, str]]) -> None:
+        """브레이크포인트 목록이 바뀌었다: 바꾼 연결(`connection`) 말고 UI 연결들에 알린다
+        (`debug.breakpoints.changed`, 이벤트 루프 안)."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class Call:
@@ -100,6 +105,8 @@ class Call:
     connection: int
     method: str
     params: Mapping[str, Any] = field(default_factory=dict[str, Any])
+    client_kind: str = "agent"
+    """연결의 `client.kind` (`ui`·`agent`). 사람이 UI에서 시작한 실행인지 가린다 (M3 2.1)."""
 
 
 type Handler = Callable[[Call], Awaitable[dict[str, Any]]]
@@ -122,9 +129,19 @@ class MethodSpec:
 
 def registry() -> dict[str, MethodSpec]:
     """이 daemon이 처리하는 메서드. 계약에 있지만 여기 없는 메서드는 `method_not_found`다."""
-    from kookabug_daemon.methods import graph, nodes, run, session, target, windows, workspace
+    from kookabug_daemon.methods import (
+        debug,
+        graph,
+        nodes,
+        run,
+        session,
+        target,
+        windows,
+        workspace,
+    )
 
     return {
+        **debug.METHODS,
         **session.METHODS,
         **workspace.METHODS,
         **nodes.METHODS,

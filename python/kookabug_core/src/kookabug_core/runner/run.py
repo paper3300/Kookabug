@@ -294,7 +294,7 @@ class Runner:
         self.started_ms = self.clock.now_ms()
         self.deadline_at_ms = self.started_ms + spec.deadline_ms
         """전체 기한 시각 (활성 시계 ms, runner 시작부터)."""
-        self.pause = PauseGate(self.token, self.clock)
+        self.pause = PauseGate(self.token, self.clock, spec.breakpoints)
         self.peer: RpcPeer | None = None
         self.watchdog: Watchdog | None = None
         self.controller: Controller | None = None

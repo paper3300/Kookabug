@@ -47,6 +47,8 @@ async def _start(call: Call) -> dict[str, Any]:
         settings=dict(params.get("settings") or {}),
         deadline_ms=None if deadline is None else request_int(deadline),
         idempotency_key=None if key is None else str(key),
+        # 사람이 UI에서 시작한 실행만 디버그 대상 (주체 kind가 아니라 연결 종류로, M3 2.1)
+        ui=call.client_kind == "ui",
     )
     return await asyncio.to_thread(call.daemon.run_manager.start, request)
 
