@@ -60,7 +60,7 @@ $env:KOOKABUG_DESKTOP_TESTS = "require"; $env:KOOKABUG_DESKTOP_INPUT = "1"
 uv run pytest python/kookabug_core/tests/acceptance/test_m1.py -v 2>&1 | Tee-Object "$ev\d2_acceptance.log"
 ```
 
-- 기대 결과: 마지막 줄 `N passed`(실패·건너뜀 0). 설치 파일 검사(`test_installed_cli_runs_capture_and_ocr_without_python`)는 Inno Setup 6·Visual Studio(VC++ 재배포 파일)가 있으면 설치 파일을 빌드해서 돈다(수 분). 없으면 그 한 개는 실패하므로 CI `installer` 잡 결과로 대신하고 그렇게 적는다
+- 기대 결과: 마지막 줄 `N passed`(실패·건너뜀 0). 설치 파일 검사(`test_installed_cli_runs_capture_and_ocr_without_python`)는 Node·pnpm(`pnpm install`, `pnpm --filter @kookabug/desktop exec install-electron`)·Visual Studio(VC++ 재배포 파일)가 있으면 설치 파일을 빌드해서 돈다(수 분, M2부터 NSIS 설치 파일). 없으면 그 한 개는 실패하므로 CI `installer` 잡 결과로 대신하고 그렇게 적는다
 - 기록: 통과·실패·건너뜀 수, 걸린 시간(마지막 줄)
 
 ### D3 캡처·장시간 안정성
@@ -205,7 +205,7 @@ Copy-Item -Recurse runs "$out\s5_runs"
 
 ### S6 제거
 
-1. 설정 → 앱 → 설치된 앱 → "Kookabug" → 제거 (또는 `& "$env:LOCALAPPDATA\Programs\Kookabug\unins000.exe"`)
+1. 설정 → 앱 → 설치된 앱 → "Kookabug" → 제거 (또는 `& "$env:LOCALAPPDATA\Programs\Kookabug\Uninstall Kookabug.exe"`, M2부터 NSIS 제거 프로그램)
 2. 새 PowerShell에서:
 
 ```powershell

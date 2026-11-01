@@ -3,7 +3,8 @@
 # - 라이선스는 SPDX 식으로 판정한다. OR은 하나만 허용돼도 되고, AND는 전부 허용돼야 한다
 # - conditional은 [exceptions]에 패키지 이름별 예외(이유 포함)가 있을 때만 허용한다.
 #   DLL 안 구성요소(native-licenses.toml 항목)일 때는 그 항목의 reason이 예외 근거다
-# - denied_patterns에 걸리는 라이선스는 예외로도 허용하지 않는다
+# - denied_patterns에 걸리는 라이선스는 예외로도 허용하지 않는다. 유일한 길은 아래 [[pinned_binary]]:
+#   판·경로·sha256이 모두 맞는 배포물 파일 하나에 묶은 예외다
 # - 라이선스 미상은 [exceptions]에 직접 확인한 라이선스와 이유를 적어야 허용한다
 # - LicenseRef-*는 패키지 메타데이터에서는 허용하지 않는다. 네이티브 표(native-licenses.toml)에
 #   원문 위치·처리 근거를 적은 [licenseref]가 있을 때 그 표의 항목에서만 허용한다
@@ -20,12 +21,16 @@ allowed = [
     # bzip2 (Python의 _bz2)
     "bzip2-1.0.6",
     "CC0-1.0",
+    # FreeType (Electron, FTL OR GPL-2.0-or-later에서 FTL을 고른다)
+    "FTL",
     # libjpeg (opencv)
     "IJG",
     "ISC",
     # libtiff (opencv)
     "libtiff",
     "MIT",
+    # LLVM 계열 (Electron의 DirectX Shader Compiler)
+    "NCSA",
     "PSF-2.0",
     "Python-2.0",
     # Tcl/Tk (Python의 tkinter)
@@ -89,6 +94,23 @@ font_suffixes = [".woff2", ".woff", ".ttf", ".otf"]
 # @font-face 선언(CSS·SCSS), 그 타입 선언, 패키지 메타데이터·설명
 support_suffixes = [".css", ".scss", ".d.css.ts", ".json", ".md"]
 support_names = ["LICENSE", "LICENSE.txt", "OFL.txt"]
+
+# 고정 바이너리 한정 예외 (구현 계획 M2 2.14·U8). 일반 예외([exceptions])로는 금지 라이선스를 허용할 수
+# 없다. 이 표는 배포물 판(package·version, 설치 트리의 실행 파일에서 읽은 실제 판)·설치 폴더 기준 상대
+# 경로(path)·sha256 셋이 **모두** 같은 그 파일 하나에서만 license를 허용한다. 판정기는 거부 패턴보다 먼저
+# 보되, 하나라도 다르면 예외가 없는 것과 같다(금지 그대로). source는 대응 소스·패치·빌드 정보를 적은
+# 배포 산출물이고 설치 트리에 있어야 한다. Electron을 올리면 이 항목을 새로 만든다(판·sha256·source)
+[[pinned_binary]]
+package = "electron"
+version = "44.8.0"
+path = "ffmpeg.dll"
+sha256 = "c5d6728608e90550f4de8c97399689f5ae6b6875b8073f74ed2985a68479ae1c"
+license = "LGPL-2.1-or-later"
+source = "licenses/ffmpeg-SOURCE.txt"
+reason = """Electron은 ffmpeg.dll 없이 시작하지 않는다(사용자 결정 U8 기본값: 제한적 예외로 허용). Chromium \
+third_party/ffmpeg를 GPL·nonfree 구성 없이 빌드한 동적 라이브러리를 수정 없이 배포한다. 사용자는 같은 이름의 \
+호환 DLL로 바꿀 수 있다. LGPL-2.1 원문은 NOTICES에 싣고, 그 빌드에 대응하는 소스·패치·빌드 설정의 판 고정 \
+위치와 제공 방법은 licenses/ffmpeg-SOURCE.txt에 적는다"""
 
 # 패키지 이름별 예외. 예:
 # "some-package" = { license = "MPL-2.0", reason = "수정 없이 동적으로만 쓴다. 소스 위치를 NOTICES에 적는다" }

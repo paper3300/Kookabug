@@ -26,6 +26,7 @@ import hashlib
 import json
 import os
 import posixpath
+import re
 import tomllib
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -37,6 +38,7 @@ from packaging.utils import canonicalize_name
 from license_audit import (
     LICENSE_REF_PREFIX,
     AuditInputError,
+    PinnedBinary,
     Policy,
     Status,
     classify_license,
@@ -47,6 +49,9 @@ SITE_PACKAGES = "site-packages"
 INSTALL = "install"
 SCOPES = (SITE_PACKAGES, INSTALL)
 NATIVE_SUFFIXES = (".dll", ".pyd", ".exe")
+# 설치 폴더(install scope)에서는 Electron 배포물의 바이너리 자원(Chromium 자원 묶음·ICU 데이터·V8
+# 스냅숏·앱 번들)도 표에 있어야 한다 (구현 계획 M2 2.14). site-packages에는 적용하지 않는다
+INSTALL_RESOURCE_SUFFIXES = (".pak", ".dat", ".bin", ".asar")
 ORIGINS = ("wheel", "pbs")
 TOOLS_DIR = Path(__file__).resolve().parent
 # SBOM에서 빌드에 쓰이지 않은 것으로 표시된 크레이트
@@ -69,6 +74,9 @@ class LicenseText:
     expect: tuple[str, ...]
     path: str = ""
     file: str = ""
+    # False면 NOTICES에 원문을 옮겨 싣지 않고 위치만 적는다. 원문 파일이 배포물에 그대로 있을 때만
+    # 쓴다 (path, 예: 20 MB인 Electron의 LICENSES.chromium.html)
+    embed: bool = True
 
     @property
     def label(self) -> str:
@@ -180,11 +188,15 @@ def _load_text(item: Mapping[str, Any], where: str) -> LicenseText:
     file = str(item.get("file", "")).strip()
     if bool(path) == bool(file):
         raise AuditInputError(f"{where}: path(배포물 안)와 file(레포) 중 하나만 있어야 한다")
+    embed = item.get("embed", True)
+    if not isinstance(embed, bool) or (not embed and not path):
+        raise AuditInputError(f"{where}: embed = false는 배포물 안 원문(path)에만 쓴다")
     return LicenseText(
         covers=_str_list(item, "covers", where),
         expect=_str_list(item, "expect", where),
         path=path,
         file=file,
+        embed=embed,
     )
 
 
@@ -374,8 +386,12 @@ def iter_files(layout: Layout, errors: list[str] | None = None) -> Iterator[tupl
                 yield scope, path.relative_to(root).as_posix(), path
 
 
-def is_native(rel: str) -> bool:
-    return rel.casefold().endswith(NATIVE_SUFFIXES)
+def is_native(rel: str, scope: str = SITE_PACKAGES) -> bool:
+    """표에 있어야 하는 파일인가: DLL·pyd·exe, 설치 폴더에서는 Electron 바이너리 자원도."""
+    name = rel.casefold()
+    if name.endswith(NATIVE_SUFFIXES):
+        return True
+    return scope == INSTALL and name.endswith(INSTALL_RESOURCE_SUFFIXES)
 
 
 def find_entry(table: NativeTable, scope: str, rel: str) -> NativeEntry | None:
@@ -407,16 +423,23 @@ class NativeFile:
 # ---------------------------------------------------------------- 판정
 
 
-def judge_entry(entry: NativeEntry, table: NativeTable, policy: Policy) -> tuple[Status, str]:
+def judge_entry(
+    entry: NativeEntry,
+    table: NativeTable,
+    policy: Policy,
+    pinned_ok: frozenset[str] = frozenset(),
+) -> tuple[Status, str]:
     """구성요소별 식 전체를 판정한다. AND의 어느 한 부분이라도 허용 밖이면 허용 밖이다.
 
     네이티브 항목은 파일마다 이유를 적으므로 조건부(MPL-2.0 등)는 그 이유로 허용한다.
+    `pinned_ok`는 고정 바이너리 한정 예외가 정확히 맞은 파일에서만 준다 (`match_pinned`).
     """
     status, expr = classify_license(
         entry.license,
         policy,
         package=canonicalize_name(entry.package),
         license_refs=table.ref_ids,
+        pinned_ok=pinned_ok,
     )
     if status is Status.NEEDS_EXCEPTION:
         status = Status.ALLOWED
@@ -469,12 +492,17 @@ def check_texts(
     policy: Policy,
     layout: Layout,
     files_by_scope: Mapping[str, Sequence[str]],
+    *,
+    pinned_ok: frozenset[str] = frozenset(),
+    references: list[str] | None = None,
 ) -> tuple[list[str], Collected]:
     """구성요소 원문 확인. 식의 모든 잎(OR는 하나)이 texts(또는 고지문 있는 LicenseRef)로 덮여야
     하고, 각 원문이 실제로 있고 `expect` 글귀를 담아야 한다. SBOM을 주면 크레이트마다도 본다.
 
     OR는 **허용이면서 원문도 있는** 선택지로만 채운다. 허용 판정은 원문과 같은 OR 쪽을 골라야
     한다 — 허용된 MIT 원문 없이 금지된 GPL 원문으로 식을 채우는 것을 막는다.
+
+    `embed = false`인 원문은 확인만 하고 돌려주는 원문 목록 대신 `references`에 위치를 남긴다.
     """
     head = f"{entry.package} {entry.glob}"
     problems: list[str] = []
@@ -482,10 +510,14 @@ def check_texts(
     covered = {c for t in entry.texts for c in t.covers}
 
     def leaf_allowed(leaf: str) -> bool:
-        # judge_entry와 같은 문맥: 패키지별 WITH 예외, 표의 LicenseRef, 조건부는 항목 reason
-
+        # judge_entry와 같은 문맥: 패키지별 WITH 예외, 표의 LicenseRef, 조건부는 항목 reason,
+        # 고정 바이너리 한정 예외가 맞은 파일이면 그 잎
         status, _ = classify_license(
-            leaf, policy, package=canonicalize_name(entry.package), license_refs=table.ref_ids
+            leaf,
+            policy,
+            package=canonicalize_name(entry.package),
+            license_refs=table.ref_ids,
+            pinned_ok=pinned_ok,
         )
         return status in (Status.ALLOWED, Status.NEEDS_EXCEPTION)
 
@@ -525,7 +557,15 @@ def check_texts(
             if " ".join(phrase.split()).casefold() not in flat:
                 problems.append(f"[근거 원문 불일치] {head}: {text.label}에 '{phrase}'가 없다")
         joined_all.append(joined)
-        collected.extend(found)
+        if text.embed:
+            collected.extend(found)
+        elif references is not None:
+            for label, _ in found:
+                rel = label.split(":", 1)[1]
+                size = (layout.roots[entry.scope] / rel).stat().st_size
+                ref = f"{label} ({size} bytes, 배포물에 그대로 있다)"
+                if ref not in references:
+                    references.append(ref)
 
     sboms: list[tuple[str, Path]] = []
     if entry.sbom:
@@ -571,6 +611,10 @@ class NativeReport:
     notes: list[str] = field(default_factory=list)
     files: list[NativeFile] = field(default_factory=list)
     notice_sections: list[str] = field(default_factory=list)
+    # 고정 바이너리 한정 예외로 허용한 파일
+    pinned: list[tuple[NativeFile, PinnedBinary]] = field(default_factory=list)
+    # NOTICES에 옮겨 싣지 않고 위치만 적은 원문 (embed = false)
+    references: list[str] = field(default_factory=list)
 
 
 # 빌드 입력 감사와 최종 트리 감사는 같은 보고 형식을 쓴다
@@ -587,9 +631,26 @@ def _scan(
     for scope, rel, path in iter_files(layout, errors):
         files_by_scope[scope].append(rel)
         all_files.append((scope, rel))
-        if is_native(rel):
+        if is_native(rel, scope):
             natives.append(NativeFile(scope, rel, path, find_entry(table, scope, rel)))
     return natives, files_by_scope, all_files
+
+
+def match_pinned(
+    policy: Policy, entry: NativeEntry, nf: NativeFile, versions: Mapping[str, str]
+) -> PinnedBinary | None:
+    """이 파일에 정확히 맞는 고정 바이너리 한정 예외. 배포물(package)·판(versions의 실제 판)·
+    설치 폴더 안 상대 경로·sha256이 **모두** 같아야 한다. 하나라도 다르면 None(예외 없음 = 금지
+    그대로)."""
+    for pin in policy.pinned:
+        name = canonicalize_name(pin.package)
+        if name != canonicalize_name(entry.package) or nf.scope != INSTALL:
+            continue
+        if nf.rel.casefold() != pin.path.casefold() or versions.get(name) != pin.version:
+            continue
+        if nf.path.is_file() and _sha256(nf.path) == pin.sha256:
+            return pin
+    return None
 
 
 def _judge_natives(
@@ -600,8 +661,14 @@ def _judge_natives(
     files_by_scope: Mapping[str, Sequence[str]],
     *,
     allow_stripped_denied: bool,
+    versions: Mapping[str, str] | None = None,
 ) -> Collected:
-    """네이티브 파일마다 표 항목과 판정. 돌려주는 값은 NOTICES에 실을 구성요소 원문."""
+    """네이티브 파일마다 표 항목과 판정. 돌려주는 값은 NOTICES에 실을 구성요소 원문.
+
+    항목의 식이 허용이 아니면 파일마다 고정 바이너리 한정 예외(`match_pinned`)를 먼저 본다. 맞는
+    파일만 그 예외의 잎을 허용해 다시 판정하고, 예외의 대응 소스 산출물이 설치 트리에 있어야 한다.
+    맞지 않는 파일은 예외가 없는 것과 같다."""
+    versions = versions or {}
     evidence: Collected = []
     by_entry: dict[NativeEntry, list[NativeFile]] = {}
     for nf in report.files:
@@ -622,24 +689,54 @@ def _judge_natives(
 
     for entry, nfs in by_entry.items():
         status, expr = judge_entry(entry, table, policy)
-        if status is not Status.ALLOWED:
-            stripped = [find_strip(table, nf.scope, nf.rel) for nf in nfs]
-            if allow_stripped_denied and status is Status.DENIED and all(stripped):
-                for nf in nfs:
-                    report.notes.append(
-                        f"[제거 대상] {_where(nf.scope, nf.rel)} ({expr}): 제거 목록에 있어 "
-                        "설치본에서 뺀다"
-                    )
+        if status is Status.ALLOWED:
+            problems, found = check_texts(
+                entry, table, policy, layout, files_by_scope, references=report.references
+            )
+            report.problems.extend(problems)
+            evidence.extend(found)
+            continue
+        rest: list[NativeFile] = []
+        for nf in nfs:
+            pin = match_pinned(policy, entry, nf, versions)
+            if (
+                pin is None
+                or judge_entry(entry, table, policy, pin.leaves)[0] is not Status.ALLOWED
+            ):
+                rest.append(nf)
                 continue
-            for nf in nfs:
+            report.pinned.append((nf, pin))
+            if not (layout.roots[INSTALL] / pin.source).is_file():
                 report.problems.append(
-                    f"[네이티브 라이선스] {_where(nf.scope, nf.rel)}: {expr} — "
-                    f"{_status_text(status)} ({entry.package})"
+                    f"[예외 근거 산출물 없음] {_where(nf.scope, nf.rel)}: 고정 바이너리 예외의 "
+                    f"대응 소스 정보 {pin.source}가 설치 트리에 없다"
+                )
+            problems, found = check_texts(
+                entry,
+                table,
+                policy,
+                layout,
+                files_by_scope,
+                pinned_ok=pin.leaves,
+                references=report.references,
+            )
+            report.problems.extend(problems)
+            evidence.extend(found)
+        if not rest:
+            continue
+        stripped = [find_strip(table, nf.scope, nf.rel) for nf in rest]
+        if allow_stripped_denied and status is Status.DENIED and all(stripped):
+            for nf in rest:
+                report.notes.append(
+                    f"[제거 대상] {_where(nf.scope, nf.rel)} ({expr}): 제거 목록에 있어 "
+                    "설치본에서 뺀다"
                 )
             continue
-        problems, found = check_texts(entry, table, policy, layout, files_by_scope)
-        report.problems.extend(problems)
-        evidence.extend(found)
+        for nf in rest:
+            report.problems.append(
+                f"[네이티브 라이선스] {_where(nf.scope, nf.rel)}: {expr} — "
+                f"{_status_text(status)} ({entry.package})"
+            )
 
     for entry in table.entries:
         if entry.scope in files_by_scope and entry not in by_entry:
@@ -655,17 +752,25 @@ def audit_build_input(
     models: Sequence[ModelEntry] | None = None,
     models_dir: Path | None = None,
     origins: Sequence[str] = ("wheel",),
+    versions: Mapping[str, str] | None = None,
 ) -> NativeReport:
     """빌드 입력 감사. 금지 라이선스 파일은 제거 목록에 있을 때만 허용하고 그 사실을 남긴다.
 
     `origins`는 이 입력에 들어 있는 빌드 입력 종류다. 그 종류의 제거 규칙은 반드시 무언가를
-    맞혀야 한다 (감사 venv에는 wheel만 있으므로 pbs 규칙은 보지 않는다).
+    맞혀야 한다 (감사 venv에는 wheel만 있으므로 pbs 규칙은 보지 않는다). `versions`는 고정 바이너리
+    한정 예외가 비교하는 배포물의 실제 판(정규화한 이름 → 판)이다.
     """
     report = NativeReport()
     natives, files_by_scope, all_files = _scan(layout, table, report.problems)
     report.files = natives
     evidence = _judge_natives(
-        report, table, policy, layout, files_by_scope, allow_stripped_denied=True
+        report,
+        table,
+        policy,
+        layout,
+        files_by_scope,
+        allow_stripped_denied=True,
+        versions=versions,
     )
 
     hit: set[StripRule] = set()
@@ -683,9 +788,43 @@ def audit_build_input(
     if models is not None:
         report.problems.extend(audit_models(models, models_dir, policy))
     report.notice_sections = render_notice_sections(
-        report.files, table, policy, evidence, models, models_dir
+        report.files,
+        table,
+        policy,
+        evidence,
+        models,
+        models_dir,
+        pinned=report.pinned,
+        references=report.references,
     )
     return report
+
+
+ELECTRON = canonicalize_name("electron")
+_ELECTRON_MARK = re.compile(rb"Electron/(\d+\.\d+\.\d+)")
+
+
+def electron_version(root: Path) -> str | None:
+    """설치 폴더 맨 위 실행 파일에 든 Electron 판 (`Electron/<판>` 사용자 에이전트 글귀). 고정
+    바이너리 예외의 판 비교는 레포의 고정판이 아니라 실제로 배포되는 실행 파일에서 읽은 판으로
+    한다."""
+    if not root.is_dir():
+        return None
+    for exe in sorted(root.glob("*.exe")):
+        tail = b""
+        with exe.open("rb") as f:
+            for chunk in iter(lambda: f.read(1 << 22), b""):
+                found = _ELECTRON_MARK.search(tail + chunk)
+                if found:
+                    return found[1].decode("ascii")
+                tail = chunk[-64:]
+    return None
+
+
+def detect_versions(root: Path) -> dict[str, str]:
+    """고정 바이너리 예외가 비교하는 배포물 판 (설치 트리에서 읽은 것)."""
+    found = electron_version(root)
+    return {ELECTRON: found} if found else {}
 
 
 def audit_final_tree(
@@ -695,14 +834,18 @@ def audit_final_tree(
     *,
     models: Sequence[ModelEntry] | None = None,
     installer_files: Sequence[str] = (),
+    versions: Mapping[str, str] | None = None,
 ) -> NativeReport:
     """최종 설치 트리 감사. 제거 목록에 있어도 남아 있으면 실패다.
 
-    `installer_files`는 설치 프로그램이 설치 때 더하는 네이티브 파일(설치 폴더 기준, 예: Inno
-    Setup 제거 프로그램)이다. 설치 전 스테이징 트리에는 없으므로 있는 것으로 보고 판정·NOTICES에
-    넣는다(설치된 트리에 실제로 있으면 그 파일을 그대로 본다)."""
+    `installer_files`는 설치 프로그램이 설치 때 더하는 네이티브 파일(설치 폴더 기준, 예: NSIS
+    제거 프로그램)이다. 설치 전 트리에는 없으므로 있는 것으로 보고 판정·NOTICES에 넣는다(설치된
+    트리에 실제로 있으면 그 파일을 그대로 본다). `versions`를 주지 않으면 트리에서 읽는다
+    (`detect_versions`)."""
     layout = Layout.install(root)
     report = NativeReport()
+    if versions is None:
+        versions = detect_versions(root)
     if not root.is_dir():
         report.problems.append(f"[설치 폴더 없음] {root}")
     natives, files_by_scope, all_files = _scan(layout, table, report.problems)
@@ -719,7 +862,13 @@ def audit_final_tree(
                 f"[제거 대상 남음] {_where(scope, rel)}: 최종 트리에 있으면 안 된다 ({rule.reason})"
             )
     evidence = _judge_natives(
-        report, table, policy, layout, files_by_scope, allow_stripped_denied=False
+        report,
+        table,
+        policy,
+        layout,
+        files_by_scope,
+        allow_stripped_denied=False,
+        versions=versions,
     )
 
     site = layout.roots[SITE_PACKAGES]
@@ -738,7 +887,14 @@ def audit_final_tree(
         else:
             report.problems.extend(audit_models(models, models_dir, policy))
     report.notice_sections = render_notice_sections(
-        report.files, table, policy, evidence, models, models_dir
+        report.files,
+        table,
+        policy,
+        evidence,
+        models,
+        models_dir,
+        pinned=report.pinned,
+        references=report.references,
     )
     return report
 
@@ -853,8 +1009,12 @@ def render_notice_sections(
     evidence: Collected,
     models: Sequence[ModelEntry] | None,
     models_dir: Path | None = None,
+    *,
+    pinned: Sequence[tuple[NativeFile, PinnedBinary]] = (),
+    references: Sequence[str] = (),
 ) -> list[str]:
-    """NOTICES 뒤에 붙일 절: 네이티브 파일, 패키지별 라이선스 예외, LicenseRef, 근거 원문, 모델.
+    """NOTICES 뒤에 붙일 절: 네이티브 파일, 패키지별 라이선스 예외, 고정 바이너리 한정 예외,
+    LicenseRef, 근거 원문(옮겨 싣지 않은 원문은 위치), 모델.
 
     모델 근거 원문은 `models_dir`에서 읽어 싣는다(없으면 받을 주소만 적는다 — 감사는 그 경우
     원문을 확인하지 않았으므로 배포용 NOTICES는 모델 폴더를 주고 만든다)."""
@@ -888,6 +1048,19 @@ def render_notice_sections(
             lines += [f"{package}: {combo}", f"  이유: {reason}", ""]
         sections.append("\n".join(lines))
 
+    if pinned:
+        lines = _rule("고정 바이너리 한정 라이선스 예외")
+        for nf, pin in pinned:
+            lines += [
+                f"{_where(nf.scope, nf.rel)}: {pin.license}",
+                f"  배포물: {pin.package} {pin.version}",
+                f"  SHA256: {pin.sha256}",
+                f"  이유: {pin.reason}",
+                f"  대응 소스·패치·빌드 정보: {pin.source}",
+                "",
+            ]
+        sections.append("\n".join(lines))
+
     refs = [
         ref
         for ref_id, ref in table.license_refs.items()
@@ -913,6 +1086,10 @@ def render_notice_sections(
             continue
         seen.add(label)
         texts += ["=" * 78, label, "-" * 78, text, ""]
+    if references:
+        texts += ["=" * 78, "옮겨 싣지 않은 원문 (설치 폴더의 그 파일이 원문이다)", "-" * 78]
+        texts += [f"  {ref}" for ref in references]
+        texts.append("")
     if texts:
         sections.append("\n".join(_rule("네이티브 파일 근거 원문") + texts))
 

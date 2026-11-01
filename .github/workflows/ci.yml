@@ -154,9 +154,11 @@ jobs:
           path: build/desktop-probe.json
           if-no-files-found: warn
 
-  # 설치 파일 (구현 계획 M1 2.12): 빌드(빌드 입력 감사·최종 트리 감사·NOTICES 포함) → 무인 설치(공백·
-  # 한글 경로) → 최종 트리 감사 → Python 없는 환경의 헤드리스 스모크(--version·doctor·예제 그래프·DLL
-  # 검사) → 제거 → 폴더·PATH 항목 없음. Inno Setup 6과 Visual Studio VC\Redist는 러너 이미지에 있다
+  # 설치 파일 (구현 계획 M1 2.12, M2 2.14): electron-builder NSIS. 빌드(빌드 입력 감사·데스크톱 앱
+  # 배포 빌드·최종 트리 감사·NOTICES 포함) → 테스트 판 무인 설치(공백·한글 경로) → 최종 트리 감사 →
+  # Python 없는 환경의 헤드리스 스모크(--version·doctor·예제 그래프) → 앱 스모크(Kookabug.exe --smoke)
+  # → DLL 검사 → 제거 → 설치 흔적(HKCU 등록·바로 가기·PATH) 처음과 같음. Visual Studio VC\Redist는 러너
+  # 이미지에 있고, NSIS는 electron-builder가 받는다
   installer:
     runs-on: windows-2025
     steps:
@@ -167,6 +169,22 @@ jobs:
           enable-cache: true
       - run: uv python install ${{ env.PYTHON_VERSION }}
       - run: uv sync --locked --all-packages
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\electron\Cache
+          key: electron-${{ hashFiles('pnpm-lock.yaml') }}
+      - run: pnpm --filter @kookabug/desktop exec install-electron
+      # electron-builder가 받는 NSIS·7zip (판은 electron-builder 고정판이 정한다)
+      - uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\electron-builder\Cache
+          key: electron-builder-${{ hashFiles('pnpm-lock.yaml') }}
       - uses: actions/cache@v4
         with:
           path: build/ocr-models
@@ -177,7 +195,7 @@ jobs:
         with:
           path: build/installer-cache
           key: installer-pbs-${{ hashFiles('tools/installer/pbs.toml') }}
-      # 제품 판과, 같은 스테이징으로 만든 테스트 전용 판(다른 AppId·이름·폴더). 무인 설치 검사는
+      # 제품 판과, 같은 최종 트리로 만든 테스트 전용 판(다른 appId·이름·GUID·폴더). 무인 설치 검사는
       # 테스트 판만 설치한다
       - name: 설치 파일 빌드
         env:
@@ -189,12 +207,20 @@ jobs:
         run: |
           $b = Get-Content build/installer/build.json -Raw | ConvertFrom-Json
           $env:KOOKABUG_INSTALLER = $b.setups.test.path
-          uv run pytest tools/tests/test_installer_e2e.py "python/kookabug_core/tests/acceptance/test_m1.py::test_installed_cli_runs_capture_and_ocr_without_python" -v -s
+          uv run pytest tools/tests/test_installer_user_path.py tools/tests/test_installer_e2e.py "python/kookabug_core/tests/acceptance/test_m1.py::test_installed_cli_runs_capture_and_ocr_without_python" -v -s
       - name: 크기 요약
         if: always()
         run: |
           $b = Get-Content build/installer/build.json -Raw | ConvertFrom-Json
-          "설치 파일 $([math]::Round($b.setups.product.bytes / 1MB, 1)) MiB, 설치본 $([math]::Round($b.stage.bytes / 1MB, 1)) MiB ($($b.stage.files)개 파일), 빌드 $($b.seconds.total) s" >> $env:GITHUB_STEP_SUMMARY
+          "설치 파일 $([math]::Round($b.setups.product.bytes / 1MB, 1)) MiB, 설치본 $([math]::Round($b.tree.bytes / 1MB, 1)) MiB ($($b.tree.files)개 파일), 빌드 $($b.seconds.total) s" >> $env:GITHUB_STEP_SUMMARY
+      # 필수 artifact(제품 판 설치 파일·build.json·smoke.json·제품 판 NOTICES)가 하나라도 없으면 실패.
+      # 경로는 build.py(ci_artifacts·tree_root) 하나가 정하고, 아래 업로드 목록과의 대조는
+      # tools/tests/test_installer_electron.py가 본다
+      - name: 필수 artifact 확인
+        if: always()
+        env:
+          PYTHONPATH: tools
+        run: uv run python -m installer.build --check-artifacts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -204,7 +230,8 @@ jobs:
             !build/installer/dist/kookabug-setup-test-*.exe
             build/installer/build.json
             build/installer/smoke.json
-            build/installer/stage/licenses/THIRD_PARTY_NOTICES.txt
+            build/installer/electron-product/win-unpacked/licenses/THIRD_PARTY_NOTICES.txt
+            build/installer/work/*.log
           if-no-files-found: warn
 
   licenses:

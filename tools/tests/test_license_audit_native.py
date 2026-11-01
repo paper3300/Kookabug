@@ -382,12 +382,18 @@ def test_repo_native_table_loads(tmp_path: Path) -> None:
     table = na.load_native_table_file(Path(__file__).resolve().parents[1] / "native-licenses.toml")
     pol = policy()
     stripped = {r.glob for r in table.strip}
+    pinned = {(pin.package, pin.path): pin for pin in pol.pinned}
     for entry in table.entries:
         status, expr = na.judge_entry(entry, table, pol)
-        # 제거 대상(FFmpeg) 밖의 모든 항목은 허용이어야 한다
+        # 제거 대상(opencv FFmpeg) 밖의 모든 항목은 허용이어야 한다
         if entry.glob in stripped:
             assert status is la.Status.DENIED, entry.glob
             continue
+        # 고정 바이너리 한정 예외(Electron ffmpeg.dll)는 그 예외의 잎을 더해야 허용된다
+        pin = pinned.get((entry.package, entry.glob))
+        if pin is not None:
+            assert status is la.Status.DENIED, entry.glob
+            status, expr = na.judge_entry(entry, table, pol, pin.leaves)
         assert status is la.Status.ALLOWED, (entry.glob, expr)
         # 감사 venv에 들어가는 항목은 모든 구성요소에 원문이 연결돼 있다
         if entry.scope == na.SITE_PACKAGES:

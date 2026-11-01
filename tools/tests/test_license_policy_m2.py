@@ -33,6 +33,8 @@ BUILD_TOOLS = {
     "playwright",
     "fast-check",
     "typescript",
+    # 설치 파일 빌드 (T13). 앱 번들에는 들어가지 않는다
+    "electron-builder",
 }
 # 실행 파일이 없는 패키지(타입 선언 등)의 파일 끝. 번들에 들어갈 코드가 없다
 TYPE_ONLY_SUFFIXES = (".d.ts", ".d.mts", ".d.cts", ".js.flow", ".json", ".md")

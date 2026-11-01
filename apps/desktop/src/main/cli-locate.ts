@@ -1,7 +1,10 @@
 // kookabug CLI 찾기 (M2 계획 2.3 "CLI 찾기 순서"). electron을 import하지 않는다 (vitest)
 import path from "node:path";
 
-/** 패키지 앱의 설치 폴더 기준 CLI 위치. 설치 구성(T13)이 바뀌면 이 상수 하나만 고친다 */
+/**
+ * 패키지 앱의 설치 폴더(Kookabug.exe가 있는 곳) 기준 CLI 위치. 설치 구성(tools/installer/build.py의 BIN·LAUNCHER,
+ * M1 폴더 구조 유지)이 바뀌면 이 상수 하나만 고친다. 설치 스모크(Kookabug.exe --smoke)가 이 경로로 daemon을 띄운다
+ */
 export const PACKAGED_CLI = ["bin", "kookabug.exe"] as const;
 /** 개발 모드: 레포 루트 기준 uv 가상 환경의 CLI */
 export const DEV_CLI = [".venv", "Scripts", "kookabug.exe"] as const;

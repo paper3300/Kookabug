@@ -463,16 +463,201 @@ expect = ["uv-trampoline 0.1.0의 Rust 크레이트 라이선스 원문", "Jorge
 
 [[native]]
 scope = "install"
-glob = "unins*.exe"
-package = "inno-setup"
-license = "LicenseRef-InnoSetup"
-components = "Inno Setup 6.7 제거 프로그램"
-reason = "Inno Setup이 설치 폴더에 넣는 제거 프로그램"
+glob = "Uninstall *.exe"
+package = "nsis"
+license = "Zlib AND LicenseRef-NSIS-WinShell"
+components = "NSIS 3.04 실행 스텁·zlib 압축 해제 (Zlib), System·nsDialogs·nsExec 플러그인 (NSIS, Zlib), UAC 플러그인 (Zlib), WinShell 플러그인 (배포처가 Freeware로 적음)"
+reason = "electron-builder 26 NSIS 대상이 만든 제거 프로그램(SetCompressor zlib). 기본 스크립트가 부르는 StdUtils(LGPL-2.1) 함수는 apps/desktop/packaging/installer.nsh가 System 플러그인·NSIS 명령으로 바꿔 넣지 않는다(설치 파일 안 플러그인 목록을 test_installer_electron.py가 확인)"
 
 [[native.texts]]
-file = "third_party_licenses/inno-setup.txt"
-covers = ["LicenseRef-InnoSetup"]
-expect = ["Inno Setup License", "Jordan Russell"]
+file = "third_party_licenses/nsis.txt"
+covers = ["Zlib"]
+expect = ["NSIS 3.04", "zlib/libpng license", "UAC plug-in"]
+
+# ---------------------------------------------------------------- Electron 44.8.0 (설치본, M2)
+#
+# electron-builder가 Electron 배포물(node_modules/electron/dist)을 복사하고 electron.exe를
+# Kookabug.exe로 바꾼다. LICENSES.chromium.html(Chromium credits, 약 20 MB)은 모든 빌드 구성(Android·
+# Linux·macOS 포함)의 합집합이라, Windows 파일에 들어가는 구성요소의 라이선스를 식으로 적고 원문은 그
+# 파일 전체다. 크기 때문에 NOTICES에 옮겨 싣지 않고 위치만 적는다(embed = false, 설치 폴더에 그대로
+# 있다). 식에 없는 나머지 credits(자체 허용 문구: fdlibm·Ooura FFT 등)는 LicenseRef-Chromium-Credits
+
+[[native]]
+scope = "install"
+glob = "{Kookabug,KookabugTest}.exe"
+package = "electron"
+license = "MIT AND BSD-3-Clause AND BSD-2-Clause AND Apache-2.0 AND (Apache-2.0 WITH LLVM-exception) AND ISC AND Zlib AND IJG AND Unicode-3.0 AND BSL-1.0 AND CC0-1.0 AND MPL-2.0 AND (FTL OR GPL-2.0-or-later) AND LicenseRef-sqlite-blessing AND LicenseRef-Chromium-Credits"
+components = "Electron (MIT), Node.js (MIT), Chromium·Blink·V8·Skia·ANGLE·WebRTC·PDFium (BSD-3-Clause), BoringSSL (ISC·OpenSSL 계열 허용 문구), abseil·Dawn·SwiftShader 일부 (Apache-2.0), libc++·libc++abi (Apache-2.0 WITH LLVM-exception), zlib·brotli·libjpeg-turbo (Zlib·IJG·BSD), ICU (Unicode-3.0), dragonbox (BSL-1.0), Eigen·hunspell (MPL-2.0), FreeType (FTL 선택), SQLite (공개 도메인)"
+reason = "Electron 44.8.0(Chromium 152.0.7977.167)의 실행 파일. 정적으로 들어간 구성요소의 원문은 함께 배포되는 LICENSES.chromium.html과 LICENSE.electron.txt다. 조건부인 MPL-2.0 구성요소(Eigen·hunspell)는 수정 없이 컴파일된 것이고 소스는 Chromium 저장소에 있다"
+
+[[native.texts]]
+path = "LICENSE.electron.txt"
+covers = ["MIT"]
+expect = ["Electron contributors"]
+
+[[native.texts]]
+path = "LICENSES.chromium.html"
+embed = false
+covers = ["BSD-3-Clause", "BSD-2-Clause", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "ISC", "Zlib", "IJG", "Unicode-3.0", "BSL-1.0", "CC0-1.0", "MPL-2.0", "FTL", "LicenseRef-Chromium-Credits"]
+expect = ["V8 JavaScript Engine", "Node.js", "BoringSSL", "Skia", "LLVM Exceptions", "Independent JPEG Group", "UNICODE LICENSE V3", "Boost Software License", "Mozilla Public License", "The FreeType Project", "Takuya OOURA"]
+
+[[native]]
+scope = "install"
+glob = "ffmpeg.dll"
+package = "electron"
+license = "LGPL-2.1-or-later AND BSD-3-Clause"
+components = "FFmpeg (LGPL-2.1-or-later, Chromium third_party/ffmpeg, GPL·nonfree 구성 없음: CONFIG_GPL 0·CONFIG_NONFREE 0·CONFIG_VERSION3 0), libopus (BSD-3-Clause)"
+reason = "Electron이 시작할 때 필요해 뺄 수 없다(release.gn is_component_ffmpeg = true로 동적 라이브러리). 금지 라이선스이므로 license-allowlist.toml [[pinned_binary]]의 Electron 판·경로·sha256 묶음 예외가 정확히 맞을 때만 허용한다. 수정 없이 배포하고 대응 소스·패치·빌드 정보는 licenses/ffmpeg-SOURCE.txt"
+
+[[native.texts]]
+file = "third_party_licenses/ffmpeg-LGPL-2.1.txt"
+covers = ["LGPL-2.1-or-later"]
+expect = ["GNU LESSER GENERAL PUBLIC LICENSE", "Version 2.1, February 1999"]
+
+[[native.texts]]
+path = "licenses/ffmpeg-SOURCE.txt"
+covers = ["LGPL-2.1-or-later"]
+expect = ["2b68d2babae73714846961fb0ee47e3b3d2e39a9", "152.0.7977.167", "60169b45c12488c6fda237af7f6425526a7ce5f0"]
+
+[[native.texts]]
+path = "LICENSES.chromium.html"
+embed = false
+covers = ["BSD-3-Clause"]
+expect = ["Most files in FFmpeg are under the GNU Lesser General Public License version 2.1", "Xiph.Org"]
+
+[[native]]
+scope = "install"
+glob = "vk_swiftshader.dll"
+package = "electron"
+license = "Apache-2.0 AND (Apache-2.0 WITH LLVM-exception)"
+components = "SwiftShader (Apache-2.0), SwiftShader에 든 LLVM (Apache-2.0 WITH LLVM-exception)"
+reason = "Chromium이 GPU가 없을 때 쓰는 소프트웨어 Vulkan 구현"
+
+[[native.texts]]
+path = "LICENSES.chromium.html"
+embed = false
+covers = ["Apache-2.0", "Apache-2.0 WITH LLVM-exception"]
+expect = ["SwiftShader", "LLVM Exceptions"]
+
+[[native]]
+scope = "install"
+glob = "vulkan-1.dll"
+package = "electron"
+license = "Apache-2.0"
+components = "Vulkan Loader"
+reason = "Khronos Vulkan 로더"
+
+[[native.texts]]
+path = "LICENSES.chromium.html"
+embed = false
+covers = ["Apache-2.0"]
+expect = ["Vulkan Loader Components"]
+
+[[native]]
+scope = "install"
+glob = "dxcompiler.dll"
+package = "electron"
+license = "NCSA AND MIT"
+components = "DirectX Shader Compiler (LLVM·Clang 기반, NCSA), miniz (MIT)"
+reason = "Dawn(WebGPU)이 쓰는 오픈 소스 DirectX 셰이더 컴파일러. credits 절의 GPL 문구는 빌드 스크립트(config.guess)용이라 바이너리에 없다"
+
+[[native.texts]]
+path = "LICENSES.chromium.html"
+embed = false
+covers = ["NCSA", "MIT"]
+expect = ["DirectX-Shader-Compiler", "University of Illinois/NCSA", "Rich Geldreich"]
+
+[[native]]
+scope = "install"
+glob = "{d3dcompiler_47.dll,dxil.dll}"
+package = "electron"
+license = "LicenseRef-MS-DirectX-Redist"
+components = "Microsoft D3DCompiler (Windows SDK 재배포 파일), DXIL 서명 검증기 (DirectX Shader Compiler 배포물의 Microsoft 재배포 파일)"
+reason = "Electron(Chromium)이 WebGL·WebGPU 셰이더용으로 함께 배포하는 Microsoft 재배포 파일. 수정 없이 그대로 배포한다. 고지는 LicenseRef 정의"
+
+[[native]]
+scope = "install"
+glob = "{resources,chrome_100_percent,chrome_200_percent}.pak"
+package = "electron"
+license = "BSD-3-Clause AND MIT"
+components = "Chromium·Electron 화면 자원 묶음 (이미지·HTML·문자열)"
+reason = "Chromium(BSD-3-Clause)과 Electron(MIT)의 자원"
+
+[[native.texts]]
+path = "LICENSE.electron.txt"
+covers = ["MIT"]
+expect = ["Electron contributors"]
+
+[[native.texts]]
+path = "LICENSES.chromium.html"
+embed = false
+covers = ["BSD-3-Clause"]
+expect = ["The Chromium Authors"]
+
+[[native]]
+scope = "install"
+glob = "locales/*.pak"
+package = "electron"
+license = "BSD-3-Clause AND MIT"
+components = "Chromium·Electron 언어별 문자열"
+reason = "Chromium(BSD-3-Clause)과 Electron(MIT)의 자원"
+
+[[native.texts]]
+path = "LICENSE.electron.txt"
+covers = ["MIT"]
+expect = ["Electron contributors"]
+
+[[native.texts]]
+path = "LICENSES.chromium.html"
+embed = false
+covers = ["BSD-3-Clause"]
+expect = ["The Chromium Authors"]
+
+[[native]]
+scope = "install"
+glob = "icudtl.dat"
+package = "electron"
+license = "Unicode-3.0"
+components = "ICU 데이터"
+reason = "ICU 데이터 파일"
+
+[[native.texts]]
+path = "LICENSES.chromium.html"
+embed = false
+covers = ["Unicode-3.0"]
+expect = ["UNICODE LICENSE V3"]
+
+[[native]]
+scope = "install"
+glob = "{snapshot_blob,v8_context_snapshot}.bin"
+package = "electron"
+license = "BSD-3-Clause AND MIT"
+components = "V8 힙 스냅숏 (V8 BSD-3-Clause, 안에 든 Node.js·Electron JS MIT)"
+reason = "V8가 시작할 때 읽는 스냅숏"
+
+[[native.texts]]
+path = "LICENSE.electron.txt"
+covers = ["MIT"]
+expect = ["Electron contributors"]
+
+[[native.texts]]
+path = "LICENSES.chromium.html"
+embed = false
+covers = ["BSD-3-Clause"]
+expect = ["V8 JavaScript Engine"]
+
+[[native]]
+scope = "install"
+glob = "resources/app.asar"
+package = "kookabug-desktop"
+license = "Apache-2.0 AND LicenseRef-Kookabug-JS-Bundle"
+components = "Kookabug 데스크톱 앱 배포 빌드 (Apache-2.0), 번들에 든 JS 의존성·글꼴 (LicenseRef 정의)"
+reason = "앱 번들(main·preload·렌더러). 번들에 든 JS prod 의존성과 글꼴은 pnpm prod 의존성 감사가 판정하고 NOTICES JavaScript 절에 싣는다(번들 입력 = prod 의존성은 test_desktop_prod_deps_equal_bundle_inputs)"
+
+[[native.texts]]
+path = "licenses/LICENSE.txt"
+covers = ["Apache-2.0"]
+expect = ["Apache License"]
 
 # ---------------------------------------------------------------- 제거 목록
 
@@ -532,7 +717,25 @@ notice = """The author disclaims copyright to this source code. In place of a le
     May you find forgiveness for yourself and forgive others.
     May you share freely, never taking more than you give."""
 
-[licenseref."LicenseRef-InnoSetup"]
-name = "Inno Setup License"
-source = "Inno Setup 설치 폴더의 license.txt (https://jrsoftware.org/files/is/license.txt)"
-reason = "Inno Setup으로 만든 설치 파일·제거기의 재배포를 허용한다. 저작권 표시를 보존한다"
+[licenseref."LicenseRef-NSIS-WinShell"]
+name = "WinShell NSIS 플러그인 (Anders Kjersem)"
+source = "https://nsis.sourceforge.io/WinShell_plug-in (License: Freeware)"
+reason = "electron-builder nsis-resources 3.4.1에 든 플러그인. 제거 프로그램이 시작 메뉴 바로 가기의 앱 ID를 지울 때 쓴다. 배포처가 조건 없는 Freeware로 적었고 수정 없이 그대로 넣는다"
+notice = "제거 프로그램에는 WinShell NSIS 플러그인(Anders Kjersem, Freeware)이 수정 없이 들어 있다."
+
+[licenseref."LicenseRef-Chromium-Credits"]
+name = "Chromium credits의 자체 허용 문구 (fdlibm·Ooura FFT 등, SPDX 식별자 없는 구성요소)"
+source = "설치 폴더의 LICENSES.chromium.html (Electron 배포물)"
+reason = "각 구성요소의 원문이 LICENSES.chromium.html에 있고, 그 파일을 수정 없이 함께 배포한다. 조건은 저작권·허용 문구 보존이다"
+
+[licenseref."LicenseRef-MS-DirectX-Redist"]
+name = "Microsoft DirectX 셰이더 컴파일러 재배포 파일 (d3dcompiler_47.dll, dxil.dll)"
+source = "Windows SDK의 Redist.txt(d3dcompiler_47.dll), DirectX Shader Compiler 릴리스의 dxil.dll 재배포 조건"
+reason = "Electron 배포물에 들어 있는 Microsoft 재배포 파일. 수정 없이, 그 파일을 쓰는 프로그램과 함께 Windows에서 실행하도록 배포한다"
+notice = "이 배포물에는 Microsoft 재배포 파일 d3dcompiler_47.dll, dxil.dll이 수정 없이 들어 있다. Copyright (c) Microsoft Corporation."
+
+[licenseref."LicenseRef-Kookabug-JS-Bundle"]
+name = "앱 번들(resources/app.asar)에 든 JavaScript 의존성과 글꼴"
+source = "이 파일의 JavaScript 절 (pnpm licenses list --prod, apps/desktop의 dependencies)"
+reason = "번들 입력 패키지 = prod 의존성(test_desktop_prod_deps_equal_bundle_inputs)이고 각 패키지를 라이선스 감사가 판정한다. 글꼴(OFL-1.1)은 글꼴 파일 한정 허용"
+notice = "앱 번들에 든 JavaScript 패키지와 글꼴의 라이선스·원문은 이 파일의 JavaScript 절에 패키지마다 있다."

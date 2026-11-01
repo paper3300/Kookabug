@@ -1,21 +1,26 @@
-"""설치 파일 빌드 (구현 계획 M1 2.12).
+"""설치 파일 빌드 (구현 계획 M1 2.12, M2 2.14).
 
     $env:PYTHONPATH = "tools"; uv run python -m installer.build [--out build/installer] [--no-setup]
 
-`<out>/stage`가 곧 설치 폴더 구조다:
+`<out>/stage`는 M1 폴더 구조(CLI 쪽)다:
 
     python/                PBS + 런타임 wheel + 우리 wheel(compileall) + 앱 로컬 VC++ 런타임
     bin/kookabug.exe       실행기 (Python 경로가 ..\\python\\python.exe 상대 경로)
     ocr-models/            OCR 모델·라이선스 근거 원문 (models.toml 해시)
     examples/sample-game/  예제 게임(sample_game)·화면 PNG·장면 표(frames)·예제 워크스페이스
-    licenses/              LICENSE.txt, THIRD_PARTY_NOTICES.txt
+    licenses/              LICENSE.txt, ffmpeg-SOURCE.txt (THIRD_PARTY_NOTICES.txt는 최종 트리에)
     VERSION
+
+`<out>/electron-<판>/win-unpacked`(`tree_root`, 판 = product·test)가 최종 설치 트리다: 스테이징
+트리 + 데스크톱 앱(Kookabug.exe·KookabugTest.exe, resources/app.asar, Electron 배포물). 설치
+파일은 감사한 이 트리 그대로를 NSIS로 묶는다.
 
 단계
 1. PBS: 캐시(`build/installer-cache`)에서 찾거나 받고, 크기·SHA256을 확인한 **그 바이트를** 푼다
 2. 런타임: 라이선스 감사와 같은 `uv export`(`license_pipeline.export_runtime`, 해시 고정)의 서드파티
    wheel과 `uv build`로 만든 우리 wheel을 `--no-deps`·`--link-mode copy`로 설치한다(uv 캐시와 하드
-   링크를 공유하면 뒤의 제거·RECORD 수정이 캐시를 건드린다). 설치된 집합 = runtime.txt + 우리 wheel
+   링크를 공유하면 뒤의 제거·RECORD 수정이 캐시를 건드린다). 설치된 집합 = runtime.txt + 우리 wheel.
+   우리 패키지는 전부 들어간다 — daemon의 target 편집이 선택 설치로 쓰는 kookabug-platform 포함
 3. 실행기: uv가 만든 `python/Scripts/*.exe`의 Python 경로 자원(`UV_PYTHON_PATH`)을 상대 경로로
    바꾸고(RECORD 해시도) `bin/kookabug.exe`를 만든다. uv 실행기는 상대 경로를 자기 폴더 기준으로
    푼다 — 설치 뒤 고치는 단계가 없고 설치 폴더를 옮겨도 돈다
@@ -24,8 +29,14 @@
 6. 빌드 입력 감사 (네이티브 표·제거 목록 — PBS 규칙 포함, 모델 해시)
 7. 제거 목록의 파일·폴더와 그 RECORD 줄을 지운다
 8. compileall
-9. 최종 트리 감사 + 메타데이터 감사(스테이징 Python을 pip-licenses로 스캔) → NOTICES
-10. iscc → `<out>/dist/kookabug-setup-<버전>.exe`. 요약은 `<out>/build.json`
+9. 데스크톱 앱 배포 빌드(`build:release`, E2E 검사 훅 없음 확인) → 앱 폴더(배포 빌드 + package.json)
+10. electron-builder `--dir`: 앱 폴더 + Electron + 스테이징 트리(extraFiles) → win-unpacked
+    (스테이징 파일이 그대로 옮겨졌는지 대조, Electron 판이 고정판인지 확인)
+11. 최종 트리 감사(Electron 네이티브 표·ffmpeg 고정 바이너리 예외 포함) + 메타데이터 감사(설치본
+    Python을 pip-licenses로 스캔, JS prod 의존성·글꼴)
+    → win-unpacked/licenses/THIRD_PARTY_NOTICES.txt
+12. 판마다 electron-builder `--prepackaged win-unpacked`
+    → `<out>/dist/kookabug-setup[-test]-<버전>.exe`. 요약은 `<out>/build.json`
 """
 
 from __future__ import annotations
@@ -40,6 +51,7 @@ import json
 import os
 import posixpath
 import shutil
+import struct
 import subprocess
 import sys
 import tarfile
@@ -66,7 +78,6 @@ INSTALLER_DIR: Final = Path(__file__).resolve().parent
 TOOLS_DIR: Final = INSTALLER_DIR.parent
 REPO_ROOT: Final = TOOLS_DIR.parent
 INPUTS: Final = INSTALLER_DIR / "pbs.toml"
-ISS: Final = INSTALLER_DIR / "kookabug.iss"
 NATIVE_TABLE: Final = TOOLS_DIR / "native-licenses.toml"
 ALLOWLIST: Final = TOOLS_DIR / "license-allowlist.toml"
 MODELS_TABLE: Final = REPO_ROOT / lp.MODELS_TABLE
@@ -85,11 +96,56 @@ LICENSES: Final = "licenses"
 NOTICES: Final = "licenses/THIRD_PARTY_NOTICES.txt"
 VERSION_FILE: Final = "VERSION"
 LAUNCHER: Final = "kookabug.exe"
-# Inno Setup이 설치 때 설치 폴더에 더하는 제거 프로그램 (스테이징에는 없다)
-INNO_UNINSTALLER: Final = "unins000.exe"
 # 예제 게임에서 설치본에 넣는 것 (테스트·도구·OCR 표본은 넣지 않는다)
 EXAMPLE_PARTS: Final = ("README.md", "sample_game", "frames", "workspace")
 EXAMPLE_IGNORE: Final = ("__pycache__", "runs", ".kookabug")
+# ffmpeg.dll 고정 바이너리 예외의 대응 소스·패치·빌드 정보
+# (license-allowlist.toml [[pinned_binary]] source)
+FFMPEG_SOURCE: Final = TOOLS_DIR / "third_party_licenses" / "ffmpeg-SOURCE.txt"
+FFMPEG_SOURCE_IN_INSTALL: Final = "licenses/ffmpeg-SOURCE.txt"
+# 설치본에 반드시 있어야 하는 우리 패키지. daemon의 target 편집 메서드는 kookabug-platform을
+# 의존성이 아니라 선택 설치로 쓴다(M2 T6) — 설치 파일은 반드시 넣는다
+REQUIRED_PACKAGES: Final = (
+    "kookabug-cli",
+    "kookabug-core",
+    "kookabug-daemon",
+    "kookabug-nodes",
+    "kookabug-platform",
+    "kookabug-sdk",
+)
+
+# 데스크톱 앱 (M2)
+DESKTOP_DIR: Final = REPO_ROOT / "apps" / "desktop"
+DESKTOP_PACKAGE: Final = "@kookabug/desktop"
+EB_CONFIG: Final = DESKTOP_DIR / "electron-builder.yml"
+NSIS_INCLUDE: Final = DESKTOP_DIR / "packaging" / "installer.nsh"
+# 제품 판 앱 실행 파일 (electron-builder.yml executableName, 테스트 판은 Variant.app_exe).
+# apps/desktop/src/main/cli-locate.ts의 PACKAGED_CLI는 이 파일 옆의 bin/kookabug.exe다
+APP_EXE: Final = "Kookabug.exe"
+APP_ASAR: Final = "resources/app.asar"
+# NSIS가 설치 때 설치 폴더에 더하는 제품 판 제거 프로그램 (win-unpacked에는 없다).
+# 이름은 "Uninstall <executableName>.exe" (Variant.uninstaller)
+UNINSTALLER: Final = "Uninstall Kookabug.exe"
+# 확정 앱 아이콘 A1 (electron-builder.yml win.icon). 실행 파일·설치 파일에 이 이미지들이
+# 들어가야 한다
+APP_ICON: Final = REPO_ROOT / "Docs" / "Design" / "앱 아이콘 (L3)" / "확정 A1" / "kookabug.ico"
+# Electron 고정판 배포물 (apps/desktop devDependencies electron)
+ELECTRON_DIST: Final = DESKTOP_DIR / "node_modules" / "electron" / "dist"
+# Electron 배포물에서 배포하지 않는 것: 기본 앱(default_app.asar)과 판 파일(version).
+# electron-builder는 사용자 지정 배포물(electronDist)을 통째로 복사하므로 미리 뺀 사본을 준다
+# (prepare_electron_dist)
+ELECTRON_LEFTOVERS: Final = ("resources/default_app.asar", "version")
+# 앱 폴더에 넣는 배포 빌드 (dist 기준). 소스 맵·번들 메타는 넣지 않는다
+APP_DIST_PARTS: Final = ("main/main.cjs", "preload/preload.cjs", "renderer")
+APP_DIST_IGNORE: Final = ("*.map",)
+# 배포 빌드에 있으면 안 되는 E2E 검사 전용 훅의 글귀 (apps/desktop/src/main/e2e-hooks.ts, T11·T12)
+E2E_HOOK_MARKERS: Final = (
+    "__kookabugE2E",
+    "KOOKABUG_E2E_HOOKS",
+    "dropDaemonConnection",
+    "delayResponses",
+    "ResponseDelays",
+)
 
 
 class BuildError(Exception):
@@ -616,7 +672,17 @@ def copy_examples(source: Path, dest: Path) -> None:
 def write_metadata(stage: Path, version: str) -> None:
     (stage / LICENSES).mkdir(parents=True, exist_ok=True)
     shutil.copy2(REPO_ROOT / "LICENSE", stage / LICENSES / "LICENSE.txt")
+    shutil.copy2(FFMPEG_SOURCE, stage / FFMPEG_SOURCE_IN_INSTALL)
     (stage / VERSION_FILE).write_text(version + "\n", encoding="utf-8")
+
+
+def check_required_packages(site: Path) -> list[str]:
+    got = installed_set(site)
+    return [
+        f"[우리 패키지 없음] {name}"
+        for name in REQUIRED_PACKAGES
+        if canonicalize_name(name) not in got
+    ]
 
 
 # ---------------------------------------------------------------- 7. 제거
@@ -706,6 +772,7 @@ class NoticesResult:
     problems: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     python_rows: list[tuple[str, str, str]] = field(default_factory=list)
+    js_rows: list[tuple[str, str, str]] = field(default_factory=list)
 
 
 def render_installer_notices(
@@ -715,11 +782,13 @@ def render_installer_notices(
     policy: la.Policy,
     final: na.NativeReport,
     own: frozenset[NormalizedName],
+    js: Sequence[la.ScannedPackage] = (),
 ) -> NoticesResult:
-    """설치본 NOTICES: 서드파티 Python 패키지 절(스테이징 Python 스캔) + 최종 트리 감사의 절
-    (네이티브 파일·패키지별 예외·LicenseRef·근거 원문·OCR 모델). 우리 패키지(워크스페이스 멤버)는
-    감사의 기준 집합에 없으므로 서드파티 절에 싣지 않고 라이선스만 허용인지 본다 (Apache-2.0은
-    licenses/LICENSE.txt, SDK의 MIT는 그 dist-info의 LICENSE)."""
+    """설치본 NOTICES: 서드파티 Python 패키지 절(설치본 Python 스캔) + JavaScript 절(앱 번들에 든
+    prod 의존성·글꼴) + 최종 트리 감사의 절(네이티브 파일·패키지별 예외·고정 바이너리 예외·
+    LicenseRef·근거 원문·OCR 모델). 우리 패키지(워크스페이스 멤버)는 감사의 기준 집합에 없으므로
+    서드파티 절에 싣지 않고 라이선스만 허용인지 본다 (Apache-2.0은 licenses/LICENSE.txt, SDK의
+    MIT는 그 dist-info의 LICENSE)."""
     problems: list[str] = []
     others: dict[NormalizedName, la.ScannedPackage] = {}
     for name, pkg in scanned.items():
@@ -727,17 +796,29 @@ def render_installer_notices(
             others[name] = pkg
         elif not la.judge_package(name, pkg.license, policy).ok:
             problems.append(f"[우리 패키지 라이선스] {pkg.display_name}: {pkg.license!r}")
-    result = la.audit(runtime, marker_env, others, [], policy, extra_notices=final.notice_sections)
+    result = la.audit(runtime, marker_env, others, js, policy, extra_notices=final.notice_sections)
     return NoticesResult(
         notices=result.notices,
         problems=[*problems, *result.problems],
         notes=result.notes,
         python_rows=result.python_rows,
+        js_rows=result.js_rows,
     )
 
 
+def scan_desktop_js(pnpm: str) -> list[la.ScannedPackage]:
+    """앱 번들에 든 JS prod 의존성 (`pnpm licenses list --prod`, apps/desktop)."""
+    out = run([pnpm, "licenses", "list", "--prod", "--json"], cwd=DESKTOP_DIR, capture=True)
+    if out.strip() == lp.PNPM_EMPTY_OUTPUT:
+        return []
+    try:
+        return la.parse_pnpm_licenses(json.loads(out))
+    except ValueError as exc:
+        raise BuildError(f"pnpm licenses 출력이 JSON이 아니다: {out[:200]!r}") from exc
+
+
 def audit_final(
-    stage: Path,
+    root: Path,
     table: na.NativeTable,
     policy: la.Policy,
     models: Sequence[na.ModelEntry],
@@ -745,11 +826,11 @@ def audit_final(
     uv: str,
     runtime_txt: Path,
     work: Path,
+    js: Sequence[la.ScannedPackage] = (),
+    uninstaller: str = UNINSTALLER,
 ) -> tuple[na.NativeReport, NoticesResult]:
-    final = na.audit_final_tree(
-        stage, table, policy, models=models, installer_files=(INNO_UNINSTALLER,)
-    )
-    python = stage / PYTHON / "python.exe"
+    final = na.audit_final_tree(root, table, policy, models=models, installer_files=(uninstaller,))
+    python = root / PYTHON / "python.exe"
     scan = work / "py.json"
     lp.scan_python(uv, python, scan, cwd=work)
     notices = render_installer_notices(
@@ -759,92 +840,434 @@ def audit_final(
         policy,
         final,
         workspace_names(),
+        js,
     )
     return final, notices
 
 
-# ---------------------------------------------------------------- 10. iscc
+# ---------------------------------------------------------------- 9. 데스크톱 앱
 
 
-def find_iscc(explicit: Path | None = None) -> Path:
-    candidates: list[Path] = []
-    if explicit is not None:
-        candidates.append(explicit)
-    if os.environ.get("ISCC"):
-        candidates.append(Path(os.environ["ISCC"]))
-    if found := shutil.which("iscc"):
-        candidates.append(Path(found))
-    for base in (
-        os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"),
-        os.environ.get("PROGRAMFILES", r"C:\Program Files"),
-        str(Path(os.environ.get("LOCALAPPDATA", "")) / "Programs"),
-    ):
-        candidates.append(Path(base) / "Inno Setup 6" / "ISCC.exe")
-    for path in candidates:
-        if path.is_file():
-            return path
-    raise BuildError("Inno Setup 6의 ISCC.exe가 없다 (winget install JRSoftware.InnoSetup)")
+def semver(version: str) -> str:
+    """PEP 440 판 → electron-builder(semver) 판: `0.1.0.dev0` → `0.1.0-dev.0`, `1.2.0` → `1.2.0`."""
+    v = Version(version)
+    core = ".".join(str(n) for n in (*v.release, 0, 0)[:3])
+    if v.dev is not None:
+        return f"{core}-dev.{v.dev}"
+    if v.pre is not None:
+        label = {"a": "alpha", "b": "beta", "rc": "rc"}[v.pre[0]]
+        return f"{core}-{label}.{v.pre[1]}"
+    return core
+
+
+def pinned_electron() -> str:
+    """apps/desktop/package.json에 고정한 Electron 판."""
+    data = json.loads((DESKTOP_DIR / "package.json").read_text(encoding="utf-8"))
+    return str(data["devDependencies"]["electron"])
+
+
+def build_desktop(pnpm: str) -> None:
+    """데스크톱 앱 배포 빌드 (`build.mjs --release`: E2E 검사 전용 훅이 번들에서 빠진다)."""
+    run([pnpm, "--filter", DESKTOP_PACKAGE, "run", "build:release"], cwd=REPO_ROOT)
+
+
+def e2e_hook_markers(files: Mapping[str, bytes]) -> list[str]:
+    """배포 번들에 남은 E2E 검사 전용 훅 글귀 (`경로: 글귀`). 비어 있어야 한다."""
+    return [
+        f"{name}: {marker}"
+        for name, data in sorted(files.items())
+        if name.endswith((".cjs", ".js", ".mjs"))
+        for marker in E2E_HOOK_MARKERS
+        if marker.encode("utf-8") in data
+    ]
+
+
+def read_asar(path: Path) -> dict[str, bytes]:
+    """Electron asar 묶음의 파일 (경로 posix → 바이트). 형식: [u32 4][u32 머리 크기][u32 내용 크기]
+    [u32 JSON 길이][JSON 머리 {"files": ...}] 뒤에 파일 바이트가 이어진다. 묶음 밖(unpacked) 파일은
+    `<묶음>.unpacked/`에서 읽고 링크는 건너뛴다."""
+    data = path.read_bytes()
+    try:
+        header_size = struct.unpack_from("<I", data, 4)[0]
+        json_len = struct.unpack_from("<I", data, 12)[0]
+        header = json.loads(data[16 : 16 + json_len].decode("utf-8"))
+    except (struct.error, ValueError) as exc:
+        raise BuildError(f"{path}: asar 머리를 읽을 수 없다 ({exc})") from exc
+    base = 8 + header_size
+    out: dict[str, bytes] = {}
+
+    def walk(node: Mapping[str, Any], prefix: str) -> None:
+        for name, item in node.get("files", {}).items():
+            rel = f"{prefix}{name}"
+            if "files" in item:
+                walk(item, rel + "/")
+            elif item.get("unpacked"):
+                out[rel] = (path.parent / f"{path.name}.unpacked" / rel).read_bytes()
+            elif "offset" in item:
+                start = base + int(item["offset"])
+                out[rel] = data[start : start + int(item["size"])]
+
+    walk(header, "")
+    return out
+
+
+def icon_images(path: Path = APP_ICON) -> list[tuple[int, bytes]]:
+    """ICO 파일의 (가로 픽셀, 이미지 바이트) 목록."""
+    ico = path.read_bytes()
+    reserved, kind, count = struct.unpack_from("<HHH", ico)
+    if (reserved, kind) != (0, 1) or count == 0:
+        raise BuildError(f"{path}가 ICO가 아니다")
+    out: list[tuple[int, bytes]] = []
+    for i in range(count):
+        width, _, _, _, _, _, size, offset = struct.unpack_from("<BBBBHHII", ico, 6 + i * 16)
+        out.append((width or 256, ico[offset : offset + size]))
+    return out
+
+
+def missing_icon_images(exe: Path, icon: Path = APP_ICON) -> list[int]:
+    """`exe` 자원에 들어 있지 않은 확정 아이콘 이미지의 크기들 (비어 있어야 한다)."""
+    data = exe.read_bytes()
+    return [width for width, image in icon_images(icon) if image not in data]
+
+
+def prepare_app_dir(
+    dist: Path, app: Path, version: str, product_name: str = "Kookabug"
+) -> list[str]:
+    """electron-builder 앱 폴더: 배포 빌드(소스 맵 제외) + package.json(의존성 없음). 번들에 E2E
+    검사 훅이 남아 있으면 멈춘다. `product_name`은 앱 이름(사용자 데이터 폴더 이름)이라 판마다
+    다르다. 넣은 파일 목록(앱 폴더 기준)."""
+    if app.exists():
+        shutil.rmtree(app)
+    for part in APP_DIST_PARTS:
+        src = dist / part
+        if not src.exists():
+            raise BuildError(f"{src}가 없다 (데스크톱 앱 배포 빌드 확인)")
+        dest = app / "dist" / part
+        if src.is_dir():
+            shutil.copytree(src, dest, ignore=shutil.ignore_patterns(*APP_DIST_IGNORE))
+        else:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+    package = {
+        "name": "kookabug",
+        "productName": product_name,
+        "version": semver(version),
+        "description": "Kookabug",
+        "main": "dist/main/main.cjs",
+        "license": "Apache-2.0",
+        "author": "Kookabug contributors",
+    }
+    (app / "package.json").write_text(json.dumps(package, indent=2) + "\n", encoding="utf-8")
+    files = {p.relative_to(app).as_posix(): p.read_bytes() for p in app.rglob("*") if p.is_file()}
+    left = e2e_hook_markers(files)
+    if left:
+        raise BuildError("배포 번들에 E2E 검사 훅이 남아 있다:\n  " + "\n  ".join(left))
+    return sorted(files)
+
+
+# ---------------------------------------------------------------- 10·12. electron-builder
 
 
 @dataclass(frozen=True)
 class Variant:
-    """설치 파일의 판. 테스트 판은 AppId·이름·기본 폴더·제거 등록 이름이 모두 제품과 달라 자동
-    검사(무인 설치·제거)가 이 PC의 실제 설치를 건드리지 않는다."""
+    """설치 파일의 판. 테스트 판은 appId·이름·GUID(제거 등록 키)·기본 폴더·실행 파일 이름이 모두
+    제품과 달라 자동 검사(무인 설치·제거)가 이 PC의 실제 설치와 실행 중인 제품 앱을 건드리지
+    않는다."""
 
     key: str
     app_guid: str
     app_name: str
-    dir_name: str
+    app_id: str
     file_prefix: str
+    # 실행 파일 이름 (확장자 없음, electron-builder executableName)
+    exe_name: str
+
+    @property
+    def app_exe(self) -> str:
+        return f"{self.exe_name}.exe"
+
+    @property
+    def uninstaller(self) -> str:
+        """NSIS 제거 프로그램 파일 이름 (설치 폴더 맨 위)."""
+        return f"Uninstall {self.exe_name}.exe"
+
+    @property
+    def dir_name(self) -> str:
+        """기본 설치 폴더 이름 (`%LOCALAPPDATA%\\Programs\\<이름>`, installer.nsh APP_FILENAME)."""
+        return self.app_name
 
     @property
     def uninstall_key(self) -> str:
-        """HKCU 제거 등록 키 이름 (Inno Setup: `{AppId}_is1`)."""
-        return f"{{{self.app_guid}}}_is1"
+        """HKCU 제거 등록 키 이름 (`...\\Uninstall\\<GUID>`, electron-builder nsis.guid)."""
+        return self.app_guid
+
+    @property
+    def install_key(self) -> str:
+        """HKCU 설치 정보 키 (`Software\\<GUID>`: InstallLocation·바로 가기 이름)."""
+        return rf"Software\{self.app_guid}"
+
+    @property
+    def shortcut(self) -> str:
+        """시작 메뉴 바로 가기 파일 이름."""
+        return f"{self.app_name}.lnk"
+
+    @property
+    def updater_dir(self) -> str:
+        """기본 스크립트가 설치 파일 사본을 두는 %LOCALAPPDATA% 아래 폴더.
+        installer.nsh가 설치 끝에 지운다."""
+        return f"{self.app_name}-updater"
 
     def setup_name(self, version: str) -> str:
         return f"{self.file_prefix}-{version}"
 
 
 PRODUCT: Final = Variant(
-    "product", "8B1C6E52-3F0A-4D6B-9C1E-5A7F2D4B0E91", "Kookabug", "Kookabug", "kookabug-setup"
+    "product",
+    "8B1C6E52-3F0A-4D6B-9C1E-5A7F2D4B0E91",
+    "Kookabug",
+    "org.kookabug.desktop",
+    "kookabug-setup",
+    "Kookabug",
 )
 TEST: Final = Variant(
     "test",
     "5E0D7A3C-9B41-4F2E-8C6A-1D3B7E9F2A64",
     "Kookabug Test",
-    "Kookabug-Test",
+    "org.kookabug.desktop.test",
     "kookabug-setup-test",
+    "KookabugTest",
 )
 VARIANTS: Final = {v.key: v for v in (PRODUCT, TEST)}
+
+
+def tree_root(out: Path, variant: Variant) -> Path:
+    """판의 최종 설치 트리 위치 (CI artifact·README가 이 경로를 쓴다)."""
+    return out / f"electron-{variant.key}" / "win-unpacked"
+
+
+def ci_artifacts(out: Path = DEFAULT_OUT) -> list[Path]:
+    """CI installer 잡이 반드시 올리는 파일 (제품 판 설치 파일·요약·스모크 결과·제품 판 NOTICES)."""
+    version = cli_version()
+    return [
+        out / "dist" / f"{PRODUCT.setup_name(version)}.exe",
+        out / "build.json",
+        out / "smoke.json",
+        tree_root(out, PRODUCT) / NOTICES,
+    ]
+
+
+def variant_of_tree(root: Path) -> Variant:
+    """설치 트리의 판 (맨 위 앱 실행 파일 이름으로). 모르면 제품 판."""
+    for variant in VARIANTS.values():
+        if (root / variant.app_exe).is_file():
+            return variant
+    return PRODUCT
 
 
 def setup_name(version: str, variant: Variant = PRODUCT) -> str:
     return variant.setup_name(version)
 
 
-def run_iscc(iscc: Path, stage: Path, dist: Path, version: str, variant: Variant = PRODUCT) -> Path:
-    dist.mkdir(parents=True, exist_ok=True)
-    run(
-        [
-            iscc,
-            "/Q",
-            f"/DAppVersion={version}",
-            f"/DFileVersion={file_version(version)}",
-            f"/DStageDir={stage}",
-            f"/DOutputDir={dist}",
-            f"/DOutputBase={variant.setup_name(version)}",
-            f"/DMaxRelPath={max_rel_path(stage)}",
-            f"/DAppGuid={variant.app_guid}",
-            f"/DAppName={variant.app_name}",
-            f"/DDirName={variant.dir_name}",
-            ISS,
-        ],
-        cwd=ISS.parent,
+def find_pnpm(explicit: Path | None = None) -> str:
+    for candidate in (explicit, os.environ.get("PNPM"), shutil.which("pnpm")):
+        if candidate and Path(candidate).is_file():
+            return str(candidate)
+    raise BuildError("pnpm을 찾을 수 없다 (Node 24·pnpm 필요)")
+
+
+def eb_env() -> dict[str, str]:
+    env = clean_env()
+    # 서명은 보류(H5): 인증서를 찾지 않는다. 하드 링크로 복사하지 않는다(뒤에서 트리를 고친다)
+    env["CSC_IDENTITY_AUTO_DISCOVERY"] = "false"
+    env["USE_HARD_LINKS"] = "false"
+    return env
+
+
+def run_eb(pnpm: str, config: Mapping[str, Any], work: Path, name: str, *args: str) -> None:
+    """`electron-builder --config <work>/<name>.json ...` (apps/desktop에서). 설정은 기본 설정
+    파일을 extends 한다."""
+    cfg = work / f"{name}.json"
+    cfg.write_text(
+        json.dumps({"extends": str(EB_CONFIG), **config}, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
     )
-    exe = dist / f"{variant.setup_name(version)}.exe"
-    if not exe.is_file():
-        raise BuildError(f"iscc가 {exe}를 만들지 않았다")
+    cmd = [pnpm, "exec", "electron-builder", "--config", str(cfg), "--win", *args]
+    print("$ " + " ".join(cmd), flush=True)
+    proc = subprocess.run(
+        cmd,
+        cwd=DESKTOP_DIR,
+        env=eb_env(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    (work / f"{name}.log").write_text(proc.stdout + proc.stderr, encoding="utf-8")
+    if proc.returncode != 0:
+        raise BuildError(
+            f"electron-builder 실패 (종료 코드 {proc.returncode}, 로그 {work / name}.log):\n"
+            + (proc.stdout + proc.stderr)[-4000:]
+        )
+
+
+def prepare_electron_dist(dest: Path, source: Path = ELECTRON_DIST) -> list[str]:
+    """electron-builder에 줄 Electron 배포물: 고정판 배포물에서 배포하지 않는 것
+    (ELECTRON_LEFTOVERS)을 뺀 사본. `version`은 스테이징의 `VERSION`과 대소문자만 달라
+    Windows에서 같은 파일이 된다 — electron-builder가 Electron 배포물을 먼저 복사하고
+    extraFiles가 덮어써 이름이 `version`으로 남는다. 같은 볼륨이면 하드 링크(electron-builder는
+    USE_HARD_LINKS=false로 다시 복사한다). 넣은 파일 목록."""
+    if not (source / "electron.exe").is_file():
+        raise BuildError(f"{source}에 Electron 배포물이 없다 (pnpm install 확인)")
+    if dest.exists():
+        shutil.rmtree(dest)
+    skip = {rel.casefold() for rel in ELECTRON_LEFTOVERS}
+    files: list[str] = []
+    for src in sorted(source.rglob("*")):
+        rel = src.relative_to(source).as_posix()
+        if not src.is_file() or rel.casefold() in skip:
+            continue
+        target = dest / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            os.link(src, target)
+        except OSError:
+            shutil.copy2(src, target)
+        files.append(rel)
+    return files
+
+
+def variant_config(variant: Variant) -> dict[str, Any]:
+    """판마다 다른 electron-builder 설정 (appId·이름·실행 파일 이름)."""
+    return {
+        "appId": variant.app_id,
+        "productName": variant.app_name,
+        "executableName": variant.exe_name,
+    }
+
+
+def package_dir(
+    pnpm: str,
+    app: Path,
+    stage: Path,
+    out: Path,
+    work: Path,
+    electron_dist: Path,
+    variant: Variant,
+) -> Path:
+    """electron-builder `--dir`: 앱 폴더 + Electron + 스테이징 트리 → `<out>/win-unpacked`.
+    실행 파일 이름·버전 정보·아이콘이 판마다 다르므로 판마다 만든다."""
+    config = {
+        **variant_config(variant),
+        "electronDist": str(electron_dist),
+        "electronVersion": pinned_electron(),
+        "directories": {"app": str(app), "output": str(out)},
+        "extraFiles": [{"from": str(stage), "to": ".", "filter": ["**/*"]}],
+    }
+    run_eb(pnpm, config, work, f"eb-dir-{variant.key}", "--dir")
+    root = out / "win-unpacked"
+    if not (root / variant.app_exe).is_file():
+        raise BuildError(f"electron-builder가 {root / variant.app_exe}를 만들지 않았다")
+    return root
+
+
+def tree_files(root: Path) -> dict[str, int]:
+    """상대 경로(posix) → 크기."""
+    return {
+        p.relative_to(root).as_posix(): p.stat().st_size for p in root.rglob("*") if p.is_file()
+    }
+
+
+def compare_stage(stage: Path, root: Path) -> list[str]:
+    """스테이징 트리의 파일이 최종 트리에 같은 크기로 다 있는가.
+    extraFiles 복사가 파일을 빠뜨리거나 바꾸지 않았는지 본다."""
+    want, got = tree_files(stage), tree_files(root)
+    problems = [f"[스테이징 파일 없음] {rel}" for rel in sorted(want) if rel not in got]
+    problems += [
+        f"[스테이징 파일 크기 다름] {rel}: {size} → {got[rel]}"
+        for rel, size in sorted(want.items())
+        if rel in got and got[rel] != size
+    ]
+    return problems
+
+
+def check_layout(root: Path, app_exe: str = APP_EXE) -> list[str]:
+    """최종 트리의 맨 위 구조: M1 폴더(CLI 쪽) + 데스크톱 앱."""
+    need = [
+        f"{PYTHON}/python.exe",
+        f"{BIN}/{LAUNCHER}",
+        na.MODELS_IN_INSTALL,
+        EXAMPLES,
+        f"{LICENSES}/LICENSE.txt",
+        FFMPEG_SOURCE_IN_INSTALL,
+        VERSION_FILE,
+        app_exe,
+        APP_ASAR,
+    ]
+    problems = [f"[설치 트리 구조] {rel}가 없다" for rel in need if not (root / rel).exists()]
+    names = {p.relative_to(root).as_posix() for p in root.rglob("*")}
+    # Windows는 대소문자를 가리지 않으므로 실제 이름으로 본다 (version ↔ VERSION)
+    problems += [f"[설치 트리 구조] {rel}가 남았다" for rel in ELECTRON_LEFTOVERS if rel in names]
+    if (root / VERSION_FILE).exists() and VERSION_FILE not in names:
+        problems.append(f"[설치 트리 구조] {VERSION_FILE}의 이름이 다르다")
+    return problems
+
+
+def check_electron_version(root: Path) -> str:
+    """배포되는 실행 파일의 Electron 판 = 고정판 (고정 바이너리 예외가 이 판을 본다)."""
+    found = na.electron_version(root)
+    want = pinned_electron()
+    if found is None or found != want:
+        raise BuildError(f"{root}의 앱 실행 파일 Electron 판이 {found}다 (고정 {want})")
+    return found
+
+
+def nsis_header(root: Path, include: Path = NSIS_INCLUDE) -> str:
+    """판마다 만드는 NSIS 머리 파일: installer.nsh가 쓰는 값.
+    가장 긴 상대 경로(KB_MAX_REL_PATH)와 제거할 맨 위 항목(kbRemoveTree)."""
+    lines = [
+        "; tools/installer/build.py가 만든다. 직접 고치지 않는다",
+        f"!define KB_MAX_REL_PATH {max_rel_path(root)}",
+        "!macro kbRemoveTree",
+    ]
+    for item in sorted(root.iterdir(), key=lambda p: p.name.casefold()):
+        if any(c in item.name for c in '"$`'):
+            raise BuildError(f"NSIS 스크립트에 넣을 수 없는 이름: {item.name!r}")
+        if item.is_dir():
+            lines.append(f'  RMDir /r "$INSTDIR\\{item.name}"')
+        else:
+            lines.append(f'  Delete "$INSTDIR\\{item.name}"')
+    lines += ["!macroend", f'!include "{include}"', ""]
+    return "\n".join(lines)
+
+
+def build_setup(
+    pnpm: str, root: Path, app: Path, out: Path, work: Path, version: str, variant: Variant
+) -> Path:
+    """감사한 트리(`root`) 그대로 NSIS 설치 파일을 만든다 (`--prepackaged`)."""
+    header = work / f"nsis-{variant.key}.nsh"
+    header.write_text(nsis_header(root), encoding="utf-8")
+    target = out / f"nsis-{variant.key}"
+    if target.exists():
+        shutil.rmtree(target)
+    config = {
+        **variant_config(variant),
+        "directories": {"app": str(app), "output": str(target)},
+        "nsis": {
+            "guid": variant.app_guid,
+            "artifactName": f"{variant.setup_name(version)}.${{ext}}",
+            "include": str(header),
+        },
+    }
+    run_eb(pnpm, config, work, f"eb-nsis-{variant.key}", "nsis", "--prepackaged", str(root))
+    built = target / f"{variant.setup_name(version)}.exe"
+    if not built.is_file():
+        raise BuildError(f"electron-builder가 {built}를 만들지 않았다")
+    dist = out / "dist"
+    dist.mkdir(parents=True, exist_ok=True)
+    exe = dist / built.name
+    shutil.move(built, exe)
+    shutil.rmtree(target, ignore_errors=True)
     return exe
 
 
@@ -862,11 +1285,80 @@ def prepare_out(out: Path) -> None:
 
 
 @dataclass
+class TreeResult:
+    """판 하나의 최종 설치 트리 (electron-builder win-unpacked).
+    감사한 그대로 설치 파일에 들어간다."""
+
+    variant: Variant
+    root: Path
+    app: Path
+    final: na.NativeReport
+    notices: NoticesResult
+    app_files: list[str]
+
+
+@dataclass
 class BuildResult:
     stage: Path
+    trees: dict[str, TreeResult]
+    """판 키 → 최종 설치 트리. 실행 파일 이름·버전 정보가 판마다 달라 판마다 만든다."""
     setups: dict[str, Path]
     """판 키(`product`·`test`) → 설치 파일."""
     summary: dict[str, Any]
+
+    @property
+    def root(self) -> Path:
+        """첫 판(제품 판이 있으면 제품 판)의 최종 설치 트리."""
+        return next(iter(self.trees.values())).root
+
+
+def build_tree(
+    variant: Variant,
+    *,
+    pnpm: str,
+    stage: Path,
+    out: Path,
+    work: Path,
+    electron_dist: Path,
+    version: str,
+    table: na.NativeTable,
+    policy: la.Policy,
+    models: Sequence[na.ModelEntry],
+    uv: str,
+    runtime_txt: Path,
+    js: Sequence[la.ScannedPackage],
+) -> TreeResult:
+    """판 하나: 앱 폴더 → `--dir` → 구성·Electron 판·아이콘 확인 → 최종 트리 감사 → NOTICES."""
+    app = out / f"app-{variant.key}"
+    app_files = prepare_app_dir(DESKTOP_DIR / "dist", app, version, variant.app_name)
+    root = package_dir(
+        pnpm, app, stage, tree_root(out, variant).parent, work, electron_dist, variant
+    )
+    if root != tree_root(out, variant):
+        raise BuildError(f"electron-builder 출력이 {tree_root(out, variant)}가 아니다: {root}")
+    problems = [*compare_stage(stage, root), *check_layout(root, variant.app_exe)]
+    missing = missing_icon_images(root / variant.app_exe)
+    if missing:
+        problems.append(f"[앱 아이콘] {variant.app_exe}에 확정 아이콘 이미지 {missing}가 없다")
+    if problems:
+        raise BuildError("최종 설치 트리 구성이 틀렸다:\n  " + "\n  ".join(problems))
+    check_electron_version(root)
+    final, notices = audit_final(
+        root,
+        table,
+        policy,
+        models,
+        uv=uv,
+        runtime_txt=runtime_txt,
+        work=work,
+        js=js,
+        uninstaller=variant.uninstaller,
+    )
+    problems = [*final.problems, *notices.problems]
+    if problems:
+        raise BuildError(f"최종 트리 감사 실패({variant.key}):\n  " + "\n  ".join(problems))
+    (root / NOTICES).write_text(notices.notices, encoding="utf-8")
+    return TreeResult(variant, root, app, final, notices, app_files)
 
 
 def build(
@@ -876,10 +1368,11 @@ def build(
     archive: Path | None = None,
     vc_redist: Path | None = None,
     models_dir: Path = MODELS_DIR,
-    iscc: Path | None = None,
+    pnpm: Path | None = None,
     variants: Sequence[str] = (PRODUCT.key,),
 ) -> BuildResult:
-    """스테이징 트리 하나로 `variants`의 설치 파일을 만든다 (비면 iscc를 건너뛴다)."""
+    """스테이징 트리 하나로 판마다 최종 설치 트리를 만들어 감사하고 `variants`의 설치 파일을 만든다
+    (비면 제품 판 트리와 감사까지만)."""
     unknown = [v for v in variants if v not in VARIANTS]
     if unknown:
         raise BuildError(f"알 수 없는 판: {unknown} ({', '.join(VARIANTS)} 중)")
@@ -897,7 +1390,7 @@ def build(
     uv = shutil.which("uv")
     if uv is None:
         raise BuildError("uv를 PATH에서 찾을 수 없다")
-    iscc_exe = find_iscc(iscc) if variants else None
+    pnpm_exe = find_pnpm(pnpm)
     check_uv_version(uv, inputs.uv_version)
     crt = vc_redist or find_vc_redist(inputs.vc_redist)
 
@@ -931,55 +1424,94 @@ def build(
     site = stage / na.SITE_PACKAGES_IN_INSTALL
     marker_env = read_marker_env(python, work)
     problems = check_runtime_set(site, runtime.runtime_txt, marker_env, runtime.wheels)
+    problems += check_required_packages(site)
     if problems:
         raise BuildError("설치 집합이 감사 runtime.txt와 다르다:\n  " + "\n  ".join(problems))
     compile_tree(python)
-    final, notices = audit_final(
-        stage, table, policy, models, uv=uv, runtime_txt=runtime.runtime_txt, work=work
-    )
-    problems = [*final.problems, *notices.problems]
-    if problems:
-        raise BuildError("최종 트리 감사 실패:\n  " + "\n  ".join(problems))
-    (stage / NOTICES).write_text(notices.notices, encoding="utf-8")
-    lap("audit", t0)
+    lap("stage", t0)
+
+    t0 = time.perf_counter()
+    build_desktop(pnpm_exe)
+    electron_dist = out / "electron-dist"
+    prepare_electron_dist(electron_dist)
+    js = scan_desktop_js(pnpm_exe)
+    lap("desktop", t0)
+
+    trees: dict[str, TreeResult] = {}
+    setups: dict[str, Path] = {}
+    for key in variants or (PRODUCT.key,):
+        variant = VARIANTS[key]
+        t0 = time.perf_counter()
+        tree = build_tree(
+            variant,
+            pnpm=pnpm_exe,
+            stage=stage,
+            out=out,
+            work=work,
+            electron_dist=electron_dist,
+            version=version,
+            table=table,
+            policy=policy,
+            models=models,
+            uv=uv,
+            runtime_txt=runtime.runtime_txt,
+            js=js,
+        )
+        trees[key] = tree
+        lap(f"tree.{key}", t0)
+        if key in variants:
+            t0 = time.perf_counter()
+            setups[key] = build_setup(pnpm_exe, tree.root, tree.app, out, work, version, variant)
+            missing = missing_icon_images(setups[key])
+            if missing:
+                raise BuildError(f"{setups[key].name}에 확정 아이콘 이미지 {missing}가 없다")
+            lap(f"nsis.{key}", t0)
 
     stage_bytes, stage_files = tree_size(stage)
-    setups: dict[str, Path] = {}
-    if iscc_exe is not None:
-        for key in variants:
-            t0 = time.perf_counter()
-            setups[key] = run_iscc(iscc_exe, stage, out / "dist", version, VARIANTS[key])
-            lap(f"iscc.{key}", t0)
+    first = next(iter(trees.values()))
     timings["total"] = round(time.perf_counter() - started, 1)
+
+    def tree_json(tree: TreeResult) -> dict[str, Any]:
+        size, files = tree_size(tree.root)
+        return {
+            "path": str(tree.root),
+            "app_exe": tree.variant.app_exe,
+            "bytes": size,
+            "files": files,
+            "max_rel_path": max_rel_path(tree.root),
+        }
+
     summary: dict[str, Any] = {
         "version": version,
+        "app_version": semver(version),
+        "electron": pinned_electron(),
         "python": {"tag": inputs.python.tag, "version": inputs.python.version},
         "vc_redist": {"folder": str(crt), "files": vc_files},
         "launchers": launchers,
-        "stage": {
-            "path": str(stage),
-            "bytes": stage_bytes,
-            "files": stage_files,
-            "max_rel_path": max_rel_path(stage),
-        },
+        "app_files": first.app_files,
+        "stage": {"path": str(stage), "bytes": stage_bytes, "files": stage_files},
+        "tree": tree_json(first),
+        "trees": {key: tree_json(tree) for key, tree in trees.items()},
         "setups": {
             key: {"path": str(path), "bytes": path.stat().st_size} for key, path in setups.items()
         },
         "audit": {
             "native_files_input": len(report.files),
-            "native_files_final": len(final.files),
+            "native_files_final": len(first.final.files),
             "native_entries": len(table.entries),
+            "pinned": [f"{nf.rel} ({pin.package} {pin.version})" for nf, pin in first.final.pinned],
             "removed": removed,
             "input_notes": report.notes,
-            "final_notes": final.notes,
-            "python_packages": [list(r) for r in notices.python_rows],
+            "final_notes": first.final.notes,
+            "python_packages": [list(r) for r in first.notices.python_rows],
+            "js_packages": [list(r) for r in first.notices.js_rows],
         },
         "seconds": timings,
     }
     (out / "build.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    return BuildResult(stage, setups, summary)
+    return BuildResult(stage, trees, setups, summary)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -992,14 +1524,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--pbs-archive", type=Path, help="받아 둔 PBS tar.gz (해시는 똑같이 확인)")
     parser.add_argument("--vc-redist", type=Path, help="Microsoft.VC143.CRT 폴더 (기본: vswhere)")
     parser.add_argument("--models-dir", type=Path, default=MODELS_DIR, help="받아 둔 OCR 모델")
-    parser.add_argument("--iscc", type=Path, help="ISCC.exe (기본: PATH·Inno Setup 6 설치 폴더)")
-    parser.add_argument("--no-setup", action="store_true", help="스테이징까지만 (iscc 생략)")
+    parser.add_argument("--pnpm", type=Path, help="pnpm (기본: PATH)")
+    parser.add_argument(
+        "--no-setup", action="store_true", help="최종 설치 트리와 감사까지만 (NSIS 생략)"
+    )
     parser.add_argument(
         "--test-setup",
         action="store_true",
-        help="테스트 전용 판(다른 AppId·이름·폴더)도 만든다 (무인 설치 검사용)",
+        help="테스트 전용 판(다른 appId·이름·GUID·폴더)도 만든다 (무인 설치 검사용)",
+    )
+    parser.add_argument(
+        "--check-artifacts",
+        action="store_true",
+        help="빌드하지 않고 CI 필수 artifact(ci_artifacts)가 --out 아래에 다 있는지만 본다",
     )
     args = parser.parse_args(argv)
+    if args.check_artifacts:
+        missing = [p for p in ci_artifacts(args.out.resolve()) if not p.is_file()]
+        for path in ci_artifacts(args.out.resolve()):
+            print(f"{'없음' if path in missing else '있음'}: {path}")
+        return 1 if missing else 0
     variants: tuple[str, ...] = () if args.no_setup else (PRODUCT.key,)
     if args.test_setup:
         variants += (TEST.key,)
@@ -1010,14 +1554,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             archive=args.pbs_archive,
             vc_redist=args.vc_redist,
             models_dir=args.models_dir,
-            iscc=args.iscc,
+            pnpm=args.pnpm,
             variants=variants,
         )
     except (BuildError, la.AuditInputError, lp.PipelineError) as exc:
         print(f"설치 파일 빌드 실패: {exc}", file=sys.stderr)
         return 1
     s = result.summary
-    print(f"스테이징: {s['stage']['path']} ({s['stage']['bytes'] / 2**20:.1f} MiB)")
+    print(f"최종 설치 트리: {s['tree']['path']} ({s['tree']['bytes'] / 2**20:.1f} MiB)")
     for key, path in result.setups.items():
         print(f"설치 파일({key}): {path} ({s['setups'][key]['bytes'] / 2**20:.1f} MiB)")
     print(f"시간(초): {s['seconds']}")

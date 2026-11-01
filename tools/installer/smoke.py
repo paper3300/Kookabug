@@ -1,21 +1,26 @@
-"""설치 파일 무인 설치·최종 트리 감사·헤드리스 스모크·제거 (구현 계획 M1 2.12).
+"""설치 파일 무인 설치·최종 트리 감사·스모크·제거 (구현 계획 M1 2.12, M2 2.14).
 
     $env:PYTHONPATH = "tools"
     uv run python -m installer.smoke --setup build/installer/dist/kookabug-setup-test-<버전>.exe `
         [--dir "<임시>\\설치 폴더 공백 한글"] [--json build/installer/smoke.json] [--keep]
 
-0. 판 확인: 기본은 **테스트 전용 판**(`build.TEST`: 제품과 다른 AppId·이름·폴더·제거 등록 이름)만
+0. 판 확인: 기본은 **테스트 전용 판**(`build.TEST`: 제품과 다른 appId·이름·GUID·기본 폴더)만
    설치한다. 설치 파일 버전 정보의 ProductName으로 가리고, 그 판의 제거 등록이 이미 있으면 멈춘다
-1. 무인 설치: `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CURRENTUSER /DIR=<폴더> /LOG=<로그>`.
-   HKCU 제거 등록에 그 판의 키 하나만 새로 생기고(InstallLocation = 설치 폴더) 다른 키는 그대로
-2. 최종 트리 감사 (`native_audit.audit_final_tree`, 모델 해시 포함)
+1. 무인 설치: NSIS `/S /currentuser /D=<폴더>`. 설치 흔적(HKCU 제거 등록 전체·`Software\\<GUID>`·
+   시작 메뉴 바로 가기·설치 파일 사본 폴더·사용자 PATH)을 앞뒤로 찍는다. 제거 등록에는 그 판의
+   GUID 키 하나만 새로 생기고 다른 키는 그대로다
+2. 최종 트리 감사 (`native_audit.audit_final_tree`, 모델 해시·Electron 네이티브 표·ffmpeg 고정
+   바이너리 예외 포함), NOTICES 절, 앱 번들 검사(E2E 검사 훅 없음, kookabug-platform 포함)
 3. Python 없는 환경 흉내: PATH = 설치 `bin` + Windows 폴더만, `PYTHONHOME`·`PYTHONPATH`·
    `VIRTUAL_ENV`·`KOOKABUG_OCR_MODELS` 등 삭제. 그 PATH에서 python·uv를 찾을 수 없어야 한다
 4. `kookabug --version`(VERSION 파일과 같음), `kookabug doctor --profile headless --json`(전부 통과,
    설치본 Python·설치 폴더 VC++ 런타임), 예제 헤드리스 스모크 그래프 `kookabug run`(통과)
-5. DLL 의존성 검사 (`dllcheck`)
-6. 제거 (`--keep`이 없으면): 제거 프로그램 → 설치 폴더 없음, 사용자 PATH에 bin 없음, HKCU 제거
-   등록이 처음과 똑같음 (테스트 흔적 없음, 다른 등록 손실 없음)
+5. 앱 스모크: 예제 워크스페이스 사본으로 `Kookabug.exe --smoke` (daemon 띄우기·session.hello·
+   graph.open·graph.save 무수정 wrote: false·daemon.shutdown, 종료 코드 0). 끝난 뒤 설치 폴더에서
+   돌던 프로세스(daemon)가 남지 않는다
+6. DLL 의존성 검사 (`dllcheck`)
+7. 제거 (`--keep`이 없으면): 제거 프로그램 → 설치 폴더 없음, 설치 흔적이 처음과 똑같음 (테스트
+   흔적 없음, 다른 등록 손실 없음)
 
 단계마다 `{id, ok, detail}`. 종료 코드 0 = 전부 통과, 1 = 실패.
 """
@@ -23,6 +28,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import ctypes
 import json
 import os
@@ -49,16 +55,27 @@ WORKSPACE: Final = f"{build.EXAMPLES}/workspace"
 INSTALL_TIMEOUT_S: Final = 600
 UNINSTALL_TIMEOUT_S: Final = 300
 RUN_TIMEOUT_S: Final = 300
-# 설치본 NOTICES에 반드시 있어야 하는 절 (Python 패키지·네이티브·예외·LicenseRef·원문·모델·
-# 제거 프로그램·VC++ 고지)
+APP_SMOKE_TIMEOUT_S: Final = 180
+# 앱 스모크 뒤 설치 폴더의 프로세스(daemon)가 끝나기를 기다리는 시간
+PROCESS_EXIT_WAIT_S: Final = 20
+# 설치본 NOTICES에 반드시 있어야 하는 절 (Python 패키지·JS 의존성·글꼴·네이티브·예외·고정 바이너리
+# 예외·LicenseRef·원문·모델·제거 프로그램·VC++·Electron 고지)
 NOTICE_SECTIONS: Final = (
     "numpy ",
+    "(JavaScript)",
+    "@xyflow/react ",
+    "@fontsource/noto-sans-kr ",
+    "SIL OPEN FONT LICENSE",
     "# 네이티브 파일 (DLL·pyd·exe)과 그 안의 구성요소",
     "# 패키지별 라이선스 예외",
+    "# 고정 바이너리 한정 라이선스 예외",
     "# SPDX 밖 배포 조건 (LicenseRef)",
     "# 네이티브 파일 근거 원문",
     "# OCR 모델",
-    "Inno Setup License",
+    "GNU LESSER GENERAL PUBLIC LICENSE",
+    "install:LICENSES.chromium.html",
+    "Electron contributors",
+    "NSIS 3.04",
     "Microsoft Visual C++",
 )
 # 실행 중 Python·uv·Kookabug 설정이 새지 않게 지우는 환경 변수
@@ -71,6 +88,9 @@ CLEARED_ENV: Final = (
     "CONDA_PREFIX",
     "UV_PROJECT_ENVIRONMENT",
     "KOOKABUG_OCR_MODELS",
+    "KOOKABUG_CLI",
+    "KOOKABUG_DAEMON_ARGS",
+    "KOOKABUG_E2E_HOOKS",
 )
 
 
@@ -105,6 +125,9 @@ class SmokeReport:
         self.steps.append(step)
         print(f"[{'통과' if ok else '실패'}] {step_id} ({step.seconds} s): {detail}", flush=True)
         return step
+
+    def get(self, step_id: str) -> Step | None:
+        return next((s for s in self.steps if s.id == step_id), None)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -171,31 +194,124 @@ def run_cli(
 
 
 def install(setup: Path, target: Path, log: Path) -> None:
-    log.parent.mkdir(parents=True, exist_ok=True)  # 로그를 못 쓰면 설치가 시작하지 않는다
-    proc = subprocess.run(
-        [
-            str(setup),
-            "/VERYSILENT",
-            "/SUPPRESSMSGBOXES",
-            "/NORESTART",
-            "/CURRENTUSER",
-            f"/DIR={target}",
-            f"/LOG={log}",
-        ],
-        timeout=INSTALL_TIMEOUT_S,
-        check=False,
-    )
+    """NSIS 무인 설치. `/D=`는 마지막 인자이고 따옴표를 쓰지 않는다(공백 포함 경로 그대로).
+    NSIS에는 설치 로그 옵션이 없어 명령과 종료 코드를 `log`에 남긴다."""
+    line = subprocess.list2cmdline([str(setup), "/S", "/currentuser"]) + f" /D={target}"
+    proc = subprocess.run(line, timeout=INSTALL_TIMEOUT_S, check=False)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(f"{line}\n종료 코드 {proc.returncode}\n", encoding="utf-8")
     if proc.returncode != 0:
         raise RuntimeError(f"설치 종료 코드 {proc.returncode} (로그 {log})")
 
 
-def user_path() -> str:
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+ENV_KEY: Final = "Environment"
+
+
+@dataclass(frozen=True)
+class RegValue:
+    """사용자 PATH 값 그대로: 있는지, 문자열(펼치지 않은 원문), 레지스트리 형식."""
+
+    exists: bool
+    value: str = ""
+    kind: int | None = None
+
+
+def read_user_path(key_path: str = ENV_KEY) -> RegValue:
+    """HKCU 사용자 PATH를 형식과 함께 읽는다 (REG_EXPAND_SZ는 펼치지 않은 원문)."""
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
         try:
-            value, _ = winreg.QueryValueEx(key, "Path")
+            value, kind = winreg.QueryValueEx(key, "Path")
         except FileNotFoundError:
-            return ""
-    return str(value)
+            return RegValue(False)
+    return RegValue(True, str(value), kind)
+
+
+def write_user_path(saved: RegValue, key_path: str = ENV_KEY) -> None:
+    """백업한 값으로 되돌린다 (없었으면 값을 지운다). 바뀐 환경을 알린다."""
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
+        if saved.exists:
+            winreg.SetValueEx(key, "Path", 0, saved.kind or winreg.REG_EXPAND_SZ, saved.value)
+        else:
+            with contextlib.suppress(FileNotFoundError):
+                winreg.DeleteValue(key, "Path")
+    if key_path == ENV_KEY:
+        broadcast_environment()
+
+
+_user32 = ctypes.WinDLL("user32", use_last_error=True)
+# LRESULT SendMessageTimeoutW(HWND, UINT, WPARAM, LPARAM, UINT fuFlags, UINT uTimeout, PDWORD_PTR)
+# 결과 인자는 포인터 크기(DWORD_PTR)다. DWORD(4바이트)를 넘기면 Win64에서 옆 메모리까지 쓴다
+# (T13 검수 2차 Low). 결과를 쓰지 않으므로 None(NULL)을 넘긴다
+SendMessageTimeoutW = _user32.SendMessageTimeoutW
+SendMessageTimeoutW.argtypes = (
+    wintypes.HWND,
+    wintypes.UINT,
+    wintypes.WPARAM,
+    wintypes.LPARAM,
+    wintypes.UINT,
+    wintypes.UINT,
+    ctypes.POINTER(ctypes.c_size_t),
+)
+SendMessageTimeoutW.restype = wintypes.LPARAM  # LRESULT
+HWND_BROADCAST: Final = 0xFFFF
+WM_SETTINGCHANGE: Final = 0x001A
+SMTO_ABORTIFHUNG: Final = 0x0002
+
+
+def broadcast_environment() -> None:
+    """사용자 환경 변수가 바뀌었음을 알린다 (탐색기 등이 PATH를 다시 읽는다)."""
+    text = ctypes.create_unicode_buffer("Environment")
+    SendMessageTimeoutW(
+        HWND_BROADCAST,
+        WM_SETTINGCHANGE,
+        0,
+        ctypes.cast(text, ctypes.c_void_p).value or 0,
+        SMTO_ABORTIFHUNG,
+        500,
+        None,
+    )
+
+
+class UserPathGuard:
+    """실제 사용자 PATH를 건드리는 검사의 보호막: 들어갈 때 값·형식·존재를 백업하고, 나올 때 바이트
+    단위로 같은지 본다. 다르면 백업으로 되돌리고 그 사실을 `restored`·`detail`에 남긴다."""
+
+    def __init__(self, key_path: str = ENV_KEY) -> None:
+        self.key_path = key_path
+        self.saved = read_user_path(key_path)
+        self.after: RegValue | None = None
+        self.restored = False
+
+    @property
+    def same(self) -> bool:
+        return self.after == self.saved
+
+    @property
+    def detail(self) -> str:
+        a = self.after
+        shape = f"{len(self.saved.value)}자·형식 {self.saved.kind}·있음 {self.saved.exists}"
+        if a is None or self.same:
+            return f"사용자 PATH 처음과 같음 ({shape})"
+        now = f"{len(a.value)}자·형식 {a.kind}·있음 {a.exists}"
+        return f"사용자 PATH가 달라졌다 ({shape} → {now}), 백업으로 되돌림={self.restored}"
+
+    def check(self) -> bool:
+        self.after = read_user_path(self.key_path)
+        if not self.same:
+            write_user_path(self.saved, self.key_path)
+            self.restored = read_user_path(self.key_path) == self.saved
+        return self.same
+
+    def __enter__(self) -> UserPathGuard:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self.after is None:
+            self.check()
+
+
+def user_path() -> str:
+    return read_user_path().value
 
 
 def path_has(paths: str, folder: Path) -> bool:
@@ -204,6 +320,19 @@ def path_has(paths: str, folder: Path) -> bool:
 
 
 UNINSTALL_ROOT: Final = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
+
+
+def _key_values(key: Any) -> dict[str, str]:
+    values: dict[str, str] = {}
+    index = 0
+    while True:
+        try:
+            name, value, _ = winreg.EnumValue(key, index)
+        except OSError:
+            break
+        index += 1
+        values[name] = str(value)
+    return values
 
 
 def uninstall_entries() -> dict[str, dict[str, str]]:
@@ -221,18 +350,46 @@ def uninstall_entries() -> dict[str, dict[str, str]]:
             except OSError:
                 break
             index += 1
-            values: dict[str, str] = {}
             with winreg.OpenKey(root, name) as key:
-                vi = 0
-                while True:
-                    try:
-                        vname, value, _ = winreg.EnumValue(key, vi)
-                    except OSError:
-                        break
-                    vi += 1
-                    values[vname] = str(value)
-            out[name] = values
+                out[name] = _key_values(key)
     return out
+
+
+def hkcu_values(path: str) -> dict[str, str] | None:
+    """HKCU 키의 값들. 키가 없으면 None."""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path) as key:
+            return _key_values(key)
+    except FileNotFoundError:
+        return None
+
+
+def start_menu() -> Path:
+    return Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+
+
+def traces(variant: build.Variant) -> dict[str, Any]:
+    """설치가 남길 수 있는 흔적 (앞뒤 비교용): 제거 등록 전체, 그 판의 설치 정보 키, 시작 메뉴 바로
+    가기, 설치 파일 사본 폴더, 사용자 PATH(값·형식·존재)."""
+    local = Path(os.environ.get("LOCALAPPDATA", ""))
+    return {
+        "uninstall": uninstall_entries(),
+        "install_key": hkcu_values(variant.install_key),
+        "shortcut": (start_menu() / variant.shortcut).exists(),
+        "updater": (local / variant.updater_dir).exists(),
+        "path": read_user_path(),
+    }
+
+
+def variant_cleaned(variant: build.Variant, root: Path) -> bool:
+    """그 판의 제거가 끝났는가: 설치 폴더·제거 등록·설치 정보 키·시작 메뉴 바로 가기가 모두 없다.
+    NSIS 제거 프로그램은 폴더를 지운 **뒤** 바로 가기와 등록 키를 지운다."""
+    return (
+        not root.exists()
+        and variant.uninstall_key not in uninstall_entries()
+        and hkcu_values(variant.install_key) is None
+        and not (start_menu() / variant.shortcut).exists()
+    )
 
 
 _version = ctypes.WinDLL("version", use_last_error=True)
@@ -255,7 +412,7 @@ _version.VerQueryValueW.argtypes = (
 
 
 def setup_product_name(setup: Path) -> str | None:
-    """설치 파일 버전 정보의 ProductName (`kookabug.iss`의 VersionInfoProductName = 판 이름)."""
+    """설치 파일 버전 정보의 ProductName (electron-builder productName = 판 이름)."""
     size = _version.GetFileVersionInfoSizeW(str(setup), None)
     if not size:
         return None
@@ -271,13 +428,12 @@ def setup_product_name(setup: Path) -> str | None:
     query = rf"\StringFileInfo\{lang:04x}{codepage:04x}\ProductName"
     if not _version.VerQueryValueW(buf, query, ctypes.byref(ptr), ctypes.byref(length)):
         return None
-    # Inno Setup은 버전 문자열을 고정 길이 틀에 넣어 뒤가 공백으로 채워져 있다
     return ctypes.wstring_at(ptr.value or 0, max(length.value - 1, 0)).rstrip("\0 ")
 
 
 def check_setup(setup: Path, variant: build.Variant) -> tuple[bool, str]:
     """설치 전 확인: 설치 파일이 그 판이고, 그 판의 제거 등록이 아직 없다. 제품 판이면 기존 제품
-    설치(제거 등록)가 있을 때 멈춘다 — 같은 AppId로 덮어써 실제 설치의 등록을 잃게 하지 않는다."""
+    설치(제거 등록)가 있을 때 멈춘다 — 같은 GUID로 덮어써 실제 설치의 등록을 잃게 하지 않는다."""
     name = setup_product_name(setup)
     if name != variant.app_name:
         return False, f"설치 파일 판이 {name!r}이다 (기대 {variant.app_name!r}). 설치하지 않는다"
@@ -287,26 +443,149 @@ def check_setup(setup: Path, variant: build.Variant) -> tuple[bool, str]:
 
 
 def uninstaller(root: Path) -> Path | None:
-    found = sorted(root.glob("unins*.exe"))
-    return found[0] if found else None
+    """설치 폴더의 제거 프로그램 (판마다 이름이 다르다)."""
+    for variant in build.VARIANTS.values():
+        exe = root / variant.uninstaller
+        if exe.is_file():
+            return exe
+    return None
 
 
-def uninstall(root: Path, *, timeout_s: float = UNINSTALL_TIMEOUT_S) -> None:
-    """제거 프로그램은 임시 폴더로 자신을 복사해 다시 띄우고 먼저 끝날 수 있으므로, 설치 폴더가
-    사라질 때까지 기다린다."""
+def uninstall(
+    root: Path,
+    *,
+    variant: build.Variant | None = None,
+    timeout_s: float = UNINSTALL_TIMEOUT_S,
+) -> bool:
+    """제거 프로그램을 돌리고 제거가 **끝날 때까지** 기다린다. 제거 프로그램은 임시 폴더로 자신을
+    복사해 다시 띄우고 먼저 끝나며, 폴더를 지운 뒤에 바로 가기·등록 키를 지운다. 그래서 폴더만이
+    아니라 그 판의 등록·바로 가기까지 다 없어질 때까지 본다(`variant_cleaned`). 기한 안에
+    끝났으면 True."""
     exe = uninstaller(root)
     if exe is None:
         raise RuntimeError(f"{root}에 제거 프로그램이 없다")
+    if variant is None:
+        variant = next(v for v in build.VARIANTS.values() if exe.name == v.uninstaller)
     proc = subprocess.run(
-        [str(exe), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
+        [str(exe), "/S", "/currentuser"],
         timeout=timeout_s,
         check=False,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"제거 종료 코드 {proc.returncode}")
     deadline = time.monotonic() + timeout_s
-    while root.exists() and time.monotonic() < deadline:
+    while time.monotonic() < deadline:
+        if variant_cleaned(variant, root):
+            return True
         time.sleep(0.5)
+    return variant_cleaned(variant, root)
+
+
+# ---------------------------------------------------------------- 프로세스
+
+
+def processes_under(root: Path) -> list[tuple[int, str]]:
+    """실행 파일이 `root` 아래에 있는 프로세스 (PID, 경로)."""
+    script = (
+        "Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath } | "
+        "ForEach-Object { '{0}`t{1}' -f $_.ProcessId, $_.ExecutablePath }"
+    )
+    proc = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+        check=False,
+    )
+    want = os.path.normcase(str(root.resolve())).rstrip("\\") + "\\"
+    out: list[tuple[int, str]] = []
+    for line in proc.stdout.splitlines():
+        pid, _, exe = line.partition("\t")
+        if exe and os.path.normcase(exe).startswith(want) and pid.strip().isdigit():
+            out.append((int(pid), exe))
+    return out
+
+
+@dataclass
+class StandIn:
+    """실행 중인 제품 앱의 대역 프로세스 (`build.PRODUCT.app_exe` 이름)."""
+
+    proc: subprocess.Popen[bytes]
+    exe: Path
+
+    @property
+    def alive(self) -> bool:
+        return self.proc.poll() is None
+
+    def stop(self) -> None:
+        if self.alive:
+            self.proc.kill()
+            self.proc.wait(timeout=30)
+        shutil.rmtree(self.exe.parent, ignore_errors=True)
+
+
+def standin_dir(target: Path) -> Path:
+    """대역 폴더: 설치 폴더 이름 뒤에 글자를 붙인 옆 폴더. 설치 폴더 경계(\\) 없이 경로 앞부분만
+    비교하는 확인은 이 폴더의 프로세스를 설치 폴더 안의 것으로 잘못 본다."""
+    return target.with_name(target.name + "2")
+
+
+def start_product_standin(target: Path) -> StandIn:
+    """제품 판 대역을 띄운다: `standin_dir(target)/Kookabug.exe`(제품 판 실행 파일 이름)로 복사한
+    Python이 잠자고 있는 프로세스. 테스트 판 설치·제거는 이것을 끄면 안 된다 (이름으로 끄면 제품
+    앱의 저장 안 한 편집을 잃는다). 실제 제품 앱은 띄우지도 끄지도 않는다."""
+    base = Path(sys.base_prefix)
+    folder = standin_dir(target)
+    folder.mkdir(parents=True, exist_ok=False)
+    for dll in [*base.glob("python3*.dll"), *base.glob("vcruntime140*.dll")]:
+        shutil.copy2(dll, folder / dll.name)
+    exe = folder / build.PRODUCT.app_exe
+    shutil.copy2(base / "python.exe", exe)
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("PYTHON")}
+    env["PYTHONHOME"] = str(base)
+    proc = subprocess.Popen(
+        [str(exe), "-S", "-c", "import time; time.sleep(1800)"],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    time.sleep(0.5)
+    if proc.poll() is not None:
+        raise RuntimeError(f"제품 판 대역이 바로 끝났다 (종료 코드 {proc.returncode})")
+    return StandIn(proc, exe)
+
+
+def shortcut_target(link: Path) -> tuple[str, str]:
+    """.lnk의 (대상 경로, 아이콘 위치) — WScript.Shell로 읽는다."""
+    script = (
+        "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:KB_LINK); "
+        "[Console]::OutputEncoding = [Text.Encoding]::UTF8; "
+        "Write-Output $s.TargetPath; Write-Output $s.IconLocation"
+    )
+    proc = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+        env={**os.environ, "KB_LINK": str(link)},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
+        check=False,
+    )
+    lines = proc.stdout.splitlines()
+    return (lines[0] if lines else ""), (lines[1] if len(lines) > 1 else "")
+
+
+def wait_no_processes(root: Path, timeout_s: float = PROCESS_EXIT_WAIT_S) -> list[tuple[int, str]]:
+    deadline = time.monotonic() + timeout_s
+    left = processes_under(root)
+    while left and time.monotonic() < deadline:
+        time.sleep(1)
+        left = processes_under(root)
+    return left
 
 
 # ---------------------------------------------------------------- 단계
@@ -321,13 +600,34 @@ def audit_step(root: Path) -> tuple[bool, str]:
     )
     if report.problems:
         return False, f"{len(report.problems)}건: " + " | ".join(report.problems[:20])
-    return True, f"네이티브 파일 {len(report.files)}개, 문제 없음"
+    pinned = [f"{nf.rel} ({pin.package} {pin.version})" for nf, pin in report.pinned]
+    return True, f"네이티브 파일 {len(report.files)}개, 고정 바이너리 예외 {pinned}, 문제 없음"
 
 
 def notices_step(root: Path) -> tuple[bool, str]:
     text = (root / build.NOTICES).read_text(encoding="utf-8")
     missing = [s for s in NOTICE_SECTIONS if s not in text]
     return not missing, f"{len(text)}자, 빠진 절 {missing or '없음'}"
+
+
+def bundle_step(root: Path) -> tuple[bool, str]:
+    """설치된 앱 번들에 E2E 검사 전용 훅이 없고(배포 빌드), 우리 패키지가 다 있다
+    (kookabug-platform 포함)."""
+    variant = build.variant_of_tree(root)
+    exe = root / variant.app_exe
+    icon = build.missing_icon_images(exe) if exe.is_file() else ["실행 파일 없음"]
+    files = build.read_asar(root / build.APP_ASAR)
+    main = files.get("dist/main/main.cjs", b"")
+    hooks = build.e2e_hook_markers(files)
+    # 대조: 빈 번들을 본 것이 아니다 (연결 관리 코드는 배포 빌드에도 있다)
+    real = b"dropConnection" in main and b"session.hello" in main
+    missing = build.check_required_packages(root / na.SITE_PACKAGES_IN_INSTALL)
+    ok = not hooks and real and not missing and not icon
+    detail = f"번들 파일 {len(files)}개, E2E 훅 {hooks or '없음'}, "
+    detail += (
+        f"우리 패키지 빠짐 {missing or '없음'}, {variant.app_exe} 확정 아이콘 빠짐 {icon or '없음'}"
+    )
+    return ok, detail
 
 
 def version_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
@@ -372,6 +672,60 @@ def graph_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
     return ok, f"{body.get('verdict')} ({body.get('code')}), 실행 폴더 {body.get('run_dir')}"
 
 
+def app_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
+    """`Kookabug.exe --smoke <예제 워크스페이스 사본>`: 설치 폴더의 CLI로 daemon을 띄우고 붙어서
+    열고 무수정 저장한다. 사용자 데이터 폴더·워크스페이스 사본은 임시 폴더라 사용자 프로필에
+    남지 않는다. 끝난 뒤 설치 폴더에서 돌던 프로세스(daemon)가 남지 않아야 한다."""
+    base = Path(tempfile.mkdtemp(prefix="kb-app-"))
+    try:
+        workspace = base / "ws"
+        shutil.copytree(
+            root / WORKSPACE, workspace, ignore=shutil.ignore_patterns(".kookabug", "runs")
+        )
+        graph = workspace / SMOKE_GRAPH
+        before = graph.read_bytes()
+        mtime = graph.stat().st_mtime_ns
+        report = base / "app-smoke.json"
+        proc = subprocess.run(
+            [
+                str(root / build.variant_of_tree(root).app_exe),
+                f"--user-data-dir={base / 'user-data'}",
+                "--smoke",
+                str(workspace),
+                "--smoke-report",
+                str(report),
+            ],
+            cwd=base,
+            env=dict(env),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=APP_SMOKE_TIMEOUT_S,
+            check=False,
+        )
+        left = wait_no_processes(root)
+        try:
+            body = json.loads(report.read_text(encoding="utf-8"))
+        except OSError, ValueError:
+            body = {}
+        steps = [f"{s['id']}={'ok' if s['ok'] else 'FAIL'}" for s in body.get("steps", [])]
+        unchanged = graph.read_bytes() == before and graph.stat().st_mtime_ns == mtime
+        ok = proc.returncode == 0 and body.get("ok") is True and unchanged and not left
+        logs = sorted((workspace / ".kookabug" / "logs").glob("daemon-*.log"))
+        detail = (
+            f"종료 코드 {proc.returncode}, 단계 {steps}, 그래프 바이트·mtime 그대로={unchanged}, "
+            f"남은 프로세스 {left or '없음'}"
+        )
+        if not ok:
+            tail = logs[-1].read_text(encoding="utf-8", errors="replace")[-1500:] if logs else ""
+            detail += f"; stdout {proc.stdout[-1500:]!r}; stderr {proc.stderr[-1500:]!r}"
+            detail += f"; daemon 로그 {tail!r}"
+        return ok, detail
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
 def dll_step(root: Path) -> tuple[bool, str]:
     report = dllcheck.check_tree(root)
     if report.problems:
@@ -391,11 +745,13 @@ def smoke_installed(report: SmokeReport) -> None:
     report.sizes["install_bytes"], report.sizes["install_files"] = build.tree_size(root)
     report.step("audit.final_tree", lambda: audit_step(root))
     report.step("licenses.notices", lambda: notices_step(root))
+    report.step("packaging.app_bundle", lambda: bundle_step(root))
     env = python_free_env(root)
     report.step("env.python_free", lambda: check_env(root, env))
     report.step("cli.version", lambda: version_step(root, env))
     report.step("cli.doctor_headless", lambda: doctor_step(root, env))
     report.step("cli.smoke_graph", lambda: graph_step(root, env))
+    report.step("app.smoke", lambda: app_step(root, env))
     report.step("dll.check", lambda: dll_step(root))
 
 
@@ -409,12 +765,23 @@ def run_all(
 ) -> SmokeReport:
     """설치 → 감사·스모크 → 제거 → 남은 것 없음. 실패해도 제거는 한다(`keep`이 아니면).
 
-    기본은 테스트 전용 판(`build.TEST`)만 받는다: AppId·이름·폴더가 제품과 달라 이 PC의 실제 설치와
-    겹치지 않는다. HKCU 제거 등록 전체를 앞뒤로 비교해, 설치 중에는 그 판의 키만 새로 생기고 제거
-    뒤에는 처음과 똑같아야 한다."""
+    기본은 테스트 전용 판(`build.TEST`)만 받는다: appId·이름·GUID·폴더가 제품과 달라 이 PC의 실제
+    설치와 겹치지 않는다. 설치 흔적(`traces`)을 앞뒤로 비교해, 설치 중에는 그 판의 키만 새로 생기고
+    제거 뒤에는 처음과 똑같아야 한다."""
     report = SmokeReport(target)
     report.sizes["setup_bytes"] = setup.stat().st_size
-    before = uninstall_entries()
+    guard = UserPathGuard()
+    before = traces(variant)
+    standin: StandIn | None = None
+
+    def start_standin() -> tuple[bool, str]:
+        nonlocal standin
+        standin = start_product_standin(target)
+        return True, f"{standin.exe} (PID {standin.proc.pid})"
+
+    def standin_alive(when: str) -> tuple[bool, str]:
+        alive = standin is not None and standin.alive
+        return alive, f"{when} 뒤 제품 판 대역 살아 있음={alive}"
 
     def do_install() -> tuple[bool, str]:
         install(setup, target, log)
@@ -422,42 +789,77 @@ def run_all(
 
     def registration() -> tuple[bool, str]:
         now = uninstall_entries()
-        added = sorted(set(now) - set(before))
-        changed = sorted(k for k in before if now.get(k) != before[k])
-        location = now.get(variant.uninstall_key, {}).get("InstallLocation", "")
+        added = sorted(set(now) - set(before["uninstall"]))
+        changed = sorted(k for k in before["uninstall"] if now.get(k) != before["uninstall"][k])
+        command = now.get(variant.uninstall_key, {}).get("UninstallString", "")
+        location = (hkcu_values(variant.install_key) or {}).get("InstallLocation", "")
         here = os.path.normcase(location.rstrip("\\")) == os.path.normcase(str(target))
-        ok = added == [variant.uninstall_key] and not changed and here
-        return ok, f"새 키 {added}, 바뀐 키 {changed or '없음'}, InstallLocation={location!r}"
+        points = os.path.normcase(str(target / variant.uninstaller)) in os.path.normcase(command)
+        ok = added == [variant.uninstall_key] and not changed and here and points
+        return ok, (
+            f"새 키 {added}, 바뀐 키 {changed or '없음'}, InstallLocation={location!r}, "
+            f"UninstallString={command!r}"
+        )
 
     def on_path() -> tuple[bool, str]:
         bin_dir = target / build.BIN
         return path_has(user_path(), bin_dir), f"사용자 PATH에 {bin_dir}"
 
-    def do_uninstall() -> tuple[bool, str]:
-        uninstall(target)
-        return True, "제거 프로그램 끝"
+    def shortcut() -> tuple[bool, str]:
+        """시작 메뉴 바로 가기가 설치한 앱 실행 파일(확정 아이콘이 든)을 가리킨다."""
+        link = start_menu() / variant.shortcut
+        local = Path(os.environ.get("LOCALAPPDATA", "")) / variant.updater_dir
+        exe = target / variant.app_exe
+        aim, icon = shortcut_target(link) if link.exists() else ("", "")
+        points = os.path.normcase(aim) == os.path.normcase(str(exe))
+        icon_ok = os.path.normcase(icon.rsplit(",", 1)[0]) == os.path.normcase(str(exe))
+        ok = link.exists() and points and icon_ok and local.exists() == before["updater"]
+        detail = f"시작 메뉴 {link.name} 있음={link.exists()}, 대상 {aim!r}, 아이콘 {icon!r}, "
+        return ok, detail + f"설치 파일 사본 폴더 남음={local.exists()}"
 
-    def registry_restored() -> tuple[bool, str]:
-        now = uninstall_entries()
-        added = sorted(set(now) - set(before))
-        lost = sorted(set(before) - set(now))
-        changed = sorted(k for k in before if k in now and now[k] != before[k])
-        ok = not added and not lost and not changed
-        return (
-            ok,
-            f"남은 키 {added or '없음'}, 사라진 키 {lost or '없음'}, 바뀐 키 {changed or '없음'}",
+    def do_uninstall() -> tuple[bool, str]:
+        done = uninstall(target, variant=variant)
+        return done, f"제거 프로그램 끝, 폴더·등록·바로 가기 정리 끝={done}"
+
+    def restored() -> tuple[bool, str]:
+        now = traces(variant)
+        added = sorted(set(now["uninstall"]) - set(before["uninstall"]))
+        lost = sorted(set(before["uninstall"]) - set(now["uninstall"]))
+        changed = sorted(
+            k
+            for k in before["uninstall"]
+            if k in now["uninstall"] and now["uninstall"][k] != before["uninstall"][k]
+        )
+        others = [k for k in ("install_key", "shortcut", "updater", "path") if now[k] != before[k]]
+        ok = not added and not lost and not changed and not others
+        return ok, (
+            f"남은 키 {added or '없음'}, 사라진 키 {lost or '없음'}, 바뀐 키 {changed or '없음'}, "
+            f"달라진 흔적 {others or '없음'}"
         )
 
     if not report.step("setup.variant", lambda: check_setup(setup, variant)).ok:
         return report
-    if report.step("install", do_install).ok:
-        report.step("install.registration", registration)
-        report.step("install.path", on_path)
-        smoke_installed(report)
-    if not keep and uninstaller(target) is not None:
-        report.step("uninstall", do_uninstall)
-        report.step("uninstall.clean", lambda: removed_step(target))
-        report.step("uninstall.registry", registry_restored)
+    try:
+        if variant is not build.PRODUCT:
+            report.step("isolation.product_standin", start_standin)
+        if report.step("install", do_install).ok:
+            if standin is not None:
+                report.step("isolation.after_install", lambda: standin_alive("설치"))
+            report.step("install.registration", registration)
+            report.step("install.path", on_path)
+            report.step("install.shortcut", shortcut)
+            smoke_installed(report)
+        if not keep and uninstaller(target) is not None:
+            report.step("uninstall", do_uninstall)
+            if standin is not None:
+                report.step("isolation.after_uninstall", lambda: standin_alive("제거"))
+            report.step("uninstall.clean", lambda: removed_step(target))
+            report.step("uninstall.registry", restored)
+    finally:
+        if standin is not None:
+            standin.stop()
+        if not keep:
+            report.step("path.guard", lambda: (guard.check(), guard.detail))
     return report
 
 

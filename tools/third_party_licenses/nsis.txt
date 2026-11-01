@@ -1,0 +1,40 @@
+NSIS 3.04의 라이선스 원문 (설치 파일·제거 프로그램 Uninstall Kookabug.exe)
+electron-builder 26.17.0이 받는 nsis-3.0.4.1 배포물의 COPYING에서 이 배포물에 해당하는 절(저작권·적용
+라이선스·zlib/libpng)을 그대로 옮겼다. 설치 파일·제거 프로그램은 zlib 압축 모듈(SetCompressor zlib)만 쓰고
+bzip2·LZMA 압축 모듈은 들어가지 않는다. 직접 고치지 않는다.
+
+COPYRIGHT
+---------
+
+Copyright (C) 1999-2018 Contributors
+
+More detailed copyright information can be found in the individual source code files.
+
+APPLICABLE LICENSES
+-------------------
+
+* All NSIS source code, plug-ins, documentation, examples, header files and graphics, with the exception of the compression modules and where otherwise noted, are licensed under the zlib/libpng license.
+
+* The zlib compression module for NSIS is licensed under the zlib/libpng license.
+
+ZLIB/LIBPNG LICENSE
+-------------------
+
+This software is provided 'as-is', without any express or implied warranty. In no event will the authors be held liable for any damages arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose, including commercial applications, and to alter it and redistribute it freely, subject to the following restrictions:
+
+      1. The origin of this software must not be misrepresented; you must not claim that you wrote the original software. If you use this software in a product, an acknowledgment in the product documentation would be appreciated but is not required.
+
+      2. Altered source versions must be plainly marked as such, and must not be misrepresented as being the original software.
+
+      3. This notice may not be removed or altered from any source distribution.
+
+==============================================================================
+UAC plug-in (Anders Kjersem), electron-builder nsis-resources 3.4.1
+https://nsis.sourceforge.io/UAC_plug-in — "License: zlib". 위 zlib/libpng license와 같은 조건이다.
+
+==============================================================================
+nsisunz plug-in (설치 파일에만 들어감, 설치 폴더에는 없음), electron-builder nsis-resources 3.4.1
+https://nsis.sourceforge.io/Nsisunz_plug-in — License 절이 zlib/libpng license 원문이다 (ZLIB 사용,
+Copyright (c) Mark Adler).

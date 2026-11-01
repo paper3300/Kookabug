@@ -1,0 +1,49 @@
+ffmpeg.dll 대응 소스·패치·빌드 정보 (Kookabug 설치본 licenses\ffmpeg-SOURCE.txt)
+==============================================================================
+
+Kookabug 데스크톱 앱 폴더의 ffmpeg.dll은 Electron 44.8.0 배포물에 든 FFmpeg 동적 라이브러리를
+수정하지 않고 그대로 배포한 것이다. FFmpeg는 GNU Lesser General Public License 2.1 이상(LGPL-2.1-or-later)
+이다. 라이선스 원문은 licenses\THIRD_PARTY_NOTICES.txt의 "네이티브 파일 근거 원문" 절에 있다.
+
+1. 배포한 파일
+   - 파일: ffmpeg.dll (설치 폴더 맨 위)
+   - SHA256: c5d6728608e90550f4de8c97399689f5ae6b6875b8073f74ed2985a68479ae1c
+   - 출처: Electron v44.8.0 win32-x64 배포물 (npm electron@44.8.0이 받는
+     https://github.com/electron/electron/releases/download/v44.8.0/electron-v44.8.0-win32-x64.zip)
+
+2. 그 빌드에 대응하는 소스 (판 고정)
+   - Electron v44.8.0
+     태그 https://github.com/electron/electron/tree/v44.8.0
+     커밋 60169b45c12488c6fda237af7f6425526a7ce5f0 (태그 객체 9d3201f397dbb80549c888ec43d34125fab86870)
+   - Chromium 152.0.7977.167 (Electron v44.8.0 DEPS의 chromium_version)
+     https://chromium.googlesource.com/chromium/src/+/refs/tags/152.0.7977.167
+   - FFmpeg 소스: Chromium 152.0.7977.167 DEPS의 ffmpeg_revision
+     https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/2b68d2babae73714846961fb0ee47e3b3d2e39a9
+     받기: git clone https://chromium.googlesource.com/chromium/third_party/ffmpeg
+           git -C ffmpeg checkout 2b68d2babae73714846961fb0ee47e3b3d2e39a9
+
+3. 패치
+   - Electron이 FFmpeg에 거는 패치는 patches/ffmpeg/.patches에 적힌 하나다:
+     https://github.com/electron/electron/blob/v44.8.0/patches/ffmpeg/link_with_loader_path.patch
+     (macOS의 libffmpeg.dylib 링크 경로만 바꾼다. Windows 빌드 결과에는 영향이 없다)
+   - 패치 목록: https://github.com/electron/electron/blob/v44.8.0/patches/ffmpeg/.patches
+   - 패치를 어느 저장소에 거는지: https://github.com/electron/electron/blob/v44.8.0/patches/config.json
+
+4. 빌드 설정
+   - Electron 빌드 인자 (ffmpeg_branding = "Chrome", proprietary_codecs = true):
+     https://github.com/electron/electron/blob/v44.8.0/build/args/all.gn
+   - 배포 빌드 인자 (is_component_ffmpeg = true: FFmpeg를 동적 라이브러리 ffmpeg.dll로 만든다):
+     https://github.com/electron/electron/blob/v44.8.0/build/args/release.gn
+   - FFmpeg configure 결과 (Windows x64, Chrome 구성):
+     https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/2b68d2babae73714846961fb0ee47e3b3d2e39a9/chromium/config/Chrome/win/x64/config.h
+     CONFIG_GPL 0, CONFIG_NONFREE 0, CONFIG_VERSION3 0 (GPL·nonfree 구성 없음). 켠 디코더는 vorbis, libopus,
+     flac, pcm 계열, mp3, aac, h264이고 디먹서는 ogg, matroska, wav, flac, mp3, mov, aac다
+   - 빌드 방법: Electron 소스 빌드 안내 https://github.com/electron/electron/blob/v44.8.0/docs/development/build-instructions-gn.md
+     에 위 인자(release.gn)를 주면 out\Release\ffmpeg.dll이 만들어진다. Electron은 같은 소스로 만든
+     FFmpeg만 따로 담은 배포물도 낸다(Chromium 구성, 독점 코덱 없음):
+     https://github.com/electron/electron/releases/download/v44.8.0/ffmpeg-v44.8.0-win32-x64.zip
+
+5. 제공 방법
+   - 위 주소에서 누구나 받을 수 있다. 주소를 쓸 수 없게 되면 Kookabug 프로젝트 저장소에 이슈로 요청하면,
+     이 배포본을 받은 날부터 3년 동안 같은 판의 소스(위 2~4의 내용)를 받을 수 있는 방법을 알려 준다
+   - ffmpeg.dll은 동적으로 읽는 별도 파일이다. 같은 이름의 호환 빌드로 바꿔 넣어 쓸 수 있다

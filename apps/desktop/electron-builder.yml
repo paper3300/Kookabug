@@ -1,0 +1,57 @@
+# 설치 파일 기본 설정 (구현 계획 M2 2.14). 직접 부르지 않는다: tools/installer/build.py가 이 파일을
+# extends 하는 설정(판·경로·버전)을 만들어 두 번 부른다.
+#   1. --dir: 앱 폴더(build.py가 만든 배포 빌드·package.json) + Electron + M1 스테이징 트리(extraFiles)
+#      → win-unpacked. build.py가 이 트리를 감사하고 NOTICES를 쓴다
+#   2. --prepackaged <win-unpacked>: 감사한 그 트리로 NSIS 설치 파일을 만든다 (판마다)
+# 판(제품·테스트)마다 다른 값(appId·productName·nsis.guid·artifactName)과 경로(directories.app·output,
+# extraFiles)는 build.py가 넣는다.
+
+# 제품 판 실행 파일 이름. 테스트 판은 build.py가 다른 이름(KookabugTest)으로 바꾼다 — 설치·제거가 실행 중인 앱을
+# 찾고 끌 때 다른 판의 앱과 섞이지 않게
+executableName: Kookabug
+copyright: Copyright (c) Kookabug contributors
+
+# Electron은 받지 않고 고정판(package.json devDependencies) 배포물을 쓴다. build.py가 기본 앱
+# (resources/default_app.asar)과 판 파일(version, 설치본 VERSION과 대소문자만 다름)을 뺀 사본 경로로 바꿔 준다
+electronDist: node_modules/electron/dist
+npmRebuild: false
+nodeGypRebuild: false
+asar: true
+compression: normal
+# 앱 폴더에는 배포 빌드와 package.json만 있다. JS 의존성은 번들에 들어 있으므로 node_modules를 넣지 않는다
+# (앱 폴더에 node_modules가 없으면 electron-builder가 apps/desktop의 의존성을 찾아 넣으려 한다)
+files:
+  - dist/**/*
+  - package.json
+  - "!**/node_modules/**"
+
+win:
+  target: nsis
+  # 확정 앱 아이콘 A1 (M2 계획 2.11). 실행 파일·설치 파일·시작 메뉴 바로 가기가 이 아이콘을 쓴다
+  icon: "../../Docs/Design/앱 아이콘 (L3)/확정 A1/kookabug.ico"
+  # 서명은 보류(H5). 실행 파일 이름·버전 정보만 바꾼다
+  signAndEditExecutable: true
+  signExts: []
+
+nsis:
+  # 사용자별 설치, 관리자 권한 없음 (M1 U2와 같음). 설치 범위 고르기 화면은 installer.nsh가 건너뛴다
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  # 모든 사용자 설치용 권한 올리기 도우미(resources/elevate.exe)를 넣지 않는다
+  packElevateHelper: false
+  # 앱 묶음을 zip으로 넣어 nsisunz(zlib/libpng) 플러그인으로 푼다. 7z 묶음은 nsis7z(7-Zip, LGPL-2.1)
+  # 플러그인이 설치 파일에 들어간다. 7z보다 크지만(설치 파일 크기는 보고서) 금지 라이선스를 피한다.
+  # 차등 업데이트용 묶음은 만들지 않는다(자동 업데이트 보류 H5, 켜면 useZip이 무시되고 7z가 된다)
+  useZip: true
+  differentialPackage: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: false
+  createStartMenuShortcut: true
+  deleteAppDataOnUninstall: false
+  runAfterFinish: false
+  installerLanguages: [ko_KR, en_US]
+  language: "1042"
+  warningsAsErrors: true
+  # nsis.include는 build.py가 판마다 만든 머리 파일(KB_MAX_REL_PATH·kbRemoveTree를 정하고
+  # packaging/installer.nsh를 include)로 넣는다

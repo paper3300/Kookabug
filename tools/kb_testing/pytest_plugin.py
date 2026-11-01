@@ -147,9 +147,10 @@ def ocr_models() -> Path:
 
 @pytest.fixture(scope="session")
 def installer_test_setup(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """테스트 전용 판 설치 파일 (구현 계획 M1 2.12). `KOOKABUG_INSTALLER`(CI installer 잡이
-    `--test-setup`으로 빌드한 것)가 있으면 그것, 없으면 세션에 한 번 빌드한다 — 무인 설치 검사와
-    M1 인수 4가 같은 설치 파일을 쓴다 (Inno Setup 6·VC++ 재배포 파일·OCR 모델·네트워크 필요)."""
+    """테스트 전용 판 설치 파일 (구현 계획 M1 2.12, M2 2.14). `KOOKABUG_INSTALLER`(CI installer
+    잡이 `--test-setup`으로 빌드한 것)가 있으면 그것, 없으면 세션에 한 번 빌드한다 — 무인 설치
+    검사와 M1 인수 4가 같은 설치 파일을 쓴다 (Node·pnpm·VC++ 재배포 파일·OCR 모델·네트워크 필요.
+    electron-builder가 NSIS를 처음 한 번 받는다)."""
     given = os.environ.get(INSTALLER_ENV, "").strip()
     if given:
         return Path(given).resolve()

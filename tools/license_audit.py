@@ -241,6 +241,27 @@ class FontOnly:
     support_names: frozenset[str]
 
 
+@dataclass(frozen=True)
+class PinnedBinary:
+    """고정 바이너리 한정 예외 (구현 계획 M2 2.14·U8). 배포물 판·설치 트리 안 상대 경로·sha256이
+    모두 맞는 그 파일 하나에서만 `license`의 잎(금지 라이선스 포함)을 허용한다. 판정기는 이 예외를
+    거부 패턴보다 먼저 보되, 셋 중 하나라도 다르면 예외가 없는 것과 같다(금지 그대로)."""
+
+    package: str
+    version: str
+    # 설치 폴더 기준 posix 상대 경로 (대소문자 무시로 비교)
+    path: str
+    sha256: str
+    license: str
+    reason: str
+    # 대응 소스·패치·빌드 정보를 적은 배포 산출물 (설치 폴더 기준). 설치 트리에 있어야 예외가 선다
+    source: str
+
+    @property
+    def leaves(self) -> frozenset[str]:
+        return frozenset(expression_ids(self.license))
+
+
 @dataclass
 class Policy:
     allowed: frozenset[str]
@@ -253,6 +274,7 @@ class Policy:
     # 패키지별 "라이선스 WITH 예외" → 이유. 그 패키지에서만, 거부 패턴보다 먼저 본다
     package_with: dict[NormalizedName, dict[str, str]] = field(default_factory=dict)
     font_only: FontOnly | None = None
+    pinned: tuple[PinnedBinary, ...] = ()
 
 
 def _load_font_only(data: Mapping[str, Any]) -> FontOnly | None:
@@ -318,6 +340,50 @@ def load_policy(data: Mapping[str, Any]) -> Policy:
         frozenset(allowed_with),
         package_with,
         _load_font_only(data),
+        tuple(_load_pinned(item, i) for i, item in enumerate(data.get("pinned_binary", []))),
+    )
+
+
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _install_rel(value: Any, where: str, key: str) -> str:
+    """설치 폴더 안의 posix 상대 경로만 받는다 (절대 경로·드라이브·상위 폴더 이탈·\\ 금지)."""
+    text = str(value or "").strip()
+    parts = text.split("/")
+    if (
+        not text
+        or "\\" in text
+        or ":" in text
+        or text.startswith("/")
+        or any(p in ("", ".", "..") for p in parts)
+    ):
+        raise AuditInputError(f"{where}: {key}는 설치 폴더 기준 posix 상대 경로다 ({text!r})")
+    return text
+
+
+def _load_pinned(item: Mapping[str, Any], index: int) -> PinnedBinary:
+    where = f"pinned_binary[{index}]"
+    fields: dict[str, str] = {}
+    for key in ("package", "version", "license", "reason"):
+        value = str(item.get(key, "")).strip()
+        if not value:
+            raise AuditInputError(f"{where}: {key}가 있어야 한다")
+        fields[key] = value
+    sha256 = str(item.get("sha256", "")).strip().lower()
+    if not _HEX64.match(sha256):
+        raise AuditInputError(f"{where}: sha256은 16진수 64자다")
+    ids = expression_ids(fields["license"])
+    if not ids or any(not _SPDX_ID.match(i) or i.startswith(LICENSE_REF_PREFIX) for i in ids):
+        raise AuditInputError(f"{where}: license는 SPDX 식별자 식이다 ({fields['license']!r})")
+    return PinnedBinary(
+        package=fields["package"],
+        version=fields["version"],
+        path=_install_rel(item.get("path"), where, "path"),
+        sha256=sha256,
+        license=fields["license"],
+        reason=fields["reason"],
+        source=_install_rel(item.get("source"), where, "source"),
     )
 
 
@@ -335,8 +401,27 @@ _WITH_ENTRY = re.compile(r"^([A-Za-z0-9.\-]+) WITH ([A-Za-z0-9.\-]+)$")
 LICENSE_REF_PREFIX = "LicenseRef-"
 
 
-def _classify_id(lic_id: str, policy: Policy, license_refs: frozenset[str]) -> Status:
+def expression_ids(expr: str) -> list[str]:
+    """SPDX 식에 나오는 라이선스·예외 식별자 (연산자·괄호 제외, 나온 순서, 중복 없음)."""
+    out: list[str] = []
+    for tok in _TOKEN.findall(expr):
+        tok = tok.strip()
+        if tok and tok.upper() not in _OPERATORS and tok.removesuffix("+") not in out:
+            out.append(tok.removesuffix("+"))
+    return out
+
+
+def _classify_id(
+    lic_id: str,
+    policy: Policy,
+    license_refs: frozenset[str],
+    pinned_ok: frozenset[str] = frozenset(),
+) -> Status:
     lic_id = lic_id.removesuffix("+")
+    # 고정 바이너리 한정 예외가 정확히 맞은 파일: 거부 패턴보다 먼저 본다
+    # (판·경로·sha256은 호출자가 확인했다, native_audit.match_pinned)
+    if lic_id in pinned_ok:
+        return Status.ALLOWED
     if any(p.search(lic_id) for p in policy.denied_patterns):
         return Status.DENIED
     # 비 SPDX 배포물은 네이티브 표에 원문·이유를 적은 LicenseRef로만 허용한다
@@ -354,6 +439,7 @@ def _eval_expression(
     policy: Policy,
     package: NormalizedName | None = None,
     license_refs: frozenset[str] = frozenset(),
+    pinned_ok: frozenset[str] = frozenset(),
 ) -> Status:
     """SPDX 식(AND·OR·WITH·괄호)을 판정한다. OR은 가장 나은 쪽, AND는 가장 나쁜 쪽."""
     package_with = policy.package_with.get(package, {}) if package else {}
@@ -402,7 +488,7 @@ def _eval_expression(
             take()
             return result
         lic_id = take_id()
-        status = _classify_id(lic_id, policy, license_refs)
+        status = _classify_id(lic_id, policy, license_refs, pinned_ok)
         if peek() != "WITH":
             return status
         take()
@@ -492,11 +578,13 @@ def classify_license(
     *,
     package: NormalizedName | None = None,
     license_refs: frozenset[str] = frozenset(),
+    pinned_ok: frozenset[str] = frozenset(),
 ) -> tuple[Status, str]:
     """스캐너가 준 라이선스 문자열을 판정한다. 돌려주는 문자열은 별칭을 푼 SPDX 식.
 
     `package`를 주면 그 패키지의 `package_with` 예외를 쓴다. `license_refs`는 네이티브 표에
-    정의된 LicenseRef 이름들이다 (패키지 메타데이터 판정에는 주지 않는다).
+    정의된 LicenseRef 이름들이다 (패키지 메타데이터 판정에는 주지 않는다). `pinned_ok`는 고정
+    바이너리 한정 예외(`PinnedBinary.leaves`)가 정확히 맞은 파일에서만 주는 허용 잎이다.
     """
     text = text.strip()
     if not text or text == UNKNOWN:
@@ -506,7 +594,7 @@ def classify_license(
     resolved = [policy.aliases.get(p.casefold(), p) for p in parts]
     statuses: list[Status] = []
     for orig, res in zip(parts, resolved, strict=True):
-        status = _eval_expression(res, policy, package, license_refs)
+        status = _eval_expression(res, policy, package, license_refs, pinned_ok)
         # SPDX 식이 아닌 긴 이름("GNU General Public License v3 ...")도 금지 계열이면 금지로 본다
         if status is Status.UNKNOWN and any(p.search(orig) for p in policy.denied_patterns):
             status = Status.DENIED

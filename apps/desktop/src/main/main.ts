@@ -12,6 +12,7 @@ import { APP_CHANNEL, checkAppAction, checkSender, EVENT_CHANNEL, IpcGuardError,
 import { handleProtocols, registerSchemes } from "./protocols";
 import { APP_ORIGIN, isExternalOpenAllowed, lockedWebPreferences } from "./security";
 import { checkWorkspaceFolder, isThemeMode, Settings } from "./settings";
+import { parseSmokeArgs, runSmoke, type SmokeArgs, withDeadline } from "./smoke";
 
 /** 빌드가 정한다 (scripts/build-options.mjs): 배포 빌드는 false라 E2E 훅 분기가 번들에서 빠진다 */
 declare const __KOOKABUG_E2E_HOOKS__: boolean;
@@ -32,8 +33,12 @@ registerSchemes();
 
 let mainWindow: BrowserWindow | null = null;
 const output: OutputLine[] = [];
+// 설치본 스모크 (smoke.ts): 창 없이 daemon 붙기·열기·무수정 저장을 하고 끝난다. 단일 인스턴스 잠금을 잡지 않는다
+const smokeArgs = parseSmokeArgs(process.argv);
 
-if (!app.requestSingleInstanceLock()) {
+if (smokeArgs !== null) {
+  void app.whenReady().then(() => startSmoke(smokeArgs));
+} else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {
@@ -56,6 +61,42 @@ function lockContents(contents: Electron.WebContents): void {
   });
 }
 
+function cliLocation() {
+  return locateCli({
+    env: process.env,
+    packaged: app.isPackaged,
+    installDir: path.dirname(process.execPath),
+    repoRoot: REPO_ROOT,
+    exists: (f) => fs.existsSync(f),
+  });
+}
+
+async function startSmoke(args: SmokeArgs): Promise<void> {
+  const manager = new DaemonManager(
+    nodeDeps({
+      client: { kind: "ui", name: "Kookabug", version: app.getVersion() },
+      locateCli: cliLocation,
+      extraArgs: parseExtraArgs(process.env.KOOKABUG_DAEMON_ARGS),
+    }),
+    {
+      state: () => {},
+      notification: () => {},
+      log: (level, message) => console.log(`[${level}] ${message}`),
+    },
+  );
+  const result = await withDeadline(runSmoke(args, manager));
+  const text = JSON.stringify({ ...result, workspace: args.workspace, graph: args.graph });
+  console.log(text);
+  if (args.report !== null) {
+    try {
+      fs.writeFileSync(args.report, text + "\n", "utf8");
+    } catch (err) {
+      console.error(`스모크 결과를 쓰지 못했다: ${(err as Error).message}`);
+    }
+  }
+  app.exit(result.code);
+}
+
 function send(name: string, data: unknown): void {
   if (mainWindow !== null && !mainWindow.isDestroyed()) mainWindow.webContents.send(EVENT_CHANNEL, name, data);
 }
@@ -74,14 +115,7 @@ function start(): void {
   const manager = new DaemonManager(
     nodeDeps({
       client: { kind: "ui", name: "Kookabug", version: app.getVersion() },
-      locateCli: () =>
-        locateCli({
-          env: process.env,
-          packaged: app.isPackaged,
-          installDir: path.dirname(process.execPath),
-          repoRoot: REPO_ROOT,
-          exists: (f) => fs.existsSync(f),
-        }),
+      locateCli: cliLocation,
       extraArgs: parseExtraArgs(process.env.KOOKABUG_DAEMON_ARGS),
     }),
     {

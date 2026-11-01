@@ -484,14 +484,14 @@ def _notices_inputs(
             },
             {
                 "scope": "install",
-                "glob": "unins*.exe",
-                "package": "inno-setup",
-                "license": "LicenseRef-InnoSetup",
+                "glob": "Uninstall *.exe",
+                "package": "nsis",
+                "license": "Zlib",
                 "texts": [
                     {
-                        "file": "third_party_licenses/inno-setup.txt",
-                        "covers": ["LicenseRef-InnoSetup"],
-                        "expect": ["Jordan Russell"],
+                        "file": "third_party_licenses/nsis.txt",
+                        "covers": ["Zlib"],
+                        "expect": ["zlib/libpng license"],
                     }
                 ],
                 "reason": "제거 프로그램",
@@ -503,11 +503,6 @@ def _notices_inputs(
                 "source": "Visual Studio 사용 조건",
                 "reason": "수정 없이 배포",
                 "notice": "Copyright (c) Microsoft Corporation. (VC++ 고지)",
-            },
-            "LicenseRef-InnoSetup": {
-                "name": "Inno Setup License",
-                "source": "license.txt",
-                "reason": "재배포 허용",
             },
         },
     )
@@ -534,7 +529,7 @@ def _notices_inputs(
         }
     )
     final = na.audit_final_tree(
-        root, table, policy(), models=models, installer_files=(build.INNO_UNINSTALLER,)
+        root, table, policy(), models=models, installer_files=(build.UNINSTALLER,)
     )
     return table, models, final
 
@@ -568,9 +563,9 @@ def test_notices_contains_all_sections(tmp_path: Path) -> None:
         "PSF LICENSE",
         "# OCR 모델",
         "Apache License Version 2.0 (model weights)",  # 모델 근거 원문 본문
-        # 설치 때 Inno Setup이 더하는 제거 프로그램도 스테이징 NOTICES에 실린다
-        "install:unins000.exe",
-        "Inno Setup License",
+        # 설치 때 NSIS가 더하는 제거 프로그램도 NOTICES에 실린다 (설치 전 트리에는 없다)
+        "install:Uninstall Kookabug.exe",
+        "NSIS 3.04",
     ):
         assert section in text, section
     assert "kookabug-cli" not in text  # 우리 패키지는 서드파티 절에 없다
@@ -584,8 +579,9 @@ def test_notices_contains_all_sections(tmp_path: Path) -> None:
 def test_final_tree_audit_runs_on_build_output(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """빌드의 마지막 감사는 스테이징 트리 자체에 최종 트리 감사를 건다: 제거 대상이 남았거나
-    RECORD가 어긋나면 실패하고, 스테이징 Python 스캔 결과로 NOTICES를 만든다."""
+    """빌드의 마지막 감사는 설치 파일에 들어갈 트리 자체(M2: electron-builder win-unpacked)에 최종
+    트리 감사를 건다: 제거 대상이 남았거나 RECORD가 어긋나면 실패하고, 그 트리의 Python 스캔
+    결과로 NOTICES를 만든다."""
     stage = tmp_path / "stage"
     table, models, _ = _notices_inputs(stage, native=[FFMPEG_NATIVE], strip=[FFMPEG_STRIP])
     write_tree(stage, {f"{SITE}/{FFMPEG}": b"MZ"})  # 지웠어야 할 파일이 남음
