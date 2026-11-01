@@ -4,8 +4,8 @@ import { create } from "zustand";
 import type { DaemonState, OpenResult, OutputLine, RecentProject } from "../../preload/bridge";
 import type { TreeEntry } from "../explorer/tree";
 import { client, toRpcError } from "../rpc/client";
-import { RunCursors } from "../rpc/runCursor";
 import { SessionRecovery } from "../rpc/recovery";
+import { runModel } from "../run/runStore";
 import {
   documentsHost,
   onGraphChanged,
@@ -55,16 +55,6 @@ const app = () => window.kookabug.app;
 /** 다시 붙은 뒤 복구. 문서 표(T8)·target 편집기(T12)·실행 화면(T11)이 Host를 등록한다 */
 export const recovery = new SessionRecovery((method, params) => client().call(method, params));
 
-/** 실행 구독 커서. 실행 화면(T11)이 apply를 바꿔 끼운다 */
-export const runCursors = new RunCursors(
-  (method, params) => client().call(method, params),
-  (runId, seq, event) => runEventSink(runId, seq, event),
-);
-let runEventSink: (runId: string, seq: number, event: unknown) => void = () => {};
-export function setRunEventSink(sink: typeof runEventSink): void {
-  runEventSink = sink;
-}
-
 function pushOutput(line: OutputLine): void {
   useWorkspace.setState((s) => {
     const output = [...s.output, line];
@@ -109,7 +99,7 @@ function switchProject(root: string | null): void {
   resetRegistry();
   closeAllTabs();
   useUi.setState({ expanded: null, selected: null, quickOpen: false });
-  runCursors.reset();
+  runModel.reset();
   recovery.reset();
   useWorkspace.setState({
     root,
@@ -141,7 +131,10 @@ async function onDaemonState(state: DaemonState): Promise<void> {
   });
   if (useWorkspace.getState().root !== state.root) return;
   if (kind === "daemon_replaced") note("info", "daemon이 바뀌어 열린 문서를 다시 열었다");
-  await Promise.all([refreshTree(), refreshInfo(), loadRegistry()]);
+  // 진행 중인 실행 다시 따라가기 (앱을 다시 열었거나 따라가던 실행이 없을 때). 따라가던 실행은 위 복구가
+  // 적용한 마지막 seq부터 다시 구독했다
+  const runs = kind === "same_connection" ? Promise.resolve() : runModel.syncActive();
+  await Promise.all([refreshTree(), refreshInfo(), loadRegistry(), runs]);
 }
 
 async function loadRegistry(): Promise<void> {
@@ -166,17 +159,19 @@ export async function initWorkspace(): Promise<void> {
   });
   // 열린 문서의 디스크가 바뀜: 편집하지 않았으면 다시 열고, 편집 중이면 충돌 띠 (2.6)
   client().on("graph.changed", (p) => onGraphChanged(p.doc_id, p.revision ?? null));
+  runModel.setHooks({ note });
   client().on("run.event", (p) => {
     try {
-      runCursors.event(p.run_id, p.seq, p.event);
+      runModel.event(p);
     } catch (err) {
       // 커서는 그대로다: 다음 이벤트·다시 붙기에서 이 seq부터 다시 받는다
       note("error", `실행 이벤트를 적용하지 못했다 (${p.run_id} #${p.seq}): ${(err as Error).message}`);
     }
   });
-  client().on("run.lagged", (p) => runCursors.lagged(p.run_id));
-  client().on("run.ended", (p) => runCursors.ended(p.run_id));
-  recovery.addRuns(runCursors);
+  client().on("run.lagged", (p) => runModel.lagged(p));
+  client().on("run.ended", (p) => runModel.ended(p));
+  client().on("lease.changed", (p) => runModel.lease(p));
+  recovery.addRuns(runModel.cursors);
   recovery.addDocs(documentsHost);
   const [recent, output, state] = await Promise.all([app().recent(), app().daemonLog(), app().daemonState()]);
   useWorkspace.setState({ recent, output });

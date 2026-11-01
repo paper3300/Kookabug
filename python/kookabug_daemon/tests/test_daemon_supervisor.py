@@ -85,7 +85,9 @@ def test_run_list_includes_cli_runs(tmp_path: Path) -> None:
         # 최근 실행부터: daemon 실행 → CLI 실행
         assert [r["run_id"] for r in runs] == [started["run_id"], cli_run["run_id"]]
         listed = runs[1]
-        assert listed == client.call("run.status", {"run_id": cli_run["run_id"]})
+        # run.status = 목록 요약 + 스냅샷 호출 관계(calls, M2 T11)
+        status = client.call("run.status", {"run_id": cli_run["run_id"]})
+        assert listed == {k: v for k, v in status.items() if k != "calls"}
         assert (listed["graph"], listed["state"], listed["run_dir"]) == (
             TEST,
             "ended",

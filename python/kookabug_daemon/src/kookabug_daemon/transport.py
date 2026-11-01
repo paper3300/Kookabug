@@ -307,6 +307,10 @@ class Host(Protocol):
         """연결이 끝났다 (그 연결이 쥔 문서 참조 등을 푼다)."""
         ...
 
+    def connection_authenticated(self, number: int) -> None:
+        """연결이 인증됐다 (hello 응답을 큐에 넣은 뒤). 그 연결에 지금 상태 알림을 보낼 수 있다."""
+        ...
+
 
 @dataclass
 class Transport:
@@ -462,6 +466,7 @@ class Transport:
             outcome.principal.attended,
         )
         self._respond(conn, request_id, "session.hello", outcome.result)
+        self.host.connection_authenticated(conn.number)
         return True
 
     async def _serve(self, conn: Connection) -> None:

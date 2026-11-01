@@ -109,6 +109,8 @@
   --kb-node-note-fg: #9d9d9d;
   --kb-node-note-warn-bg: #2a2416;
   --kb-node-note-warn-fg: #e2c08d;
+  --kb-node-running-fg: #7cc0ff; /* 실행 중 노드 상태 줄 "● 1.4s"·반복 회차 */
+  --kb-node-running-glow: rgba(0, 120, 212, 0.25); /* 실행 중 노드 번짐 */
   /* 핀·연결선 (graph/pinColors.ts가 타입으로 고른다) */
   --kb-pin-exec: #cccccc;
   --kb-pin-fail: #f0883e;
@@ -241,6 +243,8 @@
   --kb-node-note-fg: #666666;
   --kb-node-note-warn-bg: #fff7e0;
   --kb-node-note-warn-fg: #7a5600;
+  --kb-node-running-fg: #0b63b6;
+  --kb-node-running-glow: rgba(0, 120, 212, 0.25);
   --kb-pin-exec: #3b3b3b;
   --kb-pin-fail: #b85c00;
   --kb-pin-window: #005fb8;

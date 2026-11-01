@@ -267,6 +267,12 @@ class Daemon:
     def _publish_lease(self, owner: dict[str, Any] | None) -> None:
         self.transport.broadcast("lease.changed", {"owner": owner})
 
+    def connection_authenticated(self, number: int) -> None:
+        # 알림은 바뀔 때만 오므로 붙은 직후 지금 소유자를 한 번 알린다 (hello 응답 뒤 순서)
+        conn = self.transport.find(number)
+        if conn is not None:
+            self.transport.notify(conn, "lease.changed", {"owner": self._lease.owner})
+
     # ---------------------------------------------------------------- 파일 변경 알림
 
     def _publish_changes(self, paths: list[str], changes: list[DocChange]) -> None:

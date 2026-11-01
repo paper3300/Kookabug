@@ -42,6 +42,8 @@ export interface NodeTypeInfo {
   pure: boolean;
   /** 그래프 시작점(core.graph.entry): 흐름 입력이 없다 */
   entry: boolean;
+  /** 반복 노드(engine repeat·while)면 한도 입력 이름 (실행 중 "회차 / 한도" 표시, T11) */
+  loopLimit: string | null;
   plugin: string;
   /** 플러그인 판·이름 (노드를 더할 때 그래프 plugins에 적는다, 팔레트 오른쪽 칸) */
   pluginVersion: string;
@@ -169,6 +171,7 @@ export function indexNodeTypes(schemas: readonly unknown[]): Map<string, NodeTyp
         description: typeof n.description === "string" ? n.description : null,
         pure: n.pure === true,
         entry: n.engine === "graph_entry",
+        loopLimit: n.engine === "repeat" ? "times" : n.engine === "while" ? "max_iterations" : null,
         plugin,
         pluginVersion,
         pluginTitle,

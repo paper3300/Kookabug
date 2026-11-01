@@ -341,6 +341,20 @@ describe("끊김과 다시 붙기", () => {
     expect(await recovery.connected({ root: ROOT, startId: mgr.state.startId!, connection: 2 })).toBe("same_daemon");
   });
 
+  test("연결만 끊기(E2E 훅)는 같은 daemon에 새 연결로 다시 붙는다", async () => {
+    const world = new World();
+    const d = world.startDaemon(ROOT);
+    const { mgr } = manager(world);
+    await mgr.open(ROOT);
+    expect(mgr.state.connection).toBe(1);
+    expect(mgr.dropConnection()).toBe(true);
+    await until(() => mgr.state.status === "connected" && mgr.state.connection === 2, "다시 연결");
+    expect(mgr.state.startId).toBe(d.startId);
+    expect(world.spawns).toEqual([]);
+    mgr.detach();
+    expect(mgr.dropConnection()).toBe(false);
+  });
+
   test("test_reconnect_backoff_and_resubscribe_last_applied_seq", async () => {
     const world = new World();
     const d = world.startDaemon(ROOT);

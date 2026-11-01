@@ -29,6 +29,7 @@ import { PALETTE_MIME } from "../palette/groups";
 import { applyEdit, getDoc, saveViewport, setSelection, useDocuments, type GraphDoc } from "../store/documents";
 import { useEditsLocked } from "../store/dialog";
 import { useRegistry } from "../store/registry";
+import { TabRunContext, useTabRunView } from "../run/view";
 import css from "./canvas.module.css";
 import { registerCanvas } from "./canvasActions";
 import { addNode, connect, deleteSelection, moveNodes } from "./commands";
@@ -284,9 +285,13 @@ function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
     // focus는 요청마다 새 객체(nonce)라 같은 노드를 다시 눌러도 옮긴다
   }, [focus, rf]);
 
+  // 실행 중 강조·노드 상태 줄 (T11): 값 사상과 따로 맥락으로 넘긴다 (이벤트마다 사상을 다시 하지 않는다)
+  const run = useTabRunView(path, doc.value);
+
   const empty = flow.nodes.every((n) => n.type !== "kb" && n.type !== "kbGroup");
   return (
     <CanvasPathContext.Provider value={path}>
+      <TabRunContext.Provider value={run}>
       <ConnectingContext.Provider value={connecting}>
         <ReactFlow<KbFlowNode, KbFlowEdge>
           ref={wrapper}
@@ -340,6 +345,7 @@ function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
           </div>
         </ReactFlow>
       </ConnectingContext.Provider>
+      </TabRunContext.Provider>
       {empty && !dropping && <div className={css.emptyHint}>팔레트에서 노드를 끌어 놓으세요</div>}
       {dropping && (
         <div className={css.dropZone} data-part="drop-zone">

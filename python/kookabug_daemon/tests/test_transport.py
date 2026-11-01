@@ -382,8 +382,16 @@ def test_outbox_limits_lagged_and_overflow() -> None:
     asyncio.run(bytes_limit())
 
 
+def initial_lease(client: DaemonClient) -> dict[str, Any]:
+    """인증 직후 daemon이 한 번 보내는 지금 입력 임대권 소유자 (M2 T11)."""
+    message = client.notifications.get(timeout=10)
+    assert message["method"] == "lease.changed", message
+    return message["params"]
+
+
 def test_notification_contract_checked_including_run_event_body(daemon: ThreadDaemon) -> None:
     with daemon.client() as client:
+        initial_lease(client)
         conn = next(iter(daemon.daemon.transport.connections))
         notify = daemon.daemon.transport.notify
         good = {"run_id": "abcd1234", "seq": 7, "event": STEP_END}
@@ -425,6 +433,7 @@ def test_encode_escapes_lone_surrogates_only() -> None:
 
 def test_surrogate_event_roundtrip(daemon: ThreadDaemon) -> None:
     with daemon.client() as client:
+        initial_lease(client)
         conn = next(iter(daemon.daemon.transport.connections))
         params = {
             "run_id": "abcd1234",
@@ -458,6 +467,8 @@ def test_float_request_id_normalized(daemon: ThreadDaemon, hello_id: Any) -> Non
         ws.send(request("session.hello", hello_params(daemon), hello_id))
         hello = json.loads(ws.recv(timeout=10))
         assert hello["id"] == 1 and "result" in hello
+        # 인증 직후 지금 입력 임대권 소유자 알림이 한 번 온다 (응답 뒤)
+        assert json.loads(ws.recv(timeout=10))["method"] == "lease.changed"
         ws.send(request("x.noop", {}, 2.0))
         response = json.loads(ws.recv(timeout=10))
         assert response["id"] == 2 and response["error"]["code"] == -32601

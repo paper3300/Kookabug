@@ -164,6 +164,18 @@ export class DaemonManager {
     return this.current;
   }
 
+  /**
+   * 지금 연결만 끊는다 (daemon·실행은 그대로). 끊김과 같은 길로 다시 붙는다: 다시 붙기 간격 → 같은 start_id의
+   * 새 연결 → 렌더러 복구(문서 다시 열기·실행 구독은 적용한 마지막 seq부터). E2E 검사 전용 훅이 부른다
+   * (e2e-hooks.ts: 패키징되지 않은 개발 빌드에서만)
+   */
+  dropConnection(): boolean {
+    const conn = this.conn;
+    if (conn === null) return false;
+    conn.close();
+    return true;
+  }
+
   /** 연결을 놓는다 (daemon은 남는다: UI를 꺼도 daemon과 실행은 계속된다) */
   detach(): void {
     this.release();

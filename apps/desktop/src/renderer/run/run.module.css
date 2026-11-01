@@ -1,0 +1,201 @@
+/* 실행 툴바·실행 로그·노드 결과 (시안 Main 탭 줄 오른쪽·하단 패널). 색은 토큰만 쓴다 */
+
+/* ── 툴바 ───────────────────────────────────────────────────────── */
+.toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+}
+
+.profile {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.select {
+  height: 24px;
+  max-width: 160px;
+  padding: 2px 4px;
+  background: var(--kb-input-bg);
+  color: var(--kb-fg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.toolButton {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--kb-fg);
+}
+
+.toolButton:hover:not(:disabled) {
+  background: var(--kb-hover-bg);
+}
+
+.toolButton:disabled {
+  opacity: 0.4;
+}
+
+.play {
+  color: var(--kb-status-ok);
+}
+
+.stop {
+  color: var(--kb-status-error);
+}
+
+.blocked {
+  height: 22px;
+  padding: 0 8px;
+  margin-right: 4px;
+  background: var(--kb-banner-error-bg);
+  color: var(--kb-banner-error-fg);
+  border: 0;
+  border-radius: 2px;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.blocked[data-kind="busy"] {
+  background: var(--kb-banner-warn-bg);
+  color: var(--kb-banner-warn-fg);
+}
+
+/* ── 실행 로그 (시안 하단 패널 줄: 시각·수준·노드·메시지) ─────────── */
+.empty {
+  color: var(--kb-fg-muted);
+  font-family: var(--kb-font);
+}
+
+.logLine {
+  display: flex;
+  gap: 14px;
+  white-space: nowrap;
+}
+
+.logTime {
+  flex: 0 0 auto;
+  color: var(--kb-fg-subtle);
+}
+
+.logLevel {
+  flex: 0 0 40px;
+}
+
+.logNode {
+  flex: 0 0 150px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--kb-log-node);
+}
+
+.logMessage {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--kb-fg);
+}
+
+.levelRun {
+  color: var(--kb-status-run);
+}
+
+.levelOk {
+  color: var(--kb-status-ok);
+}
+
+.levelWarn {
+  color: var(--kb-status-warn);
+}
+
+.levelInfo {
+  color: var(--kb-fg-muted);
+}
+
+.levelFail {
+  color: var(--kb-status-fail);
+}
+
+.levelError {
+  color: var(--kb-status-error);
+}
+
+/* ── 노드 결과 ──────────────────────────────────────────────────── */
+.resultTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.resultNode {
+  color: var(--kb-log-node);
+}
+
+.resultRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  color: var(--kb-fg);
+}
+
+.resultBlock {
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+}
+
+.artifact {
+  color: var(--kb-link-fg);
+  overflow-wrap: anywhere;
+}
+
+.pre {
+  margin: 0;
+  color: var(--kb-fg);
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  color: var(--kb-fg-muted);
+}
+
+.toneRun {
+  color: var(--kb-status-run);
+}
+
+.toneOk {
+  color: var(--kb-status-ok);
+}
+
+.toneFail {
+  color: var(--kb-status-fail);
+}
+
+.toneError {
+  color: var(--kb-status-error);
+}
+
+.toneMuted {
+  color: var(--kb-fg-muted);
+}

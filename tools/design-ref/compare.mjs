@@ -30,6 +30,8 @@ export const SCREENS = {
   // 속성 편집기(시안에 없는 화면, U1): 에이전트 패널 자리에 사이드바 섹션·입력 상자 모양, T10
   inspector: { dark: "Main", light: "MainLight" },
   "inspector-link": { dark: "Main", light: "MainLight" },
+  // 실행 중간 시점(강조 노드·상태 줄·실행 로그·파란 상태 바), T11
+  "main-running": { dark: "Main", light: "MainLight" },
   target: { dark: "Recorder" },
 };
 

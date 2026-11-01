@@ -1042,6 +1042,29 @@ class RunStartResult(BaseModel):
     run_id: RunId
 
 
+class RunStatusResult(BaseModel):
+    """
+    실행 요약 + 실행 스냅샷의 호출 관계 (화면이 실행 중 강조를 실행한 그래프 파일에 붙인다. 편집 버퍼가 아니라 스냅샷 기준)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    calls: Annotated[
+        dict[str, dict[str, WorkspacePath]],
+        Field(
+            description="스냅샷 그래프 파일(워크스페이스 기준) → 그 그래프의 호출 노드. 스냅샷을 아직 만들지 않았으면 빈 객체"
+        ),
+    ]
+    graph: WorkspacePath
+    last_seq: Annotated[int, Field(ge=0, le=9007199254740991)]
+    outcome: RunOutcome | None
+    run_dir: str
+    run_id: RunId
+    started_at: Timestamp | None
+    state: Literal["ended", "running"]
+
+
 class RunSummary(BaseModel):
     """
     실행 요약 (record.reader.read_run). outcome은 끝난 실행만
@@ -1280,7 +1303,7 @@ class RunStatus(BaseModel):
     )
     params: RunIdParams
     renderer: Literal[True]
-    result: RunSummary
+    result: RunStatusResult
     tool: Literal["kb_run_status"]
 
 

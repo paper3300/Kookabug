@@ -6,11 +6,15 @@ import type { OpenResult, OutputLine, ThemeMode, ThemeState } from "../preload/b
 import { locateCli } from "./cli-locate";
 import { CloseGuard } from "./close-guard";
 import { DaemonManager, nodeDeps, parseExtraArgs, sameWorkspacePath } from "./daemon";
+import { installE2EHooks } from "./e2e-hooks";
 import { createNotificationForwarder, createRpcHandler } from "./ipc";
 import { APP_CHANNEL, checkAppAction, checkSender, EVENT_CHANNEL, IpcGuardError, RPC_CHANNEL } from "./ipc-guard";
 import { handleProtocols, registerSchemes } from "./protocols";
 import { APP_ORIGIN, isExternalOpenAllowed, lockedWebPreferences } from "./security";
 import { checkWorkspaceFolder, isThemeMode, Settings } from "./settings";
+
+/** 빌드가 정한다 (scripts/build-options.mjs): 배포 빌드는 false라 E2E 훅 분기가 번들에서 빠진다 */
+declare const __KOOKABUG_E2E_HOOKS__: boolean;
 
 const RENDERER_ROOT = path.join(__dirname, "..", "renderer");
 const PRELOAD = path.join(__dirname, "..", "preload", "preload.cjs");
@@ -91,6 +95,15 @@ function start(): void {
       },
     },
   );
+
+  // E2E 검사 전용 훅 (e2e-hooks.ts): 배포 빌드에서는 이 분기가 통째로 빠지고, 패키징된 앱에서는 켜지지 않는다
+  if (__KOOKABUG_E2E_HOOKS__) {
+    installE2EHooks(globalThis, {
+      packaged: app.isPackaged,
+      env: process.env,
+      hooks: { dropDaemonConnection: () => manager.dropConnection() },
+    });
+  }
 
   handleProtocols(RENDERER_ROOT, () => manager.root);
 

@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 from helpers.daemon_runs import TEST, EventLog, RunRig
-from helpers.graphs import GraphBuilder
+from helpers.graphs import GraphBuilder, subgraph_interface
 from helpers.run import tk
 from websockets.sync.client import connect
 
@@ -21,6 +21,7 @@ from kb_testing.daemon import DaemonProcess, ThreadDaemon
 from kb_testing.proc import Spawned, barrier, wait_until
 from kookabug_core.record import read_run, read_run_json
 from kookabug_daemon.client import UI_CLIENT, DaemonClient, DaemonError
+from kookabug_daemon.runs import snapshot_calls
 from kookabug_daemon.session import read_session
 from kookabug_daemon.transport import Limits
 
@@ -108,6 +109,64 @@ def test_start_streams_events_in_seq_order_until_run_ended(tmp_path: Path) -> No
         assert status["state"] == "ended" and status["outcome"] == ended["outcome"]
         assert status["last_seq"] == ended["last_seq"] and status["graph"] == TEST
         assert d.daemon.runs.active_run() is None
+
+
+def test_status_calls_from_snapshot_not_workspace(tmp_path: Path) -> None:
+    # T11 검수 1차: 화면은 실행 중 강조를 실행한 그래프 파일(스냅샷)에 붙인다.
+    # 실행 뒤 원본의 호출 대상을 바꿔도 run.status calls는 스냅샷 그대로다
+    outer, inner = "subgraphs/outer.graph.json", "subgraphs/inner.graph.json"
+    other = "subgraphs/other.graph.json"
+    graph = (
+        tk()
+        .entry("n_c1")
+        .call("n_c1", outer, next={"done": "n_pass"})
+        .node("n_pass", "core.test.pass")
+    )
+    rig = RunRig.make(tmp_path, graph)
+    for rel, target in ((outer, inner), (other, None)):
+        builder = GraphBuilder("subgraph", interface=subgraph_interface()).entry("n_x")
+        if target is not None:
+            builder.call("n_x", target, next={"done": "n_exit"})
+        else:
+            builder.node("n_x", "core.log.message", inputs={"text": "x"}, next={"done": "n_exit"})
+        builder.exit("n_exit", "done").write(rig.root, rel)
+    (
+        GraphBuilder("subgraph", interface=subgraph_interface())
+        .entry("n_y")
+        .node("n_y", "core.log.message", inputs={"text": "안쪽"}, next={"done": "n_exit"})
+        .exit("n_exit", "done")
+        .write(rig.root, inner)
+    )
+    with rig.daemon() as d, d.client() as client:
+        started, log = start_and_subscribe(client)
+        log.until_ended()
+        assert log.ended is not None and log.ended["outcome"]["verdict"] == "pass"
+        expected = {TEST: {"n_c1": outer}, outer: {"n_x": inner}}
+        assert client.call("run.status", {"run_id": started["run_id"]})["calls"] == expected
+        # 원본을 고쳐도 스냅샷 기준이다
+        source = rig.root / "tests" / "t.graph.json"
+        source.write_text(
+            source.read_text(encoding="utf-8").replace(outer, other), encoding="utf-8"
+        )
+        assert client.call("run.status", {"run_id": started["run_id"]})["calls"] == expected
+        # 목록 요약에는 싣지 않는다 (실행마다 스냅샷을 읽지 않는다)
+        listed = client.call("run.list", {})["runs"][0]
+        assert "calls" not in listed
+
+
+def test_snapshot_calls_skips_broken_files(tmp_path: Path) -> None:
+    snap = tmp_path / "run" / "snapshot"
+    (snap / "tests").mkdir(parents=True)
+    (snap / "tests" / "a.graph.json").write_text(
+        json.dumps({"nodes": {"c": {"config": {"graph": "subgraphs/s.graph.json"}}, "x": {}}}),
+        encoding="utf-8",
+    )
+    (snap / "tests" / "bad.graph.json").write_text("{", encoding="utf-8")
+    (snap / "tests" / "bom.graph.json").write_bytes(b"\xef\xbb\xbf{}")
+    assert snapshot_calls(tmp_path / "run") == {
+        "tests/a.graph.json": {"c": "subgraphs/s.graph.json"}
+    }
+    assert snapshot_calls(tmp_path / "missing") == {}
 
 
 def wait_ended(client: DaemonClient, run_id: str, timeout: float = 60) -> dict[str, Any]:
@@ -433,7 +492,8 @@ def test_runner_start_validation_error_visible_in_status(tmp_path: Path) -> None
         status = wait_ended(client, started["run_id"])
         assert status["outcome"] == {"verdict": "error", "exit_code": 4, "finalized_by": "runner"}
         (listed,) = client.call("run.list", {"limit": 5})["runs"]
-        assert listed == status
+        # run.status = 목록 요약 + 스냅샷 호출 관계(calls, M2 T11)
+        assert listed == {k: v for k, v in status.items() if k != "calls"}
 
 
 # ---------------------------------------------------------------- 동시 시작·중복 방지 키

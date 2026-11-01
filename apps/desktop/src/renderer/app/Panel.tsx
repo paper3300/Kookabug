@@ -1,11 +1,9 @@
 // 하단 패널 (시안 Main): 문제·출력·실행 로그·노드 결과. 고정 데이터·터미널은 이후 (2.11).
 // 출력(daemon·연결 메시지)은 T7, 문제(검증 진단)는 T8, 실행 로그·노드 결과는 T11
 import { useEffect, useRef } from "react";
-import { graphNodes } from "../graph/model";
-import { Problems, useProblems } from "../problems/Problems";
-import { useDocuments } from "../store/documents";
-import { useRegistry } from "../store/registry";
-import { useTabs } from "../store/tabs";
+import { Problems, useProblems, useRunProblems } from "../problems/Problems";
+import { NodeResult } from "../run/NodeResult";
+import { RunLog } from "../run/RunLog";
 import { useUi, type PanelTab } from "../store/ui";
 import { useWorkspace } from "../store/workspace";
 import css from "./shell.module.css";
@@ -48,25 +46,10 @@ function Output() {
   );
 }
 
-/** 노드 결과 자리 (T10): 고른 노드 이름만 보인다. 실행 결과(마지막 step.end)는 T11이 채운다 */
-function NodeResultSlot() {
-  const path = useTabs((s) => (s.tabs.find((t) => t.path === s.active)?.kind === "graph" ? s.active : null));
-  const doc = useDocuments((s) => (path === null ? undefined : s.docs.get(path)));
-  const types = useRegistry((s) => s.types);
-  const selected = doc?.view.selected ?? null;
-  if (selected === null || doc?.value == null) return <div className={css.panelEmpty}>고른 노드가 없어요</div>;
-  const node = graphNodes(doc.value).find((n) => n.id === selected);
-  const title = node?.title ?? (node !== undefined ? types.get(node.type)?.title : undefined) ?? selected;
-  return (
-    <div className={css.panelEmpty} data-part="node-result" data-node={selected}>
-      {title} · 실행 결과가 아직 없어요
-    </div>
-  );
-}
-
 export function Panel() {
   const tab = useUi((s) => s.panelTab);
-  const problems = useProblems().length;
+  const docProblems = useProblems();
+  const problems = docProblems.length + useRunProblems(docProblems).items.length;
   return (
     <section aria-label="하단 패널" className={css.panel}>
       <div role="tablist" aria-label="하단 패널 탭" className={css.panelTabs} data-part="panel-tabs">
@@ -94,9 +77,9 @@ export function Panel() {
         ) : tab === "problems" ? (
           <Problems />
         ) : tab === "result" ? (
-          <NodeResultSlot />
+          <NodeResult />
         ) : (
-          <div className={css.panelEmpty}>실행 기록이 없어요</div>
+          <RunLog />
         )}
       </div>
     </section>

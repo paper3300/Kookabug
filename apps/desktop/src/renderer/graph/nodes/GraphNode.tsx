@@ -2,6 +2,8 @@
 // 설명 줄(주요 입력 요약 또는 첫 진단). 핀은 흐름 = 삼각형, 데이터 = 원이고 색은 pinColors 표다.
 // 핀을 끌어 연결한다 (T9). 연결 끌기 중에는 이을 수 있는 핀을 강조하고 아닌 핀은 흐리게 그린다
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
+import { runningText, type NodeRunView } from "../../run/highlight";
+import { useNodeRun, useNow } from "../../run/view";
 import { compatible, type PinEnd } from "../compat";
 import type { KbNodeData, PinRow } from "../mapping";
 import { pinColor } from "../pinColors";
@@ -46,10 +48,22 @@ function labelClass(pin: PinRow, right: boolean): string {
   return classes.join(" ");
 }
 
+/** 실행 상태 줄 (T11): 성공 "✓ 38ms", 실행 중 "● 1.4s"(흐르는 시간), 반복 "3 / 10" */
+function RunStatus({ view }: { view: NodeRunView }) {
+  const now = useNow(view.since !== null);
+  return (
+    <span className={css.status} data-tone={view.tone} data-part="node-status" data-run-status={view.step.end?.status ?? "running"}>
+      {view.since !== null ? runningText(view.since, now) : view.text}
+    </span>
+  );
+}
+
 export function GraphNode({ data, selected }: NodeProps<Node<KbNodeData, "kb">>) {
   const connecting = useConnecting();
+  const run = useNodeRun(data.id);
   const dim = (pin: PinRow | null, side: "left" | "right") =>
     connecting !== null && pin !== null && !compatible(connecting, pinEnd(data.id, pin, side)) ? css.dim : "";
+  const runState = run === null ? undefined : run.view?.highlight === true ? "active" : run.view !== null ? "done" : run.idle ? "idle" : undefined;
   return (
     <div
       className={`${css.node} ${selected ? css.selected : ""}`}
@@ -59,15 +73,21 @@ export function GraphNode({ data, selected }: NodeProps<Node<KbNodeData, "kb">>)
       data-unknown={data.unknown}
       data-errors={data.errors}
       data-warnings={data.warnings}
+      data-run={runState}
+      data-run-tone={run?.view?.tone}
     >
       <div className={css.head} data-part="node-head">
         <span className={css.title} title={data.type}>
           {data.title}
         </span>
-        {data.status !== null && (
-          <span className={css.status} data-tone={data.status.tone} data-part="node-status">
-            {data.status.text}
-          </span>
+        {run?.view != null ? (
+          <RunStatus view={run.view} />
+        ) : (
+          data.status !== null && (
+            <span className={css.status} data-tone={data.status.tone} data-part="node-status">
+              {data.status.text}
+            </span>
+          )
         )}
       </div>
       <div className={css.body}>

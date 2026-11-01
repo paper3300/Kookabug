@@ -631,7 +631,7 @@ export interface Methods {
   "run.status": {
     params: RunIdParams;
     renderer: true;
-    result: RunSummary;
+    result: RunStatusResult;
     tool: "kb_run_status";
   };
   "run.subscribe": {
@@ -790,6 +790,34 @@ export interface RunStartResult {
   graph: WorkspacePath;
   run_dir: string;
   run_id: RunId;
+}
+/**
+ * 실행 요약 + 실행 스냅샷의 호출 관계 (화면이 실행 중 강조를 실행한 그래프 파일에 붙인다. 편집 버퍼가 아니라 스냅샷 기준)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunStatusResult".
+ */
+export interface RunStatusResult {
+  /**
+   * 스냅샷 그래프 파일(워크스페이스 기준) → 그 그래프의 호출 노드. 스냅샷을 아직 만들지 않았으면 빈 객체
+   */
+  calls: {
+    /**
+     * 호출 노드 ID → 부르는 서브그래프 (config.graph)
+     */
+    [k: string]:
+      | {
+          [k: string]: WorkspacePath | undefined;
+        }
+      | undefined;
+  };
+  graph: WorkspacePath;
+  last_seq: number;
+  outcome: RunOutcome | null;
+  run_dir: string;
+  run_id: RunId;
+  started_at: Timestamp | null;
+  state: "ended" | "running";
 }
 /**
  * after_seq = 클라이언트가 실제로 적용한 마지막 seq (처음이면 0). 순서·커서 규칙은 M2 계획 2.8

@@ -1,7 +1,10 @@
 // 에디터 영역 (시안 Main): 탭(TEST·SUB·TARGET 글자, 저장 안 됨 ●)·경로 표시줄·문서 띠(저장 충돌·저장 실패)·
-// 내용. 그래프 탭은 캔버스(T8), target 편집기는 T12가 탭 내용으로 붙인다. 툴바(프로필·실행)는 T11
+// 내용. 그래프 탭은 캔버스(T8), target 편집기는 T12가 탭 내용으로 붙인다. 탭 줄 오른쪽은 실행 툴바(T11)
 import type { ReactNode } from "react";
 import { GraphCanvas } from "../graph/Canvas";
+import { RunToolbar } from "../run/Toolbar";
+import { useRun } from "../run/runStore";
+import { editedSinceRun } from "../run/view";
 import { requestCloseTab } from "../store/editing";
 import {
   CONFLICT_DELETED,
@@ -60,6 +63,8 @@ function Tabs() {
 function Breadcrumb() {
   const name = useWorkspace((s) => s.name);
   const active = useTabs((s) => s.active);
+  const run = useRun((s) => s.current);
+  const doc = useDocuments((s) => (active === null ? undefined : s.docs.get(active)));
   const parts = active === null || name === null ? [] : [name, ...active.split("/")];
   return (
     <div aria-label="경로" className={css.breadcrumb} data-part="breadcrumb">
@@ -69,6 +74,11 @@ function Breadcrumb() {
           <span className={i === parts.length - 1 ? css.breadcrumbLast : undefined}>{p}</span>
         </span>
       ))}
+      {editedSinceRun(run, doc) && (
+        <span className={css.runSnapshot} data-part="run-snapshot" title="실행은 시작할 때 저장된 파일의 스냅샷으로 돈다">
+          실행은 저장된 버전 기준
+        </span>
+      )}
     </div>
   );
 }
@@ -138,7 +148,10 @@ export function Editor({ children }: { children?: ReactNode }) {
   const activeTab = useTabs((s) => s.tabs.find((t) => t.path === s.active));
   return (
     <main className={css.editorMain}>
-      <Tabs />
+      <div className={css.tabbar} data-part="tabbar">
+        <Tabs />
+        <RunToolbar />
+      </div>
       <Breadcrumb />
       {active !== null && activeTab?.kind === "graph" && <DocBanner path={active} />}
       {active === null ? (

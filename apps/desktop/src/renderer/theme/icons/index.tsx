@@ -109,6 +109,24 @@ export function LockIcon(props: IconProps) {
   );
 }
 
+/** 실행 (시안 Main 툴바 "실행 F5"·상태 바 "실행 중") */
+export function PlayIcon(props: IconProps) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M6 4l14 8-14 8z" />
+    </svg>
+  );
+}
+
+/** 정지 (시안 Main 디버그 툴바 "정지") */
+export function StopIcon(props: IconProps) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true" {...props}>
+      <rect width="12" height="12" />
+    </svg>
+  );
+}
+
 /** 상태 바 연결 표시 (점) */
 export function DotIcon(props: IconProps) {
   return (

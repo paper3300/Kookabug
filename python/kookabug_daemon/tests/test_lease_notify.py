@@ -41,6 +41,8 @@ def test_lease_changed_on_run_start_and_end(tmp_path: Path) -> None:
     rig = RunRig.make(tmp_path, graph)
     assert lease_dir(rig.env) == tmp_path / "state"
     with rig.daemon() as d, d.client() as client:
+        # 붙은 직후 지금 소유자를 한 번 받는다 (M2 T5 5절 결정, T11): 아직 없음
+        assert next_lease(client) is None
         started = client.call("run.start", {"path": TEST})
         # 실행이 입력을 쓰는 동안: 소유자 = 그 실행의 runner
         owner = next_lease(client)
@@ -49,9 +51,33 @@ def test_lease_changed_on_run_start_and_end(tmp_path: Path) -> None:
         # 프로세스 생성 시각(FILETIME)은 값 규칙 밖이라 문자열로 온다
         assert isinstance(owner["created"], str) and int(owner["created"]) > 2**53
         assert isinstance(owner["pid"], int)
+        # 쥔 동안 새로 붙은 연결은 hello 직후 지금 소유자를 받는다 (바뀔 때까지 기다리지 않는다)
+        with d.client() as late:
+            first = late.notifications.get(timeout=10)
+            assert first["method"] == "lease.changed"
+            assert first["params"]["owner"] == owner
         signal.touch()
         # 깨끗하게 놓았다: 소유자 없음
         assert next_lease(client) is None
+
+
+def test_lease_sent_once_on_hello_before_other_notifications(tmp_path: Path) -> None:
+    rig = RunRig.make(tmp_path)
+    with rig.daemon() as d, d.client() as client:
+        first = client.notifications.get(timeout=10)
+        assert first == {"jsonrpc": "2.0", "method": "lease.changed", "params": {"owner": None}}
+        # 바뀌지 않으면 더 보내지 않는다
+        time.sleep(1.0)
+        assert not [m for m in drain(client) if m["method"] == "lease.changed"]
+
+
+def drain(client: DaemonClient) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    while True:
+        try:
+            out.append(client.notifications.get_nowait())
+        except queue.Empty:
+            return out
 
 
 def test_wire_safe_converts_only_unsafe_integers() -> None:

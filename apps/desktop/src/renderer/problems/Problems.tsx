@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import type { Diagnostic } from "../graph/model";
 import { graphNodes } from "../graph/model";
+import { useRun } from "../run/runStore";
 import { focusNode, requestFocus, useDocuments, type GraphDoc } from "../store/documents";
 import { activateTab, openTab, useTabs } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
@@ -59,6 +60,39 @@ export function useProblems(): ProblemItem[] {
   }, [docs, tabs, active]);
 }
 
+/**
+ * 실행 전 검증 진단 (run.start validation_failed, T11 검수 1차): 고른 프로필의 설정으로 검사한 것이라 문서
+ * 검증에 없는 원인(예: 프로필이 설정을 null로)이 있다. 문서 진단과 같은 것은 한 번만 보인다
+ */
+export function useRunProblems(docItems: readonly ProblemItem[]): { items: ProblemItem[]; profile: string | null } {
+  const blocked = useRun((s) => s.blocked);
+  const docs = useDocuments((s) => s.docs);
+  return useMemo(() => {
+    if (blocked === null || blocked.diagnostics.length === 0) return { items: [], profile: null };
+    const doc = docs.get(blocked.path);
+    const nodes = doc?.value == null ? [] : graphNodes(doc.value);
+    const ids = new Set(nodes.map((n) => n.id));
+    const titles = new Map(nodes.map((n) => [n.id, n.title]));
+    const seen = new Set(docItems.map((i) => i.key));
+    const items: ProblemItem[] = [];
+    for (const diag of blocked.diagnostics) {
+      const key = JSON.stringify([diag.file ?? blocked.path, diag.pointer ?? null, diag.code, diag.node ?? null, diag.message]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const node = problemNode(diag, blocked.path, ids);
+      items.push({
+        key,
+        diag,
+        doc: blocked.path,
+        file: diag.file ?? blocked.path,
+        node,
+        nodeTitle: node === null ? null : (titles.get(node) ?? null),
+      });
+    }
+    return { items: sortProblems(items), profile: blocked.profile };
+  }, [blocked, docs, docItems]);
+}
+
 function go(item: ProblemItem): void {
   if (item.node !== null) {
     activateTab(item.doc);
@@ -73,11 +107,9 @@ function go(item: ProblemItem): void {
   }
 }
 
-export function Problems() {
-  const items = useProblems();
-  if (items.length === 0) return <div className={css.empty}>문제가 없어요</div>;
+function ProblemList({ items, label }: { items: readonly ProblemItem[]; label: string }) {
   return (
-    <ul className={css.list} aria-label="문제 목록">
+    <ul className={css.list} aria-label={label}>
       {items.map((item) => (
         <li key={`${item.doc}:${item.key}`}>
           <button
@@ -101,5 +133,24 @@ export function Problems() {
         </li>
       ))}
     </ul>
+  );
+}
+
+export function Problems() {
+  const items = useProblems();
+  const run = useRunProblems(items);
+  if (items.length === 0 && run.items.length === 0) return <div className={css.empty}>문제가 없어요</div>;
+  return (
+    <>
+      {run.items.length > 0 && (
+        <>
+          <div className={css.section} data-part="run-problems-header">
+            실행 전 검증 · 프로필 {run.profile ?? "기본"}
+          </div>
+          <ProblemList items={run.items} label="실행 전 검증 문제" />
+        </>
+      )}
+      {items.length > 0 && <ProblemList items={items} label="문제 목록" />}
+    </>
   );
 }

@@ -2,6 +2,8 @@
 // 오른쪽 에이전트 패널 자리는 속성 편집기(T10)가 쓴다
 import { useEffect } from "react";
 import { Inspector } from "../inspector/Inspector";
+import { runModel } from "../run/runStore";
+import { runnablePath } from "../run/Toolbar";
 import { useDialog } from "../store/dialog";
 import { redoEdit, saveDoc, undoEdit } from "../store/documents";
 import { confirmLeaveDirty, requestCloseTab } from "../store/editing";
@@ -33,9 +35,20 @@ export function activeGraph(): string | null {
 function useShortcuts(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!e.ctrlKey || e.altKey || e.metaKey) return;
       // 대화 상자가 떠 있으면 뒤쪽 화면의 단축키(저장·실행 취소·탭 닫기 등)는 듣지 않는다
       if (useDialog.getState().current !== null) return;
+      // F5 실행, Shift+F5 정지 (시안 툴바 "실행 F5")
+      if (e.key === "F5" && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          void runModel.cancel();
+        } else {
+          const path = runnablePath();
+          if (path !== null && useWorkspace.getState().daemon.status === "connected") void runModel.start(path);
+        }
+        return;
+      }
+      if (!e.ctrlKey || e.altKey || e.metaKey) return;
       const key = e.key.toLowerCase();
       if (key === "p" && !e.shiftKey) {
         e.preventDefault();

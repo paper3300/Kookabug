@@ -1,38 +1,19 @@
 // 앱 빌드: 렌더러 = Vite, main·preload = esbuild (M2 계획 2.1).
+// `--release`(또는 KOOKABUG_RELEASE=1) = 배포 빌드: E2E 검사 전용 훅을 번들에서 뺀다 (build-options.mjs)
 // 끝에 번들 입력 패키지 목록 dist/bundle-meta.json을 쓴다 (2.2 감사 범위 대조용)
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import * as esbuild from "esbuild";
 import { build as viteBuild } from "vite";
+import { APP_DIR as appDir, mainOptions, preloadOptions } from "./build-options.mjs";
 
-const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dist = path.join(appDir, "dist");
+const release = process.argv.includes("--release") || process.env.KOOKABUG_RELEASE === "1";
 
 fs.rmSync(dist, { recursive: true, force: true });
 
-// Electron 44 = Node 24.22, Chromium 152
-const common = {
-  bundle: true,
-  platform: "node",
-  format: "cjs",
-  target: "node24",
-  external: ["electron"],
-  sourcemap: "linked",
-  metafile: true,
-  logLevel: "warning",
-};
-const main = await esbuild.build({
-  ...common,
-  entryPoints: [path.join(appDir, "src/main/main.ts")],
-  outfile: path.join(dist, "main/main.cjs"),
-});
-// 샌드박스 preload는 CommonJS 한 파일이어야 한다
-const preload = await esbuild.build({
-  ...common,
-  entryPoints: [path.join(appDir, "src/preload/preload.ts")],
-  outfile: path.join(dist, "preload/preload.cjs"),
-});
+const main = await esbuild.build(mainOptions({ release }));
+const preload = await esbuild.build(preloadOptions());
 
 await viteBuild({ configFile: path.join(appDir, "vite.config.ts"), logLevel: "warn" });
 

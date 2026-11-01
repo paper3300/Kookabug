@@ -61,6 +61,9 @@ export interface SocketLike {
 
 type NotificationListener = (method: string, params: unknown) => void;
 
+/** 받는 쪽을 달기 전에 쌓아 두는 알림 수 상한 */
+const EARLY_MAX = 1000;
+
 interface Pending {
   method: string;
   resolve(value: unknown): void;
@@ -117,10 +120,26 @@ export class RpcConnection {
     });
   }
 
+  /**
+   * 알림 받기. 받는 쪽이 하나도 없을 때 온 알림은 버리지 않고 쌓아 두었다가 첫 받는 쪽을 등록하면 차례대로
+   * 넘긴다 (T11 검수 1차: daemon은 hello 응답 바로 뒤에 지금 임대권 소유자를 한 번 보내는데, 연결을 채택하고
+   * 받는 쪽을 다는 것은 hello 응답을 기다린 다음이다). 넘기기는 마이크로태스크로 미룬다: 등록한 쪽이 그
+   * 동기 구간에서 하던 일(연결됨 상태 알리기 등)을 먼저 끝낸다
+   */
   onNotification(cb: NotificationListener): () => void {
     this.notificationListeners.add(cb);
+    if (this.early.length > 0) {
+      const early = this.early.splice(0);
+      queueMicrotask(() => {
+        if (this.isClosed) return;
+        for (const [method, params] of early) for (const listener of this.notificationListeners) listener(method, params);
+      });
+    }
     return () => this.notificationListeners.delete(cb);
   }
+
+  /** 받는 쪽이 아직 없을 때 온 알림 (상한까지) */
+  private readonly early: [string, unknown][] = [];
 
   onClose(cb: () => void): void {
     if (this.isClosed) queueMicrotask(cb);
@@ -171,6 +190,11 @@ export class RpcConnection {
       const problems = checkNotification(msg.method, msg.params);
       if (problems.length > 0) {
         this.dropped.push(`알림 ${msg.method}: ${describe(problems)}`);
+        return;
+      }
+      if (this.notificationListeners.size === 0) {
+        if (this.early.length < EARLY_MAX) this.early.push([msg.method, msg.params ?? {}]);
+        else this.dropped.push(`받는 쪽이 없어 버린 알림 ${msg.method}`);
         return;
       }
       for (const cb of this.notificationListeners) cb(msg.method, msg.params ?? {});

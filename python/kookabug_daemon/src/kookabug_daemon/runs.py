@@ -56,10 +56,15 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Final, Protocol
 
-from kookabug_core.canonical import canonical_dumps
+from kookabug_core.canonical import canonical_dumps, loads_strict
 from kookabug_core.permissions import Decision, Principal
 from kookabug_core.record import follow, read_run, read_run_json
-from kookabug_core.record.runfolder import RUN_JSON_FILE, new_run_id, run_id_of_folder
+from kookabug_core.record.runfolder import (
+    RUN_JSON_FILE,
+    SNAPSHOT_DIR,
+    new_run_id,
+    run_id_of_folder,
+)
 from kookabug_core.registry import Registry
 from kookabug_core.runner.run import unix_micros
 from kookabug_core.runner.spec import PlatformSpec
@@ -80,6 +85,7 @@ __all__ = [
     "RunManager",
     "RunSink",
     "StartRequest",
+    "snapshot_calls",
 ]
 
 log = logging.getLogger(__name__)
@@ -652,9 +658,9 @@ class RunManager:
             run = self._runs.get(run_id)
         folder = run.folder if run is not None else self._find_folder(run_id)
         summary = None if folder is None else self._summary(folder, run)
-        if summary is None:
+        if summary is None or folder is None:
             raise RequestFailed("run_not_found", f"실행 {run_id}이(가) 없다", run_id=run_id)
-        return summary
+        return {**summary, "calls": snapshot_calls(folder)}
 
     def recent(self, limit: int | None) -> list[dict[str, Any]]:
         count = DEFAULT_LIST_LIMIT if limit is None else limit
@@ -762,6 +768,37 @@ def _graph_of(
             run_start = read_run(folder).run_start
         graph = (run_start or {}).get("graph")
     return graph if isinstance(graph, str) else None
+
+
+def snapshot_calls(folder: Path) -> dict[str, dict[str, str]]:
+    """실행 스냅샷(`snapshot/`)의 호출 관계: 그래프 파일 → 호출 노드 → `config.graph`.
+
+    화면이 실행 중 강조를 편집 버퍼가 아니라 실행한 그래프 파일에 붙이는 데 쓴다 (M2 T11). 스냅샷을
+    아직 만들지 않았거나 읽을 수 없는 파일은 빠진다 (읽기만 하고 판정하지 않는다).
+    """
+    root = folder / SNAPSHOT_DIR
+    calls: dict[str, dict[str, str]] = {}
+    try:
+        files = sorted(root.rglob("*.graph.json"))
+    except OSError:
+        return calls
+    for file in files:
+        try:
+            data = loads_strict(file.read_bytes().decode("utf-8"))
+        except OSError, UnicodeDecodeError, ValueError:
+            continue
+        nodes = data.get("nodes") if isinstance(data, dict) else None
+        if not isinstance(nodes, dict):
+            continue
+        found: dict[str, str] = {}
+        for node_id, node in nodes.items():
+            config = node.get("config") if isinstance(node, dict) else None
+            target = config.get("graph") if isinstance(config, dict) else None
+            if isinstance(node_id, str) and isinstance(target, str) and target != "":
+                found[node_id] = target
+        if found:
+            calls[file.relative_to(root).as_posix()] = found
+    return calls
 
 
 def _runner_alive(run_start: Mapping[str, Any] | None) -> bool:

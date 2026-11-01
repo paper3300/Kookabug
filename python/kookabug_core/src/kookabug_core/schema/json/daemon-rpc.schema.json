@@ -740,7 +740,7 @@
               "const": true
             },
             "result": {
-              "$ref": "#/$defs/RunSummary"
+              "$ref": "#/$defs/RunStatusResult"
             },
             "tool": {
               "const": "kb_run_status"
@@ -1643,6 +1643,72 @@
       },
       "required": ["graph", "run_dir", "run_id"],
       "title": "RunStartResult",
+      "type": "object"
+    },
+    "RunStatusResult": {
+      "additionalProperties": false,
+      "description": "실행 요약 + 실행 스냅샷의 호출 관계 (화면이 실행 중 강조를 실행한 그래프 파일에 붙인다. 편집 버퍼가 아니라 스냅샷 기준)",
+      "properties": {
+        "calls": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "$ref": "#/$defs/WorkspacePath"
+            },
+            "description": "호출 노드 ID → 부르는 서브그래프 (config.graph)",
+            "type": "object"
+          },
+          "description": "스냅샷 그래프 파일(워크스페이스 기준) → 그 그래프의 호출 노드. 스냅샷을 아직 만들지 않았으면 빈 객체",
+          "type": "object"
+        },
+        "graph": {
+          "$ref": "#/$defs/WorkspacePath"
+        },
+        "last_seq": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunOutcome"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run_dir": {
+          "type": "string"
+        },
+        "run_id": {
+          "$ref": "#/$defs/RunId"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": ["ended", "running"]
+        }
+      },
+      "required": [
+        "calls",
+        "graph",
+        "last_seq",
+        "outcome",
+        "run_dir",
+        "run_id",
+        "started_at",
+        "state"
+      ],
+      "title": "RunStatusResult",
       "type": "object"
     },
     "RunSubscribeParams": {

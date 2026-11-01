@@ -1,7 +1,8 @@
 """알림 `lease.changed` (M2 계획 2.4·2.8): 입력 임대권 옆 파일을 폴링한다.
 
 옆 파일(`<상태 폴더>/input-lease.json`)은 임대권을 쥔 주체(runner·감독자 복구)만 쓴다. daemon은
-읽기만 하고, `owner`가 바뀌면 모든 연결에 `{owner}`를 알린다(놓였으면 null). 상태 바
+읽기만 하고, `owner`가 바뀌면 모든 연결에 `{owner}`를 알린다(놓였으면 null). 연결이 인증되면
+그 연결에 지금 소유자를 한 번 보낸다(M2 T5 5절 결정: 붙은 직후 상태 바 첫 표시). 상태 바
 "입력: 실행 #…"에 쓴다. 상태 폴더는 daemon이 띄우는 runner와 같은 환경 값(`KOOKABUG_STATE_DIR`)으로
 정한다.
 
@@ -77,10 +78,10 @@ class LeaseWatcher:
             return self.owner
 
     async def run(self) -> None:
-        self.owner = await asyncio.to_thread(self._read)
+        # 첫 읽기도 바뀜으로 본다: 그 전에 붙은 연결은 hello 때 "없음"(null)을 받았다
         while True:
-            await asyncio.sleep(self.interval_s)
             owner = await asyncio.to_thread(self._read)
             if owner != self.owner:
                 self.owner = owner
                 self.publish(owner)
+            await asyncio.sleep(self.interval_s)

@@ -24,6 +24,17 @@
   box-shadow: 0 0 0 2px var(--kb-accent);
 }
 
+/* 실행 중 강조 (시안 Main "나타날 때까지 대기": 테두리 2px 파랑 + 4px 번짐) */
+.node[data-run="active"] {
+  border: 2px solid var(--kb-accent);
+  box-shadow: 0 0 0 4px var(--kb-node-running-glow);
+}
+
+/* 실행 중인데 아직 닿지 않은 노드 (시안 Main의 흐린 노드) */
+.node[data-run="idle"] {
+  opacity: 0.6;
+}
+
 .head {
   height: 32px;
   display: flex;
@@ -80,6 +91,19 @@
 
 .status[data-tone="muted"] {
   color: var(--kb-fg-muted);
+}
+
+/* 실행 상태 줄 (T11) */
+.status[data-tone="run"] {
+  color: var(--kb-node-running-fg);
+}
+
+.status[data-tone="ok"] {
+  color: var(--kb-status-ok);
+}
+
+.status[data-tone="fail"] {
+  color: var(--kb-status-fail);
 }
 
 .body {

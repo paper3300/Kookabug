@@ -3,6 +3,15 @@
   font-family: var(--kb-font);
 }
 
+/* 실행 전 검증 진단 머리 (프로필 설정으로 검사한 결과, T11) */
+.section {
+  padding: 0 4px;
+  color: var(--kb-fg-muted);
+  font-family: var(--kb-font);
+  font-size: 11px;
+  line-height: 20px;
+}
+
 .list {
   margin: 0;
   padding: 0;
