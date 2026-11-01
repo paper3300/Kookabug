@@ -125,10 +125,24 @@
     },
     "DebugPauseEvent": {
       "additionalProperties": false,
-      "description": "멈춤 확정",
+      "description": "멈춤 확정. step은 경계 멈춤이면 다음에 시작할 스텝(아직 step.start 전), 폴링 멈춤이면 기다리던 스텝. node·graph·path·reason·where는 M3부터 (M0b 기록에는 없다)",
       "properties": {
         "event": {
           "const": "debug.pause"
+        },
+        "graph": {
+          "description": "멈춘 노드가 든 그래프 (워크스페이스 기준, 브레이크포인트 열쇠와 같은 경로)",
+          "type": "string"
+        },
+        "node": {
+          "type": "string"
+        },
+        "path": {
+          "$ref": "#/$defs/CallPath"
+        },
+        "reason": {
+          "description": "breakpoint: 브레이크포인트 적중, step: Step 목표 경계, request: 일시정지 요청",
+          "enum": ["breakpoint", "request", "step"]
         },
         "run": {
           "$ref": "#/$defs/RunId"
@@ -141,6 +155,10 @@
         },
         "t": {
           "$ref": "#/$defs/Timestamp"
+        },
+        "where": {
+          "description": "boundary: 스텝 시작 직전, poll: 코어 노드의 멈출 수 있는 기다림 안 (일시정지 요청만)",
+          "enum": ["boundary", "poll"]
         }
       },
       "required": ["event", "run", "seq", "t"],
@@ -149,10 +167,23 @@
     },
     "DebugResumeEvent": {
       "additionalProperties": false,
-      "description": "재개",
+      "description": "재개. mode·epoch·paused_ms는 M3부터 (M0b 기록에는 없다)",
       "properties": {
+        "epoch": {
+          "description": "재개 뒤의 관측 세대 (재개마다 1 오른다. 이보다 오래된 관측값으로는 입력·분기하지 않는다)",
+          "minimum": 1,
+          "type": "integer"
+        },
         "event": {
           "const": "debug.resume"
+        },
+        "mode": {
+          "$ref": "#/$defs/ResumeMode"
+        },
+        "paused_ms": {
+          "description": "이번 멈춤의 길이 (멈춤 확정부터 재개까지, 기한에서 뺀 시간)",
+          "minimum": 0,
+          "type": "integer"
         },
         "run": {
           "$ref": "#/$defs/RunId"
@@ -169,6 +200,33 @@
       },
       "required": ["event", "run", "seq", "t"],
       "title": "DebugResumeEvent",
+      "type": "object"
+    },
+    "EvidenceCandidate": {
+      "additionalProperties": false,
+      "description": "매칭 후보 하나. rect는 그 스텝 마지막 증거 이미지(_fail) 좌표",
+      "properties": {
+        "rect": {
+          "description": "[x, y, w, h] 픽셀",
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 4,
+          "minItems": 4,
+          "type": "array"
+        },
+        "scale": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "score": {
+          "maximum": 1,
+          "minimum": -1,
+          "type": "number"
+        }
+      },
+      "required": ["rect", "scale", "score"],
+      "title": "EvidenceCandidate",
       "type": "object"
     },
     "FinalizedBy": {
@@ -418,9 +476,8 @@
       "description": "정책으로 남기지 않은 증거와 그 이유",
       "properties": {
         "kind": {
-          "description": "증거 종류 (screenshot, text 등)",
-          "minLength": 1,
-          "type": "string"
+          "description": "증거 종류: screenshot(스크린샷·실패 증거), text(OCR 글자), thumbnail(스텝 썸네일, M3)",
+          "enum": ["screenshot", "text", "thumbnail"]
         },
         "name": {
           "type": "string"
@@ -458,15 +515,30 @@
       "title": "ProcessInfo",
       "type": "object"
     },
+    "ResumeMode": {
+      "description": "재개 방식: continue 다음 브레이크포인트·일시정지 요청까지, step_over 호출 깊이가 같거나 얕은 다음 경계, step_into 다음 경계, step_out 더 얕은 다음 경계",
+      "enum": ["continue", "step_into", "step_out", "step_over"],
+      "title": "ResumeMode",
+      "type": "string"
+    },
     "RunEndEvent": {
       "additionalProperties": false,
-      "description": "실행 결과. runner가 쓰거나, runner가 죽으면 감독자가 쓴다 (runner_died)",
+      "description": "실행 결과. runner가 쓰거나, runner가 죽으면 감독자가 쓴다 (runner_died). active_duration_ms·paused_ms·debug_intervened·omitted는 M3부터",
       "properties": {
+        "active_duration_ms": {
+          "description": "멈춘 시간을 뺀 경과 (duration_ms는 실제 경과)",
+          "minimum": 0,
+          "type": "integer"
+        },
         "cancel_reason": {
           "$ref": "#/$defs/CancelReason"
         },
         "code": {
           "type": "string"
+        },
+        "debug_intervened": {
+          "description": "디버거로 한 번이라도 멈췄다 (브레이크포인트 적중·일시정지 모두)",
+          "type": "boolean"
         },
         "duration_ms": {
           "minimum": 0,
@@ -500,6 +572,19 @@
         },
         "input_recovery": {
           "$ref": "#/$defs/InputRecovery"
+        },
+        "omitted": {
+          "description": "실행 단위로 남기지 않은 기록",
+          "items": {
+            "$ref": "#/$defs/RunOmitted"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "paused_ms": {
+          "description": "멈춰 있던 시간 합",
+          "minimum": 0,
+          "type": "integer"
         },
         "reason": {
           "type": "string"
@@ -547,6 +632,21 @@
       "title": "RunId",
       "type": "string"
     },
+    "RunOmitted": {
+      "additionalProperties": false,
+      "description": "실행 단위로 남기지 않은 기록 (스텝 Omitted와 같은 모양). video/encoder_stuck: 녹화 스레드가 3초 안에 끝나지 않아 runner가 영상 파일을 건드리지 않고 포기했다 — runner 종료를 확인한 감독자가 video/를 지운다",
+      "properties": {
+        "kind": {
+          "enum": ["video"]
+        },
+        "reason": {
+          "enum": ["encoder_stuck"]
+        }
+      },
+      "required": ["kind", "reason"],
+      "title": "RunOmitted",
+      "type": "object"
+    },
     "RunStartEvent": {
       "additionalProperties": false,
       "description": "실행 시작. runner가 저널의 첫 줄로 쓴다",
@@ -587,8 +687,13 @@
     },
     "StepEndEvent": {
       "additionalProperties": false,
-      "description": "스텝 결과. 이 줄이 없는 스텝은 중단된 것이다",
+      "description": "스텝 결과. 이 줄이 없는 스텝은 중단된 것이다. active_duration_ms·evidence는 M3부터",
       "properties": {
+        "active_duration_ms": {
+          "description": "멈춘 시간을 뺀 경과. 그 스텝 구간에 멈춤이 있었을 때만 쓴다 (duration_ms는 실제 경과)",
+          "minimum": 0,
+          "type": "integer"
+        },
         "artifacts": {
           "items": {
             "type": "string"
@@ -618,6 +723,9 @@
         },
         "event": {
           "const": "step.end"
+        },
+        "evidence": {
+          "$ref": "#/$defs/StepEvidence"
         },
         "exit": {
           "type": ["null", "string"]
@@ -675,6 +783,96 @@
         "t"
       ],
       "title": "StepEndEvent",
+      "type": "object"
+    },
+    "StepEvidence": {
+      "additionalProperties": false,
+      "description": "fail·error·stale_observation으로 끝난 스텝의 증거 (스키마 v0 6장). 파일은 artifacts에도 있다. 시각(*_at_ms)은 스텝 시작 기준 벽시계 ms. mid는 표본 중 (시작 + 끝)/2에 가장 가까운 캡처이고 최선 노력이다: 편차가 경과의 1/4을 넘거나 첫·마지막 말고 표본이 없으면 null과 mid_missing. 매칭 후보(target·threshold·candidates)는 찾기·대기 노드가 fail 출구로 끝났을 때 마지막 찾기의 상위 3개",
+      "else": {
+        "if": {
+          "required": ["mid"]
+        },
+        "not": {
+          "required": ["mid_missing"]
+        },
+        "then": {
+          "required": ["mid_at_ms", "mid_offset_ms"]
+        }
+      },
+      "if": {
+        "properties": {
+          "mid": {
+            "type": "null"
+          }
+        },
+        "required": ["mid"]
+      },
+      "properties": {
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/EvidenceCandidate"
+          },
+          "maxItems": 3,
+          "type": "array"
+        },
+        "first": {
+          "description": "그 스텝의 첫 캡처 (steps/<스텝>_first.png)",
+          "type": "string"
+        },
+        "first_at_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "last": {
+          "description": "그 스텝의 마지막 캡처 (steps/<스텝>_fail.png 또는 _error.png)",
+          "type": "string"
+        },
+        "last_at_ms": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mid": {
+          "description": "중간 캡처 (steps/<스텝>_mid.png), 없으면 null",
+          "type": ["null", "string"]
+        },
+        "mid_at_ms": {
+          "description": "고른 중간 캡처의 실제 캡처 시각",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mid_missing": {
+          "description": "중간 장면이 없는 이유",
+          "enum": ["no_sample_near_mid"]
+        },
+        "mid_offset_ms": {
+          "description": "고른 캡처와 (시작 + 끝)/2의 차이 (절댓값)",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "target": {
+          "description": "마지막으로 찾은 target (스냅샷 안 워크스페이스 기준 경로)",
+          "type": "string"
+        },
+        "threshold": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": ["mid_at_ms"]
+            },
+            {
+              "required": ["mid_offset_ms"]
+            }
+          ]
+        },
+        "required": ["mid_missing"]
+      },
+      "title": "StepEvidence",
       "type": "object"
     },
     "StepId": {

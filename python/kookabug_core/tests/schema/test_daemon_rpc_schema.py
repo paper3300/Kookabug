@@ -36,6 +36,19 @@ TOOLS = {
     "daemon.shutdown": "ui_only",
     "graph.close": "ui_only",
     "run.unsubscribe": "ui_only",
+    # M3 계획 2.7 기록 읽기
+    "run.index": "kb_run_events",
+    "run.children": "kb_run_events",
+    "run.step": "kb_run_events",
+    "run.file": "kb_run_events",
+    "run.compare": "kb_run_events",
+    # M3 계획 2.1·2.3 디버거·내보내기
+    "debug.breakpoints.get": "ui_only",
+    "debug.breakpoints.set": "ui_only",
+    "run.pause": "ui_only",
+    "run.resume": "ui_only",
+    "run.restart": "ui_only",
+    "run.export": "ui_only",
 }
 
 
@@ -51,7 +64,8 @@ def test_method_table_matches_permission_table() -> None:
     table = methods()
     assert {name: row["properties"]["tool"]["const"] for name, row in table.items()} == TOOLS
     internal = {n for n, row in table.items() if not row["properties"]["renderer"]["const"]}
-    assert internal == {"session.hello", "daemon.shutdown"}
+    # run.export의 dest는 주 프로세스 저장 대화 상자가 정한다 (M3 계획 2.7)
+    assert internal == {"session.hello", "daemon.shutdown", "run.export"}
     for row in table.values():
         for part in ("params", "result"):
             ref = row["properties"][part]["$ref"]
@@ -62,6 +76,7 @@ def test_method_table_matches_permission_table() -> None:
 def test_notification_table() -> None:
     table = DEFS["Notifications"]["properties"]
     assert sorted(table) == [
+        "debug.breakpoints.changed",
         "graph.changed",
         "lease.changed",
         "run.ended",
@@ -79,6 +94,8 @@ def test_request_failed_codes_cover_plan_and_platform() -> None:
         "idempotency_conflict", "validation_failed", "run_busy", "run_active", "run_not_found",
         "permission_denied", "approval_required", "platform_unavailable", "window_not_found",
         "frame_expired", "target_invalid", "io_error", "shutting_down",
+        # M3 계획 2.11
+        "read_only", "not_paused", "run_not_debuggable",
     }  # fmt: skip
     assert plan <= codes
     assert set(PLATFORM_CODES) <= codes

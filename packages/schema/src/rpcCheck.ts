@@ -5,10 +5,14 @@
 //   스키마가 안쪽 모양을 정하지 않은 값(그래프 값·이벤트 출력 등)도 여기서 걸린다. 큰 유한 실수
 //   (`1e20`)는 허용한다 (전송 코덱이 float로 돌려보내는 값)
 // - 그다음 스키마 모양. 메타스키마가 쓰는 키워드만 안다 (scripts/gen.mjs가 다른 키워드를 쓰면 생성을
-//   멈춘다). $ref는 같은 파일의 "#/..."와 다른 메타스키마 "urn:kookabug:<종류>:0[#/...]"(events)를 푼다
+//   멈춘다). $ref는 같은 파일의 "#/..."와 다른 메타스키마 "urn:kookabug:<종류>:0[#/...]"(events·
+//   breakpoints·run-index·video-index)를 푼다
+import { breakpointsSchema } from "./generated/breakpoints.data.js";
 import { daemonRpcSchema } from "./generated/daemon-rpc.data.js";
 import type { Methods, Notifications } from "./generated/daemon-rpc.js";
 import { eventsSchema } from "./generated/events.data.js";
+import { runIndexSchema } from "./generated/run-index.data.js";
+import { videoIndexSchema } from "./generated/video-index.data.js";
 
 type Schema = { readonly [key: string]: unknown } | boolean;
 type Document = { readonly $id: string; readonly $defs: Record<string, Schema> };
@@ -38,7 +42,10 @@ export const MAX_DEPTH = 128;
 
 const root = daemonRpcSchema as Document;
 const documents = new Map<string, Document>(
-  [root, eventsSchema as Document].map((doc) => [doc.$id, doc]),
+  [root, eventsSchema, breakpointsSchema, runIndexSchema, videoIndexSchema].map((doc) => [
+    (doc as Document).$id,
+    doc as Document,
+  ]),
 );
 const defs = root.$defs;
 

@@ -113,6 +113,13 @@ def test_every_method_has_tool_or_ui_only() -> None:
         "daemon.shutdown",
         "graph.close",
         "run.unsubscribe",
+        # M3 디버거·내보내기
+        "debug.breakpoints.get",
+        "debug.breakpoints.set",
+        "run.pause",
+        "run.resume",
+        "run.restart",
+        "run.export",
     }
 
 

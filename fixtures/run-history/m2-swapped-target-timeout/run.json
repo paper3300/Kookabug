@@ -1,0 +1,55 @@
+{
+  "code": "unhandled_fail",
+  "conditions": {
+    "deadline_ms": 300000,
+    "platform": "fake",
+    "profile": null,
+    "settings": {
+      "game.args": {
+        "layer": "workspace",
+        "value": ["-m", "sample_game"]
+      },
+      "game.cwd": {
+        "layer": "local",
+        "value": "C:/game"
+      },
+      "game.executable": {
+        "layer": "local",
+        "value": "C:/game/game.exe"
+      },
+      "game.title": {
+        "layer": "workspace",
+        "value": "SampleRPG"
+      }
+    }
+  },
+  "ended_at": "2026-11-01T09:02:11.491Z",
+  "failure_path": ["n_enter_world", "n_wait_title"],
+  "failure_step": "s5",
+  "finalized_by": "runner",
+  "format": "kookabug.run/0",
+  "game_build": null,
+  "graph": "tests/broken/swapped_target.graph.json",
+  "packages": {
+    "kookabug_core": "0.1.0.dev0",
+    "kookabug_nodes": "0.1.0.dev0",
+    "kookabug_sdk": "0.1.0.dev0"
+  },
+  "pause_count": 0,
+  "plugins": [
+    {
+      "id": "core",
+      "version": "0.1.0.dev0"
+    }
+  ],
+  "reason": "처리되지 않은 fail: 'targets/broken/start_button_swapped.target.json'이(가) 3000ms 안에 보이지 않았다",
+  "run_id": "z3hr95xv",
+  "runner": {
+    "pid": 57988,
+    "python": "3.14.10",
+    "version": "0.1.0.dev0"
+  },
+  "started_at": "2026-11-01T09:02:08.138Z",
+  "status": "finished",
+  "verdict": "fail"
+}

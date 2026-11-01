@@ -83,6 +83,34 @@
       "title": "FinalizedBy",
       "type": "string"
     },
+    "Observed": {
+      "additionalProperties": false,
+      "description": "실행에서 처음 관측한 창의 캡처 방식·클라이언트 크기·DPI (지난 성공과 비교의 환경, M3)",
+      "properties": {
+        "backend": {
+          "description": "캡처 방식 (wgc·gdi·fake 등)",
+          "minLength": 1,
+          "type": "string"
+        },
+        "client_size": {
+          "description": "[w, h] 물리 픽셀",
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "dpi": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": ["backend", "client_size", "dpi"],
+      "title": "Observed",
+      "type": "object"
+    },
     "Plugin": {
       "additionalProperties": false,
       "properties": {
@@ -155,6 +183,49 @@
       "enum": ["error", "fail", "pass", "skipped"],
       "title": "Verdict",
       "type": "string"
+    },
+    "VideoSummary": {
+      "additionalProperties": false,
+      "description": "영상 요약 (video/index.json에서 읽는다, M3). kept·deleted는 조각 수, bytes는 남은 조각 바이트 합. 실행 판정은 바꾸지 않는다",
+      "else": {
+        "not": {
+          "required": ["reason"]
+        }
+      },
+      "if": {
+        "properties": {
+          "status": {
+            "enum": ["failed", "omitted", "unavailable"]
+          }
+        },
+        "required": ["status"]
+      },
+      "properties": {
+        "bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "deleted": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kept": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason": {
+          "$ref": "urn:kookabug:video-index:0#/$defs/VideoReason"
+        },
+        "status": {
+          "$ref": "urn:kookabug:video-index:0#/$defs/VideoStatus"
+        }
+      },
+      "required": ["bytes", "deleted", "kept", "status"],
+      "then": {
+        "required": ["reason"]
+      },
+      "title": "VideoSummary",
+      "type": "object"
     }
   },
   "$id": "urn:kookabug:run:0",
@@ -185,6 +256,11 @@
     "required": ["status"]
   },
   "properties": {
+    "active_duration_ms": {
+      "description": "멈춘 시간을 뺀 경과 (M3)",
+      "minimum": 0,
+      "type": "integer"
+    },
     "code": {
       "type": "string"
     },
@@ -234,6 +310,9 @@
       "description": "실행한 테스트 그래프 (워크스페이스 기준)",
       "type": "string"
     },
+    "observed": {
+      "$ref": "#/$defs/Observed"
+    },
     "packages": {
       "additionalProperties": {
         "type": "string"
@@ -259,6 +338,11 @@
     "reason": {
       "type": "string"
     },
+    "retried_steps": {
+      "description": "재시도 끝에 성공한 스텝 수 (step.end.retried). pass인데 0보다 크면 \"불안정\" (M3)",
+      "minimum": 0,
+      "type": "integer"
+    },
     "run_id": {
       "$ref": "#/$defs/RunId"
     },
@@ -280,6 +364,9 @@
     },
     "verdict": {
       "$ref": "#/$defs/Verdict"
+    },
+    "video": {
+      "$ref": "#/$defs/VideoSummary"
     }
   },
   "required": ["format", "graph", "run_id", "started_at", "status"],

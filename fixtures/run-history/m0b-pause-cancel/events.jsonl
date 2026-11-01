@@ -1,0 +1,11 @@
+{"event": "run.start", "graph": "tests/t.graph.json", "protocol": 1, "run": "mnr1n78g", "runner": {"created": 1793523750500633, "pid": 17148, "version": "0.1.0.dev0"}, "seq": 1, "t": "2026-11-01T09:02:30.904Z"}
+{"event": "worker.start", "pid": 4640, "run": "mnr1n78g", "seq": 2, "t": "2026-11-01T09:02:30.989Z"}
+{"attempt": 1, "event": "step.start", "node": "n_entry", "parent": null, "path": ["n_entry"], "run": "mnr1n78g", "seq": 3, "step": "s1", "t": "2026-11-01T09:02:31.794Z"}
+{"attempt": 1, "duration_ms": 0, "event": "step.end", "exit": "start", "outputs": {}, "run": "mnr1n78g", "seq": 4, "status": "success", "step": "s1", "t": "2026-11-01T09:02:31.794Z"}
+{"attempt": 1, "event": "step.start", "node": "n_gate", "parent": null, "path": ["n_gate"], "run": "mnr1n78g", "seq": 5, "step": "s2", "t": "2026-11-01T09:02:31.794Z"}
+{"event": "log", "level": "info", "message": "gate", "node": "n_gate", "run": "mnr1n78g", "seq": 6, "step": "s2", "t": "2026-11-01T09:02:31.795Z"}
+{"attempt": 1, "duration_ms": 26, "event": "step.end", "exit": "done", "outputs": {}, "run": "mnr1n78g", "seq": 7, "status": "success", "step": "s2", "t": "2026-11-01T09:02:31.821Z"}
+{"event": "debug.pause", "run": "mnr1n78g", "seq": 8, "step": "s3", "t": "2026-11-01T09:02:31.821Z"}
+{"event": "cancel.requested", "reason": "cancelled", "run": "mnr1n78g", "seq": 9, "t": "2026-11-01T09:02:31.837Z"}
+{"event": "worker.exit", "exit_code": 0, "pid": 4640, "reason": "shutdown", "run": "mnr1n78g", "seq": 10, "t": "2026-11-01T09:02:31.845Z"}
+{"cancel_reason": "cancelled", "code": "cancelled", "duration_ms": 944, "event": "run.end", "failure_path": null, "failure_step": null, "finalized_by": "runner", "reason": "실행이 취소됐다", "run": "mnr1n78g", "seq": 11, "t": "2026-11-01T09:02:31.845Z", "verdict": "error"}

@@ -24,7 +24,8 @@ from kookabug_core.canonical import MAX_SAFE_INTEGER
 from kookabug_core.diagnostics import Diagnostic
 from kookabug_core.schema.pintype import PinTypeError, parse_pin_type
 
-# events는 events.jsonl 한 줄, rpc·daemon-rpc는 프레임 본문 하나(format 없음)라 kind를 직접 준다
+# events는 events.jsonl 한 줄, rpc·daemon-rpc는 프레임 본문 하나, run-index는 daemon 응답이라
+# (format 없음) kind를 직접 준다. video-index의 segments.jsonl·frames.jsonl 줄은 ref로 검사한다
 SchemaKind = Literal[
     "graph",
     "target",
@@ -38,9 +39,13 @@ SchemaKind = Literal[
     "screen",
     "daemon-rpc",
     "session",
+    "breakpoints",
+    "video-index",
+    "run-index",
 ]
 KINDS: tuple[SchemaKind, ...] = get_args(SchemaKind)
 FORMAT_TO_KIND: dict[str, SchemaKind] = {
+    "kookabug.breakpoints/0": "breakpoints",
     "kookabug.graph/0": "graph",
     "kookabug.local/0": "local",
     "kookabug.nodes/0": "node-schema",
@@ -49,6 +54,7 @@ FORMAT_TO_KIND: dict[str, SchemaKind] = {
     "kookabug.session/0": "session",
     "kookabug.target/0": "target",
     "kookabug.user-settings/0": "user-settings",
+    "kookabug.video-index/0": "video-index",
     "kookabug.workspace/0": "workspace",
 }
 SPECIAL_VALUE_KEYS = ("$link", "$literal", "$secret", "$setting", "$target")

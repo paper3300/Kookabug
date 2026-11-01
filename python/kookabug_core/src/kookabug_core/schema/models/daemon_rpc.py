@@ -22,6 +22,32 @@ class AgentClientInfo(BaseModel):
     version: str
 
 
+class BreakpointsResult(BaseModel):
+    """
+    debug.breakpoints.get·set 결과, debug.breakpoints.changed 알림 (다른 연결이 바꿨을 때)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    breakpoints: Annotated[
+        Any, Field(description="urn:kookabug:breakpoints:0#/$defs/BreakpointList")
+    ]
+
+
+class BreakpointsSetParams(BaseModel):
+    """
+    목록 전체를 바꾼다: .kookabug/breakpoints.json에 원자적으로 쓰고, 진행 중인 UI 실행에 밀어 넣는다(다음 경계부터)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    breakpoints: Annotated[
+        Any, Field(description="urn:kookabug:breakpoints:0#/$defs/BreakpointList")
+    ]
+
+
 class DaemonErrorCode(RootModel[Literal[-32700, -32600, -32601, -32602, -32603, -32100]]):
     root: Annotated[
         Literal[-32700, -32600, -32601, -32602, -32603, -32100],
@@ -177,6 +203,26 @@ class DaemonShutdown(BaseModel):
     tool: Literal["ui_only"]
 
 
+class DebugBreakpointsGet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[True]
+    result: BreakpointsResult
+    tool: Literal["ui_only"]
+
+
+class DebugBreakpointsSet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: BreakpointsSetParams
+    renderer: Literal[True]
+    result: BreakpointsResult
+    tool: Literal["ui_only"]
+
+
 class GraphClose(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -196,6 +242,13 @@ class NodesListResult(BaseModel):
         extra="forbid",
     )
     schemas: list[dict[str, Any]]
+
+
+class DebugBreakpointsChanged(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: BreakpointsResult
 
 
 class LeaseChanged(BaseModel):
@@ -308,6 +361,7 @@ class RequestFailedCode(
             "key_unknown",
             "launch_failed",
             "not_found",
+            "not_paused",
             "ocr_model_corrupt",
             "ocr_model_missing",
             "path_outside_workspace",
@@ -316,9 +370,11 @@ class RequestFailedCode(
             "point_obscured",
             "private_path",
             "protocol_mismatch",
+            "read_only",
             "revision_conflict",
             "run_active",
             "run_busy",
+            "run_not_debuggable",
             "run_not_found",
             "shutting_down",
             "target_elevated",
@@ -351,6 +407,7 @@ class RequestFailedCode(
             "key_unknown",
             "launch_failed",
             "not_found",
+            "not_paused",
             "ocr_model_corrupt",
             "ocr_model_missing",
             "path_outside_workspace",
@@ -359,9 +416,11 @@ class RequestFailedCode(
             "point_obscured",
             "private_path",
             "protocol_mismatch",
+            "read_only",
             "revision_conflict",
             "run_active",
             "run_busy",
+            "run_not_debuggable",
             "run_not_found",
             "shutting_down",
             "target_elevated",
@@ -376,7 +435,7 @@ class RequestFailedCode(
             "window_not_found",
         ],
         Field(
-            description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로",
+            description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님)",
             title="RequestFailedCode",
         ),
     ]
@@ -417,6 +476,57 @@ class Revision(RootModel[str]):
     ]
 
 
+class RunChildrenResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    offset: Annotated[int, Field(ge=0, le=9007199254740991)]
+    steps: list[Any]
+    total: Annotated[
+        int, Field(description="그 부모(·회차) 아래 스텝 수", ge=0, le=9007199254740991)
+    ]
+
+
+class RunCompareResult(RootModel[Any]):
+    root: Annotated[
+        Any,
+        Field(
+            description="run.compare 결과 (run-index.schema.json CompareResult)",
+            title="RunCompareResult",
+        ),
+    ]
+
+
+class RunControlResult(BaseModel):
+    """
+    run.pause·run.resume 결과: runner가 답한 상태 (running·pausing·paused·cancelling)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    state: Literal["cancelling", "paused", "pausing", "running"]
+
+
+class RunExportResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    bytes: Annotated[int, Field(ge=0, le=9007199254740991)]
+    path: str
+
+
+class RunFileResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    bytes: Annotated[int, Field(description="파일 전체 크기", ge=0, le=9007199254740991)]
+    text: str
+    truncated: Annotated[
+        bool, Field(description="1 MiB를 넘어 앞(events_tail은 뒤만 남김)을 잘랐다")
+    ]
+
+
 class RunId(RootModel[str]):
     root: Annotated[
         str,
@@ -431,6 +541,16 @@ class RunIdParams(BaseModel):
     run_id: RunId
 
 
+class RunIndexResult(RootModel[Any]):
+    root: Annotated[
+        Any,
+        Field(
+            description="run.index 결과: 실행 색인 (run-index.schema.json)",
+            title="RunIndexResult",
+        ),
+    ]
+
+
 class RunLaggedParams(BaseModel):
     """
     송신 큐가 차서 구독을 끊음 → 다시 구독
@@ -440,13 +560,6 @@ class RunLaggedParams(BaseModel):
         extra="forbid",
     )
     run_id: RunId
-
-
-class RunListParams(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    limit: Annotated[int | None, Field(ge=1, le=1000)] = None
 
 
 class RunOutcome(BaseModel):
@@ -462,6 +575,38 @@ class RunOutcome(BaseModel):
     verdict: Literal["error", "fail", "pass", "skipped"]
 
 
+class RunResumeIdParams(BaseModel):
+    """
+    run.resume params. mode를 빼면 continue. 멈추지 않은 실행에 Step(step_*)이면 not_paused
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    mode: Annotated[Any | None, Field(description="urn:kookabug:events:0#/$defs/ResumeMode")] = None
+    run_id: RunId
+
+
+class RunStepResult(BaseModel):
+    """
+    스텝 하나의 자세한 기록. 파일 경로는 실행 폴더 기준 ('/' 구분, kbimg://ws/<run_dir>/<경로>로 연다)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    events: Annotated[
+        list[Any],
+        Field(description="그 스텝의 step.start·attempt.end·step.end·log 이벤트 (seq 순)"),
+    ]
+    ocr_text: Annotated[str | None, Field(description="steps/<스텝>_ocr.txt 내용 (없으면 null)")]
+    run_dir: Annotated[str, Field(description="실행 폴더 (워크스페이스 기준)")]
+    step: Annotated[Any, Field(description="urn:kookabug:run-index:0#/$defs/StepNode")]
+    thumbnail: Annotated[
+        str | None, Field(description="썸네일 파일 (thumbs/<스텝>.jpg, 없으면 null)")
+    ]
+
+
 class RunSubscribeParams(BaseModel):
     """
     after_seq = 클라이언트가 실제로 적용한 마지막 seq (처음이면 0). 순서·커서 규칙은 M2 계획 2.8
@@ -472,6 +617,10 @@ class RunSubscribeParams(BaseModel):
     )
     after_seq: Annotated[int, Field(ge=0, le=9007199254740991)]
     run_id: RunId
+
+
+class FailurePath(RootModel[list[str]]):
+    root: Annotated[list[str], Field(description="실패 위치 호출 경로 (노드 ID)", min_length=1)]
 
 
 class Seq(RootModel[int]):
@@ -502,6 +651,10 @@ class Size(RootModel[list[SizeItem]]):
         list[SizeItem],
         Field(description="[w, h] 물리 픽셀", max_length=2, min_length=2, title="Size"),
     ]
+
+
+class StepId(RootModel[str]):
+    root: Annotated[str, Field(pattern="^s[1-9][0-9]*$", title="StepId")]
 
 
 class SuccessResponse(BaseModel):
@@ -580,7 +733,7 @@ class ToolName(
             "ui_only",
         ],
         Field(
-            description="권한 판정에 쓰는 도구 이름 (구현 계획 7장). ui_only는 판정하지 않는 메서드 (agent 연결이면 daemon.shutdown만 거부)",
+            description="권한 판정에 쓰는 도구 이름 (구현 계획 7장). ui_only는 판정하지 않는 메서드 (agent 연결이면 daemon의 AGENT_DENIED 목록 — daemon.shutdown, M3 디버그 메서드 debug.breakpoints.get·set·run.pause·run.resume·run.restart, run.export — 를 판정 전에 거부)",
             title="ToolName",
         ),
     ]
@@ -597,6 +750,10 @@ class UiClientInfo(BaseModel):
     kind: Literal["ui"]
     name: str
     version: str
+
+
+class Verdict(RootModel[Literal["error", "fail", "pass", "skipped"]]):
+    root: Annotated[Literal["error", "fail", "pass", "skipped"], Field(title="Verdict")]
 
 
 class WindowInfo(BaseModel):
@@ -814,6 +971,36 @@ class RunCancel(BaseModel):
     tool: Literal["kb_run_cancel"]
 
 
+class RunIndex(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: RunIdParams
+    renderer: Literal[True]
+    result: RunIndexResult
+    tool: Literal["kb_run_events"]
+
+
+class RunPause(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: RunIdParams
+    renderer: Literal[True]
+    result: RunControlResult
+    tool: Literal["ui_only"]
+
+
+class RunResume(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: RunResumeIdParams
+    renderer: Literal[True]
+    result: RunControlResult
+    tool: Literal["ui_only"]
+
+
 class RunSubscribe(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -971,7 +1158,7 @@ class Request(BaseModel):
 
 class RequestFailedData(BaseModel):
     """
-    error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found → run_id, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message
+    error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message
     """
 
     model_config = ConfigDict(
@@ -994,6 +1181,34 @@ class RequestFailedData(BaseModel):
     run_id: RunId | None = None
 
 
+class RunChildrenParams(BaseModel):
+    """
+    그 스텝 바로 아래 스텝을 쪽으로 읽는다. 반복 스텝이면 iteration으로 회차를 고른다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    iteration: Annotated[int | None, Field(ge=0, le=9007199254740991)] = None
+    limit: Annotated[int, Field(ge=1, le=500)]
+    offset: Annotated[int, Field(ge=0, le=9007199254740991)]
+    parent: StepId
+    run_id: RunId
+
+
+class RunCompareParams(BaseModel):
+    """
+    baseline을 빼면 기준 실행을 고른다 (같은 테스트·같은 프로필·pass·디버거 개입 아님 중 이 실행보다 먼저 시작한 가장 최근). step은 화면을 비교할 스텝 (빼면 실패 스텝)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    baseline: RunId | None = None
+    run_id: RunId
+    step: StepId | None = None
+
+
 class RunEndedParams(BaseModel):
     """
     감독자 마무리와 파일 끝까지 보낸 뒤
@@ -1014,6 +1229,47 @@ class RunEventParams(BaseModel):
     event: Annotated[Any, Field(description="events.jsonl 한 줄 (events.schema.json 형식 그대로)")]
     run_id: RunId
     seq: Seq
+
+
+class RunExportParams(BaseModel):
+    """
+    실행 폴더를 zip으로 내보낸다 (Electron 주 프로세스 내부용: dest는 저장 대화 상자가 고른 절대 경로). dest 옆 임시 파일에 쓰고 끝나면 replace. 진행 중 실행은 run_active
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    dest: Annotated[str, Field(min_length=1)]
+    run_id: RunId
+
+
+class RunFileParams(BaseModel):
+    """
+    run.json 원문, 또는 events.jsonl 끝부분 (1 MiB까지)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    name: Literal["events_tail", "run.json"]
+    run_id: RunId
+
+
+class RunListParams(BaseModel):
+    """
+    최신순. before는 앞 쪽 결과의 next (그보다 먼저 시작한 실행부터). graph(이 테스트 그래프의 실행만)·verdict(이 판정의 끝난 실행만)는 거르기 (M3)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    before: Annotated[
+        str | None,
+        Field(description="쪽 커서 (앞 결과의 next 그대로, 뜻은 daemon만 안다)", min_length=1),
+    ] = None
+    graph: WorkspacePath | None = None
+    limit: Annotated[int | None, Field(ge=1, le=1000)] = None
+    verdict: Verdict | None = None
 
 
 class RunStartParams(BaseModel):
@@ -1065,17 +1321,44 @@ class RunStatusResult(BaseModel):
     state: Literal["ended", "running"]
 
 
+class RunStepParams(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    run_id: RunId
+    step: StepId
+
+
 class RunSummary(BaseModel):
     """
-    실행 요약 (record.reader.read_run). outcome은 끝난 실행만
+    실행 요약 (record.reader.read_run). outcome은 끝난 실행만. code부터 아래 필드는 M3 run.list가 채운다(run.json에서 읽고, 없으면 뺀다)
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
+    code: str | None = None
+    debug_intervened: Annotated[bool | None, Field(description='배지 "디버거 개입"')] = None
+    duration_ms: Annotated[int | None, Field(ge=0, le=9007199254740991)] = None
+    failure_path: Annotated[
+        FailurePath | None, Field(description="실패 위치 호출 경로 (노드 ID)")
+    ] = None
+    failure_title: Annotated[
+        str | None,
+        Field(description="실패 위치를 노드 제목으로 이은 것 (예: 월드 접속 > 타이틀 대기)"),
+    ] = None
+    flaky: Annotated[
+        bool | None,
+        Field(
+            description='배지 "불안정": 재시도 끝에 성공한 스텝이 있는 pass (run.json retried_steps)'
+        ),
+    ] = None
+    game_build: str | None = None
     graph: WorkspacePath
     last_seq: Annotated[int, Field(ge=0, le=9007199254740991)]
     outcome: RunOutcome | None
+    profile: str | None = None
+    reason: str | None = None
     run_dir: str
     run_id: RunId
     started_at: Timestamp | None
@@ -1243,6 +1526,12 @@ class GraphOpenResult(BaseModel):
     canonical: Annotated[bool, Field(description="원문이 canonical 형식인가")]
     diagnostics: list[Diagnostic]
     doc_id: DocId
+    read_only: Annotated[
+        bool | None,
+        Field(
+            description="실행 폴더(runs/ 아래)의 스냅샷 그래프라 읽기만 한다. graph.save는 read_only로 거부 (M3, 없으면 false)"
+        ),
+    ] = None
     revision: Revision
     shapes: NodeShapes
     value: GraphValue
@@ -1287,6 +1576,56 @@ class GraphValidate(BaseModel):
     tool: Literal["kb_graph_validate"]
 
 
+class RunChildren(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: RunChildrenParams
+    renderer: Literal[True]
+    result: RunChildrenResult
+    tool: Literal["kb_run_events"]
+
+
+class RunCompare(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: RunCompareParams
+    renderer: Literal[True]
+    result: RunCompareResult
+    tool: Literal["kb_run_events"]
+
+
+class RunExport(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: RunExportParams
+    renderer: Literal[False]
+    result: RunExportResult
+    tool: Literal["ui_only"]
+
+
+class RunFile(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: RunFileParams
+    renderer: Literal[True]
+    result: RunFileResult
+    tool: Literal["kb_run_events"]
+
+
+class RunRestart(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: RunIdParams
+    renderer: Literal[True]
+    result: RunStartResult
+    tool: Literal["ui_only"]
+
+
 class RunStart(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1305,6 +1644,16 @@ class RunStatus(BaseModel):
     renderer: Literal[True]
     result: RunStatusResult
     tool: Literal["kb_run_status"]
+
+
+class RunStep(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: RunStepParams
+    renderer: Literal[True]
+    result: RunStepResult
+    tool: Literal["kb_run_events"]
 
 
 class SessionHello(BaseModel):
@@ -1406,6 +1755,9 @@ class Notifications(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    debug_breakpoints_changed: Annotated[
+        DebugBreakpointsChanged, Field(alias="debug.breakpoints.changed")
+    ]
     graph_changed: Annotated[GraphChanged, Field(alias="graph.changed")]
     lease_changed: Annotated[LeaseChanged, Field(alias="lease.changed")]
     run_ended: Annotated[RunEnded, Field(alias="run.ended")]
@@ -1416,13 +1768,22 @@ class Notifications(BaseModel):
 
 class RunListResult(BaseModel):
     """
-    최근 실행부터
+    최근 실행부터. next가 null이면 마지막 쪽
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
+    next: str | None = None
     runs: list[RunSummary]
+    runs_bytes: Annotated[
+        int | None,
+        Field(
+            description="runs/ 폴더 합계 크기 (캐시, 1분마다 다시 잼). 모르면 없음",
+            ge=0,
+            le=9007199254740991,
+        ),
+    ] = None
 
 
 class DaemonErrorObject(RootModel[DaemonStandardError | DaemonRequestFailedError]):
@@ -1462,6 +1823,8 @@ class Methods(BaseModel):
         extra="forbid",
     )
     daemon_shutdown: Annotated[DaemonShutdown, Field(alias="daemon.shutdown")]
+    debug_breakpoints_get: Annotated[DebugBreakpointsGet, Field(alias="debug.breakpoints.get")]
+    debug_breakpoints_set: Annotated[DebugBreakpointsSet, Field(alias="debug.breakpoints.set")]
     graph_close: Annotated[GraphClose, Field(alias="graph.close")]
     graph_create: Annotated[GraphCreate, Field(alias="graph.create")]
     graph_open: Annotated[GraphOpen, Field(alias="graph.open")]
@@ -1469,9 +1832,18 @@ class Methods(BaseModel):
     graph_validate: Annotated[GraphValidate, Field(alias="graph.validate")]
     nodes_list: Annotated[NodesList, Field(alias="nodes.list")]
     run_cancel: Annotated[RunCancel, Field(alias="run.cancel")]
+    run_children: Annotated[RunChildren, Field(alias="run.children")]
+    run_compare: Annotated[RunCompare, Field(alias="run.compare")]
+    run_export: Annotated[RunExport, Field(alias="run.export")]
+    run_file: Annotated[RunFile, Field(alias="run.file")]
+    run_index: Annotated[RunIndex, Field(alias="run.index")]
     run_list: Annotated[RunList, Field(alias="run.list")]
+    run_pause: Annotated[RunPause, Field(alias="run.pause")]
+    run_restart: Annotated[RunRestart, Field(alias="run.restart")]
+    run_resume: Annotated[RunResume, Field(alias="run.resume")]
     run_start: Annotated[RunStart, Field(alias="run.start")]
     run_status: Annotated[RunStatus, Field(alias="run.status")]
+    run_step: Annotated[RunStep, Field(alias="run.step")]
     run_subscribe: Annotated[RunSubscribe, Field(alias="run.subscribe")]
     run_unsubscribe: Annotated[RunUnsubscribe, Field(alias="run.unsubscribe")]
     session_hello: Annotated[SessionHello, Field(alias="session.hello")]

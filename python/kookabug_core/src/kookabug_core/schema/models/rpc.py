@@ -27,7 +27,7 @@ class ControlState(RootModel[Literal["cancelling", "paused", "pausing", "running
 
 class ControlStateResult(BaseModel):
     """
-    run.cancel·run.pause·run.resume (감독자 → runner)의 결과. 노드가 실행 중이어도 받는 즉시 답한다
+    run.cancel·run.pause·run.resume·run.breakpoints (감독자 → runner)의 결과. 노드가 실행 중이어도 받는 즉시 답한다
     """
 
     model_config = ConfigDict(
@@ -219,6 +219,30 @@ class RequestId(RootModel[int]):
             title="RequestId",
         ),
     ]
+
+
+class RunBreakpointsParams(BaseModel):
+    """
+    run.breakpoints (감독자 → runner, M3): 브레이크포인트 목록 전체를 바꾼다. 다음 스텝 경계부터 적용. 결과는 ControlStateResult
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    breakpoints: Annotated[
+        Any, Field(description="urn:kookabug:breakpoints:0#/$defs/BreakpointList")
+    ]
+
+
+class RunResumeParams(BaseModel):
+    """
+    run.resume (감독자 → runner) params. mode를 빼거나 params가 없으면 continue (M0b 호출과 같다). Step 목표는 멈춘 자리의 호출 깊이로 정한다 (M3)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    mode: Annotated[Any | None, Field(description="urn:kookabug:events:0#/$defs/ResumeMode")] = None
 
 
 class Control(BaseModel):
@@ -754,6 +778,12 @@ class RunSpec(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    breakpoints: Annotated[
+        Any | None,
+        Field(
+            description="시작할 때의 브레이크포인트 (M3). 사람이 UI에서 시작한 실행만 daemon이 채운다. 없으면 빈 목록"
+        ),
+    ] = None
     capture_timeout_ms: Annotated[
         int | None,
         Field(

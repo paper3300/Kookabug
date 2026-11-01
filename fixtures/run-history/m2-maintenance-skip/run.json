@@ -1,0 +1,55 @@
+{
+  "code": "test_skip",
+  "conditions": {
+    "deadline_ms": 300000,
+    "platform": "fake",
+    "profile": "maintenance",
+    "settings": {
+      "game.args": {
+        "layer": "profile",
+        "value": ["-m", "sample_game", "--maintenance"]
+      },
+      "game.cwd": {
+        "layer": "local",
+        "value": "C:/game"
+      },
+      "game.executable": {
+        "layer": "local",
+        "value": "C:/game/game.exe"
+      },
+      "game.title": {
+        "layer": "workspace",
+        "value": "SampleRPG"
+      }
+    }
+  },
+  "ended_at": "2026-11-01T09:02:06.914Z",
+  "failure_path": ["n_skip_maintenance"],
+  "failure_step": "s9",
+  "finalized_by": "runner",
+  "format": "kookabug.run/0",
+  "game_build": null,
+  "graph": "tests/inventory_open.graph.json",
+  "packages": {
+    "kookabug_core": "0.1.0.dev0",
+    "kookabug_nodes": "0.1.0.dev0",
+    "kookabug_sdk": "0.1.0.dev0"
+  },
+  "pause_count": 0,
+  "plugins": [
+    {
+      "id": "core",
+      "version": "0.1.0.dev0"
+    }
+  ],
+  "reason": "서버 점검 중",
+  "run_id": "2v4rnnqk",
+  "runner": {
+    "pid": 28504,
+    "python": "3.14.10",
+    "version": "0.1.0.dev0"
+  },
+  "started_at": "2026-11-01T09:02:06.620Z",
+  "status": "finished",
+  "verdict": "skipped"
+}

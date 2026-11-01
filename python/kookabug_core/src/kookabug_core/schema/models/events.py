@@ -28,6 +28,19 @@ class CancelReason(RootModel[Literal["cancelled", "deadline_exceeded", "supervis
     ]
 
 
+class EvidenceCandidate(BaseModel):
+    """
+    매칭 후보 하나. rect는 그 스텝 마지막 증거 이미지(_fail) 좌표
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    rect: Annotated[list[int], Field(description="[x, y, w, h] 픽셀", max_length=4, min_length=4)]
+    scale: Annotated[float, Field(ge=0.0)]
+    score: Annotated[float, Field(ge=-1.0, le=1.0)]
+
+
 class FinalizedBy(RootModel[Literal["runner", "supervisor"]]):
     root: Annotated[
         Literal["runner", "supervisor"],
@@ -71,7 +84,12 @@ class Omitted(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    kind: Annotated[str, Field(description="증거 종류 (screenshot, text 등)", min_length=1)]
+    kind: Annotated[
+        Literal["screenshot", "text", "thumbnail"],
+        Field(
+            description="증거 종류: screenshot(스크린샷·실패 증거), text(OCR 글자), thumbnail(스텝 썸네일, M3)"
+        ),
+    ]
     name: str | None = None
     reason: Annotated[
         Literal["capture_policy", "policy_off", "secret_input", "sensitive_target"],
@@ -94,11 +112,33 @@ class ProcessInfo(BaseModel):
     version: str
 
 
+class ResumeMode(RootModel[Literal["continue", "step_into", "step_out", "step_over"]]):
+    root: Annotated[
+        Literal["continue", "step_into", "step_out", "step_over"],
+        Field(
+            description="재개 방식: continue 다음 브레이크포인트·일시정지 요청까지, step_over 호출 깊이가 같거나 얕은 다음 경계, step_into 다음 경계, step_out 더 얕은 다음 경계",
+            title="ResumeMode",
+        ),
+    ]
+
+
 class RunId(RootModel[str]):
     root: Annotated[
         str,
         Field(description="실행 ID: 소문자·숫자 8자", pattern="^[a-z0-9]{8}$", title="RunId"),
     ]
+
+
+class RunOmitted(BaseModel):
+    """
+    실행 단위로 남기지 않은 기록 (스텝 Omitted와 같은 모양). video/encoder_stuck: 녹화 스레드가 3초 안에 끝나지 않아 runner가 영상 파일을 건드리지 않고 포기했다 — runner 종료를 확인한 감독자가 video/를 지운다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["video"]
+    reason: Literal["encoder_stuck"]
 
 
 class Seq(RootModel[int]):
@@ -111,6 +151,42 @@ class Error(BaseModel):
     )
     code: str
     message: str
+
+
+class StepEvidence(BaseModel):
+    """
+    fail·error·stale_observation으로 끝난 스텝의 증거 (스키마 v0 6장). 파일은 artifacts에도 있다. 시각(*_at_ms)은 스텝 시작 기준 벽시계 ms. mid는 표본 중 (시작 + 끝)/2에 가장 가까운 캡처이고 최선 노력이다: 편차가 경과의 1/4을 넘거나 첫·마지막 말고 표본이 없으면 null과 mid_missing. 매칭 후보(target·threshold·candidates)는 찾기·대기 노드가 fail 출구로 끝났을 때 마지막 찾기의 상위 3개
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    candidates: Annotated[list[EvidenceCandidate] | None, Field(max_length=3)] = None
+    first: Annotated[
+        str | None, Field(description="그 스텝의 첫 캡처 (steps/<스텝>_first.png)")
+    ] = None
+    first_at_ms: Annotated[int | None, Field(ge=0)] = None
+    last: Annotated[
+        str | None,
+        Field(description="그 스텝의 마지막 캡처 (steps/<스텝>_fail.png 또는 _error.png)"),
+    ] = None
+    last_at_ms: Annotated[int | None, Field(ge=0)] = None
+    mid: Annotated[
+        str | None, Field(description="중간 캡처 (steps/<스텝>_mid.png), 없으면 null")
+    ] = None
+    mid_at_ms: Annotated[int | None, Field(description="고른 중간 캡처의 실제 캡처 시각", ge=0)] = (
+        None
+    )
+    mid_missing: Annotated[
+        Literal["no_sample_near_mid"] | None, Field(description="중간 장면이 없는 이유")
+    ] = None
+    mid_offset_ms: Annotated[
+        int | None, Field(description="고른 캡처와 (시작 + 끝)/2의 차이 (절댓값)", ge=0)
+    ] = None
+    target: Annotated[
+        str | None, Field(description="마지막으로 찾은 target (스냅샷 안 워크스페이스 기준 경로)")
+    ] = None
+    threshold: Annotated[float | None, Field(ge=0.0, le=1.0)] = None
 
 
 class StepId(RootModel[str]):
@@ -231,28 +307,60 @@ class ControlLostEvent(BaseModel):
 
 class DebugPauseEvent(BaseModel):
     """
-    멈춤 확정
+    멈춤 확정. step은 경계 멈춤이면 다음에 시작할 스텝(아직 step.start 전), 폴링 멈춤이면 기다리던 스텝. node·graph·path·reason·where는 M3부터 (M0b 기록에는 없다)
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
     event: Literal["debug.pause"]
+    graph: Annotated[
+        str | None,
+        Field(
+            description="멈춘 노드가 든 그래프 (워크스페이스 기준, 브레이크포인트 열쇠와 같은 경로)"
+        ),
+    ] = None
+    node: str | None = None
+    path: CallPath | None = None
+    reason: Annotated[
+        Literal["breakpoint", "request", "step"] | None,
+        Field(
+            description="breakpoint: 브레이크포인트 적중, step: Step 목표 경계, request: 일시정지 요청"
+        ),
+    ] = None
     run: RunId
     seq: Seq
     step: StepId | None = None
     t: Timestamp
+    where: Annotated[
+        Literal["boundary", "poll"] | None,
+        Field(
+            description="boundary: 스텝 시작 직전, poll: 코어 노드의 멈출 수 있는 기다림 안 (일시정지 요청만)"
+        ),
+    ] = None
 
 
 class DebugResumeEvent(BaseModel):
     """
-    재개
+    재개. mode·epoch·paused_ms는 M3부터 (M0b 기록에는 없다)
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
+    epoch: Annotated[
+        int | None,
+        Field(
+            description="재개 뒤의 관측 세대 (재개마다 1 오른다. 이보다 오래된 관측값으로는 입력·분기하지 않는다)",
+            ge=1,
+        ),
+    ] = None
     event: Literal["debug.resume"]
+    mode: ResumeMode | None = None
+    paused_ms: Annotated[
+        int | None,
+        Field(description="이번 멈춤의 길이 (멈춤 확정부터 재개까지, 기한에서 뺀 시간)", ge=0),
+    ] = None
     run: RunId
     seq: Seq
     step: StepId | None = None
@@ -340,20 +448,31 @@ class LogEvent(BaseModel):
 
 class RunEndEvent(BaseModel):
     """
-    실행 결과. runner가 쓰거나, runner가 죽으면 감독자가 쓴다 (runner_died)
+    실행 결과. runner가 쓰거나, runner가 죽으면 감독자가 쓴다 (runner_died). active_duration_ms·paused_ms·debug_intervened·omitted는 M3부터
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
+    active_duration_ms: Annotated[
+        int | None, Field(description="멈춘 시간을 뺀 경과 (duration_ms는 실제 경과)", ge=0)
+    ] = None
     cancel_reason: CancelReason | None = None
     code: str
+    debug_intervened: Annotated[
+        bool | None,
+        Field(description="디버거로 한 번이라도 멈췄다 (브레이크포인트 적중·일시정지 모두)"),
+    ] = None
     duration_ms: Annotated[int | None, Field(ge=0)]
     event: Literal["run.end"]
     failure_path: CallPath | None
     failure_step: StepId | None
     finalized_by: FinalizedBy
     input_recovery: InputRecovery | None = None
+    omitted: Annotated[
+        list[RunOmitted] | None, Field(description="실행 단위로 남기지 않은 기록", min_length=1)
+    ] = None
+    paused_ms: Annotated[int | None, Field(description="멈춰 있던 시간 합", ge=0)] = None
     reason: str
     run: RunId
     runner_exit_code: int | None = None
@@ -384,17 +503,25 @@ class RunStartEvent(BaseModel):
 
 class StepEndEvent(BaseModel):
     """
-    스텝 결과. 이 줄이 없는 스텝은 중단된 것이다
+    스텝 결과. 이 줄이 없는 스텝은 중단된 것이다. active_duration_ms·evidence는 M3부터
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
+    active_duration_ms: Annotated[
+        int | None,
+        Field(
+            description="멈춘 시간을 뺀 경과. 그 스텝 구간에 멈춤이 있었을 때만 쓴다 (duration_ms는 실제 경과)",
+            ge=0,
+        ),
+    ] = None
     artifacts: list[str] | None = None
     attempt: Annotated[int, Field(ge=1)]
     duration_ms: Annotated[int, Field(ge=0)]
     error: Error | None = None
     event: Literal["step.end"]
+    evidence: StepEvidence | None = None
     exit: str | None
     graph: Annotated[
         str | None, Field(description="서브그래프 호출이면 이번 실행에 쓴 스냅샷 파일")

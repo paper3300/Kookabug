@@ -28,10 +28,27 @@ export const RENDERER_METHODS: ReadonlySet<string> = new Set([
   "target.open",
   "target.preview",
   "target.save",
+  // M3 디버거 (계획 2.3)
+  "debug.breakpoints.get",
+  "debug.breakpoints.set",
+  "run.pause",
+  "run.resume",
+  "run.restart",
+  // M3 기록 읽기 (계획 2.7)
+  "run.index",
+  "run.children",
+  "run.step",
+  "run.file",
+  "run.compare",
 ]);
 
-// 주 프로세스 안에서만 쓰는 메서드. 렌더러 표면에서 뺀다
-export const INTERNAL_METHODS: ReadonlySet<string> = new Set(["session.hello", "daemon.shutdown"]);
+// 주 프로세스 안에서만 쓰는 메서드. 렌더러 표면에서 뺀다. run.export는 dest(쓸 경로)를 주 프로세스의
+// 저장 대화 상자가 정한다 — 렌더러가 임의 경로에 쓰게 하지 않는다 (M3 계획 2.7)
+export const INTERNAL_METHODS: ReadonlySet<string> = new Set([
+  "session.hello",
+  "daemon.shutdown",
+  "run.export",
+]);
 
 // 렌더러가 구독할 수 있는 알림
 export const RENDERER_EVENTS: ReadonlySet<string> = new Set([
@@ -41,6 +58,7 @@ export const RENDERER_EVENTS: ReadonlySet<string> = new Set([
   "run.lagged",
   "run.ended",
   "lease.changed",
+  "debug.breakpoints.changed",
 ]);
 
 // 주 프로세스가 보내는 앱 알림 (daemon 알림이 아님): 연결 상태, 출력 패널 줄, 창 최대화 상태, 테마,

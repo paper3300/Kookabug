@@ -721,11 +721,20 @@ runs/2026-10-29T15-02-11_inventory_open_r8k2x7qm/
 ├─ input-recovery.json (있을 때만) 이 실행에서 눌렸을 수 있는 키를 누가 뗐는지
 ├─ snapshot/           실행 시작 때 복사한 그래프·서브그래프·타깃·이미지·화면 정의
 ├─ steps/              스크린샷 등 artifacts
+├─ thumbs/             (M3) 캡처한 스텝의 썸네일 <스텝>.jpg (긴 변 480). 지난 성공과 화면 비교의 근거
+├─ video/              (M3) 연속 영상: 조각 seg-NNNN.mp4, 조각 목록 segments.jsonl, 칸 기록 seg-NNNN.frames.jsonl, 마무리 색인 index.json
 └─ logs/               러너·워커의 stdout·stderr
 ```
 
 - 폴더 이름: `<시작 시각 UTC YYYY-MM-DDTHH-MM-SS>_<테스트 그래프 파일 줄기>_<run_id>`. `run_id`는 소문자·숫자 8자이고, 이미 쓰인 ID면 다시 뽑는다
 - `run.json`은 원자적 교체로만 쓴다 (`running` → `finished`). 형식은 `packages/schema/run.schema.json`
+  - M3부터 더하는 필드(모두 선택, 예전 실행에는 없다): `active_duration_ms`(멈춘 시간을 뺀 경과), `retried_steps`(재시도 끝에 성공한 스텝 수, "불안정" 표시), `observed`(처음 관측한 창의 캡처 방식·클라이언트 크기·DPI), `video`(영상 요약 `{status, reason, kept, deleted, bytes}` — `video/index.json`에서 읽는다). `pause_count`·`paused_ms`·`debug_intervened`는 6장
+- `thumbs/<스텝>.jpg`는 이벤트에 적지 않는다. 반복 안 스텝은 첫 회차와 마지막 두 회차만 남기므로 **파일 유무가 기준**이다. 정책으로 막힌 썸네일은 그 스텝 `step.end.omitted`의 `kind: "thumbnail"`
+- `video/` (M3): 조각 하나는 한 모드(`on`·`failed_only`)·한 창·한 크기·최대 60초이고 안에 빈 구간이 없다. 쓰는 중에는 `seg-NNNN.part.mp4`다(MP4는 닫을 때 색인을 쓴다)
+  - `segments.jsonl`: 녹화 스레드가 닫은 조각(`file`·`mode`·`t0`·`frame_ms`·`frames`·`t_end`·`size`·`window`·`bytes`)이나 비운 구간(`gap`·`t_start`·`t_end`, 이유 `policy_off`·`secret_input`·`paused`·`no_window`·`capture_missed`·`unavailable`·`interrupted`)을 한 줄씩 덧붙인다. 조각은 `t0`부터 `frame_ms`(초당 5장이면 200) 칸마다 한 장을 쓰므로 재생 위치 `k × frame_ms` = 실행 시각 `t0 + k × frame_ms`다
+  - `seg-NNNN.frames.jsonl`: 칸마다 쓴 프레임(`slot`·`pixels_at`·`repeat`). 검사·사람 확인용이다
+  - `index.json`: 실행 마무리가 **최종 `run.end`** 기준으로 남길 조각·지운 조각과 이유·빈 구간·`status`를 정해 원자적 교체로 공개한다. 없으면 읽는 쪽이 `segments.jsonl`만 보고 보여 준다(읽기는 고치지 않는다)
+  - 형식은 `packages/schema/video-index.schema.json`(`index.json`, `segments.jsonl` 줄 `SegmentsLine`, `frames.jsonl` 줄 `FramesLine`)
 - **실행 시작 때 고정**: 러너는 시작할 때 테스트가 참조하는 모든 파일을 따라가 `snapshot/`에 복사하고, 실행 내내 그 복사본만 읽는다. 실행 중에 서브그래프나 이미지를 고쳐도 이번 실행에는 섞이지 않는다
   - 따라가는 방법: `kookabug.json`과 테스트 그래프를 복사하고, 스냅샷에서 읽어 새로 보이는 참조(서브그래프·target·target의 이미지·서브그래프 출구가 가리킨 화면 판정 파일과 그 target·이미지)를 복사하기를 더 없을 때까지 되풀이한다. 화면 판정 파일은 ID로 찾으므로 원본의 `screens/`에서 그 ID의 파일을 찾아 복사한다. 파일마다 한 번만 복사하므로 호출 깊이와 상관없이 끝난다. 실행은 마지막으로 읽은 결과를 그대로 쓴다
   - 설정(`$setting`의 `kookabug.json` 기본값·프로필)도 복사한 `kookabug.json`에서 읽는다. `.kookabug/local.json` 값은 원본에서 읽는다
@@ -756,14 +765,14 @@ runs/2026-10-29T15-02-11_inventory_open_r8k2x7qm/
 
 | `event` | 내용 |
 |---|---|
-| `run.start` / `run.end` | 실행 시작·결과 (`verdict`, `code`, `reason`, 실패 위치, 누가 마무리했는지 `finalized_by`) |
+| `run.start` / `run.end` | 실행 시작·결과 (`verdict`, `code`, `reason`, 실패 위치, 누가 마무리했는지 `finalized_by`). M3: `active_duration_ms`·`paused_ms`·`debug_intervened`(6장), 실행 단위로 남기지 않은 기록 `omitted`(`[{kind: "video", reason: "encoder_stuck"}]` — 녹화 스레드가 멈춰 그 실행의 영상을 포기함) |
 | `step.start` / `step.end` | 스텝 시작·결과 |
 | `attempt.end` | 재시도할 중간 시도의 실패 (6장 "재시도") |
 | `log` | 노드·러너 로그 |
 | `input.down` / `input.up` / `input.recovered` | 키·버튼 누르기·떼기, 앞 실행에서 눌린 채 남은 키를 뗀 기록 |
 | `cancel.requested` | 취소 시작과 사유 (`cancelled`·`deadline_exceeded`·`supervisor_lost`) |
 | `control.lost` | 러너와 감독자 사이의 제어 채널이 끊김 (취소는 아님) |
-| `debug.pause` / `debug.resume` | 멈춤·재개 (6장) |
+| `debug.pause` / `debug.resume` | 멈춤·재개 (6장). `debug.pause`: `step`(경계 멈춤이면 다음에 시작할 스텝, 폴링 멈춤이면 기다리던 스텝), M3부터 `node`·`graph`(워크스페이스 기준)·`path`, `reason`(`breakpoint`·`step`·`request`), `where`(`boundary`·`poll`). `debug.resume`: M3부터 `mode`(`continue`·`step_over`·`step_into`·`step_out`), `epoch`(재개 뒤 관측 세대), `paused_ms`(이번 멈춤) |
 | `worker.start` / `worker.exit` | 플러그인 워커 프로세스 시작·종료. 종료 사유: `shutdown`(정상), `killed_after_grace`(취소 유예 초과로 끝냄), `unexpected`(스스로 죽음), `start_timeout`·`start_failed`·`cancelled`(시작 중 hello 기한 초과·실패·취소) |
 
 - `step.end`의 확정된 노드 결과(`status`, `outputs`, `error`, `artifacts`, `duration_ms`)에 더하는 필드
@@ -773,6 +782,9 @@ runs/2026-10-29T15-02-11_inventory_open_r8k2x7qm/
   - `path`: 호출 경로. 실패 위치를 `월드 접속 > 타이틀 대기`처럼 보여 줄 때 쓴다
   - `graph`: 서브그래프 호출이면 이번 실행에 쓴 스냅샷 파일
   - `omitted`: 정책으로 남기지 않은 증거와 이유 (6장 "화면에 찍힌 비밀값")
+  - `active_duration_ms` (M3): 멈춘 시간을 뺀 경과. 그 스텝 구간에 디버거 멈춤이 있었을 때만 쓴다. `duration_ms`는 늘 실제 경과다
+  - `evidence` (M3): fail·error·`stale_observation`으로 끝난 스텝의 증거. 그 스텝의 첫 캡처(`first`, `steps/<스텝>_first.png`)·중간 캡처(`mid`)·마지막 캡처(`last`, `_fail`·`_error`)와 각 실제 캡처 시각(`*_at_ms`, 스텝 시작 기준 벽시계 ms), 찾기·대기 노드가 fail 출구로 끝났으면 마지막 찾기의 `target`·`threshold`·상위 후보 3개 `candidates`(`score`·`rect`·`scale`, `rect`는 `_fail` 이미지 좌표)
+    - 중간은 근사이고 최선 노력이다. 폴링 스텝은 끝나는 시각을 모르므로 표본 중 (시작 + 끝)/2에 가장 가까운 캡처를 고르고 그 편차를 `mid_offset_ms`에 남긴다. 편차가 경과의 1/4을 넘거나 첫·마지막 말고 표본이 없으면 `mid: null`, `mid_missing: "no_sample_near_mid"`(뷰어는 "중간 장면 없음")
 - `step.end`가 없는 스텝은 러너가 중간에 죽은 것이다. 뷰어는 "중단"으로 표시한다
   - 러너가 죽으면 감독자가 러너 종료를 확인한 뒤 기록을 마무리한다: 잘린 끝 줄을 잘라 내고, 눌렸을 수 있는 키를 떼고, `run.end`가 없으면 `run.end`(`error`/`runner_died`, `finalized_by: supervisor`)를 덧붙이고, `run.json`을 `run.end`에서 다시 만든다. 이미 있는 `run.end`는 덮어쓰지 않는다. 열린 스텝에는 `step.end`를 쓰지 않는다
   - 감독자도 마무리하지 못하면 기록은 그대로 남는다. 읽는 쪽이 `\n`으로 끝나지 않는 끝 줄을 버리고, `run.end`가 없는 실행 전체를 "중단"으로 표시한다 (읽기는 파일을 고치지 않는다)
@@ -1056,3 +1068,9 @@ Codex 제안을 기본으로 하고, 세 군데는 Claude가 다르게 정했다
 |---|---|
 | 원문 보존(원칙): 바이트로 읽기, 무쓰기는 지금 디스크 바이트와 비교, BOM 파일은 읽기 오류 | 로더처럼 텍스트로 읽으면 줄바꿈이 바뀌어(CRLF → LF) 원문을 돌려줄 수 없다. 열 때의 원문과 비교하면 밖에서 바뀐 파일을 내 버전으로 덮어쓰는 저장(값이 원문과 같은 경우)이 아무것도 쓰지 않는다 |
 | target 편집기 저장(4장 "편집기 저장"): 합친 revision, `recorded`는 정지 화면에서, 정규화 검색 범위의 픽셀 왕복, 새 PNG는 배타적 생성(같은 바이트면 재사용), JSON 한 번 쓰기가 커밋, 충돌이면 이 저장이 만든 PNG만 되돌림, 에디터 소유 기록에 있는 이미지만 정리, 영역 없이 저장하면 이미지·`recorded` 그대로 JSON만 | PNG를 먼저 덮어쓰고 JSON을 나중에 보면 실패한 저장이 기존 target을 망가뜨린다. "존재 확인 → 덮어쓰기"는 동시 저장에서 성공한 target의 이미지를 바꾸거나 지운다. 어떤 target도 가리키지 않는다는 이유만으로 지우면 사용자가 넣은 원본 PNG가 사라진다. 반올림한 정규화 범위가 원래 픽셀과 달라지면 저장한 범위가 편집기에서 고른 것과 다르다. 사양만 고칠 때 이미지를 다시 자르면 `recorded`가 그 이미지 크기로 바뀌어 기대 배율이 틀어지고 같은 그림의 PNG가 하나 더 생긴다 |
+
+### M3 구현 반영
+
+| 바뀐 것 | 이유 |
+|---|---|
+| 기록 형식 계약(5장): 실행 폴더 `thumbs/`·`video/`(조각·`segments.jsonl`·`frames.jsonl`·`index.json`, `video-index` 메타스키마), `debug.pause`의 `node`·`graph`·`path`·`reason`·`where`, `debug.resume`의 `mode`·`epoch`·`paused_ms`, `step.end`의 `active_duration_ms`·`evidence`(첫·중간·마지막 캡처와 실제 시각, 중간이 없으면 `null`과 이유, 매칭 후보), `run.end`의 `active_duration_ms`·`paused_ms`·`debug_intervened`·`omitted`(영상 포기), `run.json`의 `active_duration_ms`·`retried_steps`·`observed`·`video`, `Omitted.kind`를 `screenshot`·`text`·`thumbnail`로 고정. 새 필드는 모두 선택이라 M0b~M2 실행 기록이 그대로 읽힌다 | 디버거·영상·기록 뷰어(M3)가 쓸 자리가 스키마에 없었다(`paused_ms`·`active_duration_ms`는 설명만 있고 아무도 쓰지 않았다). 시안의 "실행 전 · 대기 · 시간 초과" 스크린샷과 매칭 후보 점수를 남길 곳이 없었다. 중간 캡처는 끝 시각을 모르는 폴링에서 정확히 고를 수 없어 실제 시각과 편차를 남기고 없을 수도 있게 했다. 영상 조각은 고정 fps라 칸 격자(`t0`·`frame_ms`)가 있어야 재생 위치와 실행 시각을 잇는다 |

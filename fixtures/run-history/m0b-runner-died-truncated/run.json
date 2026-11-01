@@ -1,0 +1,43 @@
+{
+  "code": "runner_died",
+  "conditions": {
+    "deadline_ms": 1800000,
+    "platform": "fake",
+    "profile": null,
+    "settings": {}
+  },
+  "ended_at": "2026-11-01T09:02:53.234Z",
+  "failure_path": ["n_block"],
+  "failure_step": "s2",
+  "finalized_by": "supervisor",
+  "format": "kookabug.run/0",
+  "game_build": null,
+  "graph": "tests/t.graph.json",
+  "packages": {
+    "kookabug_core": "0.1.0.dev0",
+    "kookabug_nodes": "0.1.0.dev0",
+    "kookabug_sdk": "0.1.0.dev0"
+  },
+  "plugins": [
+    {
+      "id": "core",
+      "version": "0.1.0.dev0"
+    },
+    {
+      "id": "testkit",
+      "version": "0+dev"
+    }
+  ],
+  "reason": "runner가 실행을 마무리하지 못하고 끝났다 (종료 코드 1)",
+  "run_id": "76ptr3xn",
+  "run_json_repaired": true,
+  "runner": {
+    "pid": 35456,
+    "python": "3.14.10",
+    "version": "0.1.0.dev0"
+  },
+  "runner_exit_code": 1,
+  "started_at": "2026-11-01T09:02:52.367Z",
+  "status": "finished",
+  "verdict": "error"
+}

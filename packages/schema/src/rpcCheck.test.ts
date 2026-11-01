@@ -23,8 +23,10 @@ test("test_method_table_tools_and_internal_methods", () => {
   const internal = Object.entries(METHODS)
     .filter(([, info]) => !info.renderer)
     .map(([name]) => name);
-  expect(internal.sort()).toEqual(["daemon.shutdown", "session.hello"]);
+  // M3: run.export의 dest는 주 프로세스 저장 대화 상자가 정한다
+  expect(internal.sort()).toEqual(["daemon.shutdown", "run.export", "session.hello"]);
   expect(Object.keys(NOTIFICATIONS).sort()).toEqual([
+    "debug.breakpoints.changed",
     "graph.changed",
     "lease.changed",
     "run.ended",
@@ -172,4 +174,78 @@ test("test_whole_value_json_rules", () => {
     "128단",
   );
   expect(checkMessage({ jsonrpc: "2.0", id: 1, result: nest(140) })).toHaveLength(1);
+});
+
+test("test_m3_methods_resolve_other_schemas", () => {
+  // M3 계획 2.11: 디버거·기록 읽기 메서드가 breakpoints·run-index·events·video-index를 참조한다
+  const T = "2026-10-29T06:02:11.104Z";
+  const bp = { graph: "subgraphs/enter_world.graph.json", node: "n_wait_title" };
+  expect(checkParams("debug.breakpoints.set", { breakpoints: [bp] })).toEqual([]);
+  expect(checkParams("debug.breakpoints.set", { breakpoints: [{ node: "n" }] })).not.toEqual([]);
+  expect(checkParams("run.resume", { run_id: "abcd1234", mode: "step_into" })).toEqual([]);
+  expect(checkParams("run.resume", { run_id: "abcd1234", mode: "jump" })).not.toEqual([]);
+  expect(checkResult("run.pause", { state: "pausing" })).toEqual([]);
+  const node = {
+    attempt: 1,
+    children: 0,
+    duration_ms: null,
+    evidence: false,
+    exit: null,
+    graph: "tests/a.graph.json",
+    node: "n_wait",
+    parent: null,
+    path: ["n_wait"],
+    status: "running",
+    step: "s2",
+    t_end: null,
+    t_start: T,
+  };
+  const segment = {
+    bytes: 1,
+    file: "seg-0001.mp4",
+    frame_ms: 200,
+    frames: 5,
+    mode: "on",
+    size: [1280, 720],
+    t0: T,
+    t_end: T,
+    window: "w1",
+  };
+  const index = {
+    failure_chain: [],
+    last_seq: 3,
+    pauses: [],
+    run: null,
+    run_dir: "runs/x",
+    run_id: "abcd1234",
+    state: "running",
+    stats: [],
+    steps: [node],
+    video: { finalized: false, gaps: [], segments: [segment], status: "recorded" },
+  };
+  expect(checkResult("run.index", index)).toEqual([]);
+  expect(checkResult("run.index", { ...index, steps: [{ ...node, status: "lost" }] })).not.toEqual(
+    [],
+  );
+  const badVideo = { ...index.video, segments: [{ ...segment, frame_ms: 0 }] };
+  expect(checkResult("run.index", { ...index, video: badVideo })).not.toEqual([]);
+  const stepEnd = {
+    event: "step.end",
+    run: "abcd1234",
+    seq: 4,
+    t: T,
+    attempt: 1,
+    duration_ms: 3,
+    exit: "timeout",
+    outputs: {},
+    status: "success",
+    step: "s2",
+    evidence: { mid: null, mid_missing: "no_sample_near_mid" },
+  };
+  const step = { events: [stepEnd], ocr_text: null, run_dir: "runs/x", step: node, thumbnail: null };
+  expect(checkResult("run.step", step)).toEqual([]);
+  const noReason = { ...stepEnd, evidence: { mid: null } };
+  expect(checkResult("run.step", { ...step, events: [noReason] })).not.toEqual([]);
+  expect(checkResult("run.compare", { baseline: null, run_id: "abcd1234" })).toEqual([]);
+  expect(checkNotification("debug.breakpoints.changed", { breakpoints: [bp] })).toEqual([]);
 });

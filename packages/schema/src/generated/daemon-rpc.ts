@@ -30,7 +30,7 @@ export type DaemonErrorCode = -32700 | -32600 | -32601 | -32602 | -32603 | -3210
  */
 export type DaemonErrorObject = DaemonStandardError | DaemonRequestFailedError;
 /**
- * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로
+ * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RequestFailedCode".
@@ -51,6 +51,7 @@ export type RequestFailedCode =
   | "key_unknown"
   | "launch_failed"
   | "not_found"
+  | "not_paused"
   | "ocr_model_corrupt"
   | "ocr_model_missing"
   | "path_outside_workspace"
@@ -59,9 +60,11 @@ export type RequestFailedCode =
   | "point_obscured"
   | "private_path"
   | "protocol_mismatch"
+  | "read_only"
   | "revision_conflict"
   | "run_active"
   | "run_busy"
+  | "run_not_debuggable"
   | "run_not_found"
   | "shutting_down"
   | "target_elevated"
@@ -163,6 +166,30 @@ export type RequestSeq = number;
  */
 export type MethodName = string;
 /**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "StepId".
+ */
+export type StepId = string;
+/**
+ * run.compare 결과 (run-index.schema.json CompareResult)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunCompareResult".
+ */
+export type RunCompareResult = import("./run-index.js").CompareResult;
+/**
+ * run.index 결과: 실행 색인 (run-index.schema.json)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunIndexResult".
+ */
+export type RunIndexResult = import("./run-index.js").RunIndex;
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Verdict".
+ */
+export type Verdict = "error" | "fail" | "pass" | "skipped";
+/**
  * UTC 시각, 밀리초까지 (2026-10-29T06:02:11.104Z)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -197,7 +224,7 @@ export type PreviewTemplate =
  */
 export type Seq = number;
 /**
- * 권한 판정에 쓰는 도구 이름 (구현 계획 7장). ui_only는 판정하지 않는 메서드 (agent 연결이면 daemon.shutdown만 거부)
+ * 권한 판정에 쓰는 도구 이름 (구현 계획 7장). ui_only는 판정하지 않는 메서드 (agent 연결이면 daemon의 AGENT_DENIED 목록 — daemon.shutdown, M3 디버그 메서드 debug.breakpoints.get·set·run.pause·run.resume·run.restart, run.export — 를 판정 전에 거부)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "ToolName".
@@ -240,6 +267,24 @@ export interface AgentClientInfo {
   kind: "agent";
   name: string;
   version: string;
+}
+/**
+ * debug.breakpoints.get·set 결과, debug.breakpoints.changed 알림 (다른 연결이 바꿨을 때)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "BreakpointsResult".
+ */
+export interface BreakpointsResult {
+  breakpoints: import("./breakpoints.js").BreakpointList;
+}
+/**
+ * 목록 전체를 바꾼다: .kookabug/breakpoints.json에 원자적으로 쓰고, 진행 중인 UI 실행에 밀어 넣는다(다음 경계부터)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "BreakpointsSetParams".
+ */
+export interface BreakpointsSetParams {
+  breakpoints: import("./breakpoints.js").BreakpointList;
 }
 /**
  * UI 연결 → 판정하지 않는 사용자 주체
@@ -288,7 +333,7 @@ export interface DaemonRequestFailedError {
   message: string;
 }
 /**
- * error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found → run_id, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message
+ * error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RequestFailedData".
@@ -432,6 +477,10 @@ export interface GraphOpenResult {
   canonical: boolean;
   diagnostics: Diagnostic[];
   doc_id: DocId;
+  /**
+   * 실행 폴더(runs/ 아래)의 스냅샷 그래프라 읽기만 한다. graph.save는 read_only로 거부 (M3, 없으면 false)
+   */
+  read_only?: boolean;
   revision: Revision;
   shapes: NodeShapes;
   value: GraphValue;
@@ -574,6 +623,18 @@ export interface Methods {
     result: EmptyResult;
     tool: "ui_only";
   };
+  "debug.breakpoints.get": {
+    params: EmptyParams;
+    renderer: true;
+    result: BreakpointsResult;
+    tool: "ui_only";
+  };
+  "debug.breakpoints.set": {
+    params: BreakpointsSetParams;
+    renderer: true;
+    result: BreakpointsResult;
+    tool: "ui_only";
+  };
   "graph.close": {
     params: GraphCloseParams;
     renderer: true;
@@ -616,11 +677,59 @@ export interface Methods {
     result: EmptyResult;
     tool: "kb_run_cancel";
   };
+  "run.children": {
+    params: RunChildrenParams;
+    renderer: true;
+    result: RunChildrenResult;
+    tool: "kb_run_events";
+  };
+  "run.compare": {
+    params: RunCompareParams;
+    renderer: true;
+    result: RunCompareResult;
+    tool: "kb_run_events";
+  };
+  "run.export": {
+    params: RunExportParams;
+    renderer: false;
+    result: RunExportResult;
+    tool: "ui_only";
+  };
+  "run.file": {
+    params: RunFileParams;
+    renderer: true;
+    result: RunFileResult;
+    tool: "kb_run_events";
+  };
+  "run.index": {
+    params: RunIdParams;
+    renderer: true;
+    result: RunIndexResult;
+    tool: "kb_run_events";
+  };
   "run.list": {
     params: RunListParams;
     renderer: true;
     result: RunListResult;
     tool: "kb_run_status";
+  };
+  "run.pause": {
+    params: RunIdParams;
+    renderer: true;
+    result: RunControlResult;
+    tool: "ui_only";
+  };
+  "run.restart": {
+    params: RunIdParams;
+    renderer: true;
+    result: RunStartResult;
+    tool: "ui_only";
+  };
+  "run.resume": {
+    params: RunResumeIdParams;
+    renderer: true;
+    result: RunControlResult;
+    tool: "ui_only";
   };
   "run.start": {
     params: RunStartParams;
@@ -633,6 +742,12 @@ export interface Methods {
     renderer: true;
     result: RunStatusResult;
     tool: "kb_run_status";
+  };
+  "run.step": {
+    params: RunStepParams;
+    renderer: true;
+    result: RunStepResult;
+    tool: "kb_run_events";
   };
   "run.subscribe": {
     params: RunSubscribeParams;
@@ -723,31 +838,144 @@ export interface RunIdParams {
   run_id: RunId;
 }
 /**
+ * 그 스텝 바로 아래 스텝을 쪽으로 읽는다. 반복 스텝이면 iteration으로 회차를 고른다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunChildrenParams".
+ */
+export interface RunChildrenParams {
+  iteration?: number;
+  limit: number;
+  offset: number;
+  parent: StepId;
+  run_id: RunId;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunChildrenResult".
+ */
+export interface RunChildrenResult {
+  offset: number;
+  steps: import("./run-index.js").StepNode[];
+  /**
+   * 그 부모(·회차) 아래 스텝 수
+   */
+  total: number;
+}
+/**
+ * baseline을 빼면 기준 실행을 고른다 (같은 테스트·같은 프로필·pass·디버거 개입 아님 중 이 실행보다 먼저 시작한 가장 최근). step은 화면을 비교할 스텝 (빼면 실패 스텝)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunCompareParams".
+ */
+export interface RunCompareParams {
+  baseline?: RunId;
+  run_id: RunId;
+  step?: StepId;
+}
+/**
+ * 실행 폴더를 zip으로 내보낸다 (Electron 주 프로세스 내부용: dest는 저장 대화 상자가 고른 절대 경로). dest 옆 임시 파일에 쓰고 끝나면 replace. 진행 중 실행은 run_active
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunExportParams".
+ */
+export interface RunExportParams {
+  dest: string;
+  run_id: RunId;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunExportResult".
+ */
+export interface RunExportResult {
+  bytes: number;
+  path: string;
+}
+/**
+ * run.json 원문, 또는 events.jsonl 끝부분 (1 MiB까지)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunFileParams".
+ */
+export interface RunFileParams {
+  name: "events_tail" | "run.json";
+  run_id: RunId;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunFileResult".
+ */
+export interface RunFileResult {
+  /**
+   * 파일 전체 크기
+   */
+  bytes: number;
+  text: string;
+  /**
+   * 1 MiB를 넘어 앞(events_tail은 뒤만 남김)을 잘랐다
+   */
+  truncated: boolean;
+}
+/**
+ * 최신순. before는 앞 쪽 결과의 next (그보다 먼저 시작한 실행부터). graph(이 테스트 그래프의 실행만)·verdict(이 판정의 끝난 실행만)는 거르기 (M3)
+ *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RunListParams".
  */
 export interface RunListParams {
+  /**
+   * 쪽 커서 (앞 결과의 next 그대로, 뜻은 daemon만 안다)
+   */
+  before?: string;
+  graph?: WorkspacePath;
   limit?: number;
+  verdict?: Verdict;
 }
 /**
- * 최근 실행부터
+ * 최근 실행부터. next가 null이면 마지막 쪽
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RunListResult".
  */
 export interface RunListResult {
+  next?: null | string;
   runs: RunSummary[];
+  /**
+   * runs/ 폴더 합계 크기 (캐시, 1분마다 다시 잼). 모르면 없음
+   */
+  runs_bytes?: number;
 }
 /**
- * 실행 요약 (record.reader.read_run). outcome은 끝난 실행만
+ * 실행 요약 (record.reader.read_run). outcome은 끝난 실행만. code부터 아래 필드는 M3 run.list가 채운다(run.json에서 읽고, 없으면 뺀다)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RunSummary".
  */
 export interface RunSummary {
+  code?: string;
+  /**
+   * 배지 "디버거 개입"
+   */
+  debug_intervened?: boolean;
+  duration_ms?: number;
+  /**
+   * 실패 위치 호출 경로 (노드 ID)
+   */
+  failure_path?: [string, ...string[]] | null;
+  /**
+   * 실패 위치를 노드 제목으로 이은 것 (예: 월드 접속 > 타이틀 대기)
+   */
+  failure_title?: string;
+  /**
+   * 배지 "불안정": 재시도 끝에 성공한 스텝이 있는 pass (run.json retried_steps)
+   */
+  flaky?: boolean;
+  game_build?: null | string;
   graph: WorkspacePath;
   last_seq: number;
   outcome: RunOutcome | null;
+  profile?: null | string;
+  reason?: string;
   run_dir: string;
   run_id: RunId;
   started_at: Timestamp | null;
@@ -763,6 +991,34 @@ export interface RunOutcome {
   exit_code: number;
   finalized_by: "runner" | "supervisor";
   verdict: "error" | "fail" | "pass" | "skipped";
+}
+/**
+ * run.pause·run.resume 결과: runner가 답한 상태 (running·pausing·paused·cancelling)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunControlResult".
+ */
+export interface RunControlResult {
+  state: "cancelling" | "paused" | "pausing" | "running";
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunStartResult".
+ */
+export interface RunStartResult {
+  graph: WorkspacePath;
+  run_dir: string;
+  run_id: RunId;
+}
+/**
+ * run.resume params. mode를 빼면 continue. 멈추지 않은 실행에 Step(step_*)이면 not_paused
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunResumeIdParams".
+ */
+export interface RunResumeIdParams {
+  mode?: import("./events.js").ResumeMode;
+  run_id: RunId;
 }
 /**
  * 디스크 파일로 실행 (M2 계획 2.8 시작 순서). 진행 중인 실행이 있으면 run_busy
@@ -781,15 +1037,6 @@ export interface RunStartParams {
   settings?: {
     [k: string]: unknown | undefined;
   };
-}
-/**
- * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
- * via the `definition` "RunStartResult".
- */
-export interface RunStartResult {
-  graph: WorkspacePath;
-  run_dir: string;
-  run_id: RunId;
 }
 /**
  * 실행 요약 + 실행 스냅샷의 호출 관계 (화면이 실행 중 강조를 실행한 그래프 파일에 붙인다. 편집 버퍼가 아니라 스냅샷 기준)
@@ -818,6 +1065,39 @@ export interface RunStatusResult {
   run_id: RunId;
   started_at: Timestamp | null;
   state: "ended" | "running";
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunStepParams".
+ */
+export interface RunStepParams {
+  run_id: RunId;
+  step: StepId;
+}
+/**
+ * 스텝 하나의 자세한 기록. 파일 경로는 실행 폴더 기준 ('/' 구분, kbimg://ws/<run_dir>/<경로>로 연다)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunStepResult".
+ */
+export interface RunStepResult {
+  /**
+   * 그 스텝의 step.start·attempt.end·step.end·log 이벤트 (seq 순)
+   */
+  events: import("./events.js").Event[];
+  /**
+   * steps/<스텝>_ocr.txt 내용 (없으면 null)
+   */
+  ocr_text: null | string;
+  /**
+   * 실행 폴더 (워크스페이스 기준)
+   */
+  run_dir: string;
+  step: import("./run-index.js").StepNode;
+  /**
+   * 썸네일 파일 (thumbs/<스텝>.jpg, 없으면 null)
+   */
+  thumbnail: null | string;
 }
 /**
  * after_seq = 클라이언트가 실제로 적용한 마지막 seq (처음이면 0). 순서·커서 규칙은 M2 계획 2.8
@@ -1069,6 +1349,9 @@ export interface Params {
  * via the `definition` "Notifications".
  */
 export interface Notifications {
+  "debug.breakpoints.changed": {
+    params: BreakpointsResult;
+  };
   "graph.changed": {
     params: GraphChangedParams;
   };

@@ -1,0 +1,55 @@
+{
+  "code": "unhandled_fail",
+  "conditions": {
+    "deadline_ms": 300000,
+    "platform": "fake",
+    "profile": "login_fail",
+    "settings": {
+      "game.args": {
+        "layer": "profile",
+        "value": ["-m", "sample_game", "--login-fail"]
+      },
+      "game.cwd": {
+        "layer": "local",
+        "value": "C:/game"
+      },
+      "game.executable": {
+        "layer": "local",
+        "value": "C:/game/game.exe"
+      },
+      "game.title": {
+        "layer": "workspace",
+        "value": "SampleRPG"
+      }
+    }
+  },
+  "ended_at": "2026-11-01T09:02:05.466Z",
+  "failure_path": ["n_enter_world"],
+  "failure_step": "s2",
+  "finalized_by": "runner",
+  "format": "kookabug.run/0",
+  "game_build": null,
+  "graph": "tests/inventory_open.graph.json",
+  "packages": {
+    "kookabug_core": "0.1.0.dev0",
+    "kookabug_nodes": "0.1.0.dev0",
+    "kookabug_sdk": "0.1.0.dev0"
+  },
+  "pause_count": 0,
+  "plugins": [
+    {
+      "id": "core",
+      "version": "0.1.0.dev0"
+    }
+  ],
+  "reason": "처리되지 않은 fail: 서브그래프 'subgraphs/enter_world.graph.json'이(가) fail 출구 'login_failed'로 나갔다",
+  "run_id": "h6njnfi1",
+  "runner": {
+    "pid": 58252,
+    "python": "3.14.10",
+    "version": "0.1.0.dev0"
+  },
+  "started_at": "2026-11-01T09:02:04.164Z",
+  "status": "finished",
+  "verdict": "fail"
+}

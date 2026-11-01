@@ -1,0 +1,42 @@
+{
+  "code": "test_pass",
+  "conditions": {
+    "deadline_ms": 60000,
+    "platform": "fake",
+    "profile": null,
+    "settings": {}
+  },
+  "ended_at": "2026-11-01T09:02:30.454Z",
+  "failure_path": null,
+  "failure_step": null,
+  "finalized_by": "runner",
+  "format": "kookabug.run/0",
+  "game_build": null,
+  "graph": "tests/t.graph.json",
+  "packages": {
+    "kookabug_core": "0.1.0.dev0",
+    "kookabug_nodes": "0.1.0.dev0",
+    "kookabug_sdk": "0.1.0.dev0"
+  },
+  "pause_count": 1,
+  "plugins": [
+    {
+      "id": "core",
+      "version": "0.1.0.dev0"
+    },
+    {
+      "id": "testkit",
+      "version": "0+dev"
+    }
+  ],
+  "reason": "core.test.pass에 도달했다",
+  "run_id": "v8cx5qbl",
+  "runner": {
+    "pid": 26032,
+    "python": "3.14.10",
+    "version": "0.1.0.dev0"
+  },
+  "started_at": "2026-11-01T09:02:29.534Z",
+  "status": "finished",
+  "verdict": "pass"
+}

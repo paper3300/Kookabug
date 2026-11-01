@@ -46,6 +46,26 @@ class FinalizedBy(RootModel[Literal["runner", "supervisor"]]):
     ]
 
 
+class ClientSizeItem(RootModel[int]):
+    root: Annotated[int, Field(ge=0)]
+
+
+class Observed(BaseModel):
+    """
+    실행에서 처음 관측한 창의 캡처 방식·클라이언트 크기·DPI (지난 성공과 비교의 환경, M3)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    backend: Annotated[str, Field(description="캡처 방식 (wgc·gdi·fake 등)", min_length=1)]
+    client_size: Annotated[
+        list[ClientSizeItem],
+        Field(description="[w, h] 물리 픽셀", max_length=2, min_length=2),
+    ]
+    dpi: Annotated[int, Field(ge=1)]
+
+
 class Plugin(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -102,6 +122,23 @@ class Verdict(RootModel[Literal["error", "fail", "pass", "skipped"]]):
     root: Annotated[Literal["error", "fail", "pass", "skipped"], Field(title="Verdict")]
 
 
+class VideoSummary(BaseModel):
+    """
+    영상 요약 (video/index.json에서 읽는다, M3). kept·deleted는 조각 수, bytes는 남은 조각 바이트 합. 실행 판정은 바꾸지 않는다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    bytes: Annotated[int, Field(ge=0)]
+    deleted: Annotated[int, Field(ge=0)]
+    kept: Annotated[int, Field(ge=0)]
+    reason: Annotated[
+        Any | None, Field(description="urn:kookabug:video-index:0#/$defs/VideoReason")
+    ] = None
+    status: Annotated[Any, Field(description="urn:kookabug:video-index:0#/$defs/VideoStatus")]
+
+
 class Conditions(BaseModel):
     """
     실행 조건
@@ -130,6 +167,9 @@ class Run(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    active_duration_ms: Annotated[
+        int | None, Field(description="멈춘 시간을 뺀 경과 (M3)", ge=0)
+    ] = None
     code: str | None = None
     conditions: Conditions | None = None
     debug_intervened: Annotated[bool | None, Field(description="디버거가 개입한 실행")] = None
@@ -141,6 +181,7 @@ class Run(BaseModel):
     format: Literal["kookabug.run/0"]
     game_build: str | None = None
     graph: Annotated[str, Field(description="실행한 테스트 그래프 (워크스페이스 기준)")]
+    observed: Observed | None = None
     packages: Annotated[dict[str, str] | None, Field(description="패키지 이름 → 버전")] = None
     pause_count: Annotated[int | None, Field(ge=0)] = None
     paused_ms: Annotated[
@@ -148,6 +189,13 @@ class Run(BaseModel):
     ] = None
     plugins: list[Plugin] | None = None
     reason: str | None = None
+    retried_steps: Annotated[
+        int | None,
+        Field(
+            description='재시도 끝에 성공한 스텝 수 (step.end.retried). pass인데 0보다 크면 "불안정" (M3)',
+            ge=0,
+        ),
+    ] = None
     run_id: RunId
     run_json_repaired: Annotated[
         Literal[True] | None, Field(description="감독자가 run.end에서 다시 만든 파일")
@@ -157,3 +205,4 @@ class Run(BaseModel):
     started_at: Timestamp
     status: Literal["finished", "running"]
     verdict: Verdict | None = None
+    video: VideoSummary | None = None

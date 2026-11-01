@@ -36,6 +36,10 @@ export type SettingKey = string;
  * 실행 정보·결과 (실행 폴더의 run.json). 원자적 교체로만 쓴다
  */
 export interface Run {
+  /**
+   * 멈춘 시간을 뺀 경과 (M3)
+   */
+  active_duration_ms?: number;
   code?: string;
   conditions?: Conditions;
   /**
@@ -53,6 +57,7 @@ export interface Run {
    * 실행한 테스트 그래프 (워크스페이스 기준)
    */
   graph: string;
+  observed?: Observed;
   /**
    * 패키지 이름 → 버전
    */
@@ -66,6 +71,10 @@ export interface Run {
   paused_ms?: number;
   plugins?: Plugin[];
   reason?: string;
+  /**
+   * 재시도 끝에 성공한 스텝 수 (step.end.retried). pass인데 0보다 크면 "불안정" (M3)
+   */
+  retried_steps?: number;
   run_id: RunId;
   /**
    * 감독자가 run.end에서 다시 만든 파일
@@ -76,6 +85,7 @@ export interface Run {
   started_at: Timestamp;
   status: "finished" | "running";
   verdict?: Verdict;
+  video?: VideoSummary;
 }
 /**
  * 실행 조건
@@ -121,6 +131,26 @@ export interface Diagnostic {
   severity: "error" | "warning";
 }
 /**
+ * 실행에서 처음 관측한 창의 캡처 방식·클라이언트 크기·DPI (지난 성공과 비교의 환경, M3)
+ *
+ * This interface was referenced by `Run`'s JSON-Schema
+ * via the `definition` "Observed".
+ */
+export interface Observed {
+  /**
+   * 캡처 방식 (wgc·gdi·fake 등)
+   */
+  backend: string;
+  /**
+   * [w, h] 물리 픽셀
+   *
+   * @minItems 2
+   * @maxItems 2
+   */
+  client_size: [number, number];
+  dpi: number;
+}
+/**
  * This interface was referenced by `Run`'s JSON-Schema
  * via the `definition` "Plugin".
  */
@@ -136,6 +166,19 @@ export interface RunnerInfo {
   pid: number;
   python: string;
   version: string;
+}
+/**
+ * 영상 요약 (video/index.json에서 읽는다, M3). kept·deleted는 조각 수, bytes는 남은 조각 바이트 합. 실행 판정은 바꾸지 않는다
+ *
+ * This interface was referenced by `Run`'s JSON-Schema
+ * via the `definition` "VideoSummary".
+ */
+export interface VideoSummary {
+  bytes: number;
+  deleted: number;
+  kept: number;
+  reason?: import("./video-index.js").VideoReason;
+  status: import("./video-index.js").VideoStatus;
 }
 /**
  * 디버거 개입 정보 (스키마 v0 6장)

@@ -5,7 +5,7 @@ daemon의 메서드는 모두 도구 이름 하나(구현 계획 7장)에 대응
 
 판정은 `WorkspaceService.require(principal, tool, arg)`만 한다. daemon에는 판정 코드를 두지 않고,
 연결의 주체를 바꾸지 않고 그대로 넘긴다. user 주체는 서비스가 판정하지 않는다(`human`).
-`ui_only`는 판정하지 않는다. 단 agent 연결의 `daemon.shutdown`은 거부한다.
+`ui_only`는 판정하지 않는다. 단 agent 연결이 `AGENT_DENIED`의 메서드를 부르면 거부한다.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from kookabug_core.permissions import Decision, Principal
 from kookabug_core.service import ApprovalRequired, PermissionDenied
 from kookabug_daemon.protocol import UI_ONLY, RequestFailed
 
-__all__ = ["AGENT_DENIED", "METHOD_TOOLS", "Authorizer", "ServiceLike"]
+__all__ = ["AGENT_DENIED", "METHOD_TOOLS", "UI_ONLY_AGENT_ALLOWED", "Authorizer", "ServiceLike"]
 
 METHOD_TOOLS: Final[dict[str, str]] = {
     "session.hello": UI_ONLY,
@@ -41,10 +41,39 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     "target.open": "kb_image_find",
     "target.preview": "kb_image_find",
     "target.save": "kb_target_create",
+    # M3 기록 읽기 (계획 2.7)
+    "run.index": "kb_run_events",
+    "run.children": "kb_run_events",
+    "run.step": "kb_run_events",
+    "run.file": "kb_run_events",
+    "run.compare": "kb_run_events",
+    # M3 디버거·내보내기 (계획 2.1·2.3): 사람만 쓴다
+    "debug.breakpoints.get": UI_ONLY,
+    "debug.breakpoints.set": UI_ONLY,
+    "run.pause": UI_ONLY,
+    "run.resume": UI_ONLY,
+    "run.restart": UI_ONLY,
+    "run.export": UI_ONLY,
 }
 
-AGENT_DENIED: Final = frozenset({"daemon.shutdown"})
-"""`ui_only`이지만 agent 연결에는 거부하는 메서드."""
+AGENT_DENIED: Final = frozenset(
+    {
+        "daemon.shutdown",
+        "debug.breakpoints.get",
+        "debug.breakpoints.set",
+        "run.pause",
+        "run.resume",
+        "run.restart",
+        "run.export",
+    }
+)
+"""`ui_only`이지만 agent 연결에는 판정 전에 거부하는 메서드. `ui_only`는 판정을 건너뛰므로
+표시만으로는 에이전트를 막지 못한다 (M3 계획 2.1). 사람 없는 실행이 멈추거나 에이전트가 실행
+기록을 임의 경로에 쓰지 않게 디버그·내보내기 메서드를 여기에 넣는다."""
+
+UI_ONLY_AGENT_ALLOWED: Final = frozenset({"session.hello", "graph.close", "run.unsubscribe"})
+"""`ui_only`인데 agent 연결에도 허용하는 기존 메서드 (자기 연결의 문서·구독만 닫는다). 새 `ui_only`
+메서드는 여기나 `AGENT_DENIED` 중 한 곳에 넣어야 한다 (표 검사가 빠짐을 잡는다)."""
 
 
 class ServiceLike(Protocol):

@@ -1,0 +1,8 @@
+{"event": "run.start", "graph": "tests/t.graph.json", "protocol": 1, "run": "vm3hd03a", "runner": {"created": 1793523770577511, "pid": 58288, "version": "0.1.0.dev0"}, "seq": 1, "t": "2026-11-01T09:02:51.065Z"}
+{"event": "worker.start", "pid": 38308, "run": "vm3hd03a", "seq": 2, "t": "2026-11-01T09:02:51.141Z"}
+{"attempt": 1, "event": "step.start", "node": "n_entry", "parent": null, "path": ["n_entry"], "run": "vm3hd03a", "seq": 3, "step": "s1", "t": "2026-11-01T09:02:51.894Z"}
+{"attempt": 1, "duration_ms": 0, "event": "step.end", "exit": "start", "outputs": {}, "run": "vm3hd03a", "seq": 4, "status": "success", "step": "s1", "t": "2026-11-01T09:02:51.894Z"}
+{"attempt": 1, "event": "step.start", "node": "n_key", "parent": null, "path": ["n_key"], "run": "vm3hd03a", "seq": 5, "step": "s2", "t": "2026-11-01T09:02:51.894Z"}
+{"device": "keyboard", "event": "input.down", "key": "ctrl", "run": "vm3hd03a", "seq": 6, "step": "s2", "t": "2026-11-01T09:02:51.895Z"}
+{"by": {"kind": "supervisor"}, "event": "input.recovered", "from_run": "vm3hd03a", "inputs": [{"device": "keyboard", "key": "ctrl"}], "run": "vm3hd03a", "seq": 7, "t": "2026-11-01T09:02:51.916Z"}
+{"code": "runner_died", "duration_ms": 851, "event": "run.end", "failure_path": ["n_key"], "failure_step": "s2", "finalized_by": "supervisor", "input_recovery": "recovered", "reason": "runner가 실행을 마무리하지 못하고 끝났다 (종료 코드 1)", "run": "vm3hd03a", "runner_exit_code": 1, "seq": 8, "t": "2026-11-01T09:02:51.916Z", "verdict": "error"}

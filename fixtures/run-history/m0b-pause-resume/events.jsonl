@@ -1,0 +1,13 @@
+{"event": "run.start", "graph": "tests/t.graph.json", "protocol": 1, "run": "v8cx5qbl", "runner": {"created": 1793523749100593, "pid": 26032, "version": "0.1.0.dev0"}, "seq": 1, "t": "2026-11-01T09:02:29.534Z"}
+{"event": "worker.start", "pid": 19016, "run": "v8cx5qbl", "seq": 2, "t": "2026-11-01T09:02:29.620Z"}
+{"attempt": 1, "event": "step.start", "node": "n_entry", "parent": null, "path": ["n_entry"], "run": "v8cx5qbl", "seq": 3, "step": "s1", "t": "2026-11-01T09:02:30.421Z"}
+{"attempt": 1, "duration_ms": 0, "event": "step.end", "exit": "start", "outputs": {}, "run": "v8cx5qbl", "seq": 4, "status": "success", "step": "s1", "t": "2026-11-01T09:02:30.421Z"}
+{"attempt": 1, "event": "step.start", "node": "n_gate", "parent": null, "path": ["n_gate"], "run": "v8cx5qbl", "seq": 5, "step": "s2", "t": "2026-11-01T09:02:30.421Z"}
+{"event": "log", "level": "info", "message": "gate", "node": "n_gate", "run": "v8cx5qbl", "seq": 6, "step": "s2", "t": "2026-11-01T09:02:30.422Z"}
+{"attempt": 1, "duration_ms": 21, "event": "step.end", "exit": "done", "outputs": {}, "run": "v8cx5qbl", "seq": 7, "status": "success", "step": "s2", "t": "2026-11-01T09:02:30.442Z"}
+{"event": "debug.pause", "run": "v8cx5qbl", "seq": 8, "step": "s3", "t": "2026-11-01T09:02:30.442Z"}
+{"event": "debug.resume", "run": "v8cx5qbl", "seq": 9, "step": "s3", "t": "2026-11-01T09:02:30.445Z"}
+{"attempt": 1, "event": "step.start", "node": "n_pass", "parent": null, "path": ["n_pass"], "run": "v8cx5qbl", "seq": 10, "step": "s3", "t": "2026-11-01T09:02:30.446Z"}
+{"attempt": 1, "duration_ms": 0, "event": "step.end", "exit": null, "outputs": {}, "run": "v8cx5qbl", "seq": 11, "status": "success", "step": "s3", "t": "2026-11-01T09:02:30.446Z"}
+{"event": "worker.exit", "exit_code": 0, "pid": 19016, "reason": "shutdown", "run": "v8cx5qbl", "seq": 12, "t": "2026-11-01T09:02:30.454Z"}
+{"code": "test_pass", "duration_ms": 923, "event": "run.end", "failure_path": null, "failure_step": null, "finalized_by": "runner", "reason": "core.test.pass에 도달했다", "run": "v8cx5qbl", "seq": 13, "t": "2026-11-01T09:02:30.454Z", "verdict": "pass"}

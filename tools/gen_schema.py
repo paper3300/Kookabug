@@ -40,6 +40,9 @@ KINDS = (
     "screen",
     "daemon-rpc",
     "session",
+    "breakpoints",
+    "video-index",
+    "run-index",
 )
 
 MODELS_INIT = '''\

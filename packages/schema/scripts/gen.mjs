@@ -19,16 +19,26 @@ const kinds = [
   "screen",
   "daemon-rpc",
   "session",
+  "breakpoints",
+  "video-index",
+  "run-index",
 ];
 
 const banner =
   "/* 생성물 (packages/schema/*.schema.json → scripts/gen.mjs). 직접 고치지 않는다. */";
 
-// 런타임 검사(src/rpcCheck.ts)가 읽는 스키마 값도 내는 종류. daemon-rpc가 events를 참조한다.
-// 검사기가 아는 키워드만 쓴다
-const CHECKED = { "daemon-rpc": "daemonRpcSchema", events: "eventsSchema" };
-// 최상위가 oneOf(메시지 종류)라 $defs를 빈 객체 틀로 내보내는 종류
-const DEFS_ROOT = new Set(["daemon-rpc"]);
+// 런타임 검사(src/rpcCheck.ts)가 읽는 스키마 값도 내는 종류. daemon-rpc가 events·breakpoints·
+// run-index를, run-index가 events·video-index를 참조한다. 검사기가 아는 키워드만 쓴다
+const CHECKED = {
+  "daemon-rpc": "daemonRpcSchema",
+  events: "eventsSchema",
+  breakpoints: "breakpointsSchema",
+  "run-index": "runIndexSchema",
+  "video-index": "videoIndexSchema",
+};
+// 최상위가 oneOf(메시지 종류)라 $defs를 빈 객체 틀로 내보내는 종류. 그러지 않으면 메시지 봉투가
+// 참조하지 않는 정의(rpc의 RunSpec·메서드별 params 등)가 TS에서 빠진다
+const DEFS_ROOT = new Set(["daemon-rpc", "rpc"]);
 const KEYWORDS = new Set([
   "$defs", "$id", "$ref", "$schema", "additionalProperties", "anyOf", "const", "description",
   "else", "enum", "if", "items", "maxItems", "maximum", "minItems", "minLength", "minimum", "not",
@@ -55,21 +65,33 @@ function checkKeywords(node, where) {
   }
 }
 
-const URN = /^urn:kookabug:([a-z-]+):0$/;
+// 다른 메타스키마 참조: 파일 전체(urn:kookabug:<종류>:0) 또는 그 파일의 정의(…:0#/$defs/<이름>)
+const URN = /^urn:kookabug:([a-z-]+):0(?:#\/\$defs\/([A-Za-z0-9_]+))?$/;
 const titles = {};
+const defTitles = {};
 for (const kind of kinds) {
-  titles[kind] = JSON.parse(await readFile(path.join(root, `${kind}.schema.json`), "utf8")).title;
+  const schema = JSON.parse(await readFile(path.join(root, `${kind}.schema.json`), "utf8"));
+  titles[kind] = schema.title;
+  defTitles[kind] = Object.fromEntries(
+    Object.entries(schema.$defs ?? {}).map(([name, def]) => [name, def.title ?? name]),
+  );
 }
 
-// 다른 메타스키마 참조($ref: urn:kookabug:<종류>:0)는 생성기가 풀지 못한다. TS에서는 그 파일의 최상위
-// 타입을 import 타입으로 쓴다 (검사기와 Python은 참조를 그대로 따라간다)
+function externalType(kind, def) {
+  const name = def === undefined ? titles[kind] : defTitles[kind]?.[def];
+  if (name === undefined) throw new Error(`없는 참조 urn:kookabug:${kind}:0#/$defs/${def}`);
+  return `import("./${kind}.js").${name}`;
+}
+
+// 다른 메타스키마 참조는 생성기가 풀지 못한다. TS에서는 그 파일의 최상위 타입(또는 그 정의의 타입)을
+// import 타입으로 쓴다 (검사기와 Python은 참조를 그대로 따라간다)
 function externalToTs(node) {
   if (Array.isArray(node)) return node.map(externalToTs);
   if (node === null || typeof node !== "object") return node;
   const match = typeof node.$ref === "string" ? URN.exec(node.$ref) : null;
   if (match) {
     const { $ref: _, ...rest } = node;
-    return { ...rest, tsType: `import("./${match[1]}.js").${titles[match[1]]}` };
+    return { ...rest, tsType: externalType(match[1], match[2]) };
   }
   return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, externalToTs(v)]));
 }
@@ -78,7 +100,7 @@ await mkdir(outDir, { recursive: true });
 const expected = new Set();
 for (const kind of kinds) {
   const schema = JSON.parse(await readFile(path.join(root, `${kind}.schema.json`), "utf8"));
-  // 생성기는 최상위가 객체일 때만 $defs를 다 내보낸다. 최상위가 oneOf(메시지 종류)인 daemon-rpc는
+  // 생성기는 최상위가 객체일 때만 $defs를 다 내보낸다. 최상위가 oneOf(메시지 종류)인 daemon-rpc·rpc는
   // 빈 객체 틀로 $defs를 내보내고 최상위 합 타입은 직접 붙인다 (메서드 표 등을 렌더러가 쓴다)
   const union = DEFS_ROOT.has(kind) ? schema.oneOf.map((s) => s.$ref.split("/").pop()) : null;
   let input = externalToTs(schema);

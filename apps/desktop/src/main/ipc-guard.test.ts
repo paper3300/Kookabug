@@ -70,7 +70,7 @@ describe("bridge", () => {
     const ipc = new FakeIpc();
     const bridge = createBridge(ipc);
     expect(Object.keys(bridge).sort()).toEqual(["app", "on", "rpc"]);
-    for (const method of ["session.hello", "daemon.shutdown"]) {
+    for (const method of ["session.hello", "daemon.shutdown", "run.export"]) {
       expect(INTERNAL_METHODS.has(method)).toBe(true);
       expect(RENDERER_METHODS.has(method)).toBe(false);
       expect(() => checkRendererMethod(method)).toThrow(IpcGuardError);
