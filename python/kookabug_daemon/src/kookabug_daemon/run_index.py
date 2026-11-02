@@ -4,11 +4,13 @@
 - 색인은 코어 `record.index`가 만든다. 끝난 실행은 `.kookabug/cache/runs/<run_id>.index.json`
   캐시(이벤트 파일 크기·수정 시각이 같으면 다시 쓰지 않음)를, 진행 중 실행은 메모리 색인을 쓰고
   읽을 때마다 새로 쓰인 완전한 줄만 더 읽어 늘린다. 실행이 끝나면 메모리 색인을 캐시로 옮긴다
+  (이 daemon이 띄운 실행은 감독자 마무리 뒤 `finish`, 아니면 다음 기록 읽기가 정리한다)
 - 실행이 끝났는지는 실행 관리(`RunManager.locate`)가 정한다: 이 daemon이 띄운 실행은 감독자 마무리,
   아니면 `run.json`이 `finished`이거나 runner가 없음
 - 실행 폴더 기준 파일 경로는 `kbimg://ws/<run_dir>/<경로>`로 연다 (`run_dir` = `runs/<폴더>`)
-- `run.export`는 진행 중 실행을 거부한다(`run_active`). zip은 `dest` 옆 임시 파일에 쓰고 끝나면
-  replace한다. 에이전트 연결은 전송이 판정 전에 거부하므로(`AGENT_DENIED`) 여기까지 오지 않는다
+- `run.export`는 진행 중 실행을 거부한다(`run_active`). `dest`가 `runs/` 아래면 거부한다(실행
+  폴더는 기록이라 고치지 않는다). zip은 `dest` 옆 임시 파일에 쓰고 끝나면 replace한다.
+  에이전트 연결은 전송이 판정 전에 거부하므로(`AGENT_DENIED`) 여기까지 오지 않는다
 """
 
 from __future__ import annotations
@@ -93,35 +95,71 @@ class RunRecords:
 
     def _index(self, run_id: str) -> tuple[Located, _Entry]:
         where = self.locate(run_id)
+        self._sweep_live(run_id)
+        if where.state == "running":
+            with self._lock:
+                entry = self._live.get(run_id)
+                if entry is None:
+                    entry = self._live[run_id] = _Entry(
+                        RunIndex(where.folder), threading.Lock(), "running"
+                    )
+            # 파일 읽기는 그 실행의 잠금만 잡는다 (다른 실행의 기록 읽기를 막지 않게)
+            with entry.lock:
+                entry.index.update()
+            return where, entry
         with self._lock:
-            entry = self._live.get(run_id) if where.state == "running" else None
-            if where.state == "running" and entry is None:
-                entry = self._live[run_id] = _Entry(
-                    RunIndex(where.folder), threading.Lock(), "running"
-                )
-            if entry is not None:
-                with entry.lock:
-                    entry.index.update()
-                return where, entry
             live = self._live.pop(run_id, None)
             cached = self._ended.get(run_id)
         if live is not None:
-            # 끝났다: 메모리 색인을 마저 읽어 캐시로 옮긴다
-            with live.lock:
-                live.index.update()
-                write_cache(live.index, index_cache_file(self.root, run_id))
-                entry = _Entry(live.index, live.lock, "ended")
+            entry = self._to_ended(run_id, live)
         elif cached is not None and _same_file(cached.index):
             entry = cached
         else:
             index = cached_index(where.folder, index_cache_file(self.root, run_id))
             entry = _Entry(index, threading.Lock(), "ended")
+        self._keep(run_id, entry)
+        return where, entry
+
+    def _to_ended(self, run_id: str, live: _Entry) -> _Entry:
+        """끝난 실행의 메모리 색인을 마저 읽어 캐시로 옮긴다."""
+        with live.lock:
+            live.index.update()
+            write_cache(live.index, index_cache_file(self.root, run_id))
+            return _Entry(live.index, live.lock, "ended")
+
+    def _keep(self, run_id: str, entry: _Entry) -> None:
         with self._lock:
             self._ended[run_id] = entry
             self._ended.move_to_end(run_id)
             while len(self._ended) > KEEP_INDEXES:
                 self._ended.popitem(last=False)
-        return where, entry
+
+    def _sweep_live(self, skip: str) -> None:
+        """진행 중에 읽힌 뒤 끝난 실행의 메모리 색인을 캐시로 옮긴다 (그 실행을 다시 읽지 않아도
+        daemon이 끝날 때까지 남지 않게). 이 daemon이 띄운 실행은 감독자 마무리가 `finish`를
+        부른다."""
+        with self._lock:
+            others = [rid for rid in self._live if rid != skip]
+        for rid in others:
+            try:
+                state = self.locate(rid).state
+            except Exception:
+                state = "ended"  # 폴더가 사라졌다: 버린다
+            if state == "running":
+                continue
+            self.finish(rid)
+
+    def finish(self, run_id: str) -> None:
+        """실행이 끝났다: 메모리 색인이 있으면 캐시로 옮긴다 (없으면 할 일 없음)."""
+        with self._lock:
+            live = self._live.pop(run_id, None)
+        if live is None:
+            return
+        try:
+            entry = self._to_ended(run_id, live)
+        except OSError:
+            return  # 캐시를 못 써도 다음 읽기가 파일에서 다시 만든다
+        self._keep(run_id, entry)
 
     def forget(self, run_id: str) -> None:
         """메모리 색인을 버린다 (다음 읽기가 파일·캐시에서 다시 만든다)."""
@@ -288,6 +326,9 @@ class RunRecords:
         if not target.parent.is_dir():
             text = f"저장할 폴더가 없다: {target.parent}"
             raise RequestFailed("io_error", text, message=text)
+        if _inside(target.parent, self.root / RUNS_NAME):
+            # 실행 폴더는 기록이라 고치지 않는다 (zip이 자기 임시 파일을 담는 일도 없게)
+            raise InvalidParams(f"실행 기록 폴더(runs/) 안에는 내보낼 수 없다: {dest}")
         try:
             fd, temp = tempfile.mkstemp(dir=target.parent, prefix=".kb-export-", suffix=".tmp")
         except OSError as exc:
@@ -320,6 +361,26 @@ def _zip_folder(archive: zipfile.ZipFile, folder: Path) -> None:
         name = f"{folder.name}/{path.relative_to(folder).as_posix()}"
         method = zipfile.ZIP_STORED if path.suffix.lower() in _STORED else zipfile.ZIP_DEFLATED
         archive.write(path, name, compress_type=method)
+
+
+def _inside(folder: Path, parent: Path) -> bool:
+    """`folder`가 `parent`이거나 그 아래인가. 같은 폴더는 파일 정체로 본다 (8.3 짧은 이름·대소문자·
+    정션으로 표기가 달라도 같은 폴더). 정션·심볼릭 링크를 따라간 실제 경로의 조상도 본다
+    (바깥 별칭이 `runs/<실행>`을 가리키는 경우)."""
+    try:
+        if not parent.is_dir():
+            return False
+        real = folder.resolve()
+    except OSError:
+        return False
+    for start in (folder, real):
+        for at in (start, *start.parents):
+            try:
+                if at.is_dir() and os.path.samefile(at, parent):
+                    return True
+            except OSError:
+                continue
+    return False
 
 
 def _same_file(index: RunIndex) -> bool:

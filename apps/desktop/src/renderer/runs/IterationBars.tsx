@@ -54,10 +54,13 @@ export function IterationBars({
   loop,
   selected,
   onPick,
+  note = null,
 }: {
   loop: StepNode;
   selected: number | null;
   onPick(iteration: number): void;
+  /** 지난 성공과 비교가 찾은 변곡 (시안 "2,960회차부터 대기 시간이 늘어남") */
+  note?: string | null;
 }) {
   const iterations = loop.iterations ?? [];
   const bars = barsOf(iterations);
@@ -93,7 +96,9 @@ export function IterationBars({
           />
         ))}
       </div>
-      <div className={css.iterNote}>회차별 소요 시간 · {formatCount(iterations.length)}회</div>
+      <div className={css.iterNote} data-part="iteration-note">
+        회차별 소요 시간 · {note ?? `${formatCount(iterations.length)}회`}
+      </div>
     </div>
   );
 }

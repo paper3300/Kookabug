@@ -2735,6 +2735,26 @@
           },
           "type": "array"
         },
+        "retention": {
+          "additionalProperties": false,
+          "description": "실행 기록 보관 정책 (kookabug.json retention, 없는 값은 기본값: 통과 14일·실패 60일·최근 50개). 기록 뷰어 상태 바 문구용 (M3 T11). 정리는 보류 H1",
+          "properties": {
+            "failed_days": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "keep_last": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "passed_days": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": ["failed_days", "keep_last", "passed_days"],
+          "type": "object"
+        },
         "root": {
           "type": "string"
         },

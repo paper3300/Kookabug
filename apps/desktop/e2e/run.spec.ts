@@ -241,6 +241,11 @@ test("test_reopen_subgraph_tab_only_highlights_inner_node", async () => {
   // 앱을 다시 열고 루트(조상) 탭은 열지 않은 채 서브그래프 탭만 연다: 강조는 실행 스냅샷의 호출 관계로 붙는다
   // (T11 검수 1차: 편집 버퍼·조상 탭에 기대지 않는다)
   const ws = prepareRunWorkspace({ "mouse:left": "first_click" });
+  // 강조만 본다: 그 뒤 실제 OCR(n_select_server)이 부하로 2초 관측 기한을 넘겨 error가 되지 않게 기한을 넉넉히
+  // (T11 검수 6. OCR 기한 집행은 runner·OCR 검사가 따로 본다)
+  const config = path.join(ws.root, "kookabug.json");
+  const body = JSON.parse(fs.readFileSync(config, "utf8"));
+  fs.writeFileSync(config, JSON.stringify({ ...body, run: { ...body.run, capture_timeout_ms: 30_000 } }, null, 2));
   s = await openRunApp(ws);
   await openGraph(s.page, INVENTORY);
   await clickRun(s.page);

@@ -74,13 +74,15 @@ export type KbimgResult =
       reason: "bad_url" | "path_outside_workspace" | "private_path" | "not_image" | "not_found";
     };
 
-// 실행 영상 자리: <루트>/runs/<실행 폴더>/video/<파일>.mp4 (구간은 루트 기준, 대소문자 무시)
+// 실행 영상 자리: <루트>/runs/<실행 폴더>/video/<파일>.mp4 (구간은 루트 기준, 대소문자 무시). 쓰는 중 조각
+// (seg-NNNN.part.mp4)은 MP4 색인이 없어 재생할 수 없고 녹화 스레드가 쥔 파일이라 주지 않는다 (M3 T11)
 function isRunVideo(parts: readonly string[]): boolean {
   return (
     parts.length === 4 &&
     parts[0].toLowerCase() === RUNS_DIR &&
     parts[2].toLowerCase() === RUN_VIDEO_DIR &&
-    path.extname(parts[3]).toLowerCase() === VIDEO_EXTENSION
+    path.extname(parts[3]).toLowerCase() === VIDEO_EXTENSION &&
+    !parts[3].toLowerCase().endsWith(`.part${VIDEO_EXTENSION}`)
   );
 }
 

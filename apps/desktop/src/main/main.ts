@@ -1,11 +1,13 @@
 // Electron 주 프로세스: 창, 보안 기본값, app://·kbimg:// 프로토콜, IPC 다리, daemon 관리자 (M2 계획 2.3·2.10)
 import fs from "node:fs";
 import path from "node:path";
+import { wireStringify } from "@kookabug/schema";
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, shell } from "electron";
 import type { OpenResult, OutputLine, ThemeMode, ThemeState } from "../preload/bridge";
 import { locateCli } from "./cli-locate";
 import { CloseGuard } from "./close-guard";
 import { DaemonManager, nodeDeps, parseExtraArgs, sameWorkspacePath } from "./daemon";
+import { exportRun } from "./dialogs";
 import { installE2EHooks, ResponseDelays } from "./e2e-hooks";
 import { createNotificationForwarder, createRpcHandler, type DaemonCall } from "./ipc";
 import { APP_CHANNEL, checkAppAction, checkSender, EVENT_CHANNEL, IpcGuardError, RPC_CHANNEL } from "./ipc-guard";
@@ -222,6 +224,22 @@ function start(): void {
     closeAnswer(ok) {
       if (typeof ok !== "boolean") throw new IpcGuardError("closeAnswer 인자가 boolean이 아니다");
       closeGuard.answer(ok);
+    },
+    exportRun(runId) {
+      if (typeof runId !== "string") throw new IpcGuardError("exportRun 인자가 문자열이 아니다");
+      return exportRun(runId, {
+        async pickSave(name) {
+          const win = mainWindow;
+          const options: Electron.SaveDialogOptions = {
+            title: "분석 번들 내보내기",
+            defaultPath: path.join(app.getPath("downloads"), name),
+            filters: [{ name: "zip", extensions: ["zip"] }],
+          };
+          const picked = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options);
+          return picked.canceled || !picked.filePath ? null : picked.filePath;
+        },
+        call: (method, params) => daemonCall(method, params, wireStringify(params)),
+      });
     },
   };
   // 창 닫기 확인 (close-guard.ts): 저장 안 된 그래프가 있으면 렌더러가 저장·버림·취소를 묻는다

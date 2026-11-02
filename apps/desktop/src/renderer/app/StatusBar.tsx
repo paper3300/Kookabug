@@ -5,6 +5,8 @@ import { pausedTitle } from "../debug/PauseBanner";
 import { formatCount, formatElapsed, loopProgress } from "../run/highlight";
 import { useRun, type LeaseOwner } from "../run/runStore";
 import { openRun } from "../runs/open";
+import { retentionText, useRunList } from "../runs/runListStore";
+import { useTabs } from "../store/tabs";
 import { docLookup, loopLimitOf, useNow } from "../run/view";
 import { useDocuments } from "../store/documents";
 import { useRegistry } from "../store/registry";
@@ -92,6 +94,20 @@ function RunState() {
   );
 }
 
+/** 기록 뷰어(RUN 탭)를 보고 있으면 보관 정책·runs/ 용량 (M3 계획 2.10 "상태 바(뷰어)") */
+function Retention() {
+  const viewer = useTabs((s) => s.tabs.some((t) => t.path === s.active && t.kind === "run"));
+  const retention = useWorkspace((s) => s.info?.retention);
+  const bytes = useRunList((s) => s.runsBytes);
+  const text = viewer ? retentionText(retention, bytes) : null;
+  if (text === null) return null;
+  return (
+    <span className={css.statusItem} data-part="retention" title="실행 기록 보관 정책 (kookabug.json retention)">
+      {text}
+    </span>
+  );
+}
+
 export function StatusBar() {
   const daemon = useWorkspace((s) => s.daemon);
   const info = useWorkspace((s) => s.info);
@@ -121,6 +137,7 @@ export function StatusBar() {
         </span>
       )}
       <div className={css.spacer} />
+      <Retention />
       {runtime && (
         <>
           <span className={css.statusItem} title={runtime.ocr ?? undefined}>

@@ -357,6 +357,94 @@ describe("RunIndexModel", () => {
     expect(view.reveal!.nonce).toBeGreaterThan(nonce);
   });
 
+  test("test_reveal_step_walks_parents_through_unloaded_pages", async () => {
+    // 노드별 통계 → 마지막 실패 (T11): s50은 반복 s1의 3회차 안 호출 s40 아래에 있고, 읽은 쪽(첫 쪽)에는 없다
+    const loop = step("s1", { children: 900, iterations: [0, 1, 2].map((i) => ({ iteration: i, status: "success" as const, steps: 300, t_start: "2026-11-02T01:00:00.000Z", duration_ms: 10 })) });
+    const call40 = step("s40", { parent: "s1", iteration: 2, calls: "subgraphs/c.graph.json", children: 600 });
+    const target = step("s50", { parent: "s40", status: "fail", graph: "subgraphs/c.graph.json" });
+    const asked: string[] = [];
+    const call = (async (method: string, params: Record<string, unknown>) => {
+      if (method === "graph.open") throw new Error("no graph");
+      if (method === "run.index") return index([loop], { failure_chain: [] });
+      if (method === "run.children") return { offset: 0, total: 600, steps: [step(`s${1000 + Number(params.offset)}`, { parent: String(params.parent) })] };
+      if (method === "run.step") {
+        asked.push(String(params.step));
+        const node = params.step === "s50" ? target : call40;
+        return { run_dir: "runs/r", step: node, events: [{ event: "step.start" }, { event: "step.end" }], thumbnail: null, ocr_text: null };
+      }
+      throw new Error(method);
+    }) as unknown as RpcCall;
+    const model = new RunIndexModel(call, manualTimers().delay);
+    await model.open("ab12cd34");
+    model.setView("ab12cd34", "stats");
+    expect(await model.revealStep("ab12cd34", "s50")).toBe(true);
+    const view = model.get("ab12cd34")!;
+    expect(asked).toEqual(["s50", "s40"]);
+    expect(view.view).toBe("timeline");
+    expect(view.selected).toBe("s50");
+    expect(view.reveal?.step).toBe("s50");
+    expect([...view.expanded].sort()).toEqual(["s1", "s40"]);
+    expect(view.iteration.get("s1")).toBe(2);
+    // 쪽에 없어도 고정한 조상 사슬로 줄이 보인다
+    expect(childrenOf(view, loop).map((s) => s.step)).toContain("s40");
+    expect(childrenOf(view, call40).map((s) => s.step)).toContain("s50");
+    // 이미 받은 끝난 기록은 다시 읽지 않는다
+    expect(detailComplete(view.details.get("s50"))).toBe(true);
+  });
+
+  test("test_compare_late_running_response_does_not_overwrite_after_end", async () => {
+    // T11 검수 3: 진행 중 비교 요청 → 색인 ended → 강제 재요청, 새 응답이 먼저 오고 옛 응답이 늦게 와도 새 결과가 남는다
+    let state: "running" | "ended" = "running";
+    const pending: ((v: unknown) => void)[] = [];
+    const call = (async (method: string) => {
+      if (method === "run.index") return index([], { state });
+      if (method === "run.compare") return new Promise((resolve) => pending.push(resolve));
+      throw new Error("no graph");
+    }) as unknown as RpcCall;
+    const model = new RunIndexModel(call, manualTimers().delay);
+    await model.open("ab12cd34");
+    const old = model.loadCompare("ab12cd34", null);
+    state = "ended";
+    await model.refresh("ab12cd34");
+    const fresh = model.loadCompare("ab12cd34", null, true);
+    expect(pending).toHaveLength(2);
+    pending[1]({ baseline: "good0001", baseline_picked: "auto", screen: { diff_ratio: 0.5 } });
+    await fresh;
+    pending[0]({ baseline: "good0001", baseline_picked: "auto", screen: { reason: "no_evidence", file: null, baseline_file: "thumbs/s1.jpg" } });
+    await old;
+    const result = model.get("ab12cd34")!.compare!.result as { screen: { diff_ratio?: number; reason?: string } };
+    expect(result.screen.diff_ratio).toBe(0.5);
+    expect(result.screen.reason).toBeUndefined();
+    // 같은 열쇠는 캐시: 다시 불러도 요청하지 않는다
+    await model.loadCompare("ab12cd34", null);
+    expect(pending).toHaveLength(2);
+  });
+
+  test("test_compare_a_b_a_drops_late_first_response", async () => {
+    // T11 검수 3: 스텝 A → B → A. 첫 A 응답이 마지막에 와도 두 번째 A의 결과가 남는다
+    const pending: { step: unknown; resolve(v: unknown): void }[] = [];
+    const call = (async (method: string, params: Record<string, unknown>) => {
+      if (method === "run.index") return index([step("s1"), step("s2")], { state: "ended" });
+      if (method === "run.compare") return new Promise((resolve) => pending.push({ step: params.step, resolve }));
+      if (method === "run.step") return { run_dir: "runs/r", step: step(String(params.step)), events: [], thumbnail: null, ocr_text: null };
+      throw new Error("no graph");
+    }) as unknown as RpcCall;
+    const model = new RunIndexModel(call, manualTimers().delay);
+    await model.open("ab12cd34");
+    const a1 = model.loadCompare("ab12cd34", "s1");
+    const b = model.loadCompare("ab12cd34", "s2");
+    const a2 = model.loadCompare("ab12cd34", "s1");
+    expect(pending.map((p) => p.step)).toEqual(["s1", "s2", "s1"]);
+    pending[2].resolve({ baseline: "good0001", baseline_picked: "auto", screen: { diff_ratio: 0.25 } });
+    await a2;
+    pending[1].resolve({ baseline: "good0001", baseline_picked: "auto", screen: { diff_ratio: 0.9 } });
+    pending[0].resolve({ baseline: "good0001", baseline_picked: "auto", screen: { diff_ratio: 0.1 } });
+    await Promise.all([a1, b]);
+    const compare = model.get("ab12cd34")!.compare!;
+    expect(compare.key).toBe("auto|s1");
+    expect((compare.result as { screen: { diff_ratio: number } }).screen.diff_ratio).toBe(0.25);
+  });
+
   test("mergeSteps_orders_by_step_number", () => {
     expect(mergeSteps([step("s10"), step("s2")], [step("s9")]).map((s) => s.step)).toEqual(["s2", "s9", "s10"]);
   });

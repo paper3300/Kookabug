@@ -116,6 +116,7 @@ def _info_sync(call: Call) -> dict[str, Any]:
     return {
         "root": str(root),
         "profiles": workspace.profile_names(),
+        "retention": workspace.retention(),
         "diagnostics": [d.to_dict() for d in workspace.diagnostics],
         "plugins": [registry.plugin_info(p) for p in sorted(registry.plugins)],
         "runtime": runtime_info(call.daemon.platform_fake),

@@ -1,18 +1,22 @@
 // 기록 뷰어 RUN 탭 (시안 RunViewer 에디터 영역, M3 계획 2.10).
 // - 머리: `#<id> <테스트>` · 결과·사유 · 시작 시각 · 경과(멈춘 시간이 있으면 "실제 a · 멈춤 제외 b") · 반복 · 스냅샷
-//   경로 · 해상도·DPI. "에디터에서 재현"·"분석 번들 내보내기"는 T11, "에이전트에게 분석 요청"은 M5(숨김)
-// - 하위 탭: 스텝 타임라인 · run.json. 노드별 통계·비교는 T11, "수집 데이터"는 숨김(U11)
+//   경로 · 해상도·DPI. 단추 "에디터에서 재현"(reproduce.ts)·"분석 번들 내보내기"(주 프로세스 저장 대화 상자),
+//   "에이전트에게 분석 요청"은 M5(숨김). 두 단추의 결과는 머리 아래 알림 줄
+// - 하위 탭: 스텝 타임라인 · 노드별 통계 · `#<기준> 과 비교` · run.json. "수집 데이터"는 숨김(U11)
 // - 처음 열면 실패 노드로 바로 이동한다(실패 사슬을 펼치고 실패 스텝을 고른 뒤 보이게 하고 그 증거를 보인다)
 // - 진행 중 실행은 실행 화면이 받은 이벤트를 따라 늘어난다 (runIndexStore, live.ts)
 import { useEffect } from "react";
 import { formatCount } from "../run/highlight";
 import { useRegistry } from "../store/registry";
 import { renameTab, runTabPath } from "../store/tabs";
+import { CompareTab, compareTabLabel } from "./Compare";
 import { Evidence } from "./Evidence";
 import { isoMs, stepTitle, type TypeTitle } from "./labels";
+import { NodeStats } from "./NodeStats";
 import { runTabTitle, shortIdOf } from "./open";
+import { reproduce, reproduceNotice } from "./reproduce";
 import { findStep, runIndexModel, useRunIndex, type RunIndex, type RunViewState } from "./runIndexStore";
-import { formatDuration } from "./runListStore";
+import { formatBytes, formatDuration } from "./runListStore";
 import css from "./runs.module.css";
 import { Timeline } from "./Timeline";
 
@@ -72,10 +76,31 @@ export function headMeta(index: RunIndex): string[] {
   return parts;
 }
 
+/** "분석 번들 내보내기": 저장 대화 상자 → run.export (주 프로세스 dialogs.ts) */
+async function exportBundle(runId: string): Promise<void> {
+  runIndexModel.setNotice(runId, { tone: "info", text: "분석 번들을 내보내는 중…" });
+  try {
+    const r = await window.kookabug.app.exportRun(runId);
+    if (r.ok) runIndexModel.setNotice(runId, { tone: "info", text: `분석 번들을 내보냈어요: ${r.path} (${formatBytes(r.bytes)})` });
+    else if (r.reason === "canceled") runIndexModel.setNotice(runId, null);
+    else runIndexModel.setNotice(runId, { tone: "error", text: `내보내지 못했어요: ${r.error.message}` });
+  } catch (err) {
+    runIndexModel.setNotice(runId, { tone: "error", text: `내보내지 못했어요: ${(err as Error).message ?? String(err)}` });
+  }
+}
+
+async function reproduceRun(view: RunViewState, typeTitle: TypeTitle): Promise<void> {
+  const failureId = view.index?.failure_chain.at(-1);
+  const failure = failureId === undefined ? null : findStep(view, failureId);
+  const result = await reproduce(view);
+  runIndexModel.setNotice(view.runId, reproduceNotice(result, failure === null ? null : stepTitle(view, failure, typeTitle)));
+}
+
 function Head({ view, shortId, typeTitle }: { view: RunViewState; shortId: string; typeTitle: TypeTitle }) {
   const index = view.index!;
   const verdict = verdictOf(view, typeTitle);
   const title = view.testTitle ?? (typeof index.run?.graph === "string" ? index.run.graph : index.run_id);
+  const running = index.state === "running";
   return (
     <div className={css.head} data-part="run-head">
       <div className={css.headText}>
@@ -91,6 +116,39 @@ function Head({ view, shortId, typeTitle }: { view: RunViewState; shortId: strin
           {headMeta(index).join(" · ")}
         </div>
       </div>
+      <div className={css.headSpacer} />
+      <button
+        type="button"
+        className={css.headButton}
+        data-part="reproduce"
+        title="테스트 그래프를 열고 실패 노드에 브레이크포인트를 건 뒤 그 실행의 프로필을 고른다 (실행은 F5)"
+        onClick={() => void reproduceRun(view, typeTitle)}
+      >
+        에디터에서 재현
+      </button>
+      <button
+        type="button"
+        className={css.headButton}
+        data-part="export-bundle"
+        disabled={running}
+        title={running ? "진행 중인 실행은 끝난 뒤 내보낼 수 있어요" : "실행 폴더를 zip으로 저장"}
+        onClick={() => void exportBundle(view.runId)}
+      >
+        분석 번들 내보내기
+      </button>
+    </div>
+  );
+}
+
+function Notice({ view }: { view: RunViewState }) {
+  const n = view.notice;
+  if (n === null) return null;
+  return (
+    <div className={css.notice} data-part="run-notice" data-tone={n.tone} role="status">
+      <span className={css.noticeText}>{n.text}</span>
+      <button type="button" className={css.noticeClose} aria-label="알림 닫기" onClick={() => runIndexModel.setNotice(view.runId, null)}>
+        ×
+      </button>
     </div>
   );
 }
@@ -148,29 +206,36 @@ export function RunTab({ runId }: { runId: string }) {
       data-last-seq={view.index.last_seq}
     >
       <Head view={view} shortId={shortId} typeTitle={typeTitle} />
+      <Notice view={view} />
       <div role="tablist" aria-label="기록 보기" className={css.subtabs}>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={view.view === "timeline"}
-          className={css.subtab}
-          onClick={() => runIndexModel.setView(runId, "timeline")}
-        >
-          스텝 타임라인
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={view.view === "runjson"}
-          className={css.subtab}
-          onClick={() => runIndexModel.setView(runId, "runjson")}
-        >
-          run.json
-        </button>
+        {(
+          [
+            ["timeline", "스텝 타임라인"],
+            ["stats", "노드별 통계"],
+            ["compare", compareTabLabel(view)],
+            ["runjson", "run.json"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={view.view === key}
+            className={css.subtab}
+            data-part={`subtab-${key}`}
+            onClick={() => runIndexModel.setView(runId, key)}
+          >
+            {label}
+          </button>
+        ))}
       </div>
       <div className={css.body}>
         {view.view === "runjson" ? (
           <RunJson view={view} />
+        ) : view.view === "stats" ? (
+          <NodeStats view={view} typeTitle={typeTitle} />
+        ) : view.view === "compare" ? (
+          <CompareTab view={view} typeTitle={typeTitle} />
         ) : (
           <>
             <Timeline view={view} typeTitle={typeTitle} />

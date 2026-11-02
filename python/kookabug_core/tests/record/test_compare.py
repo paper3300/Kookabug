@@ -185,6 +185,18 @@ def test_baseline_latest_pass_same_graph_profile_excluding_debug(tmp_path: Path)
     )
 
 
+def test_baseline_scan_skips_run_json_with_invalid_utf8(tmp_path: Path) -> None:
+    """T11 검수 2차: UTF-8이 깨진 run.json 하나(더 최근)가 기준 찾기를 깨지 않고 건너뛰어진다."""
+    runs = tmp_path / "runs"
+    plant_run(runs, "good0001", started_ms=0)
+    broken = plant_run(runs, "bad00001", started_ms=1000)
+    (broken / "run.json").write_bytes(b'{"status":"finished","pad":"\xff"}')
+    target = plant_run(runs, "this0001", started_ms=2000, verdict="fail")
+    data = json.loads((target / "run.json").read_text(encoding="utf-8"))
+    found = pick_baseline(runs, data)
+    assert found is not None and found[0] == "good0001"
+
+
 def test_no_baseline_message(tmp_path: Path) -> None:
     runs = tmp_path / "runs"
     events = [RUN_START, start("s1", "n_w"), end("s1", None, "fail"), run_end("fail", "s1")]

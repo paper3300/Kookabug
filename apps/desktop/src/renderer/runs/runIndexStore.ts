@@ -59,12 +59,24 @@ export interface RunViewState {
   nodes: ReadonlyMap<string, ReadonlyMap<string, NodeInfo>>;
   /** 테스트 그래프 제목 (스냅샷 meta.title) */
   testTitle: string | null;
-  view: "timeline" | "runjson";
+  view: "timeline" | "stats" | "compare" | "runjson";
   /** run.json 원문 (run.json 탭을 열 때 읽는다) */
   runJson: { text: string; truncated: boolean } | "loading" | "error" | null;
   /** 실패(또는 끝나지 않은 스텝)로 이동했다 */
   jumped: boolean;
+  /** 스크린샷 줄 머리 "스크린샷 | 영상" (U8) */
+  media: "shots" | "video";
+  /** 쪽을 다 읽지 않고 고른 스텝과 그 조상 (노드별 통계 → 마지막 실패). 부모 아래 줄에 합쳐 보인다 */
+  pinned: StepNode[];
+  /** 사용자가 고른 기준 실행 (null = 자동: 지난 성공) */
+  baseline: string | null;
+  /** 비교 결과 (key = 기준|스텝) */
+  compare: { key: string; result: CompareResult | "loading" | { error: string } } | null;
+  /** 머리 아래 알림 (내보내기·재현 결과) */
+  notice: { tone: "info" | "warn" | "error"; text: string } | null;
 }
+
+export type CompareResult = ResultOf<"run.compare">;
 
 export function pageKey(parent: string, iteration: number | null): string {
   return iteration === null ? parent : `${parent}#${iteration}`;
@@ -82,14 +94,13 @@ export function detailComplete(detail: StepDetail | "loading" | "error" | undefi
   return typeof detail === "object" && detail.events.some((e) => e.event === "step.end");
 }
 
-/** 그 부모(·회차) 아래에 보일 스텝: 읽은 쪽 + 색인이 아는 스텝(실패 사슬) */
+/** 그 부모(·회차) 아래에 보일 스텝: 고정한 스텝 < 읽은 쪽 < 색인이 아는 스텝(실패 사슬) 순으로 새 값 */
 export function childrenOf(view: RunViewState, parent: StepNode): StepNode[] {
   const iteration = parent.iterations !== undefined ? (view.iteration.get(parent.step) ?? null) : null;
   const page = view.pages.get(pageKey(parent.step, iteration))?.steps ?? [];
-  const known = (view.index?.steps ?? []).filter(
-    (s) => s.parent === parent.step && (iteration === null || s.iteration === iteration),
-  );
-  return mergeSteps(page, known);
+  const under = (s: StepNode) => s.parent === parent.step && (iteration === null || s.iteration === iteration);
+  const known = (view.index?.steps ?? []).filter(under);
+  return mergeSteps(mergeSteps(view.pinned.filter(under), page), known);
 }
 
 export function topSteps(view: RunViewState): StepNode[] {
@@ -104,7 +115,12 @@ export function findStep(view: RunViewState, step: string): StepNode | null {
     const found = page.steps.find((s) => s.step === step);
     if (found !== undefined) return found;
   }
-  return null;
+  return view.pinned.find((s) => s.step === step) ?? null;
+}
+
+/** 비교 결과 열쇠 (기준 실행·화면을 비교할 스텝) */
+export function compareKey(baseline: string | null, step: string | null): string {
+  return `${baseline ?? "auto"}|${step ?? ""}`;
 }
 
 const EMPTY_PAGE: ChildPage = { steps: [], total: 0, loaded: 0, loading: false, error: null };
@@ -129,6 +145,11 @@ function emptyView(runId: string): RunViewState {
     view: "timeline",
     runJson: null,
     jumped: false,
+    media: "shots",
+    pinned: [],
+    baseline: null,
+    compare: null,
+    notice: null,
   };
 }
 
@@ -150,6 +171,8 @@ export class RunIndexModel {
   private readonly titleLoads = new Set<string>();
   /** 읽는 중인 스텝 기록 `<보기 번호>|<스텝>` → 끝난 뒤 다시 읽을지 */
   private readonly detailInflight = new Map<string, { again: boolean }>();
+  /** 실행별 마지막 비교 요청 번호 (늦게 온 옛 응답 버림) */
+  private readonly compareSeq = new Map<string, number>();
 
   constructor(
     private readonly call: RpcCall,
@@ -222,6 +245,7 @@ export class RunIndexModel {
     this.live.clear();
     this.titleLoads.clear();
     this.detailInflight.clear();
+    this.compareSeq.clear();
     this.store.setState({ runs: new Map() });
   }
 
@@ -455,6 +479,101 @@ export class RunIndexModel {
   setView(runId: string, view: RunViewState["view"]): void {
     this.patch(runId, () => ({ view }));
     if (view === "runjson") void this.loadRunJson(runId);
+  }
+
+  setMedia(runId: string, media: RunViewState["media"]): void {
+    this.patch(runId, () => ({ media }));
+  }
+
+  setNotice(runId: string, notice: RunViewState["notice"]): void {
+    this.patch(runId, () => ({ notice }));
+  }
+
+  /** 기준 실행을 고른다 (null = 자동) */
+  setBaseline(runId: string, baseline: string | null): void {
+    this.patch(runId, () => ({ baseline }));
+  }
+
+  /**
+   * 지난 성공과 비교 (run.compare). step = 화면을 비교할 스텝 (null = 실패 스텝). 같은 열쇠는 다시 읽지 않는다(진행
+   * 중 실행은 끝난 뒤 다시). 늦게 온 다른 열쇠의 응답은 쓰지 않는다
+   */
+  async loadCompare(runId: string, step: string | null, force = false): Promise<void> {
+    const view = this.get(runId);
+    if (view?.index == null) return;
+    const key = compareKey(view.baseline, step);
+    const have = view.compare;
+    if (!force && have !== null && have.key === key && have.result !== "loading" && !("error" in have.result)) return;
+    if (!force && have !== null && have.key === key && have.result === "loading") return;
+    const gen = this.generation;
+    const instance = view.instance;
+    // 마지막 요청만 반영한다: 실행 끝 뒤 강제 재요청보다 늦게 온 진행 중 응답, A→B→A의 첫 A 응답은 버린다
+    const seqKey = `${instance}|${runId}`;
+    const seq = (this.compareSeq.get(seqKey) ?? 0) + 1;
+    this.compareSeq.set(seqKey, seq);
+    this.patch(runId, () => ({ compare: { key, result: "loading" } }), instance);
+    let result: CompareResult | { error: string };
+    try {
+      result = await this.call("run.compare", {
+        run_id: runId,
+        ...(view.baseline === null ? {} : { baseline: view.baseline }),
+        ...(step === null ? {} : { step }),
+      });
+    } catch (err) {
+      result = { error: toRpcError(err).message };
+    }
+    if (!this.alive(runId, instance, gen) || this.compareSeq.get(seqKey) !== seq) return;
+    this.patch(runId, (v) => (v.compare?.key === key ? { compare: { key, result } } : null), instance);
+  }
+
+  /**
+   * 아무 스텝으로나 간다 (노드별 통계 → 그 노드의 마지막 실패): 색인·읽은 쪽에 없는 조상은 run.step으로 부모를 따라
+   * 올라가며 읽고, 조상을 모두 펼친 뒤(반복이면 그 회차) 고르고 보이게 한다. 쪽을 다 읽지 않아도 줄이 보이게 그
+   * 사슬을 고정한다(pinned)
+   */
+  async revealStep(runId: string, step: string): Promise<boolean> {
+    const start = this.get(runId);
+    if (start?.index == null) return false;
+    const instance = start.instance;
+    const gen = this.generation;
+    this.patch(runId, () => ({ view: "timeline" }), instance);
+    const chain: StepNode[] = [];
+    let id: string | null = step;
+    for (let depth = 0; id !== null && depth < 64; depth++) {
+      const v = this.get(runId);
+      if (v === undefined || v.instance !== instance) return false;
+      let node: StepNode | null = findStep(v, id);
+      if (node === null) {
+        try {
+          const detail: StepDetail = await this.call("run.step", { run_id: runId, step: id });
+          node = detail.step;
+          const sid = id;
+          if (detailComplete(detail)) this.patch(runId, (x) => ({ details: new Map(x.details).set(sid, detail) }), instance);
+        } catch {
+          return false;
+        }
+      }
+      chain.unshift(node);
+      id = node.parent;
+    }
+    if (!this.alive(runId, instance, gen)) return false;
+    const unknown = chain.filter((n) => {
+      const v = this.get(runId)!;
+      return !(v.index?.steps ?? []).some((s) => s.step === n.step);
+    });
+    const expanded = new Set(this.get(runId)!.expanded);
+    const iterations = new Map(this.get(runId)!.iteration);
+    for (let i = 0; i < chain.length - 1; i++) {
+      expanded.add(chain[i].step);
+      if (chain[i].iterations !== undefined && chain[i + 1].iteration !== undefined) iterations.set(chain[i].step, chain[i + 1].iteration!);
+    }
+    this.patch(runId, (v) => ({ expanded, iteration: iterations, pinned: mergeSteps(v.pinned, unknown) }), instance);
+    await Promise.all(
+      chain.slice(0, -1).map((parent) => this.ensurePage(runId, parent, parent.iterations !== undefined ? (iterations.get(parent.step) ?? null) : null)),
+    );
+    if (!this.alive(runId, instance, gen)) return false;
+    this.select(runId, step, true);
+    return true;
   }
 
   private async loadRunJson(runId: string): Promise<void> {

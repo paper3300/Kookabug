@@ -571,6 +571,243 @@
   color: var(--kb-fg-muted);
 }
 
+/* 비교 상자: 기준과 다른 줄의 이름은 시안처럼 주황 */
+.kvKey[data-differs="true"] {
+  color: var(--kb-status-fail);
+}
+
+.boxNote {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--kb-fg-muted);
+}
+
+/* ── RUN 머리 단추·알림 (T11) ─────────────────────────────────── */
+.headSpacer {
+  flex: 1 1 20px;
+}
+
+.headButton {
+  flex: 0 0 auto;
+  background: var(--kb-input-bg);
+  color: var(--kb-fg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  padding: 0 12px;
+  height: 26px;
+  font-size: 12px;
+}
+
+.headButton:disabled {
+  color: var(--kb-fg-muted);
+}
+
+.notice {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 20px;
+  font-size: 12px;
+  background: var(--kb-banner-info-bg);
+  color: var(--kb-banner-info-fg);
+}
+
+.notice[data-tone="warn"] {
+  background: var(--kb-banner-warn-bg);
+  color: var(--kb-banner-warn-fg);
+}
+
+.notice[data-tone="error"] {
+  background: var(--kb-banner-error-bg);
+  color: var(--kb-banner-error-fg);
+}
+
+.noticeText {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.noticeClose {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+}
+
+/* ── 스크린샷 | 영상 전환 (U8) ─────────────────────────────────── */
+.mediaToggle {
+  display: flex;
+  flex: 0 0 auto;
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.mediaButton {
+  padding: 0 10px;
+  height: 22px;
+  background: none;
+  border: 0;
+  color: var(--kb-fg-muted);
+  font-size: 11px;
+}
+
+.mediaButton[aria-pressed="true"] {
+  background: var(--kb-input-bg);
+  color: var(--kb-fg-strong);
+}
+
+.videoNote {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--kb-fg-muted);
+}
+
+.video {
+  padding: 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 960px;
+}
+
+.videoFrame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--kb-run-shot-bg);
+  border: 1px solid var(--kb-run-shot-border);
+  overflow: hidden;
+}
+
+.videoEl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.videoOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: repeating-linear-gradient(135deg, var(--kb-run-omit-stripe-a) 0 8px, var(--kb-run-omit-stripe-b) 8px 16px);
+  color: var(--kb-run-omit-fg);
+  font-size: 12px;
+}
+
+.videoMeta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--kb-fg-muted);
+  font-family: var(--kb-font-mono);
+}
+
+.videoStrip {
+  position: relative;
+  height: 8px;
+  background: var(--kb-run-shot-bg);
+}
+
+.videoSeg,
+.videoGap {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding: 0;
+  border: 0;
+}
+
+.videoSeg {
+  background: var(--kb-run-bar);
+}
+
+.videoSeg[aria-pressed="true"] {
+  background: var(--kb-accent);
+}
+
+.videoGap {
+  background: repeating-linear-gradient(135deg, var(--kb-run-omit-stripe-a) 0 3px, var(--kb-run-omit-stripe-b) 3px 6px);
+}
+
+.videoMarker {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--kb-run-bar-selected);
+  pointer-events: none;
+}
+
+/* ── 비교 탭·노드별 통계 탭 (T11) ──────────────────────────────── */
+.compareTab {
+  padding: 14px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pickRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--kb-fg-muted);
+}
+
+.select {
+  height: 24px;
+  background: var(--kb-input-bg);
+  color: var(--kb-fg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  font-size: 12px;
+}
+
+.compareShots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.diffBox {
+  position: absolute;
+  border: 1px solid var(--kb-status-fail);
+  background: color-mix(in srgb, var(--kb-status-fail) 12%, transparent);
+}
+
+.statsTab {
+  padding: 8px 8px 20px;
+  overflow-x: auto;
+}
+
+.statsRowLink {
+  cursor: pointer;
+}
+
+.statsRowLink:hover {
+  background: var(--kb-hover-bg);
+}
+
+.statsGraph {
+  color: var(--kb-fg-muted);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pre {
   margin: 0;
   padding: 14px 20px;

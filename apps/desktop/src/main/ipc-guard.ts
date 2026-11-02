@@ -89,6 +89,8 @@ export const APP_ACTIONS: ReadonlySet<string> = new Set([
   "windowState",
   "closeGuard",
   "closeAnswer",
+  // 기록 뷰어 "분석 번들 내보내기": 저장 대화 상자 → run.export (M3 T11, dialogs.ts)
+  "exportRun",
 ]);
 
 export class IpcGuardError extends Error {

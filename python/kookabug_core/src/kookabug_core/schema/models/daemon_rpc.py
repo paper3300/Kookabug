@@ -779,6 +779,19 @@ class WindowsListResult(BaseModel):
     windows: list[WindowInfo]
 
 
+class Retention(BaseModel):
+    """
+    실행 기록 보관 정책 (kookabug.json retention, 없는 값은 기본값: 통과 14일·실패 60일·최근 50개). 기록 뷰어 상태 바 문구용 (M3 T11). 정리는 보류 H1
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    failed_days: Annotated[int, Field(ge=0)]
+    keep_last: Annotated[int, Field(ge=0)]
+    passed_days: Annotated[int, Field(ge=0)]
+
+
 class Runtime(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -800,6 +813,12 @@ class WorkspaceInfoResult(BaseModel):
     diagnostics: list[Diagnostic]
     plugins: list[PluginSummary]
     profiles: list[str]
+    retention: Annotated[
+        Retention | None,
+        Field(
+            description="실행 기록 보관 정책 (kookabug.json retention, 없는 값은 기본값: 통과 14일·실패 60일·최근 50개). 기록 뷰어 상태 바 문구용 (M3 T11). 정리는 보류 H1"
+        ),
+    ] = None
     root: str
     runtime: Runtime
 

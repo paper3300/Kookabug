@@ -1280,6 +1280,14 @@ export interface WorkspaceInfoResult {
   diagnostics: Diagnostic[];
   plugins: PluginSummary[];
   profiles: string[];
+  /**
+   * 실행 기록 보관 정책 (kookabug.json retention, 없는 값은 기본값: 통과 14일·실패 60일·최근 50개). 기록 뷰어 상태 바 문구용 (M3 T11). 정리는 보류 H1
+   */
+  retention?: {
+    failed_days: number;
+    keep_last: number;
+    passed_days: number;
+  };
   root: string;
   runtime: {
     capture: string | null;

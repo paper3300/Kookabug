@@ -63,6 +63,8 @@ RUN_ID_LENGTH: Final = 8
 _RUN_ID = re.compile(rf"[a-z0-9]{{{RUN_ID_LENGTH}}}")
 _MAX_TRIES: Final = 100
 REPLACE_RETRY_S: Final = 5.0
+# 읽는 쪽은 교체 순간만 기다린다 (계속 거부되면 진짜 권한 문제)
+READ_RETRY_S: Final = 1.0
 
 # run.end에서 run.json으로 옮기는 결과 필드 (run.end 필드 → run.json 필드는 같은 이름)
 RUN_END_FIELDS: Final = (
@@ -206,10 +208,27 @@ def write_run_json(path: str | os.PathLike[str], data: Mapping[str, Any]) -> Non
 
 
 def read_run_json(path: str | os.PathLike[str]) -> dict[str, Any] | None:
-    """`run.json` (없거나 JSON 객체가 아니면 None)."""
+    """`run.json` (없거나 JSON 객체가 아니면 None).
+
+    Windows에서는 쓰는 쪽의 교체(`os.replace`) 순간 파일을 잠깐 열 수 없어 `PermissionError`가
+    난다. `READ_RETRY_S` 동안 다시 읽고, 그래도 안 되면 그 오류를 그대로 올린다.
+    """
+    file = Path(path)
+    deadline = time.monotonic() + READ_RETRY_S
+    while True:
+        try:
+            text = file.read_text(encoding="utf-8")
+            break
+        except FileNotFoundError, ValueError:
+            # ValueError: UTF-8이 아닌 기록(UnicodeDecodeError) — 형식이 틀린 기록으로 본다
+            return None
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.005)
     try:
-        value = json.loads(Path(path).read_text(encoding="utf-8"))
-    except FileNotFoundError, ValueError:
+        value = json.loads(text)
+    except ValueError:
         return None
     return value if isinstance(value, dict) else None
 

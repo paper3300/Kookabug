@@ -55,6 +55,21 @@ export function formatDuration(ms: number): string {
   return `${m}분 ${String(s).padStart(2, "0")}초`;
 }
 
+/** 바이트 글 (12.4 GB) */
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`;
+  return `${(n / 1024 ** 3).toFixed(1)} GB`;
+}
+
+/** 상태 바 보관 문구 (시안 "보관: 통과 14일 · 실패 60일 · 12.4 GB"). 정리는 보류 H1 — 정책 문구만 */
+export function retentionText(retention: { passed_days: number; failed_days: number } | undefined, runsBytes: number | null): string | null {
+  if (retention === undefined) return null;
+  const size = runsBytes === null ? "" : ` · ${formatBytes(runsBytes)}`;
+  return `보관: 통과 ${retention.passed_days}일 · 실패 ${retention.failed_days}일${size}`;
+}
+
 /** 메타 줄: 결과 · 실패 위치(또는 사유) · 경과 · build */
 export function metaOf(run: RunSummary): string {
   const parts: string[] = [VERDICT_LABEL[toneOf(run)]];

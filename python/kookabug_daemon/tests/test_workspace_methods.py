@@ -134,6 +134,8 @@ def test_info_profiles_and_status_fields(ws: Path, tmp_path: Path) -> None:
         info = client.call("workspace.info")
     assert info["root"] == str(ws)
     assert info["profiles"] == ["login_fail", "maintenance"]
+    # 보관 정책 (기록 뷰어 상태 바, M3 T11): 없는 값은 기본값
+    assert info["retention"] == {"passed_days": 14, "failed_days": 60, "keep_last": 50}
     assert info["diagnostics"] == []
     core = [p for p in info["plugins"] if p["id"] == "core"]
     assert len(core) == 1 and core[0]["version"]

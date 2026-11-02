@@ -16,6 +16,11 @@ export const VIEWER_OMIT = "tests/viewer_omit.graph.json";
 export const VIEWER_PRIVATE = "subgraphs/viewer_private.graph.json";
 /** 검증 노드 없이 끝남 (검증 없음 배지) */
 export const VIEWER_NOASSERT = "tests/viewer_noassert.graph.json";
+/**
+ * 타이틀에서 시작 단추를 누른 뒤 점검 팝업을 기다린다 (지난 성공과 비교, T11): 게임 인수에 `--maintenance`가 있으면
+ * 점검 팝업이 떠 통과, 없으면 로그인 화면이라 시간 초과 실패 → 화면·환경 차이
+ */
+export const VIEWER_CMP = "tests/viewer_compare.graph.json";
 
 const START_BUTTON = { $target: "targets/title/start_button.target.json" };
 /** 타이틀 화면에 없는 대상 (점검 팝업) */
@@ -96,6 +101,19 @@ export function writeViewerGraphs(ws: RunWorkspace): void {
       n_wait: { in: { target: START_BUTTON, timeout_ms: 30000 }, title: "타이틀 대기", type: "core.image.wait", version: 1 },
       n_assert: { in: { target: START_BUTTON, timeout_ms: 5000 }, title: "타이틀 확인", type: "core.assert.visible", version: 1 },
     }),
+    [VIEWER_CMP]: testGraph("뷰어 비교", {
+      n_entry: { next: { start: "n_launch" }, title: "시작", type: "core.graph.entry", version: 1 },
+      n_launch: launch("n_wait_title"),
+      n_wait_title: { in: { target: START_BUTTON, timeout_ms: 30000 }, next: { found: "n_settle" }, title: "타이틀 대기", type: "core.image.wait", version: 1 },
+      // 실제 녹화(MSMF)는 인코더 준비에 시간이 든다: 그 뒤에 시작하는 스텝이 조각 안에 들게 기다린다 (T11 검수: 실제 조각 안 탐색)
+      n_settle: { in: { ms: 3000 }, next: { done: "n_repeat" }, title: "녹화 준비 대기", type: "core.flow.delay", version: 1 },
+      // 회차 막대 (시안 대비 스크린샷)
+      n_repeat: { in: { times: 3 }, next: { body: "n_check", done: "n_click" }, title: "세 번 확인", type: "core.flow.repeat", version: 1 },
+      n_check: { in: { target: START_BUTTON, timeout_ms: 30000 }, title: "타이틀 확인", type: "core.image.wait", version: 1 },
+      n_click: { in: { target: START_BUTTON }, next: { done: "n_wait_popup" }, title: "시작 클릭", type: "core.image.click", version: 1 },
+      n_wait_popup: { in: { target: MISSING, timeout_ms: 2000 }, next: { found: "n_pass" }, title: "점검 팝업 대기", type: "core.image.wait", version: 1 },
+      n_pass: { title: "통과", type: "core.test.pass", version: 1 },
+    }),
     [VIEWER_NOASSERT]: testGraph("뷰어 검증 없음", {
       n_entry: { next: { start: "n_launch" }, title: "시작", type: "core.graph.entry", version: 1 },
       n_launch: launch("n_wait"),
@@ -109,10 +127,30 @@ export function writeViewerGraphs(ws: RunWorkspace): void {
   }
 }
 
-/** 렌더러 다리로 run.start (UI 연결) */
-export async function startRun(page: Page, graph: string): Promise<string> {
-  const r = (await page.evaluate((p) => window.kookabug.rpc("run.start", { path: p }), graph)) as { run_id: string };
+/** 렌더러 다리로 run.start (UI 연결). profile을 주면 그 프로필로 */
+export async function startRun(page: Page, graph: string, profile?: string): Promise<string> {
+  const r = (await page.evaluate(
+    ([p, prof]) => window.kookabug.rpc("run.start", prof === undefined ? { path: p } : { path: p, profile: prof }),
+    [graph, profile] as const,
+  )) as { run_id: string };
   return r.run_id;
+}
+
+/** `.kookabug/local.json`의 게임 인수 (null이면 빼서 프로필·워크스페이스 값을 쓴다) */
+export function setLocalGameArgs(ws: RunWorkspace, args: string[] | null): void {
+  const file = path.join(ws.root, ".kookabug", "local.json");
+  const local = JSON.parse(fs.readFileSync(file, "utf8")) as { settings: Record<string, unknown> };
+  if (args === null) delete local.settings["game.args"];
+  else local.settings["game.args"] = args;
+  fs.writeFileSync(file, JSON.stringify(local));
+}
+
+/** 워크스페이스 영상 정책 (예제 워크스페이스는 off) */
+export function setWorkspaceVideo(ws: RunWorkspace, mode: "on" | "failed_only" | "off"): void {
+  const file = path.join(ws.root, "kookabug.json");
+  const value = JSON.parse(fs.readFileSync(file, "utf8")) as { record?: Record<string, unknown> };
+  value.record = { ...(value.record ?? {}), video: mode };
+  fs.writeFileSync(file, JSON.stringify(value, null, 2) + "\n");
 }
 
 export async function runState(page: Page, runId: string): Promise<{ state: string; verdict: string | null }> {

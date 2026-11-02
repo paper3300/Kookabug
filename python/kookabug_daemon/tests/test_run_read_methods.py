@@ -696,6 +696,8 @@ def test_live_run_index_grows_with_events(tmp_path: Path) -> None:
         signal.write_text("go", encoding="utf-8")
         log.until_ended()
         wait_ended(client, run_id)
+        # 다시 읽지 않아도 감독자 마무리 뒤 메모리 색인이 캐시로 옮겨진다 (T7 검수 Low)
+        wait_until(lambda: index_cache_file(rig.root, run_id).is_file(), timeout=30, interval=0.05)
         done = client.call("run.index", {"run_id": run_id})
         assert done["state"] == "ended" and done["last_seq"] == log.events[-1]["seq"]
         assert step_of(done, "n_gate")["status"] == "success"

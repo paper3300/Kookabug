@@ -269,6 +269,7 @@ describe("kbimg run video", () => {
     fs.mkdirSync(path.join(ws, ".kookabug", "runs", RUN, "video"), { recursive: true });
     fs.mkdirSync(path.join(tmp, "elsewhere", "video"), { recursive: true });
     fs.writeFileSync(path.join(video, "seg-0001.mp4"), BYTES);
+    fs.writeFileSync(path.join(video, "seg-0002.part.mp4"), BYTES);
     fs.writeFileSync(path.join(ws, "runs", RUN, "thumbs", "s3.jpg"), "jpg");
     fs.writeFileSync(path.join(ws, "runs", RUN, "a.mp4"), "mp4");
     fs.writeFileSync(path.join(ws, "media", "clip.mp4"), "mp4");
@@ -295,6 +296,9 @@ describe("kbimg run video", () => {
       [`kbimg://ws/runs/${RUN}/a.mp4`, "not_image"],
       ["kbimg://ws/media/clip.mp4", "not_image"],
       [`kbimg://ws/runs/${RUN}/video/sub/seg-0001.mp4`, "not_image"],
+      // 쓰는 중 조각은 주지 않는다 (T11)
+      [`kbimg://ws/runs/${RUN}/video/seg-0002.part.mp4`, "not_image"],
+      [`kbimg://ws/runs/${RUN}/video/SEG-0002.PART.MP4`, "not_image"],
       [`kbimg://ws/runs/${RUN}/clips/seg-0001.mp4`, "not_image"],
       [`kbimg://ws/.kookabug/runs/${RUN}/video/seg-0001.mp4`, "private_path"],
       ["kbimg://ws/runs/linked/video/seg-0001.mp4", "path_outside_workspace"],

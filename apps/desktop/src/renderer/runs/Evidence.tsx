@@ -1,30 +1,17 @@
-// 고른 스텝의 스크린샷 줄과 매칭 후보 표 (시안 RunViewer 아래쪽). 칸은 evidenceCells.ts가 정하고, 후보 상자는
-// 마지막 칸 이미지 위에 그린다(후보 사각형은 _fail 이미지 좌표). "그래프에서 보기"는 실행 스냅샷 그래프를
-// 읽기 전용 탭으로 연다 (viewInGraph.ts)
+// 고른 스텝의 스크린샷 줄과 매칭 후보 표·지난 성공과 비교 상자 (시안 RunViewer 아래쪽). 칸은 evidenceCells.ts가
+// 정하고, 후보 상자는 마지막 칸 이미지 위에 그린다(후보 사각형은 _fail 이미지 좌표). 머리의 "스크린샷 | 영상"은 그
+// 실행에 영상 조각이 있을 때만(U8), 없으면 이유만. "그래프에서 보기"는 실행 스냅샷 그래프를 읽기 전용 탭으로
+// 연다 (viewInGraph.ts)
 import { useState } from "react";
 import { formatClock } from "../run/highlight";
-import { candidateRows, evidenceCells, stepEnd, type EvidenceCell } from "./evidenceCells";
+import { CompareBox } from "./Compare";
+import { candidateRows, evidenceCells, fileUrl, fitted, stepEnd, type EvidenceCell, type Size } from "./evidenceCells";
 import { isoMs, stepTitle, type TypeTitle } from "./labels";
-import type { RunViewState, StepDetail, StepNode } from "./runIndexStore";
+import { runIndexModel, type RunViewState, type StepDetail, type StepNode } from "./runIndexStore";
 import css from "./runs.module.css";
+import { VideoPlayer } from "./VideoPlayer";
+import { videoHeader } from "./videoTimeline";
 import { viewInGraph } from "./viewInGraph";
-
-function fileUrl(runDir: string, file: string): string {
-  return `kbimg://ws/${`${runDir}/${file}`.split("/").map(encodeURIComponent).join("/")}`;
-}
-
-interface Size {
-  w: number;
-  h: number;
-}
-
-/** object-fit: contain 으로 그린 그림의 상자 안 위치 (%) */
-function fitted(img: Size, box: Size): { left: number; top: number; width: number; height: number } {
-  const scale = Math.min(box.w / img.w, box.h / img.h);
-  const w = img.w * scale;
-  const h = img.h * scale;
-  return { left: ((box.w - w) / 2 / box.w) * 100, top: ((box.h - h) / 2 / box.h) * 100, width: (w / box.w) * 100, height: (h / box.h) * 100 };
-}
 
 function Shot({ cell, runDir, detail, clock }: { cell: EvidenceCell; runDir: string; detail: StepDetail; clock: string }) {
   const [natural, setNatural] = useState<Size | null>(null);
@@ -161,6 +148,8 @@ export function Evidence({
   const clockOf = (cell: EvidenceCell) =>
     cell.atMs === null || stepStart === null || runStart === null ? "" : formatClock(stepStart - runStart + cell.atMs).slice(0, -2);
   const cells = typeof detail === "object" ? evidenceCells(step, detail, testGraph) : [];
+  const video = videoHeader(index.video, index.run?.video as { status?: unknown; deleted?: unknown } | undefined);
+  const showVideo = video.toggle && view.media === "video" && index.video !== null;
   return (
     <section aria-label="스텝 증거" data-part="evidence" data-step={step.step}>
       <div className={css.stepHead}>
@@ -169,6 +158,33 @@ export function Evidence({
           {step.graph}
           {step.message !== undefined ? ` · ${step.message}` : ""}
         </span>
+        {video.toggle ? (
+          <div className={css.mediaToggle} role="group" aria-label="스크린샷 또는 영상" data-part="media-toggle">
+            {(
+              [
+                ["shots", "스크린샷"],
+                ["video", "영상"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={css.mediaButton}
+                aria-pressed={view.media === key}
+                data-part={`media-${key}`}
+                onClick={() => runIndexModel.setMedia(view.runId, key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          video.note !== null && (
+            <span className={css.videoNote} data-part="video-note">
+              {video.note}
+            </span>
+          )
+        )}
         <button
           type="button"
           className={css.button}
@@ -178,7 +194,17 @@ export function Evidence({
           그래프에서 보기
         </button>
       </div>
-      {detail === "loading" || detail === undefined ? (
+      {showVideo ? (
+        <>
+          <VideoPlayer runDir={index.run_dir} runStart={runStart} step={step} video={index.video!} />
+          {typeof detail === "object" && (
+            <div className={css.tables}>
+              <Candidates detail={detail} />
+              <CompareBox view={view} step={step.step} typeTitle={typeTitle} />
+            </div>
+          )}
+        </>
+      ) : detail === "loading" || detail === undefined ? (
         <div className={css.message}>읽는 중…</div>
       ) : detail === "error" ? (
         <div className={css.message}>스텝 기록을 읽지 못했어요</div>
@@ -197,6 +223,7 @@ export function Evidence({
           )}
           <div className={css.tables}>
             <Candidates detail={detail} />
+            <CompareBox view={view} step={step.step} typeTitle={typeTitle} />
           </div>
         </>
       )}

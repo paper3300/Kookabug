@@ -1,6 +1,7 @@
 // window.kookabug 로 내놓는 좁은 API (M2 계획 2.10). ipcRenderer를 인자로 받아 vitest가
 // 가짜 ipc로 검사한다
 import type { DaemonState } from "../main/daemon-state";
+import type { ExportResult } from "../main/dialogs";
 import {
   APP_CHANNEL,
   checkAppAction,
@@ -47,7 +48,7 @@ export interface WindowState {
   maximized: boolean;
 }
 
-export type { DaemonState, RpcErrorShape };
+export type { DaemonState, ExportResult, RpcErrorShape };
 
 /** 앱 API. 주 프로세스가 동작 이름과 인자를 다시 검사한다 */
 export interface AppApi {
@@ -70,6 +71,8 @@ export interface AppApi {
   closeGuard(on: boolean): Promise<void>;
   /** app.closeRequested의 답: true면 창을 닫는다 */
   closeAnswer(ok: boolean): Promise<void>;
+  /** 실행 폴더를 zip으로: 저장 대화 상자가 고른 곳에 run.export (M3 T11) */
+  exportRun(runId: string): Promise<ExportResult>;
 }
 
 export interface KookabugBridge {
@@ -105,6 +108,7 @@ function appApi(ipc: IpcRendererLike): AppApi {
     windowState: call("windowState"),
     closeGuard: call("closeGuard"),
     closeAnswer: call("closeAnswer"),
+    exportRun: call("exportRun"),
   };
 }
 

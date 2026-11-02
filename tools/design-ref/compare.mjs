@@ -39,6 +39,11 @@ export const SCREENS = {
   target: { dark: "Recorder", light: "Recorder" },
   // 기록 뷰어(사이드바 실행 목록·RUN 머리·타임라인·스크린샷 줄·후보 표), M3 T10. RunViewer도 다크 시안뿐이다
   runviewer: { dark: "RunViewer", light: "RunViewer" },
+  // 기록 뷰어 2(머리 단추·하위 탭·회차 막대·"스크린샷 | 영상" 전환·비교 상자·보관 문구), M3 T11. 통계·비교 탭 내용은
+  // 시안에 없어 나란히 볼 기준이 같은 RunViewer다
+  "runviewer-compare": { dark: "RunViewer", light: "RunViewer" },
+  "runviewer-stats": { dark: "RunViewer", light: "RunViewer" },
+  "runviewer-comparetab": { dark: "RunViewer", light: "RunViewer" },
 };
 
 function pngSize(file) {

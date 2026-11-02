@@ -47,6 +47,24 @@ export function omittedText(o: events.Omitted, testGraph: string | null = null):
   return `${where} ${reason}`;
 }
 
+/** 실행 폴더 기준 파일 → kbimg 주소 (구간마다 인코딩) */
+export function fileUrl(runDir: string, file: string): string {
+  return `kbimg://ws/${`${runDir}/${file}`.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+export interface Size {
+  w: number;
+  h: number;
+}
+
+/** object-fit: contain 으로 그린 그림의 상자 안 위치 (%) — 후보·차이 영역 상자를 그림 좌표에 맞춘다 */
+export function fitted(img: Size, box: Size): { left: number; top: number; width: number; height: number } {
+  const scale = Math.min(box.w / img.w, box.h / img.h);
+  const w = img.w * scale;
+  const h = img.h * scale;
+  return { left: ((box.w - w) / 2 / box.w) * 100, top: ((box.h - h) / 2 / box.h) * 100, width: (w / box.w) * 100, height: (h / box.h) * 100 };
+}
+
 export function stepEnd(detail: StepDetail): events.StepEndEvent | null {
   const end = detail.events.find((e) => e.event === "step.end");
   return (end as events.StepEndEvent | undefined) ?? null;

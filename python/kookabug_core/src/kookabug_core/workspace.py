@@ -11,7 +11,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, Final, Literal, Protocol
+from typing import Any, Final, Literal, Protocol, cast
 
 from kookabug_core.canonical import loads_strict
 from kookabug_core.codes import diag
@@ -20,6 +20,7 @@ from kookabug_core.schema import check_shape
 
 __all__ = [
     "LOCAL_FILE",
+    "RETENTION_DEFAULTS",
     "SECRET_ENV_PREFIX",
     "WORKSPACE_FILE",
     "EnvSecrets",
@@ -38,6 +39,12 @@ __all__ = [
 WORKSPACE_FILE: Final = "kookabug.json"
 LOCAL_FILE: Final = ".kookabug/local.json"
 SECRET_ENV_PREFIX: Final = "KOOKABUG_SECRET_"
+RETENTION_DEFAULTS: Final[Mapping[str, int]] = {
+    "passed_days": 14,
+    "failed_days": 60,
+    "keep_last": 50,
+}
+"""실행 기록 보관 기본값 (워크스페이스 구조 \"실행 기록 보관\"). 정리는 보류 H1."""
 
 Layer = Literal["options", "local", "profile", "workspace"]
 _LAYER_NAMES: Final[dict[Layer, str]] = {
@@ -181,6 +188,17 @@ class Workspace:
             frame_budget_mib=run.get("frame_budget_mib"),
             frame_output_refs=run.get("frame_output_refs"),
         )
+
+    def retention(self) -> dict[str, int]:
+        """`kookabug.json`의 `retention`, 없는 값은 기본값 (워크스페이스 구조 "실행 기록 보관")."""
+        out = dict(RETENTION_DEFAULTS)
+        raw = self.config.get("retention")
+        if isinstance(raw, dict):
+            for key in out:
+                value = cast(dict[str, Any], raw).get(key)
+                if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                    out[key] = value
+        return out
 
     def profile_names(self) -> list[str]:
         profiles = self.config.get("profiles")

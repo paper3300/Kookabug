@@ -121,6 +121,16 @@ export class BreakpointModel {
     return this.store.getState().list;
   }
 
+  /** daemon이 확인한 목록 (저장이 끝났는지·성공했는지는 이것으로 본다) */
+  get confirmedList(): readonly Breakpoint[] {
+    return this.confirmed;
+  }
+
+  /** 보내는 중인 저장이 다 끝날 때 (없으면 바로) */
+  settled(): Promise<void> {
+    return this.draining ?? Promise.resolve();
+  }
+
   /** 저장 중이거나 보낼 것이 남았다 (화면 목록이 아직 확인되지 않음) */
   private get busy(): boolean {
     return this.draining !== null || this.pending !== null;

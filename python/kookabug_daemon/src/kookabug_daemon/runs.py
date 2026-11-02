@@ -598,6 +598,12 @@ class RunManager:
                             self._send_ended(sub, ended)
                             run.subs.remove(sub)
         run.finished.set()
+        if run.done.is_set():
+            # 진행 중에 읽힌 메모리 색인을 캐시로 옮긴다 (다시 읽히지 않아도 남지 않게)
+            try:
+                self.records.finish(run.run_id)
+            except Exception:
+                log.exception("실행 %s 색인 정리 실패", run.run_id)
 
     def _ended_params(self, run: _Run) -> dict[str, Any] | None:
         recover_error: str | None = None

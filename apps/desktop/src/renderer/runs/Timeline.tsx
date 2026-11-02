@@ -19,6 +19,16 @@ function hiddenReentry(parent: StepNode, child: StepNode): boolean {
   return parent.iterations !== undefined && child.node === parent.node && child.graph === parent.graph && child.status === "success";
 }
 
+/** 이 반복의 변곡 (지난 성공과 비교 결과가 있을 때): "N회차부터 <노드> 시간이 늘어남" */
+function inflectionNote(view: RunViewState, loop: StepNode, typeTitle: TypeTitle): string | null {
+  const r = view.compare?.result;
+  if (r === undefined || r === "loading" || "error" in r) return null;
+  const hit = r.time?.inflections.find((i) => i.step === loop.step);
+  if (hit === undefined) return null;
+  const node = stepTitle(view, { graph: hit.graph, node: hit.body_node ?? hit.node }, typeTitle);
+  return `${(hit.from_iteration + 1).toLocaleString("ko-KR")}회차부터 ${node} 시간이 늘어남`;
+}
+
 function omittedShots(step: StepNode): boolean {
   return (step.omitted ?? []).some((o) => o.kind === "screenshot" || o.kind === "thumbnail");
 }
@@ -82,7 +92,12 @@ function Row({ view, step, depth, typeTitle }: { view: RunViewState; step: StepN
       </div>
       {open && step.iterations !== undefined && (
         <div style={{ paddingLeft: (depth + 1) * INDENT }}>
-          <IterationBars loop={step} selected={iteration} onPick={(i) => runIndexModel.setIteration(view.runId, step.step, i)} />
+          <IterationBars
+            loop={step}
+            selected={iteration}
+            onPick={(i) => runIndexModel.setIteration(view.runId, step.step, i)}
+            note={inflectionNote(view, step, typeTitle)}
+          />
         </div>
       )}
       {open && kids.map((c) => <Row key={c.step} view={view} step={c} depth={depth + 1} typeTitle={typeTitle} />)}
