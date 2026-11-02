@@ -28,6 +28,7 @@ from helpers.video import (
     run_video,
     segment_lines,
     switch,
+    wait_slots,
     write_scenario,
 )
 
@@ -210,13 +211,23 @@ def test_pending_gate_blocks_new_pixels_until_classified(tmp_path: Path) -> None
 
         return action
 
+    def recording(segments: int) -> Any:
+        # 녹화 시작·차단이 풀린 뒤 첫 칸이 늦으면(느린 러너) 비밀값·일반 스텝 앞에 조각이 없어 아래
+        # 검사가 빈다 — 그 앞 장면 스텝 끝(아직 스택에 있다, 게이트 기록)에서 조각을 기다린다
+        def action(platform: ScenarioPlatform, gate: VideoGate) -> None:
+            wait_slots(tmp_path / "run", segments)
+
+        return action
+
     ran = run_video(
         tmp_path,
         g,
         secrets={"acc.pw": "hunter2"},
         hooks=[
+            on_event("step.end", "n_a", recording(1)),
             on_event("step.start", "n_secret", to("c", 0.6)),
             on_event("step.end", "n_secret", to("idle")),  # 아직 스택에 있다 (게이트 off)
+            on_event("step.end", "n_b", recording(2)),
             on_event("step.start", "n_plain", to("d", 0.6)),
         ],
     )

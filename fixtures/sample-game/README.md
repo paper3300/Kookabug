@@ -32,7 +32,7 @@ uv run python -m sample_game --event-log build/sample-game.jsonl
 | `--owned-popup` | 메인 창이 소유한 팝업(`<제목> Notice`, transient). 메인 클라이언트 왼쪽 위 (40, 40)에 겹친다 |
 | `--recreate-after MS` | MS 뒤 메인 창을 닫고 같은 제목으로 한 번 다시 만든다 (게임 상태는 이어짐) |
 
-테스트용 숨은 옵션: `--start-scene <장면>`(그 장면의 대표 상태로 시작), `--font <글꼴>`(기본 `Malgun Gothic`).
+테스트용 숨은 옵션: `--start-scene <장면>`(그 장면의 대표 상태로 시작), `--font <글꼴>`(기본 `Malgun Gothic`), `--signal-file <파일>`(그 파일이 생기면 읽고 지운 뒤 줄마다 명령 처리 — `fire`는 지금 걸린 타이머를 바로 끝낸다. 입력 없이 검사가 정한 때 장면을 바꾼다. 보내는 쪽은 `kb_testing.sample_game.send_signal`).
 
 - 결정성: 애니메이션 없음, 글자 크기는 픽셀 단위(DPI와 무관). 같은 상태 = 같은 그림
 - 팝업(점검·로그인 오류·인벤토리)은 같은 Canvas 안에 그린다 — 창 캡처에 찍힌다. 보조 창 두 개만 실제 별도 창이다
@@ -55,6 +55,7 @@ uv run python -m sample_game --event-log build/sample-game.jsonl
 | `focus` | `window`, `focused` |
 | `resize` | `client_size` |
 | `recreate` · `window_closed` · `fatal` · `exit` | 창 다시 만들기 · 보조 창 닫힘 · 시작 실패(`reason`) · 정상 종료 |
+| `signal` | `command` — `--signal-file` 명령을 처리한 뒤 |
 
 ## 헤드리스 자료 (`frames/`)
 

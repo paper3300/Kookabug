@@ -22,6 +22,7 @@ import numpy as np
 from testkit import registry_with_testkit
 
 from helpers.graphs import GraphBuilder, make_workspace
+from kb_testing.proc import wait_until
 from kookabug_core.engine import ExecOptions, Executor, MemoryArtifacts, RunResult
 from kookabug_core.engine.scenario import FakeScenario, ScenarioPlatform
 from kookabug_core.loader import load_program
@@ -48,6 +49,7 @@ __all__ = [
     "launch",
     "run_video",
     "segment_lines",
+    "wait_slots",
     "write_scenario",
 ]
 
@@ -232,6 +234,19 @@ def run_video(
     end.update(run_end or {})
     index = finalize_video(run_dir, end) if finalize and done and recorder is not None else None
     return VideoRun(result, sink.events, run_dir, written, index, done, gate, platform)
+
+
+def wait_slots(run_dir: Path, segments: int = 1, timeout: float = 10.0) -> None:
+    """녹화 스레드가 조각 `segments`개에 칸을 쓸 때까지 (칸 없이 닫힌 조각은 지워져 세지 않는다).
+
+    녹화 시작·차단이 풀린 뒤 첫 프레임은 늦을 수 있다(설계상 허용: 2초 전까지는 조각도 빈 구간도
+    없다). 느린 러너에서 "그 스텝 앞 조각" 검사가 빈 목록이 되지 않게 스텝을 붙잡아 둔다."""
+
+    def written() -> bool:
+        files = (run_dir / VIDEO_DIR).glob("seg-*.frames.jsonl")
+        return sum(1 for p in files if p.stat().st_size > 0) >= segments
+
+    wait_until(written, timeout=timeout, message=f"녹화 조각 {segments}개에 칸이 쓰이지 않았다")
 
 
 def switch(platform: ScenarioPlatform, scene: str) -> None:

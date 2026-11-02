@@ -12,6 +12,7 @@ import hashlib
 import threading
 import time
 import uuid
+import warnings
 from collections.abc import Callable, Iterator
 from ctypes import wintypes
 from pathlib import Path
@@ -21,9 +22,21 @@ import numpy as np
 import pytest
 
 from kb_testing.proc import wait_until
-from kb_testing.sample_game import SampleGame, capture_client, client_rect, launch_sample_game
+from kb_testing.sample_game import (
+    SampleGame,
+    capture_client,
+    client_rect,
+    launch_sample_game,
+    send_signal,
+)
 from kookabug_core.engine.cancel import Cancelled, CancelToken
-from kookabug_platform.capture import CapturedFrame, CaptureHandle, CaptureService, WgcBackend
+from kookabug_platform.capture import (
+    CapturedFrame,
+    CaptureHandle,
+    CaptureService,
+    WgcBackend,
+    wall_time,
+)
 from kookabug_platform.deadline import ObservationDeadline
 from kookabug_platform.dpi import per_monitor_v2_thread
 from kookabug_platform.errors import (
@@ -284,16 +297,220 @@ def test_move_does_not_change_frame(rig: Rig) -> None:
     assert np.array_equal(after.pixels, before.pixels)
 
 
-def test_minimized_is_window_minimized(rig: Rig) -> None:
-    rig.capture()
-    user32.ShowWindow(rig.game.hwnd, SW_MINIMIZE)
-    wait_until(lambda: window_info(rig.game.hwnd).minimized, timeout=5, message="최소화 안 됨")
+def fit_on_monitor(hwnd: int) -> None:
+    """창 전체를 그 모니터 안에 둔다 (넘치면 클라이언트를 줄여 모니터 왼쪽 위로).
+
+    CI 러너 화면은 1024x768이라 기본 배치의 1024x640 클라이언트 오른쪽 8열이 화면 밖이다. 복원
+    검사가 CI에서 한 번 오른쪽 모서리만 달랐다(이어 온 세션은 흰색, 새 세션은 검정, 둘 다 게임
+    배경색이 아님). 화면 밖 픽셀이 세션마다 다르다는 것은 **가설**이다(로컬에서 재현 안 됨) — 화면
+    밖에 걸친 배치는 `test_restore_offscreen_columns`가 따로 진단한다. 이 배치는 그 대조 조건이다.
+    """
+    info = window_info(hwnd)
+    ml, mt, mr, mb = info.monitor
+    wl, wt, wr, wb = info.window_rect
+    if ml <= wl and mt <= wt and wr <= mr and wb <= mb:
+        return
+    cw, ch = info.client_size
+    w = min(cw, (mr - ml) - ((wr - wl) - cw))
+    h = min(ch, (mb - mt) - ((wb - wt) - ch))
+    if (w, h) != (cw, ch):
+        assert set_client_size(hwnd, w, h)
+    with per_monitor_v2_thread():
+        flags = user32.SWP_NOSIZE | user32.SWP_NOZORDER | user32.SWP_NOACTIVATE
+        assert user32.SetWindowPos(hwnd, None, ml, mt, 0, 0, flags)
+    x, y, w, h = client_rect(hwnd)
+    assert ml <= x and mt <= y and x + w <= mr and y + h <= mb, ((x, y, w, h), info.monitor)
+
+
+def pixel_diff(a: Any, b: Any) -> str:
+    """다른 픽셀 수와 범위 (실패 메시지)."""
+    if a.shape != b.shape:
+        return f"크기가 다르다: {a.shape} != {b.shape}"
+    ys, xs = np.nonzero(np.any(a != b, axis=2))
+    if not len(xs):
+        return "같다"
+    return f"{len(xs)}픽셀 다름, x {xs.min()}~{xs.max()}, y {ys.min()}~{ys.max()}"
+
+
+def monitor_rects() -> list[tuple[int, int, int, int]]:
+    """모든 모니터의 `(left, top, right, bottom)` (물리 픽셀)."""
+    rects: list[tuple[int, int, int, int]] = []
+    proto = ctypes.WINFUNCTYPE(
+        wintypes.BOOL,
+        wintypes.HMONITOR,
+        wintypes.HDC,
+        ctypes.POINTER(wintypes.RECT),
+        wintypes.LPARAM,
+    )
+
+    def each(_monitor: Any, _dc: Any, rect: Any, _param: Any) -> bool:
+        r = rect.contents
+        rects.append((r.left, r.top, r.right, r.bottom))
+        return True
+
+    callback = proto(each)
+    with per_monitor_v2_thread():
+        assert ctypes.windll.user32.EnumDisplayMonitors(None, None, callback, 0)
+    return rects
+
+
+def on_screen_mask(hwnd: int) -> Any:
+    """클라이언트 픽셀 중 어느 모니터 안에 있는 것 (`(h, w)` bool)."""
+    x, y, w, h = client_rect(hwnd)
+    mask = np.zeros((h, w), dtype=bool)
+    for left, top, right, bottom in monitor_rects():
+        x0, y0 = max(left, x) - x, max(top, y) - y
+        x1, y1 = min(right, x + w) - x, min(bottom, y + h) - y
+        if x0 < x1 and y0 < y1:
+            mask[y0:y1, x0:x1] = True
+    return mask
+
+
+def frame_note(name: str, shot: CapturedFrame) -> str:
+    info = shot.info
+    return f"{name} seq {info.frame_seq} pixels_at {info.pixels_at:.3f} reused {info.reused}"
+
+
+def minimize_and_restore(rig: Rig, on_minimized: Callable[[], None] | None = None) -> float:
+    """최소화 → (`on_minimized`) → 복원. 복원을 요청한 시각(`pixels_at`과 같은 시계)을 준다."""
+    hwnd = rig.game.hwnd
+    user32.ShowWindow(hwnd, SW_MINIMIZE)
+    wait_until(lambda: window_info(hwnd).minimized, timeout=5, message="최소화 안 됨")
     assert "최소화" in rig.fails(WINDOW_MINIMIZED).message
-    user32.ShowWindow(rig.game.hwnd, SW_RESTORE)
-    wait_until(lambda: not window_info(rig.game.hwnd).minimized, timeout=5, message="복원 안 됨")
+    if on_minimized is not None:
+        on_minimized()
+    restored_at = wall_time(time.monotonic())
+    user32.ShowWindow(hwnd, SW_RESTORE)
+    wait_until(lambda: not window_info(hwnd).minimized, timeout=5, message="복원 안 됨")
+    return restored_at
+
+
+def test_minimized_is_window_minimized(rig: Rig) -> None:
+    # 대조 조건: 창 전체가 모니터 안, 복원 전후 장면 같음 (복원 뒤 장면이 바뀌는 경우는
+    # test_restore_shows_scene_changed_while_minimized)
+    fit_on_monitor(rig.game.hwnd)
+    before = rig.capture()
+    minimize_and_restore(rig)
     # 복원 애니메이션 동안의 프레임은 다 그린 화면이 아닐 수 있다 — 멈춘 뒤 독립 캡처와 비교
     shot = settled(rig)
-    assert np.array_equal(shot.pixels, capture_client(rig.game.hwnd))
+    reference = capture_client(rig.game.hwnd)
+    assert np.array_equal(shot.pixels, reference), (
+        f"{frame_note('복원 전', before)}, {frame_note('복원 뒤', shot)}: "
+        f"{pixel_diff(shot.pixels, reference)}, 클라이언트 {client_rect(rig.game.hwnd)}, "
+        f"모니터 {monitor_rects()}"
+    )
+
+
+OFFSCREEN_COLUMNS = 8
+"""화면 밖 배치에서 모니터 밖에 둘 클라이언트 오른쪽 열 (CI 러너 기본 배치와 같은 8열)."""
+
+
+def place_offscreen(hwnd: int, columns: int = OFFSCREEN_COLUMNS) -> None:
+    """클라이언트 오른쪽 `columns`열이 어느 모니터에도 없게 (이미 화면 밖에 걸쳐 있으면 그대로 —
+    CI 러너의 기본 배치)."""
+    if not on_screen_mask(hwnd).all():
+        return
+    _left, top, right, _bottom = max(monitor_rects(), key=lambda r: r[2])
+    x, _y, w, _h = client_rect(hwnd)
+    rect = window_info(hwnd).window_rect
+    with per_monitor_v2_thread():
+        flags = user32.SWP_NOSIZE | user32.SWP_NOZORDER | user32.SWP_NOACTIVATE
+        dx = right + columns - (x + w)
+        assert user32.SetWindowPos(hwnd, None, rect[0] + dx, top + 50, 0, 0, flags)
+
+
+def test_restore_offscreen_columns(rig: Rig) -> None:
+    # 진단: CI 기본 배치처럼 클라이언트 오른쪽이 화면 밖인 채 최소화·복원. 화면 안 픽셀은 반드시
+    # 독립 캡처와 같아야 한다. 화면 밖 열만 다른 것은 허용한다 — DWM이 합성하지 않는 픽셀이라
+    # 세션마다 다를 수 있다는 가설 때문이며, 다르면 경고로 범위·좌표·프레임 번호를 남긴다
+    # (통과해도 CI 로그 warnings summary에 보인다)
+    hwnd = rig.game.hwnd
+    place_offscreen(hwnd)
+    rig.capture()
+    before = settled(rig)
+    mask = on_screen_mask(hwnd)
+    assert mask.any() and not mask.all(), (client_rect(hwnd), monitor_rects())
+    minimize_and_restore(rig)
+    shot = settled(rig)
+    reference = capture_client(hwnd)
+    again = capture_client(hwnd)
+    assert mask.shape == on_screen_mask(hwnd).shape, "복원 뒤 클라이언트 크기가 바뀌었다"
+    inside = np.where(mask[..., None], shot.pixels, 0), np.where(mask[..., None], reference, 0)
+    outside = np.where(mask[..., None], 0, shot.pixels), np.where(mask[..., None], 0, reference)
+    note = (
+        f"{frame_note('복원 전', before)}, {frame_note('복원 뒤', shot)}, "
+        f"화면 안 {pixel_diff(*inside)}, 화면 밖 {pixel_diff(*outside)}, "
+        f"독립 캡처 두 번 {pixel_diff(reference, again)}, 화면 밖 열 {int((~mask).any(0).sum())}, "
+        f"클라이언트 {client_rect(hwnd)}, 모니터 {monitor_rects()}"
+    )
+    assert np.array_equal(*inside), note
+    if not np.array_equal(*outside):
+        warnings.warn(f"복원 뒤 화면 밖 픽셀만 다름 (허용): {note}", stacklevel=1)
+
+
+HOLD_LOADING_MS = 600_000
+"""장면 변경 검사의 로딩 시간: 게임 타이머가 검사 중에 끝나지 않게 한다. 월드로 바꾸는 것은
+검사가 최소화를 확인한 뒤 보내는 신호(`send_signal(..., "fire")`)뿐이라 시작 시각과 경쟁하지
+않는다."""
+
+
+def check_restore_shows_new_scene(
+    rig: Rig, signal: Path, on_minimized: Callable[[], None] | None = None
+) -> None:
+    """로딩 화면이 멈춘 뒤 최소화 → 최소화를 확인한 뒤 신호로 월드로 바꿈(입력 없음) → 복원. 복원
+    뒤 관측은 복원 전과 다른 새 프레임이어야 하고 독립 캡처와 같아야 한다."""
+    game = rig.game
+    loading = settled(rig)
+    # 기준은 최소화 전: 그 뒤의 월드 기록은 (최소화 확인 직후 이미 와 있어도) 모두 받는다
+    before = game.last_seq()
+    early = [e for e in game.events() if e["event"] == "screen" and e["scene"] == "world"]
+    assert not early, f"신호 전에 월드로 바뀌었다: {early}"
+
+    def change_while_minimized() -> None:
+        send_signal(signal, "fire")
+        game.wait_screen("world", after=before)
+        assert window_info(game.hwnd).minimized, "월드로 바뀐 뒤 최소화 상태가 아니다"
+        if on_minimized is not None:
+            on_minimized()
+
+    restored_at = minimize_and_restore(rig, change_while_minimized)
+
+    def fresh() -> CapturedFrame | None:
+        shot = rig.capture()
+        return shot if shot.info.pixels_at >= restored_at else None
+
+    # 복원 뒤 픽셀을 받은 프레임이 오지 않으면(최소화 전·중 프레임만 재사용) 정해진 메시지로 실패.
+    # frame_seq만 보면 최소화 애니메이션 동안 온 (로딩 화면) 프레임이 "새 프레임"으로 통과한다
+    wait_until(
+        fresh, timeout=5, message=lambda: f"복원 뒤 새 프레임이 없다: {frame_note('로딩', loading)}"
+    )
+    shot = settled(rig)
+    reference = capture_client(game.hwnd)
+    note = f"{frame_note('복원 전', loading)}, {frame_note('복원 뒤', shot)}"
+    assert shot.info.pixels_at > loading.info.pixels_at, note
+    assert not np.array_equal(shot.pixels, loading.pixels), f"복원 뒤에도 로딩 화면: {note}"
+    assert np.array_equal(shot.pixels, reference), f"{note}: {pixel_diff(shot.pixels, reference)}"
+
+
+def test_restore_shows_scene_changed_while_minimized(tmp_path: Path, title: str) -> None:
+    signal = tmp_path / "game.signal"
+    game = launch(
+        tmp_path,
+        title,
+        "--start-scene",
+        "loading",
+        "--slow-loading",
+        str(HOLD_LOADING_MS),
+        "--signal-file",
+        str(signal),
+    )
+    with game:
+        fit_on_monitor(game.hwnd)
+        r = Rig(game)
+        try:
+            check_restore_shows_new_scene(r, signal)
+        finally:
+            r.close()
 
 
 def test_closed_window_is_window_gone(rig: Rig) -> None:

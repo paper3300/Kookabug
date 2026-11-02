@@ -58,6 +58,7 @@ __all__ = [
     "post_close",
     "read_frames_snapshot",
     "renderer_of",
+    "send_signal",
     "snap_scene",
     "stale_frames",
     "window_owner",
@@ -299,6 +300,14 @@ def capture_client(
 
 
 # ---------------------------------------------------------------- 띄우기
+
+
+def send_signal(path: Path, command: str) -> None:
+    """`--signal-file path`로 띄운 게임에 검사용 명령을 보낸다 (`fire`: 지금 걸린 타이머를 바로
+    끝냄). 게임이 읽다 만 파일을 보지 않게 옆 파일에 쓴 뒤 바꿔 넣는다. 처리되면 `signal` 기록."""
+    staging = path.with_name(path.name + ".tmp")
+    staging.write_text(command + "\n", encoding="utf-8")
+    staging.replace(path)
 
 
 def game_env(base: Mapping[str, str] | None = None) -> dict[str, str]:

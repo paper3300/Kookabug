@@ -16,6 +16,7 @@
 | `resize` | `client_size` |
 | `recreate` | `old_hwnd` |
 | `window_closed` | `window` |
+| `signal` | `command` — 검사용 신호 파일(`--signal-file`)의 명령을 처리한 뒤 |
 | `fatal` | `reason`, `detail` |
 | `exit` | `code` |
 """
@@ -35,7 +36,7 @@ from pathlib import Path
 from typing import IO, Any, Final
 
 from sample_game import EXIT_FONT_MISSING
-from sample_game.flow import Game, Scene, scene_state
+from sample_game.flow import Game, Scene, apply, scene_state
 from sample_game.layout import Viewport, hit
 from sample_game.options import Options, parse_args
 from sample_game.render import BG, MUTED, PANEL, TEXT, draw
@@ -73,6 +74,8 @@ _KEYSYMS: Final = {
     "Insert": "insert",
 }
 _MISSING_FONT: Final = "kookabug-no-such-font"
+SIGNAL_POLL_MS: Final = 50
+"""검사용 신호 파일을 보는 간격."""
 
 _user32 = ctypes.WinDLL("user32", use_last_error=True)
 _user32.SetProcessDpiAwarenessContext.argtypes = (ctypes.c_void_p,)
@@ -253,7 +256,26 @@ class App:
         self._after_change()
         if self.o.recreate_after is not None and not self.recreated:
             root.after(self.o.recreate_after, self._recreate)
+        if self.o.signal_file is not None:
+            root.after(SIGNAL_POLL_MS, self._poll_signal)
         return None
+
+    def _poll_signal(self) -> None:
+        """검사용 신호 파일을 본다 (최소화 중에도 돈다 — 입력 없이 장면을 바꾸는 데 쓴다)."""
+        if self.root is None or self.o.signal_file is None:
+            return
+        path = self.o.signal_file
+        try:
+            text = path.read_text(encoding="utf-8")
+            path.unlink()
+        except OSError:
+            text = ""
+        for command in text.split():
+            if command == "fire":
+                apply(self.game, ("fire", ""))
+                self._after_change()
+            self.log.write("signal", command=command)
+        self.root.after(SIGNAL_POLL_MS, self._poll_signal)
 
     def _resolve_font(self, root: tk.Tk) -> str | None:
         actual = tkfont.Font(root=root, family=self.o.font, size=-12).actual("family")

@@ -35,6 +35,9 @@ class Options:
     recreate_after: int | None
     start_scene: Scene | None
     font: str
+    signal_file: Path | None = None
+    """검사용 신호 파일: 생기면 읽고 지운 뒤 줄마다 명령을 처리한다 (`fire` = 지금 걸린 타이머를
+    바로 끝냄). 입력 없이 검사가 정한 때 장면을 바꾼다."""
 
 
 def _size(text: str) -> tuple[int, int]:
@@ -101,6 +104,7 @@ def parser() -> argparse.ArgumentParser:
     # 테스트·화면 PNG용 (도움말에 숨김)
     p.add_argument("--start-scene", choices=[s.value for s in Scene], help=argparse.SUPPRESS)
     p.add_argument("--font", default=DEFAULT_FONT, help=argparse.SUPPRESS)
+    p.add_argument("--signal-file", type=Path, help=argparse.SUPPRESS)
     return p
 
 
@@ -125,4 +129,5 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
         recreate_after=ns.recreate_after,
         start_scene=Scene(ns.start_scene) if ns.start_scene else None,
         font=ns.font,
+        signal_file=ns.signal_file,
     )
