@@ -505,9 +505,60 @@ def test_gate_step_target_skips_entry_point_but_request_stops() -> None:
     assert paused == [("n_call", "request"), ("n_a", "step"), ("n_entry", "request")]
 
 
-def test_gate_breakpoint_key_strips_snapshot_prefix() -> None:
-    assert point("n_b", graph=f"snapshot/{SUB}").key == bp("n_b", SUB)
-    assert Breakpoint.from_json({"graph": f"snapshot/{SUB}", "node": "n_b"}) == bp("n_b", SUB)
+def test_breakpoint_graph_path_kept_as_given() -> None:
+    # T3 검수 Low: 사람이 준 경로의 `snapshot/` 접두를 떼지 않는다 (워크스페이스의 `snapshot/`
+    # 폴더 그래프가 루트 그래프로 바뀌어 잘못 적중하지 않게)
+    folder = "snapshot/login.graph.json"
+    assert Breakpoint.from_json({"graph": folder, "node": "n_b"}) == bp("n_b", folder)
+    assert point("n_b", graph=folder).key == bp("n_b", folder)
+    assert point("n_b", graph="login.graph.json").key != bp("n_b", folder)
+
+
+def test_gate_continue_while_running_clears_request_and_step_target() -> None:
+    # T3 검수 Low: 멈추지 않은 채 받은 continue는 일시정지 요청과 진행 중인 Step 목표를 함께
+    # 거둔다 (스키마 6장). 호출 노드에서 step_over → 서브그래프를 달리는 중 continue → n_next 통과
+    token = CancelToken()
+    gate = PauseGate(token, ActiveClock(token), [])
+    emitted: list[dict[str, Any]] = []
+
+    def emit(event: Any) -> None:
+        emitted.append(dict(event))
+        if event["event"] == "debug.pause":
+            threading.Timer(0.01, lambda: gate.resume("step_over")).start()
+
+    assert gate.request() == "pausing"
+    gate.at_boundary(point("n_call"), emit)
+    gate.at_boundary(point("n_a", "n_call", graph=SUB), emit)
+    assert gate.request() == "pausing"
+    assert gate.resume("continue") == "running"
+    gate.at_boundary(point("n_next"), emit)
+    paused = [e["node"] for e in emitted if e["event"] == "debug.pause"]
+    assert paused == ["n_call"]
+    assert gate.state == "running"
+
+
+def test_gate_paused_where_reports_boundary_and_poll() -> None:
+    # T2 검수 Low: 멈춘 동안 그 자리(boundary·poll), 재개 뒤 None
+    token = CancelToken()
+    gate = PauseGate(token, ActiveClock(token), [bp("n_a")])
+    seen: list[str | None] = []
+
+    def emit(event: Any) -> None:
+        if event["event"] == "debug.pause":
+            # 멈춤을 확정한 뒤(같은 잠금 밖) 다른 스레드가 읽는다
+            def check() -> None:
+                wait_until(lambda: gate.state == "paused", timeout=5)
+                seen.append(gate.paused_where)
+                gate.resume()
+
+            threading.Thread(target=check).start()
+
+    assert gate.paused_where is None
+    gate.at_boundary(point("n_a"), emit)
+    assert gate.request() == "pausing"
+    gate.at_poll(point("n_b"), emit)
+    assert seen == ["boundary", "poll"]
+    assert gate.paused_where is None and gate.state == "running"
 
 
 def test_gate_poll_ignores_breakpoint_and_step_target() -> None:

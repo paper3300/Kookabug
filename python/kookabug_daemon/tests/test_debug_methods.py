@@ -203,6 +203,25 @@ def test_breakpoints_file_invalid_is_empty_and_rewritten(tmp_path: Path) -> None
         assert started["run_id"]
 
 
+@pytest.mark.parametrize(
+    "graph",
+    ["./tests/t.graph.json", "tests//t.graph.json", "/tests/t.graph.json", "../t.graph.json"],
+)
+def test_breakpoints_set_rejects_unnormalized_graph_path(tmp_path: Path, graph: str) -> None:
+    # T3 검수 Low: 어디서도 적중하지 않는 경로를 조용히 저장하지 않는다. `snapshot/` 폴더는 그대로
+    rig = RunRig.make(tmp_path)
+    with rig.daemon() as d, d.client() as ui:
+        ui.check = False  # 클라이언트 쪽 형식 검사를 끄고 daemon이 거부하는지 본다
+        with pytest.raises(DaemonError) as caught:
+            ui.call("debug.breakpoints.set", {"breakpoints": [bp("n_a", graph)]})
+        assert caught.value.code == -32602, caught.value
+        assert not (rig.root / BREAKPOINTS_FILE).exists()
+        kept = [bp("n_a", "snapshot/login.graph.json"), bp("n_b", ".hidden/x.graph.json")]
+        assert ui.call("debug.breakpoints.set", {"breakpoints": kept}) == {
+            "breakpoints": sorted(kept, key=lambda b: (b["graph"], b["node"]))
+        }
+
+
 def test_agent_run_ignores_breakpoints(tmp_path: Path) -> None:
     rig = RunRig.make(tmp_path, delay_graph())
     allow_agent_runs(rig)

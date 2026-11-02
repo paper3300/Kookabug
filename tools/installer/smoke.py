@@ -14,7 +14,9 @@
 3. Python 없는 환경 흉내: PATH = 설치 `bin` + Windows 폴더만, `PYTHONHOME`·`PYTHONPATH`·
    `VIRTUAL_ENV`·`KOOKABUG_OCR_MODELS` 등 삭제. 그 PATH에서 python·uv를 찾을 수 없어야 한다
 4. `kookabug --version`(VERSION 파일과 같음), `kookabug doctor --profile headless --json`(전부 통과,
-   설치본 Python·설치 폴더 VC++ 런타임), 예제 헤드리스 스모크 그래프 `kookabug run`(통과)
+   설치본 Python·설치 폴더 VC++ 런타임), 예제 헤드리스 스모크 그래프 `kookabug run`(통과),
+   영상(M3: 예제 사본을 영상 `on`으로 돌려 OS Media Foundation H.264 조각이 남음. 인코더가 없는
+   PC면 `unavailable`과 이유 — 실행은 그대로 통과)
 5. 앱 스모크: 예제 워크스페이스 사본으로 `Kookabug.exe --smoke` (daemon 띄우기·session.hello·
    graph.open·graph.save 무수정 wrote: false·daemon.shutdown, 종료 코드 0). 끝난 뒤 설치 폴더에서
    돌던 프로세스(daemon)가 남지 않는다
@@ -669,6 +671,146 @@ def graph_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
     return ok, f"{body.get('verdict')} ({body.get('code')}), 실행 폴더 {body.get('run_dir')}"
 
 
+VIDEO_GRAPH: Final = "tests/video_smoke.graph.json"
+VIDEO_SMOKE: Final[dict[str, Any]] = {
+    "format": "kookabug.graph/0",
+    "kind": "test",
+    "meta": {"title": "영상 스모크"},
+    "nodes": {
+        "n_entry": {"next": {"start": "n_launch"}, "type": "core.graph.entry", "version": 1},
+        "n_launch": {
+            "in": {"path": "SampleRPG", "timeout_ms": 5000, "window_title": "SampleRPG"},
+            "next": {"attached": "n_wait"},
+            "type": "core.app.launch",
+            "version": 1,
+        },
+        # 차가운 Media Foundation 첫 열기(약 1초, 빈 구간 starting) 뒤에도 칸이 남게 기다린다
+        "n_wait": {
+            "in": {"ms": 3000},
+            "next": {"done": "n_pass"},
+            "type": "core.flow.delay",
+            "version": 1,
+        },
+        "n_pass": {"type": "core.test.pass", "version": 1},
+    },
+    "plugins": {"core": "0.1.0"},
+}
+
+
+VIDEO_TEST_ENV: Final = "KOOKABUG_VIDEO_TEST"
+"""숨은 영상 검사 설정 (`kookabug_core.record.video.TEST_ENV`). 인코더 탐지에서는 뺀다."""
+OS_MEDIA_MISSING: Final = frozenset({"mf_missing", "h264_encoder_missing"})
+"""`probe_media`의 이유 중 OS 구성요소 부재 (N 판 등). `backend_missing`은 설치 트리 결함이다."""
+_PROBE_SCRIPT: Final = (
+    "import json\n"
+    "from kookabug_platform.video import probe_media\n"
+    "p = probe_media()\n"
+    "print(json.dumps({'available': p.available, 'reason': p.reason, 'detail': p.detail}))\n"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class MediaFound:
+    """설치 환경에서 따로 탐지한 영상 인코더 (`probe_media`, 파일을 쓰지 않는다)."""
+
+    available: bool
+    reason: str | None
+    detail: str
+
+    @property
+    def os_missing(self) -> bool:
+        """OS에 Media Foundation H.264 인코더가 없다 (영상 없는 실행만 통과로 볼 수 있다)."""
+        return not self.available and self.reason in OS_MEDIA_MISSING
+
+
+def probe_installed_media(root: Path, env: Mapping[str, str]) -> MediaFound:
+    """설치본 Python으로 `probe_media()`를 부른다. 검사 설정(`KOOKABUG_VIDEO_TEST`)은 빼서 주입과
+    무관한 이 PC의 실제 인코더를 본다. 탐지하지 못하면(`probe_failed`) 인코더 부재로 보지 않는다 —
+    그때는 영상이 실제로 써져야 통과다."""
+    clean = {k: v for k, v in env.items() if k.upper() != VIDEO_TEST_ENV}
+    try:
+        proc = subprocess.run(
+            [str(root / "python" / "python.exe"), "-X", "utf8", "-c", _PROBE_SCRIPT],
+            env=clean,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=RUN_TIMEOUT_S,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return MediaFound(False, "probe_failed", f"설치본 Python을 실행하지 못했다: {exc}")
+    try:
+        body = json.loads(proc.stdout.strip().splitlines()[-1])
+        return MediaFound(bool(body["available"]), body["reason"], str(body["detail"]))
+    except (ValueError, KeyError, IndexError) as exc:
+        detail = f"탐지 실패 ({exc}, 종료 코드 {proc.returncode}): {proc.stderr[-800:]}"
+        return MediaFound(False, "probe_failed", detail)
+
+
+def video_step(
+    root: Path,
+    env: Mapping[str, str],
+    *,
+    probe: Callable[[Path, Mapping[str, str]], MediaFound] = probe_installed_media,
+) -> tuple[bool, str]:
+    """설치본 runner의 영상 (M3 2.5, 검수 M9): 예제 사본(워크스페이스 영상 정책 `on`)에서 3초짜리
+    그래프를 가짜 플랫폼으로 돌린다. FFmpeg DLL이 없는 트리라 OS Media Foundation H.264로 써야 한다.
+
+    인코더가 없다는 판단은 실행 결과가 아니라 설치 환경에서 따로 탐지한 결과(`probe`)로만 한다.
+    OS에 인코더가 없으면(`mf_missing`·`h264_encoder_missing`) 영상 없는 pass(`unavailable`)가 통과,
+    그 밖에는 pass 실행이고 `recorded`(남은 조각이 MP4)여야 통과다. 인코더가 있는데 실행이
+    `unavailable`·`failed`·`omitted`·`none`이면 실패다 (계획 2.5 "인코더가 있는데 쓰기가 실패하면
+    실패")."""
+    found = probe(root, env)
+    base = Path(tempfile.mkdtemp(prefix="kb-video-"))
+    try:
+        examples = base / "examples"
+        shutil.copytree(
+            root / build.EXAMPLES, examples, ignore=shutil.ignore_patterns(".kookabug", "runs")
+        )
+        workspace = examples / "workspace"
+        config_file = workspace / "kookabug.json"
+        config = json.loads(config_file.read_text(encoding="utf-8"))
+        config["record"] = {**config.get("record", {}), "video": "on"}
+        config_file.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+        graph = workspace / VIDEO_GRAPH
+        graph.write_text(json.dumps(VIDEO_SMOKE, ensure_ascii=False), encoding="utf-8")
+        proc = run_cli(
+            root,
+            env,
+            ["run", VIDEO_GRAPH, "--platform-fake", FAKE_PLATFORM, "--json"],
+            cwd=workspace,
+        )
+        try:
+            body = json.loads(proc.stdout)
+            run_dir = Path(body["run_dir"])
+            video = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))["video"]
+        except (ValueError, KeyError, TypeError, OSError) as exc:
+            return (
+                False,
+                f"실행 결과를 읽지 못했다 ({exc}): {proc.stdout[-1500:]} {proc.stderr[-1500:]}",
+            )
+        status = video.get("status")
+        heads = [p.read_bytes()[4:8] for p in sorted((run_dir / "video").glob("seg-*.mp4"))]
+        detail = (
+            f"판정 {body.get('verdict')}, 영상 {video}, 조각 머리 {heads}; "
+            f"인코더 탐지 {found.available} ({found.reason or 'ok'}: {found.detail})"
+        )
+        if body.get("verdict") != "pass":
+            return False, detail
+        if found.os_missing:
+            ok = status == "unavailable"
+            return ok, f"{detail} (이 PC에 영상 인코더 없음 — 영상 없이 실행)"
+        ok = (
+            status == "recorded" and video.get("kept", 0) >= 1 and heads and set(heads) == {b"ftyp"}
+        )
+        return bool(ok), detail
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
 def app_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
     """`Kookabug.exe --smoke <예제 워크스페이스 사본>`: 설치 폴더의 CLI로 daemon을 띄우고 붙어서
     열고 무수정 저장한다. 사용자 데이터 폴더·워크스페이스 사본은 임시 폴더라 사용자 프로필에
@@ -748,6 +890,7 @@ def smoke_installed(report: SmokeReport) -> None:
     report.step("cli.version", lambda: version_step(root, env))
     report.step("cli.doctor_headless", lambda: doctor_step(root, env))
     report.step("cli.smoke_graph", lambda: graph_step(root, env))
+    report.step("cli.video", lambda: video_step(root, env))
     report.step("app.smoke", lambda: app_step(root, env))
     report.step("dll.check", lambda: dll_step(root))
 

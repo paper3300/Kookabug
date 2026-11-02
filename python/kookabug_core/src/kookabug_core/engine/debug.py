@@ -33,31 +33,26 @@ __all__ = [
     "PausePoint",
     "ResumeMode",
     "StepPoint",
-    "breakpoint_graph",
     "step_limit",
 ]
 
 type ResumeMode = Literal["continue", "step_over", "step_into", "step_out"]
 RESUME_MODES: Final[frozenset[str]] = frozenset({"continue", "step_over", "step_into", "step_out"})
 
-_SNAPSHOT_PREFIX: Final = "snapshot/"
-
-
-def breakpoint_graph(graph: str) -> str:
-    """비교용 그래프 경로: 스냅샷 접두(`snapshot/`)를 뗀 워크스페이스 기준 경로."""
-    return graph.removeprefix(_SNAPSHOT_PREFIX)
-
 
 @dataclass(frozen=True, slots=True, order=True)
 class Breakpoint:
-    """브레이크포인트 하나 (`breakpoints.schema.json#/$defs/Breakpoint`)."""
+    """브레이크포인트 하나 (`breakpoints.schema.json#/$defs/Breakpoint`). `graph`는 워크스페이스
+    기준 경로 그대로다: runner는 스냅샷 안의 같은 상대 경로로 프로그램을 읽으므로 스텝의 그래프
+    경로에도 `snapshot/` 접두가 없다. 그래서 접두를 떼지 않는다(워크스페이스에 `snapshot/` 폴더가
+    있으면 그 폴더의 그래프다)."""
 
     graph: str
     node: str
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> Breakpoint:
-        return cls(breakpoint_graph(str(data["graph"])), str(data["node"]))
+        return cls(str(data["graph"]), str(data["node"]))
 
     @classmethod
     def many(cls, items: Iterable[Mapping[str, Any]]) -> tuple[Breakpoint, ...]:
@@ -102,7 +97,7 @@ class StepPoint:
     @property
     def key(self) -> Breakpoint:
         """이 자리의 브레이크포인트 열쇠."""
-        return Breakpoint(breakpoint_graph(self.graph), self.node)
+        return Breakpoint(self.graph, self.node)
 
     def to_event(self) -> dict[str, object]:
         """`debug.pause`에 싣는 위치 필드."""

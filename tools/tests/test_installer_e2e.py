@@ -41,6 +41,7 @@ STEPS = [
     "cli.version",
     "cli.doctor_headless",
     "cli.smoke_graph",
+    "cli.video",
     "app.smoke",
     "dll.check",
     "uninstall",
@@ -118,10 +119,15 @@ def test_silent_install_test_edition_doctor_headless_and_app_smoke(run: Run) -> 
         "cli.version",
         "cli.doctor_headless",
         "cli.smoke_graph",
+        "cli.video",
         "app.smoke",
         "dll.check",
     )
     assert run.report.ok, run.body()
+    # 영상 단계는 설치본 Python으로 인코더를 따로 탐지했다 (탐지 실패를 인코더 부재로 넘기지 않음)
+    video = run.report.get("cli.video")
+    assert video is not None and "probe_failed" not in video.detail, run.body()
+    assert "인코더 탐지 True" in video.detail or "인코더 없음" in video.detail, run.body()
 
 
 def test_uninstall_restores_hkcu(run: Run) -> None:

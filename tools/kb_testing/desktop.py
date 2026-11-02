@@ -618,6 +618,10 @@ def summary_markdown(report: ProbeReport) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    from kookabug_sdk.console import utf8_stdio
+
+    # argparse의 --help·오류 메시지도 한국어라 cp1252 콘솔에서 먼저 UTF-8로 바꾼다
+    utf8_stdio()
     parser = argparse.ArgumentParser(description="대화형 데스크톱 탐지 (입력은 보내지 않는다)")
     parser.add_argument("--json", help="결과 JSON을 쓸 파일 (- = 표준 출력)")
     parser.add_argument("--summary", help="마크다운 요약을 덧붙일 파일 (CI 잡 요약)")
@@ -627,16 +631,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     report = run_probe()
     text = json.dumps(report.to_dict(), ensure_ascii=False, indent=2)
     if args.json == "-":
-        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
         print(text)
     else:
         if args.json:
             out = Path(args.json)
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(text + "\n", encoding="utf-8")
-        from kookabug_sdk.console import utf8_stdio
-
-        utf8_stdio()
         print(summary_markdown(report))
     if args.summary:
         with Path(args.summary).open("a", encoding="utf-8") as f:

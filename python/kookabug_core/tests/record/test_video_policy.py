@@ -596,6 +596,29 @@ def test_on_segments_always_kept(tmp_path: Path) -> None:
     assert ran.index["segments"] and all(s["mode"] == "on" for s in ran.index["segments"])
 
 
+@pytest.mark.parametrize("ws_video", [None, "failed_only"])
+def test_lower_layer_on_cannot_loosen_workspace_default(
+    tmp_path: Path, ws_video: str | None
+) -> None:
+    # T5 재검수 Low: 기본 failed_only는 워크스페이스 층이다. 테스트·노드에 `video: on`을 써도
+    # 아래 층은 더 세게만 바꿀 수 있어 pass 실행의 조각은 지워진다(스키마 6장 "워크스페이스 정책").
+    # 성공 실행 영상을 남기려면 워크스페이스에서 on을 명시한다
+    g = tk(record={"video": "on"}).entry("n_launch")
+    launch(g, "n_launch", "n_a")
+    show(g, "n_a", "a", "n_end", record={"video": "on"})
+    g.node("n_end", "core.test.pass")
+    ws_record = None if ws_video is None else {"video": ws_video}
+    ran = run_video(tmp_path, g, ws_record=ws_record)
+    assert ran.result.verdict == "pass"
+    assert ran.written  # 녹화는 했고
+    assert ran.index is not None and ran.index["segments"] == []
+    assert {d["reason"] for d in ran.index["deleted"]} == {"run_pass"}
+    # 워크스페이스가 on이면 같은 그래프의 조각이 남는다
+    kept = run_video(tmp_path / "on", g, ws_record={"video": "on"})
+    assert kept.index is not None and kept.index["segments"]
+    assert all(s["mode"] == "on" for s in kept.index["segments"])
+
+
 def test_mixed_modes_split_segments(tmp_path: Path) -> None:
     g = tk().entry("n_launch")
     launch(g, "n_launch", "n_a")

@@ -171,7 +171,11 @@ def test_found_wait_has_no_evidence_and_click_not_found_has_candidates(tmp_path:
     assert (end["status"], end["exit"]) == ("fail", "not_found")
     evidence = end["evidence"]
     assert evidence["target"] == LOGIN_TITLE and evidence["candidates"]
-    assert (evidence["first_at_ms"], evidence["last_at_ms"]) == (0, 200)
+    # 캡처 0·100·200 ms. 마지막 관측(200 ms)은 남은 노드 기한 100 ms를 **실제 시간** 예산으로
+    # 받아(시계는 가짜) 부하로 캡처가 그보다 오래 걸리면 그 캡처 없이 끝난다 (T9 2라운드 5절과
+    # 같은 성질). 그래도 마지막 증거 = 끝나기 전 마지막 캡처다
+    assert evidence["first_at_ms"] == 0
+    assert evidence["last_at_ms"] in (100, 200), evidence
 
 
 def test_error_step_first_mid(tmp_path: Path) -> None:

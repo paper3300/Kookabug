@@ -37,6 +37,15 @@ def test_help_on_cp1252_console(script: str, description: str) -> None:
     assert description in proc.stdout
 
 
+def test_desktop_probe_help_on_cp1252_console() -> None:
+    # `python -m kb_testing.desktop`: argparse 도움말(한국어)이 utf8_stdio보다 먼저 나가면 죽었다
+    env = {**os.environ, "PYTHONPATH": str(TOOLS)}
+    cmd = [sys.executable, "-m", "kb_testing.desktop", "--help"]
+    proc = run_legacy_console(cmd, cwd=pk.REPO_ROOT, env=env)
+    assert proc.returncode == 0, proc.stderr
+    assert "대화형 데스크톱 탐지" in proc.stdout
+
+
 PYTEST_PRINT_PROBE = """\
 from pathlib import Path
 

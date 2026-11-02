@@ -25,7 +25,7 @@ export interface Breakpoints {
  */
 export interface Breakpoint {
   /**
-   * 노드가 든 그래프 파일 (워크스페이스 루트 기준 '/' 구분 경로, 스냅샷 접두 없음)
+   * 노드가 든 그래프 파일 (워크스페이스 루트 기준 '/' 구분 상대 경로, 그대로 비교한다). 빈 조각·'.'·'..'·앞 '/'는 받지 않는다
    */
   graph: string;
   /**

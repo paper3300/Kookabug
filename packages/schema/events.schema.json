@@ -204,7 +204,7 @@
     },
     "EvidenceCandidate": {
       "additionalProperties": false,
-      "description": "매칭 후보 하나. rect는 찾은 이미지 좌표(코어 노드는 창 전체 캡처라 _fail과 같다). 후보끼리는 서로 다른 자리다(겹치지 않는다)",
+      "description": "매칭 후보 하나. rect는 찾은 이미지 좌표(코어 노드는 창 전체 캡처라 _fail과 같다). 후보끼리는 서로 다른 자리다(점수 지도 봉우리에서 고르면 겹치지 않는다. 프레임 저장소가 없거나 봉우리 다시 고르기를 못 한 경우의 대체 경로는 크게 겹치는 것(IoU 0.3 초과)만 하나로 줄여 조금 겹칠 수 있다)",
       "properties": {
         "rect": {
           "description": "[x, y, w, h] 픽셀",

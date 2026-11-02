@@ -377,6 +377,110 @@ def test_poll_pause_only_on_request_not_breakpoint(tmp_path: Path, spawned: Spaw
     assert len(done.of("debug.pause")) == 1
 
 
+SUB = "subgraphs/s.graph.json"
+
+
+def call_root() -> GraphBuilder:
+    return (
+        GraphBuilder()
+        .entry("n_call")
+        .call("n_call", SUB, next={"done": "n_pass"})
+        .node("n_pass", "core.test.pass")
+    )
+
+
+def test_poll_pause_in_subgraph_reports_subgraph_location(tmp_path: Path, spawned: Spawned) -> None:
+    # T2 검수 Low: 서브그래프 안 폴링 멈춤의 graph는 워크스페이스 기준 서브그래프 경로, path는
+    # 호출 경로 전체 (Step 깊이 판정이 이 path를 쓴다)
+    sub = (
+        GraphBuilder("subgraph", interface={"exits": {"done": {"kind": "ok"}}})
+        .entry("n_a")
+        .node("n_a", "core.flow.delay", inputs={"ms": 100}, next={"done": "n_b"})
+        .node("n_b", "core.flow.delay", inputs={"ms": 3_000}, next={"done": "n_done"})
+        .exit("n_done", "done")
+    )
+    h = RunnerHarness.make(tmp_path, call_root(), plugin_modules=())
+    sub.write(h.ws, SUB)
+    h.start(spawned)
+    pause = pause_in_poll(h, "n_b")
+    assert (pause["graph"], pause["path"]) == (SUB, ["n_call", "n_b"])
+    h.resume()
+    done = h.finish()
+    assert done.exit_code == 0, h.stderr()
+    assert done.run_end is not None and done.run_end["verdict"] == "pass", done.run_end
+    assert_schema(h, done.view.events)
+
+
+def test_boundary_pause_inside_subgraph_counts_for_call_step_only(
+    tmp_path: Path, spawned: Spawned
+) -> None:
+    # T2 검수 Low: 서브그래프 안 경계 멈춤(누르고 있기 중 요청 → 키를 뗀 뒤 n_b 경계)은 그 경계를
+    # 감싼 호출 스텝 구간에만 든다. 앞 스텝(n_key)·멈춘 경계 뒤 스텝(n_b)에는 active_duration_ms가
+    # 없다
+    sub = (
+        GraphBuilder("subgraph", interface={"exits": {"done": {"kind": "ok"}}})
+        .entry("n_key")
+        .node("n_key", "core.input.key", inputs={"keys": "a", "hold_ms": 600}, next={"done": "n_b"})
+        .node("n_b", "core.flow.delay", inputs={"ms": 100}, next={"done": "n_done"})
+        .exit("n_done", "done")
+    )
+    h = RunnerHarness.make(tmp_path, call_root(), plugin_modules=())
+    sub.write(h.ws, SUB)
+    h.start(spawned)
+    h.wait_event("input.down")
+    assert h.pause() == "pausing"
+    h.wait_event("debug.pause")
+    time.sleep(0.8)
+    h.resume()
+    done = h.finish()
+    assert done.exit_code == 0, h.stderr()
+    events = done.view.events
+    (pause,) = done.of("debug.pause")
+    assert (pause["where"], pause["node"], pause["graph"], pause["path"]) == (
+        "boundary",
+        "n_b",
+        SUB,
+        ["n_call", "n_b"],
+    )
+    (resume,) = done.of("debug.resume")
+    ends = {node: step_of(events, node)[1] for node in ("n_call", "n_key", "n_b")}
+    assert all(end is not None for end in ends.values())
+    call = ends["n_call"]
+    assert call["duration_ms"] - call["active_duration_ms"] >= resume["paused_ms"] - 50
+    assert "active_duration_ms" not in ends["n_key"]
+    assert "active_duration_ms" not in ends["n_b"]
+
+
+def test_wait_stable_poll_pause_and_restarts_stability(tmp_path: Path, spawned: Spawned) -> None:
+    # T2 검수 Low: screen.wait_stable도 멈출 수 있는 기다림이다(요청이 폴링 중 바로 먹는다). 재개
+    # 뒤 안정 시간은 재개 뒤 프레임으로 다시 잰다 — 정지 화면이라도 멈춘 시간(2초)이 안정 시간
+    # (1.2초)을 채우지 않는다
+    graph = (
+        GraphBuilder()
+        .entry("n_launch")
+        .node("n_launch", "core.app.launch", inputs={"path": "game.exe"}, next={"attached": "n_ws"})
+        .node(
+            "n_ws",
+            "core.screen.wait_stable",
+            inputs={"stable_ms": 1_200, "timeout_ms": 20_000},
+            next={"stable": "n_pass"},
+        )
+        .node("n_pass", "core.test.pass")
+    )
+    h = scene_run(tmp_path, graph, after_frames=100_000).start(spawned)
+    pause_in_poll(h, "n_ws")
+    time.sleep(2.0)
+    assert h.resume() == "running"
+    done = h.finish()
+    assert done.exit_code == 0, h.stderr()
+    assert done.run_end is not None and done.run_end["verdict"] == "pass", done.run_end
+    _, end = step_of(done.view.events, "n_ws")
+    assert end is not None and end["exit"] == "stable", end
+    (resume,) = done.of("debug.resume")
+    assert resume["paused_ms"] >= 1_900
+    assert at(end) - at(resume) >= 1.2 - 0.05, at(end) - at(resume)
+
+
 def test_worker_node_not_paused_mid_call(tmp_path: Path, spawned: Spawned) -> None:
     # 워커 노드 실행 중 요청 → 그 노드는 끝까지 돌고(워커의 ctx.sleep은 확인 지점이 아니다) 다음
     # 경계에서 멈춘다
@@ -440,9 +544,9 @@ def test_pause_request_during_key_hold_confirmed_after_release(
 
 
 def test_pause_during_long_delay_confirmed_within_100ms(tmp_path: Path, spawned: Spawned) -> None:
-    # 검수 M1: flow.delay 4초 중 요청 → 100 ms 안에 debug.pause(where: poll), 1초 멈춘 뒤 재개하면
+    # 검수 M1: flow.delay 10초 중 요청 → 100 ms 안에 debug.pause(where: poll), 1초 멈춘 뒤 재개하면
     # 남은 활성 시간만 기다린다
-    h = RunnerHarness.make(tmp_path, delay_graph(4_000), plugin_modules=()).start(spawned)
+    h = RunnerHarness.make(tmp_path, delay_graph(10_000), plugin_modules=()).start(spawned)
     h.wait_event("step.start", node="n_d1")
     time.sleep(0.3)
     asked = time.time()
@@ -460,7 +564,7 @@ def test_pause_during_long_delay_confirmed_within_100ms(tmp_path: Path, spawned:
     (resume,) = done.of("debug.resume")
     assert resume["paused_ms"] >= 950
     # 활성 경과는 delay 그대로(멈춘 1초를 더 기다리지 않음), 실제 경과는 멈춘 만큼 길다
-    assert 3_950 <= end["active_duration_ms"] <= 4_500, end
+    assert 9_950 <= end["active_duration_ms"] <= 10_500, end
     assert end["duration_ms"] >= end["active_duration_ms"] + resume["paused_ms"] - 50
 
 

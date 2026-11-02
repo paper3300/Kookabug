@@ -10,6 +10,8 @@ dev = [
     "pyright[nodejs]>=1.1.400",
     "pytest>=8.4",
     "pytest-timeout>=2.4",
+    # tools/tests/test_workflows_yaml.py (CI 워크플로 검사)
+    "pyyaml>=6",
     "ruff>=0.13",
 ]
 
