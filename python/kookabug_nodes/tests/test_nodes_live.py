@@ -19,7 +19,7 @@ from helpers.run import tk
 from helpers.runner import RunnerHarness, step_of
 
 from kb_testing.keys import assert_no_keys_held, release_all_for_test
-from kb_testing.proc import Spawned, python_cmd
+from kb_testing.proc import Spawned, python_cmd, wait_until
 from kb_testing.sample_game import GAME_DIR
 
 ACCOUNT = "qa_tester_01"
@@ -64,6 +64,7 @@ def run_windows(tmp_path: Path, graph: Any) -> RunnerHarness:
 def test_launch_sample_game_and_close(tmp_path: Path, spawned: Spawned) -> None:
     title = f"KB T10 {uuid.uuid4().hex[:8]}"
     event_log = tmp_path / "game.jsonl"
+    signal = tmp_path / "first-screen.signal"
     g = (
         tk()
         .entry("n_launch")
@@ -77,8 +78,11 @@ def test_launch_sample_game_and_close(tmp_path: Path, spawned: Spawned) -> None:
             "n_attach",
             "core.window.attach",
             inputs={"title": title},
-            next={"found": "n_close"},
+            next={"found": "n_gate"},
         )
+        # 창은 첫 화면을 그리기 전에 보인다(게임이 창을 띄운 뒤 준비를 마치고 첫 `screen`을 기록).
+        # 그 전에 닫으면 준비 중에 끝나 정상 종료를 볼 수 없다: 검사가 첫 화면 기록을 본 뒤 연다
+        .node("n_gate", "testkit.gate", inputs={"signal": str(signal)}, next={"done": "n_close"})
         .node(
             "n_close",
             "core.app.close",
@@ -94,17 +98,24 @@ def test_launch_sample_game_and_close(tmp_path: Path, spawned: Spawned) -> None:
         .node("n_pass", "core.test.pass")
     )
     h = run_windows(tmp_path, g).start(spawned)
+    first = wait_until(
+        lambda: next((e for e in game_events(event_log) if e["event"] == "screen"), None),
+        timeout=30,
+        message=lambda: f"게임이 첫 화면을 기록하지 않았다: {game_events(event_log)}",
+    )
+    assert first is not None and first["scene"] == "title", first
+    signal.write_text("", encoding="utf-8")
     done = h.finish(timeout=60)
     assert done.run_end is not None and done.run_end["verdict"] == "pass", done.run_end
     _, launched = step_of(h.events(), "n_launch")
     assert launched["exit"] == "attached"
     window = launched["outputs"]["window"]
     assert window["title"] == title and window["pid"] == launched["outputs"]["process"]["pid"]
-    # 게임은 창 닫기를 받아 스스로 끝났다 (강제 종료가 아니다)
+    # 게임은 창 닫기를 받아 스스로 끝났다 (강제 종료가 아니다: 메인 루프가 끝나며 exit 0을 기록)
     _, closed = step_of(h.events(), "n_close")
     assert closed["exit"] == "closed"
-    events = game_events(event_log)
-    assert next(e for e in events if e["event"] == "screen")["scene"] == "title"
+    last = game_events(event_log)[-1]
+    assert (last["event"], last.get("code")) == ("exit", 0), last
 
 
 @pytest.mark.desktop_input

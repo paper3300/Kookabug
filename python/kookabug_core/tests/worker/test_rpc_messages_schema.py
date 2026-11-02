@@ -159,10 +159,12 @@ def test_recorded_session_messages_validate(tmp_path: Path) -> None:
         h.shutdown()
 
     # M1: 창·프로세스·관측·입력 한 바퀴 + 노드 기한(observation_timeout)·재검증 실패(stale)
+    # 한 바퀴 노드 안의 set_window는 다음 스텝부터라, 캡처·입력할 현재 창을 앞 스텝에서 정한다
     write_target(ws, TARGET)
     (
         tk()
-        .entry("n_tour")
+        .entry("n_l0")
+        .node("n_l0", "testkit.m1.launch", inputs={"path": "game.exe"}, next={"done": "n_tour"})
         .node(
             "n_tour", "testkit.m1.tour", inputs={"target": target(TARGET)}, next={"done": "n_wait"}
         )

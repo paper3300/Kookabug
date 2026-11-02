@@ -63,6 +63,11 @@ FORMAT: Final = "kookabug.fake-scenario/0"
 FIRST_PID: Final = 4001
 FIRST_HWND: Final = 0x10010
 _WINDOW_GONE: Final = "window_gone"
+# 실제 플랫폼(`kookabug_platform.sendinput`·`platform`)과 같은 문구
+NO_INPUT_WINDOW: Final = "입력 대상 창이 정해지지 않았다 (앱 실행·창 붙기로 대상 창을 먼저 정한다)"
+NO_CAPTURE_WINDOW: Final = (
+    "캡처할 대상 창이 정해지지 않았다 (앱 실행·창 붙기로 대상 창을 먼저 정한다)"
+)
 
 type _Edge = Mapping[str, Any]
 
@@ -565,8 +570,10 @@ class ScenarioSink:
         self._then = then
 
     def _game(self, target: object | None) -> _Game:
+        # 실제 `WindowInputGuard`처럼 대상 창 없는 입력은 거부한다 (최근 게임으로 보내면 현재 창을
+        # 정하지 않은 그래프가 헤드리스에서만 통과한다)
         if target is None:
-            return self._scenario.latest()
+            raise EngineError("platform_unavailable", NO_INPUT_WINDOW)
         return cast(_Game, target)
 
     def click(
@@ -578,9 +585,9 @@ class ScenarioSink:
         target: object | None = None,
         step: str | None = None,
     ) -> None:
+        game = self._game(target)
         if self._then is not None:
             self._then.click(at, button=button, count=count, target=target, step=step)
-        game = self._game(target)
         for _ in range(count):
             self._scenario.apply(game, "click", at.x, at.y, button)
 
@@ -594,11 +601,12 @@ class ScenarioSink:
         target: object | None = None,
         step: str | None = None,
     ) -> None:
+        game = self._game(target)
         if self._then is not None:
             self._then.drag(
                 start, end, button=button, duration_ms=duration_ms, target=target, step=step
             )
-        self._scenario.apply(self._game(target), "drag", start, end)
+        self._scenario.apply(game, "drag", start, end)
 
     def scroll(
         self,
@@ -608,32 +616,39 @@ class ScenarioSink:
         target: object | None = None,
         step: str | None = None,
     ) -> None:
+        game = self._game(target)
         if self._then is not None:
             self._then.scroll(at, amount, target=target, step=step)
-        self._scenario.apply(self._game(target), "scroll", at, amount)
+        self._scenario.apply(game, "scroll", at, amount)
 
     def key(self, key: str, *, target: object | None = None, step: str | None = None) -> None:
+        game = self._game(target)
         if self._then is not None:
             self._then.key(key, target=target, step=step)
-        self._scenario.apply(self._game(target), "key", key)
+        self._scenario.apply(game, "key", key)
 
     def press(self, key: str, *, target: object | None = None, step: str | None = None) -> None:
+        game = self._game(target)
         if self._then is not None:
             self._then.press(key, target=target, step=step)
-        self._scenario.apply(self._game(target), "key", key)
+        self._scenario.apply(game, "key", key)
 
     def release(self, key: str, *, target: object | None = None, step: str | None = None) -> None:
+        # 떼기는 실제 입력 액터도 창을 확인하지 않는다 (복구가 막히지 않게).
+        # 대상이 없으면 장면에만 넣지 않는다
         if self._then is not None:
             self._then.release(key, target=target, step=step)
-        self._scenario.apply(self._game(target), "release", key)
+        if target is not None:
+            self._scenario.apply(self._game(target), "release", key)
 
     def type_text(
         self, text: str | Secret, *, target: object | None = None, step: str | None = None
     ) -> None:
+        game = self._game(target)
         if self._then is not None:
             self._then.type_text(text, target=target, step=step)
         raw = text.reveal() if isinstance(text, Secret) else text
-        self._scenario.apply(self._game(target), "text", raw)
+        self._scenario.apply(game, "text", raw)
 
 
 @dataclass(frozen=True, slots=True)
@@ -702,7 +717,10 @@ class ScenarioPlatform:
     # ------------------------------------------------------------ 캡처
 
     def _game(self, window: WindowRef | None) -> _Game:
-        return self.scenario.latest() if window is None else self.scenario.game_of(window)
+        # 실제 플랫폼처럼 대상 창 없는 캡처는 거부한다
+        if window is None:
+            raise EngineError("platform_unavailable", NO_CAPTURE_WINDOW)
+        return self.scenario.game_of(window)
 
     def capture(self, window: WindowRef | None, region: Rect | None) -> Image:
         return self.scenario.frame(self._game(window))

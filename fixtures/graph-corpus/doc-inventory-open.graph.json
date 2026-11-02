@@ -4,7 +4,7 @@
   "layout": {
     "nodes": {
       "n_check_inventory": {
-        "x": 560,
+        "x": 840,
         "y": 0
       },
       "n_enter_world": {
@@ -16,12 +16,16 @@
         "y": 0
       },
       "n_press_i": {
-        "x": 280,
+        "x": 560,
         "y": 0
       },
       "n_skip_maintenance": {
         "x": 280,
         "y": 160
+      },
+      "n_use_window": {
+        "x": 280,
+        "y": 0
       }
     }
   },
@@ -55,7 +59,7 @@
       },
       "next": {
         "maintenance": "n_skip_maintenance",
-        "success": "n_press_i"
+        "success": "n_use_window"
       },
       "title": "월드 접속",
       "type": "core.graph.call",
@@ -86,6 +90,19 @@
       },
       "title": "점검이면 건너뜀",
       "type": "core.test.skip",
+      "version": 1
+    },
+    "n_use_window": {
+      "in": {
+        "window": {
+          "$link": "n_enter_world.window"
+        }
+      },
+      "next": {
+        "done": "n_press_i"
+      },
+      "title": "게임 창으로",
+      "type": "core.window.set_current",
       "version": 1
     }
   },

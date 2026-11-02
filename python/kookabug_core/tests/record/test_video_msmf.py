@@ -40,6 +40,12 @@ from kookabug_platform.video import MsmfFactory
 
 pytestmark = pytest.mark.media
 
+# 실제 MSMF는 부하가 크면 마무리(H.264 flush)가 제품 정지 유예 3초를 넘길 수 있다. 이 파일은
+# 디코드 일치를 보는 검사라 녹화 스레드가 끝날 때까지 넉넉히 기다린다
+# (3초 포기 경로는 가짜 인코더 검사가 본다)
+STOP_GRACE_S = 30.0
+STUCK = "녹화 스레드가 정지 유예 안에 끝나지 않았다 (MSMF 마무리 지연)"
+
 SCRIPT = """
 import json, sys
 from pathlib import Path
@@ -164,8 +170,9 @@ def test_decode_frames_match_written_markers(tmp_path: Path) -> None:
     show(g, "n_c", "c", "n_pass")
     g.node("n_pass", "core.test.pass")
     tee = _Tee()
-    ran = run_video(tmp_path, g, factory=tee, decode=decode_image)
+    ran = run_video(tmp_path, g, factory=tee, decode=decode_image, stop_grace_s=STOP_GRACE_S)
     assert ran.result.verdict == "pass"
+    assert ran.writer_done, STUCK
     assert ran.index is not None and ran.index["status"] == "recorded"
     for seg in ran.index["segments"]:
         scenes = decode(ran.run_dir / VIDEO_DIR / seg["file"])
@@ -233,8 +240,10 @@ def test_seek_by_grid_lands_on_step_marker_real_mp4(tmp_path: Path) -> None:
         wrap=_Jitter,
         hooks=[grab],
         before_step=before,
+        stop_grace_s=STOP_GRACE_S,
     )
     assert ran.result.verdict == "pass", ran.result.reason
+    assert ran.writer_done, STUCK
     assert ran.index is not None
     segments = ran.index["segments"]
     gaps = [gap["gap"] for gap in ran.index["gaps"]]

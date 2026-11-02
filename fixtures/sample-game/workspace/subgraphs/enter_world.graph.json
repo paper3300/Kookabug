@@ -31,6 +31,10 @@
       "message": {
         "nullable": true,
         "type": "string|secret"
+      },
+      "window": {
+        "nullable": true,
+        "type": "window"
       }
     }
   },
@@ -194,6 +198,11 @@
     "n_exit_success": {
       "config": {
         "exit": "success"
+      },
+      "in": {
+        "window": {
+          "$link": "n_launch.window"
+        }
       },
       "title": "성공",
       "type": "core.graph.exit",

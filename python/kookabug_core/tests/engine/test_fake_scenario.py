@@ -171,6 +171,42 @@ def test_fake_context_scenario_protocol() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("node", "inputs"),
+    [
+        ("testkit.input.tap", {"x": 512, "y": 412}),
+        ("testkit.m1.key", {"key": "tab"}),
+        ("testkit.m1.type", {"text": ACCOUNT}),
+    ],
+)
+def test_input_without_current_window_is_platform_unavailable(
+    tmp_path: Path, node: str, inputs: dict[str, Any]
+) -> None:
+    """실제 `WindowInputGuard`처럼: 게임이 떠 있어도 현재 창을 정하지 않은 입력은 최근 게임으로
+    가지 않고 `platform_unavailable`이다 (입력은 장면에 닿지 않는다)."""
+    ws = make_workspace(tmp_path)
+    platform = ScenePlatform.sample()
+    platform.scenario.launch_game("game.exe", [])
+    g = tk().entry("n_in").node("n_in", node, inputs=inputs, next={"done": "n_pass"})
+    g.node("n_pass", "core.test.pass")
+    ran = run_on(ws, g, platform)
+    assert (ran.result.verdict, ran.result.code) == ("error", "platform_unavailable")
+    assert "입력 대상 창이 정해지지 않았다" in str(ran.result.reason)
+    assert platform.scenario.inputs == []
+    assert platform.scenario.latest().state.scene == "title"
+
+
+def test_capture_without_current_window_is_platform_unavailable(tmp_path: Path) -> None:
+    ws = make_workspace(tmp_path)
+    platform = ScenePlatform.sample()
+    platform.scenario.launch_game("game.exe", [])
+    g = tk().entry("n_cap").node("n_cap", "testkit.m1.capture_wait", next={"done": "n_pass"})
+    g.node("n_pass", "core.test.pass")
+    ran = run_on(ws, g, platform)
+    assert (ran.result.verdict, ran.result.code) == ("error", "platform_unavailable")
+    assert "캡처할 대상 창이 정해지지 않았다" in str(ran.result.reason)
+
+
 def test_platform_runs_launch_click_and_key_graph(tmp_path: Path) -> None:
     """실행기 + `ScenarioPlatform`: 띄우기 → 클릭(타이틀 → 로그인) → 글자·키 → 로비."""
     ws = make_workspace(tmp_path)

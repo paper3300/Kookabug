@@ -80,6 +80,7 @@ INVENTORY_OPEN: Final = "tests/inventory_open.graph.json"
 SWAPPED: Final = "tests/broken/swapped_target.graph.json"
 FAKE: Final = ("--platform-fake", "fake-platform.json")
 RUN_TIMEOUT_S: Final = 240
+RESIZE_THRESHOLD: Final = 0.7
 START_BUTTON: Final = (412, 380, 200, 64)
 """타이틀 "게임 시작" 버튼 (클라이언트 1024x640, `targets/title/start_button`)."""
 INPUT_EVENTS: Final = ("key_down", "key_up", "char", "mouse_down", "mouse_up", "wheel")
@@ -222,6 +223,28 @@ def test_sample_game_enter_world_and_inventory_open_pass(
     assert "qa_tester_01" in typed and EXAMPLE_SECRETS["accounts.qa_tester_01"] in typed
     record = (Path(out["run_dir"]) / "events.jsonl").read_text(encoding="utf-8")
     assert EXAMPLE_SECRETS["accounts.qa_tester_01"] not in record
+
+
+@pytest.mark.process
+@pytest.mark.timeout(300)
+def test_subgraph_window_not_set_in_caller_is_platform_unavailable_headless(
+    tmp_path: Path, ocr_models: Path
+) -> None:
+    """서브그래프 안에서 띄운 게임 창은 호출 쪽 현재 창이 되지 않는다: 창 출력·`set_current` 없이
+    호출 뒤 키를 누르면 가짜 플랫폼도 실제처럼 `platform_unavailable` (잠금 해제 데스크톱 검사에서
+    처음 드러난 예제 버그의 헤드리스 회귀)."""
+    ws = copy_example_workspace(tmp_path)
+    path = ws / INVENTORY_OPEN
+    graph = json.loads(path.read_text(encoding="utf-8"))
+    del graph["nodes"]["n_use_window"]
+    del graph["layout"]["nodes"]["n_use_window"]
+    graph["nodes"]["n_enter_world"]["next"]["success"] = "n_press_i"
+    path.write_text(json.dumps(graph, ensure_ascii=False), encoding="utf-8")
+    code, out = run_example(ws, tmp_path, ocr_models, INVENTORY_OPEN, *FAKE)
+    assert (code, out["verdict"], out["code"]) == (2, "error", "platform_unavailable"), out
+    assert out["failure_path"] == ["n_press_i"]
+    assert "입력 대상 창이 정해지지 않았다" in out["reason"]
+    assert step_ends(out)["n_enter_world"]["exit"] == "success"
 
 
 # ---------------------------------------------------------------- 2·3. 깨뜨리면 실패 위치·스크린샷
@@ -416,10 +439,26 @@ def check_independent_window_and_owned_popup(live: Live) -> None:
         assert {e["window"] for e in inputs_after(game, mark)} == {"popup"}
 
 
+def relaxed_target(ws: Path, rel: str) -> str:
+    """`rel`의 임계값만 `RESIZE_THRESHOLD`로 낮춘 사본(같은 폴더·이미지)을 쓰고 그 경로를 준다.
+
+    예제 게임은 큰 창에서 글자를 그 크기로 다시 그린다(비트맵 확대가 아니다). 1024x640에서 기록한
+    시작 버튼을 1.25배로 늘린 템플릿은 1280x800 화면에서 자리는 맞아도 점수가 0.75 근처라 기본
+    임계값(0.85)에 못 미친다. 이 검사는 다시 찾기 경로를 보려는 것이라 임계값만 낮춘다."""
+    src = ws.joinpath(*rel.split("/"))
+    spec = json.loads(src.read_text(encoding="utf-8"))
+    spec["match"] = {**spec.get("match", {}), "threshold": RESIZE_THRESHOLD}
+    out = rel.removesuffix(".target.json") + "_resize.target.json"
+    ws.joinpath(*out.split("/")).write_text(json.dumps(spec, ensure_ascii=False), encoding="utf-8")
+    return out
+
+
 def check_resize_revalidation(tmp_path: Path, ocr_models: Path) -> None:
     """찾은 뒤 창 크기가 바뀌면 입력 서비스가 target으로 다시 찾아 새 자리를 누른다 (실제
     그래프)."""
     ws = copy_example_workspace(tmp_path / "resize")
+    start = relaxed_target(ws, "targets/title/start_button.target.json")
+    login = relaxed_target(ws, "targets/login/account_field.target.json")
     graph = write_test_graph(
         ws,
         "tests/m1_resize.graph.json",
@@ -427,7 +466,7 @@ def check_resize_revalidation(tmp_path: Path, ocr_models: Path) -> None:
             "n_launch": launch_node("n_wait_title"),
             "n_wait_title": {
                 "in": {
-                    "target": {"$target": "targets/title/start_button.target.json"},
+                    "target": {"$target": start},
                     "timeout_ms": 60000,
                 },
                 "next": {"found": "n_resize"},
@@ -448,7 +487,7 @@ def check_resize_revalidation(tmp_path: Path, ocr_models: Path) -> None:
             },
             "n_wait_login": {
                 "in": {
-                    "target": {"$target": "targets/login/account_field.target.json"},
+                    "target": {"$target": login},
                     "timeout_ms": 15000,
                 },
                 "next": {"found": "n_pass"},

@@ -72,7 +72,8 @@ test("test_capture_window_make_target_live_match", async () => {
   const scale = size[1] / 640;
   const [x, y, w, h] = START_BUTTON.map((v) => Math.round(v * scale));
   const crop = await selectRect(page, [x + 4, y + 4, w - 8, h - 8]);
-  expect(await waitPreview(page, true)).toEqual(crop);
+  // 연 target(원래 시작 버튼 전체)이 캡처에서 이미 찾음이라, 고른 영역의 미리보기가 올 때까지 기다린다
+  await expect.poll(() => waitPreview(page, true), { timeout: 20_000 }).toEqual(crop);
   await saveTargetTab(page, rel);
   await expect(page.locator('[data-part="target-saved"]')).toHaveAttribute("data-found", "true");
   expect(fs.existsSync(filePath(workspace, rel))).toBe(true);

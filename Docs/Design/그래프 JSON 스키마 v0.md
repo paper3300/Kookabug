@@ -80,6 +80,10 @@ workspace/
       "message": {
         "nullable": true,
         "type": "string|secret"
+      },
+      "window": {
+        "nullable": true,
+        "type": "window"
       }
     }
   },
@@ -243,6 +247,11 @@ workspace/
     "n_exit_success": {
       "config": {
         "exit": "success"
+      },
+      "in": {
+        "window": {
+          "$link": "n_launch.window"
+        }
       },
       "title": "성공",
       "type": "core.graph.exit",
@@ -458,6 +467,7 @@ workspace/
 **현재 대상 창**
 - `core.app.launch`가 그 호출 프레임의 **현재 대상 창**을 정하고, 이후 노드는 그 창을 쓴다. 서브그래프는 호출한 쪽의 현재 대상 창을 이어받는다 (변수는 이어받지 않음)
 - 노드에 `window` 입력을 주면 **그 노드만** 다른 창을 쓴다. 호출한 쪽의 현재 대상 창을 바꾸려면 명시적인 노드(`core.window.set_current`)를 쓴다
+- 서브그래프 안에서 정하거나 바꾼 현재 대상 창은 밖으로 나오지 않는다. **게임을 실행하는(창을 정하는) 서브그래프는 그 창을 출력(`window`)으로 내고, 호출한 쪽이 `core.window.set_current`로 현재 창을 정한다** (권장 패턴, 이 장 `n_exit_success`와 3장 `n_use_window`). 그러지 않으면 호출 뒤 노드는 **호출 전 현재 창**을 그대로 쓴다: 호출 전에 이미 창이 있었다면 서브그래프가 띄운 새 창이 아니라 그 기존 창이 입력·캡처 대상이고, 호출 전 현재 창이 없고 그 노드에 `window` 입력도 주지 않았다면 대상 창이 없어 `platform_unavailable`이다 (가짜 플랫폼도 같다)
 - 캡처·매칭 결과에는 창 식별자와 좌표 변환 정보가 붙고, 입력 노드는 입력 직전에 그 창이 아직 유효한지 확인한다
 
 **접기**
@@ -520,7 +530,7 @@ workspace/
   "layout": {
     "nodes": {
       "n_check_inventory": {
-        "x": 560,
+        "x": 840,
         "y": 0
       },
       "n_enter_world": {
@@ -532,12 +542,16 @@ workspace/
         "y": 0
       },
       "n_press_i": {
-        "x": 280,
+        "x": 560,
         "y": 0
       },
       "n_skip_maintenance": {
         "x": 280,
         "y": 160
+      },
+      "n_use_window": {
+        "x": 280,
+        "y": 0
       }
     }
   },
@@ -571,7 +585,7 @@ workspace/
       },
       "next": {
         "maintenance": "n_skip_maintenance",
-        "success": "n_press_i"
+        "success": "n_use_window"
       },
       "title": "월드 접속",
       "type": "core.graph.call",
@@ -603,6 +617,19 @@ workspace/
       "title": "점검이면 건너뜀",
       "type": "core.test.skip",
       "version": 1
+    },
+    "n_use_window": {
+      "in": {
+        "window": {
+          "$link": "n_enter_world.window"
+        }
+      },
+      "next": {
+        "done": "n_press_i"
+      },
+      "title": "게임 창으로",
+      "type": "core.window.set_current",
+      "version": 1
     }
   },
   "plugins": {
@@ -614,6 +641,7 @@ workspace/
 - 서브그래프 호출은 `core.graph.call` 노드 하나다. `config.graph`의 경로로 **참조**한다. 서브그래프 파일을 고치면 **다음 실행부터** 이 테스트에도 반영된다
 - 호출 노드의 핀은 서브그래프 `interface`에서 만들어진다. `inputs` → data 입력, `exits` → exec 출구, `outputs` → data 출력
 - 호출한 쪽은 **실제로 나간 출구**에서 보장되는 출력만 읽는다. `message`는 `nullable`이므로 `success`로 나가면 `null`이다
+- 서브그래프 안 `n_launch`가 정한 현재 대상 창은 밖으로 나오지 않는다 (1장 "현재 대상 창", [[Python 노드 SDK v0]] `ctx.set_window`). 그래서 `success` 출구가 `window`를 내고, 호출한 쪽이 `core.window.set_current`(`n_use_window`)로 그 창을 현재 창으로 정한 뒤 키를 누른다. 이 테스트는 호출 전에 현재 창이 없으므로, 이것이 없으면 `n_press_i`는 대상 창이 없어 `platform_unavailable` 오류다
   - 서브그래프의 **모든** `core.graph.exit` 노드(`fail` 종류 출구로 나가는 것 포함)는 `nullable`이 아닌 출력을 전부 줘야 한다. 빠뜨리면 실행 전 검증 오류다. 출구별로 non-nullable 출력을 생략하는 선언은 없다
   - `nullable` 출력은 exit 노드가 주지 않으면 `null`로 채운다. 그래서 호출 노드의 출력은 **모든 출구에서 주어진 것**으로 본다 (값이 `null`일 수는 있다)
 - `login_failed`는 연결하지 않았다 → 로그인이 실패하면 `n_enter_world`에서 처리되지 않은 실패 → 테스트 `fail` (판정 순서 2)
@@ -1113,3 +1141,9 @@ Codex 제안을 기본으로 하고, 세 군데는 Claude가 다르게 정했다
 | 지난 성공과 비교(`run.compare`, 6장 "디버거로 멈췄다 재개"): 화면은 실패 스텝 증거와 기준 실행의 같은 호출 경로·노드 썸네일. 호출 스텝(서브그래프 fail 출구)이면 그 증거를 캡처한 안쪽 스텝의 경로로 찾고(그 스텝에 기준 썸네일이 없으면 다른 노드로 넘어가지 않고 이유), 안쪽 캡처 스텝을 모를 때만 그 호출 경로 아래 마지막 썸네일. 시간은 멈춤을 뺀 경과, 늦어진 회차는 앞 절반 중앙값의 2배가 3회차 이어지기 시작한 곳과 그 본문에서 가장 많이 는 노드의 전·후 평균(앞 1/4 안에서 늦어지면 못 잡음), 디버거 개입 실행은 변곡을 내지 않음 | 호출 스텝은 직접 캡처하지 않아 썸네일이 없으므로 호출 스텝끼리 맞추면 서브그래프 실패의 화면 차이를 낼 수 없다. 시안 문구 "대기 평균 a → b"는 반복 전체가 아니라 본문 노드 단위다. 벽시계 회차 경과에는 멈춘 시간이 들어 거짓 변곡이 나온다 |
 | 영상 기본 정책 `failed_only`(6장 "워크스페이스 정책"), 빈 구간 이유 `starting`(5장) | 기본이 `on`이면 기본 설정의 모든 실행이 영상을 남겨 "성공한 실행의 영상은 지워짐"(구현 계획 1장 M3)이 서지 않고 보관 정리(보류)가 없어 쌓인다. 차가운 Media Foundation 첫 열기(약 1초)를 기다리는 실행 앞부분은 영상이 없으므로 뷰어가 그 이유를 보여야 한다 |
 | `step_into`는 서브그래프 시작점(`core.graph.entry`)을 건너뛰고 첫 동작 노드에서 멈춘다(6장 "디버거로 멈췄다 재개") | 시작점은 아무 동작이 없어 거기서 멈추면 F11을 한 번 더 눌러야 한다. 시작점에 건 브레이크포인트·일시정지 요청은 그대로 멈춘다 |
+
+### 잠금 해제 데스크톱 검사 반영 (2026-11-02)
+
+| 바뀐 것 | 이유 |
+|---|---|
+| 예시 `enter_world`에 출력 `window`(`nullable`, `success` 출구가 `n_launch.window`를 냄), 예시 `inventory_open`에 `n_use_window`(`core.window.set_current`)를 호출 뒤에 둠 (1장·3장) | 서브그래프 안에서 정한 현재 대상 창은 밖으로 나오지 않는다(1장 "현재 대상 창"). 예시대로면 실제 창에서 `n_press_i`가 대상 창 없이 `platform_unavailable`로 끝났다. 가짜 플랫폼은 대상 창 없는 입력을 기본 게임으로 보내 헤드리스 검사에서는 드러나지 않았다 |
