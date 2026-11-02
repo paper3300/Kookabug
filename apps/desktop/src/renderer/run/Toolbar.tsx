@@ -1,9 +1,10 @@
-// 실행 툴바 (시안 Main 탭 줄 오른쪽, M2 계획 2.11): 프로필 고르기(시안 "대상" 자리, U4)·실행 ▶·정지 ■.
-// 녹화·에디터 분할·디버그 툴바(멈춤·Step)는 숨긴다 (U3). 검증 오류로 실행을 막으면 "검증 오류 N개"를 띄운다
+// 실행 툴바 (시안 Main 탭 줄 오른쪽, M2 계획 2.11): 프로필 고르기(시안 "대상" 자리, U4)·실행 ▶.
+// 정지 ■는 M3에서 시안대로 디버그 툴바로 옮겼다 (debug/DebugToolbar.tsx). 녹화·에디터 분할은 숨긴다 (U3).
+// 검증 오류로 실행을 막으면 "검증 오류 N개"를 띄운다
 import { useTabs } from "../store/tabs";
 import { useUi } from "../store/ui";
 import { useWorkspace } from "../store/workspace";
-import { PlayIcon, StopIcon } from "../theme/icons";
+import { PlayIcon } from "../theme/icons";
 import { runAvailability, type RunAvailability } from "./commands";
 import css from "./run.module.css";
 import { runModel, useRun } from "./runStore";
@@ -48,7 +49,7 @@ export function RunToolbar() {
   const running = current?.phase === "running";
   const starting = useRun((s) => s.starting);
   const graph = tab?.kind === "graph" ? tab : undefined;
-  const { canRun, canStop, runTitle } = useRunAvailability();
+  const { canRun, runTitle } = useRunAvailability();
   return (
     <div
       role="toolbar"
@@ -100,16 +101,6 @@ export function RunToolbar() {
         onClick={runActive}
       >
         <PlayIcon />
-      </button>
-      <button
-        type="button"
-        aria-label="정지"
-        title="실행 취소 (Shift+F5)"
-        className={`${css.toolButton} ${css.stop}`}
-        disabled={!canStop}
-        onClick={stopActive}
-      >
-        <StopIcon />
       </button>
     </div>
   );

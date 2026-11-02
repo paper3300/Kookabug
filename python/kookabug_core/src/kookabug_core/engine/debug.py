@@ -15,7 +15,8 @@
 
 - `continue`: 목표 없음 (다음 브레이크포인트·일시정지 요청까지)
 - `step_over`: 깊이 ≤ `d`인 다음 경계
-- `step_into`: 다음 경계 (깊이 무관)
+- `step_into`: 다음 경계 (깊이 무관). 그래프 시작점(`core.graph.entry`) 경계는 Step 목표가
+  아니므로 서브그래프로 들어가면 첫 동작 노드에서 멈춘다
 - `step_out`: 깊이 < `d`인 다음 경계 (맨 바깥에서는 `continue`와 같다)
 """
 
@@ -81,12 +82,17 @@ def step_limit(mode: ResumeMode, depth: int) -> int | None:
 @dataclass(frozen=True, slots=True)
 class StepPoint:
     """확인 지점의 스텝: 스텝 ID, 노드 ID, 노드가 든 그래프(프로그램 기준 경로 — 스냅샷 실행이면
-    워크스페이스 기준과 같다), 호출 경로(그 노드까지)."""
+    워크스페이스 기준과 같다), 호출 경로(그 노드까지).
+
+    `entry`는 그래프 시작점(`core.graph.entry`) 스텝이다. 아무 동작도 없는 자리라 Step 목표로는
+    멈추지 않는다(서브그래프로 들어가면 첫 동작 노드에서 멈춤). 브레이크포인트·일시정지 요청은
+    본다."""
 
     step: str
     node: str
     graph: str
     path: tuple[str, ...]
+    entry: bool = False
 
     @property
     def depth(self) -> int:

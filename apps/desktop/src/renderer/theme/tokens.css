@@ -60,6 +60,12 @@
   --kb-chip-record-fg: #f8a79b;
   --kb-chip-agent-bg: #33264a;
   --kb-chip-agent-fg: #d2c2f0;
+  --kb-debug-bg: #252526; /* 디버그 툴바 (시안 "실행 제어", M3 T9) */
+  --kb-debug-border: #3c3c3c;
+  --kb-debug-handle: #9d9d9d;
+  --kb-debug-step: #4daafc;
+  --kb-debug-restart: #89d185;
+  --kb-debug-stop: #f14c4c;
 
   /* 시안의 같은 자리 색 */
   --kb-fg-strong: #e7e7e7; /* 활성 패널 탭 글자 */
@@ -201,6 +207,12 @@
   --kb-chip-record-fg: #b42318;
   --kb-chip-agent-bg: #eee6fa;
   --kb-chip-agent-fg: #5e43a6;
+  --kb-debug-bg: #ffffff;
+  --kb-debug-border: #cecece;
+  --kb-debug-handle: #666666;
+  --kb-debug-step: #005fb8;
+  --kb-debug-restart: #2e7d32;
+  --kb-debug-stop: #c42b1c;
 
   /* 시안의 같은 자리 색 */
   --kb-fg-strong: #1f1f1f;

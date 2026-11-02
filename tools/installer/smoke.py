@@ -320,6 +320,17 @@ def path_has(paths: str, folder: Path) -> bool:
     return any(os.path.normcase(p.rstrip("\\")) == want for p in paths.split(";") if p)
 
 
+def same_file(text: str, path: Path) -> bool:
+    """두 경로가 같은 파일인가. 8.3 짧은 이름(`PAPER3~1`)과 긴 이름이 섞여도 같다고 본다 —
+    문자열 `normcase`는 별칭을 펴지 않는다. 파일이 없으면 펼친 경로끼리 비교한다."""
+    if not text:
+        return False
+    other = Path(text)
+    with contextlib.suppress(OSError):
+        return other.samefile(path)
+    return os.path.normcase(str(other.resolve())) == os.path.normcase(str(path.resolve()))
+
+
 UNINSTALL_ROOT: Final = r"Software\Microsoft\Windows\CurrentVersion\Uninstall"
 
 
@@ -812,8 +823,9 @@ def run_all(
         local = Path(os.environ.get("LOCALAPPDATA", "")) / variant.updater_dir
         exe = target / variant.app_exe
         aim, icon = shortcut_target(link) if link.exists() else ("", "")
-        points = os.path.normcase(aim) == os.path.normcase(str(exe))
-        icon_ok = os.path.normcase(icon.rsplit(",", 1)[0]) == os.path.normcase(str(exe))
+        points = same_file(aim, exe)
+        icon_file, _, icon_index = icon.rpartition(",") if "," in icon else (icon, "", "0")
+        icon_ok = same_file(icon_file, exe) and icon_index.strip() == "0"
         ok = link.exists() and points and icon_ok and local.exists() == before["updater"]
         detail = f"시작 메뉴 {link.name} 있음={link.exists()}, 대상 {aim!r}, 아이콘 {icon!r}, "
         return ok, detail + f"설치 파일 사본 폴더 남음={local.exists()}"

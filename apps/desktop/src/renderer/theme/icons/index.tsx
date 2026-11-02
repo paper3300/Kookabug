@@ -127,6 +127,64 @@ export function StopIcon(props: IconProps) {
   );
 }
 
+/** 일시정지 (시안 Main 디버그 툴바 "일시정지 F6") */
+export function PauseIcon(props: IconProps) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" {...props}>
+      <rect x="3" y="2" width="3.5" height="12" />
+      <rect x="9.5" y="2" width="3.5" height="12" />
+    </svg>
+  );
+}
+
+/** 계속 (멈춘 동안 일시정지 자리, 시안에 없음 — 실행 ▶ 모양) */
+export function ContinueIcon(props: IconProps) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" {...props}>
+      <path d="M4 2.5l9.5 5.5L4 13.5z" />
+    </svg>
+  );
+}
+
+/** 다음 노드 (시안 Main 디버그 툴바 "다음 노드 F10") */
+export function StepOverIcon(props: IconProps) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true" {...props}>
+      <path d="M2 9a6 6 0 0 1 11-3M13 2v4H9" />
+      <circle cx="8" cy="13" r="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** 서브그래프로 들어가기 (시안 Main 디버그 툴바 F11) */
+export function StepIntoIcon(props: IconProps) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true" {...props}>
+      <path d="M8 1v8M4.5 5.5L8 9l3.5-3.5" />
+      <circle cx="8" cy="13" r="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** 서브그래프에서 나오기 (시안 Main 디버그 툴바) */
+export function StepOutIcon(props: IconProps) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true" {...props}>
+      <path d="M8 9V1M4.5 4.5L8 1l3.5 3.5" />
+      <circle cx="8" cy="13" r="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** 다시 시작 (시안 Main 디버그 툴바) */
+export function RestartIcon(props: IconProps) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true" {...props}>
+      <path d="M13 8a5 5 0 1 1-1.5-3.5M12 1.5V5H8.5" />
+    </svg>
+  );
+}
+
 /** 상태 바 연결 표시 (점) */
 export function DotIcon(props: IconProps) {
   return (

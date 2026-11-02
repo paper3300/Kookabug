@@ -2,7 +2,8 @@
 // 오른쪽 에이전트 패널 자리는 속성 편집기(T10)가 쓴다
 import { useEffect } from "react";
 import { Inspector } from "../inspector/Inspector";
-import { runActive, stopActive } from "../run/Toolbar";
+import { runDebugKey } from "../debug/commands";
+import { debugKey } from "../debug/keys";
 import { getTarget, saveBlocker, saveTarget, targetDirty } from "../target/targetStore";
 import { useDialog } from "../store/dialog";
 import { redoEdit, saveDoc, undoEdit } from "../store/documents";
@@ -43,11 +44,12 @@ function useShortcuts(): void {
     const onKey = (e: KeyboardEvent) => {
       // 대화 상자가 떠 있으면 뒤쪽 화면의 단축키(저장·실행 취소·탭 닫기 등)는 듣지 않는다
       if (useDialog.getState().current !== null) return;
-      // F5 실행, Shift+F5 정지 (시안 툴바 "실행 F5")
-      if (e.key === "F5" && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      // 실행·디버거 (M3 2.9, VS Code 관례): F5 실행·계속, Shift+F5 정지, Ctrl+Shift+F5 다시 시작, F6 일시정지,
+      // F9 브레이크포인트, F10·F11·Shift+F11 Step. 글자 칸 안에서도 기능 키는 디버거 것이다
+      const debug = debugKey(e);
+      if (debug !== null) {
         e.preventDefault();
-        if (e.shiftKey) stopActive();
-        else runActive();
+        runDebugKey(debug);
         return;
       }
       if (!e.ctrlKey || e.altKey || e.metaKey) return;

@@ -1,6 +1,13 @@
 // 타이틀 바 (시안 Main): 로고·메뉴·명령 검색 자리·창 버튼. 명령 검색은 파일 빠른 열기만 한다 (2.11).
 // 시안의 "플러그인" 메뉴는 M6까지 숨긴다 (2.10 "창", U3)
 import { useEffect, useRef, useState } from "react";
+import {
+  pauseRun,
+  restartRun,
+  resumeRun,
+  toggleSelectedBreakpoints,
+  useDebugAvailability,
+} from "../debug/commands";
 import { runActive, stopActive, useRunAvailability } from "../run/Toolbar";
 import { canRedo, canUndo, redoEdit, saveDoc, undoEdit, useDocuments } from "../store/documents";
 import { requestCloseTab } from "../store/editing";
@@ -30,6 +37,7 @@ function useMenus(): [string, MenuEntry[]][] {
   const doc = useDocuments((s) => (graph === null ? undefined : s.docs.get(graph)));
   const inspectorOpen = useUi((s) => s.inspectorOpen);
   const runs = useRunAvailability();
+  const debug = useDebugAvailability();
   const theme =(value: ThemeMode, label: string): MenuItem => ({
     label: `테마: ${label}`,
     checked: mode === value,
@@ -81,6 +89,16 @@ function useMenus(): [string, MenuEntry[]][] {
         // 툴바 ▶·■와 같은 명령·같은 활성 조건 (run/commands.ts)
         { label: "실행", shortcut: "F5", disabled: !runs.canRun, run: runActive },
         { label: "정지", shortcut: "Shift+F5", disabled: !runs.canStop, run: stopActive },
+        // 디버거 (M3 2.9): 디버그 툴바·단축키와 같은 명령·활성 조건 (debug/commands.ts)
+        "separator",
+        { label: "계속", shortcut: "F5", disabled: !debug.canStep, run: () => resumeRun("continue") },
+        { label: "일시정지", shortcut: "F6", disabled: !debug.canPause, run: pauseRun },
+        { label: "다음 노드", shortcut: "F10", disabled: !debug.canStep, run: () => resumeRun("step_over") },
+        { label: "서브그래프로 들어가기", shortcut: "F11", disabled: !debug.canStep, run: () => resumeRun("step_into") },
+        { label: "서브그래프에서 나오기", shortcut: "Shift+F11", disabled: !debug.canStep, run: () => resumeRun("step_out") },
+        { label: "다시 시작", shortcut: "Ctrl+Shift+F5", disabled: !debug.canRestart, run: restartRun },
+        "separator",
+        { label: "브레이크포인트 설정/해제", shortcut: "F9", disabled: graph === null, run: toggleSelectedBreakpoints },
       ],
     ],
     ["도움말", [{ label: "Kookabug 0.1", disabled: true }]],

@@ -9,11 +9,18 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { REPO_BUILD, setTheme, settle } from "../helpers/app";
 import { openGraph } from "../helpers/editor";
-import { clickRun, closeRunApp, openRunApp, prepareRunWorkspace, runNode, type RunSession } from "../helpers/run";
+import {
+  clickRun,
+  closeRunApp,
+  openRunApp,
+  prepareRunWorkspace,
+  runNode,
+  runnableSianMain,
+  SIAN_RUN_GRAPH as GRAPH,
+  type RunSession,
+} from "../helpers/run";
 
 const OUT = path.join(REPO_BUILD, "ui-shots");
-const SIAN_MAIN = path.join(import.meta.dirname, "..", "fixtures", "sian-main.graph.json");
-const GRAPH = "tests/enchant_loop.graph.json";
 
 let s: RunSession | null = null;
 
@@ -21,23 +28,6 @@ test.afterEach(async () => {
   await closeRunApp(s);
   s = null;
 });
-
-function runnableSianMain(): string {
-  const graph = JSON.parse(fs.readFileSync(SIAN_MAIN, "utf8")) as { nodes: Record<string, Record<string, unknown>> };
-  graph.nodes.n_attach = {
-    ...graph.nodes.n_attach,
-    type: "core.app.launch",
-    in: {
-      args: { $setting: "game.args" },
-      cwd: { $setting: "game.cwd" },
-      path: { $setting: "game.executable" },
-      timeout_ms: 30000,
-      window_title: { $setting: "game.title" },
-    },
-    next: { attached: "n_repeat" },
-  };
-  return JSON.stringify(graph, null, 2);
-}
 
 for (const theme of ["dark", "light"] as const) {
   test(`main-running-${theme}`, async () => {

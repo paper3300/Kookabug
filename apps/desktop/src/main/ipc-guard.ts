@@ -79,6 +79,8 @@ export const APP_ACTIONS: ReadonlySet<string> = new Set([
   "closeWorkspace",
   "themeGet",
   "themeSet",
+  "debugToolbarGet",
+  "debugToolbarSet",
   "daemonState",
   "daemonLog",
   "daemonRetry",

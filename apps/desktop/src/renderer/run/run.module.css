@@ -56,10 +56,6 @@
   color: var(--kb-status-ok);
 }
 
-.stop {
-  color: var(--kb-status-error);
-}
-
 .blocked {
   height: 22px;
   padding: 0 8px;

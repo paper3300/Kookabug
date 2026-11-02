@@ -8,6 +8,7 @@ import { dragNode, openGraph, readJson, tabOf, writeFile } from "./helpers/edito
 import {
   clickRun,
   closeRunApp,
+  debugToolbar,
   INVENTORY,
   openRunApp,
   prepareRunWorkspace,
@@ -68,9 +69,9 @@ test("test_run_highlights_running_node_then_pass", async () => {
   const top = runLog(page).locator("[data-level]").first();
   await expect(top).toHaveAttribute("data-level", "RUN");
   await expect(top).toContainText("I 키");
-  // 실행 중에는 다시 실행할 수 없고 정지할 수 있다
+  // 실행 중에는 다시 실행할 수 없고 정지할 수 있다 (정지는 M3부터 디버그 툴바)
   await expect(toolbar(page).getByRole("button", { name: "실행 F5" })).toBeDisabled();
-  await expect(toolbar(page).getByRole("button", { name: "정지" })).toBeEnabled();
+  await expect(debugToolbar(page).getByRole("button", { name: "정지", exact: true })).toBeEnabled();
   // 실행 중 그래프를 고치면 경로 표시줄 옆에 "실행은 저장된 버전 기준"
   await expect(page.locator('[data-part="run-snapshot"]')).toHaveCount(0);
   await dragNode(page, "n_skip_maintenance", 0, 60);
@@ -167,7 +168,7 @@ test("test_cancel_ends_cancelled", async () => {
   await openGraph(page, INVENTORY);
   await clickRun(page);
   await waitGate(ws, "press_i");
-  await toolbar(page).getByRole("button", { name: "정지" }).click();
+  await debugToolbar(page).getByRole("button", { name: "정지", exact: true }).click();
   // 취소가 입력 앞에서 선 스텝에 닿도록 지점을 푼다 (훅은 취소로 끊기지 않는 대기다)
   releaseGate(ws, "press_i");
   await waitEnded(page);
@@ -325,7 +326,11 @@ test("test_broken_variant_fail_shows_fail_node_and_artifact_path", async () => {
   const rel = (await artifact.getAttribute("data-artifact"))!;
   const full = path.join(runFolder(ws, runId), ...rel.split("/"));
   expect(fs.existsSync(full)).toBe(true);
-  expect(path.normalize((await artifact.textContent())!)).toBe(path.normalize(full));
+  // 같은 파일인지는 실제 경로로 본다: 임시 폴더가 8.3 짧은 이름(PAPER3~1)이면 화면(긴 이름)과 글자가 다르다.
+  // path.normalize는 별칭을 펴지 않는다
+  const shown = (await artifact.textContent())!;
+  expect(fs.existsSync(shown)).toBe(true);
+  expect(fs.realpathSync.native(shown)).toBe(fs.realpathSync.native(full));
   // 실행 로그에 판정 줄
   await page.getByRole("tab", { name: "실행 로그" }).click();
   await expect(runLog(page).locator('[data-level="FAIL"]').first()).toContainText("판정 fail");

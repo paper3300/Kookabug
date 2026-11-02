@@ -204,7 +204,7 @@ class PauseGate:
             reason: PauseReason | None
             if point.key in self._breakpoints:
                 reason = "breakpoint"
-            elif self._limit is not None and point.depth <= self._limit:
+            elif self._limit is not None and point.depth <= self._limit and not point.entry:
                 reason = "step"
             elif self._requested:
                 reason = "request"

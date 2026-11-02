@@ -452,7 +452,8 @@ class _Run:
             start["iteration"] = end["iteration"] = iteration
         if self.before_step is not None:
             try:
-                self.before_step(StepPoint(step, node.id, frame.graph.path, path))
+                entry = node.type == GRAPH_ENTRY
+                self.before_step(StepPoint(step, node.id, frame.graph.path, path, entry=entry))
             except Cancelled as exc:
                 # 시작하지 않은 스텝: step.start·step.end 없이 위로 (원인 스텝 없음)
                 raise _Error(_cause_of(None, frame.path, _with_reason(rt.cancel, exc))) from exc

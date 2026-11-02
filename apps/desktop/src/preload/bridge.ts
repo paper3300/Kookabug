@@ -57,6 +57,9 @@ export interface AppApi {
   closeWorkspace(): Promise<void>;
   themeGet(): Promise<ThemeState>;
   themeSet(mode: ThemeMode): Promise<ThemeState>;
+  /** 디버그 툴바 가로 자리 (캔버스 가운데 기준 px) */
+  debugToolbarGet(): Promise<number>;
+  debugToolbarSet(x: number): Promise<void>;
   daemonState(): Promise<DaemonState>;
   daemonLog(): Promise<OutputLine[]>;
   daemonRetry(): Promise<DaemonState>;
@@ -92,6 +95,8 @@ function appApi(ipc: IpcRendererLike): AppApi {
     closeWorkspace: call("closeWorkspace"),
     themeGet: call("themeGet"),
     themeSet: call("themeSet"),
+    debugToolbarGet: call("debugToolbarGet"),
+    debugToolbarSet: call("debugToolbarSet"),
     daemonState: call("daemonState"),
     daemonLog: call("daemonLog"),
     daemonRetry: call("daemonRetry"),

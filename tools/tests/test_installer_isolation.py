@@ -373,3 +373,29 @@ def test_install_that_touches_other_keys_fails_registration_step(
     report = smoke.run_all(setup_file, tmp_path / "target", log=tmp_path / "log")
     step = next(s for s in report.steps if s.id == "install.registration")
     assert not step.ok and f"바뀐 키 ['{PRODUCT_KEY}']" in step.detail
+
+
+def _short_path(path: Path) -> str:
+    """8.3 짧은 이름 (`PAPER3~1` 꼴). 볼륨이 짧은 이름을 만들지 않으면 긴 이름 그대로."""
+    import ctypes
+
+    buf = ctypes.create_unicode_buffer(1024)
+    n = ctypes.windll.kernel32.GetShortPathNameW(str(path), buf, len(buf))
+    return buf.value if 0 < n < len(buf) else str(path)
+
+
+def test_shortcut_same_file_ignores_short_name_alias(tmp_path: Path) -> None:
+    """바로 가기 대상이 긴 이름, 설치 폴더가 짧은 이름(TEMP가 8.3)이어도 같은 파일이다
+    (검수 T9-1 TEMP 판정)."""
+    folder = tmp_path / "설치 폴더 공백 한글 long-name-folder"
+    folder.mkdir()
+    exe = folder / "KookabugTest.exe"
+    exe.write_bytes(b"MZ")
+    short = _short_path(exe)
+    if short == str(exe):
+        pytest.skip("이 볼륨은 8.3 짧은 이름을 만들지 않는다")
+    assert short.lower() != str(exe).lower()
+    assert smoke.same_file(short, exe)
+    assert smoke.same_file(str(exe), Path(short))
+    assert not smoke.same_file(str(folder / "other.exe"), exe)
+    assert not smoke.same_file("", exe)

@@ -12,9 +12,12 @@ import { RunCursors } from "../rpc/runCursor";
 import { getDoc, saveDoc } from "../store/documents";
 import { useUi, type PanelTab } from "../store/ui";
 import type { Diagnostic } from "../graph/model";
+import type { events } from "@kookabug/schema";
+import { applyPause, NO_PAUSE, pauseNeedsCalls, type PauseState } from "../debug/pauseState";
 import { applyEvent, emptyTrace, unresolvedCall, type CallMap, type RunEvent, type RunTrace } from "./highlight";
 
 export type RunOutcome = NotificationParamsOf<"run.ended">["outcome"];
+export type ResumeMode = events.ResumeMode;
 type RunSummary = ResultOf<"run.list">["runs"][number];
 
 /** 입력 임대권 옆 파일의 소유자 (lease.changed) */
@@ -38,6 +41,10 @@ export interface RunView {
   calls: CallMap;
   /** 성공한 조회가 덮는 마지막 seq (그 뒤에 시작한 스텝이 모르는 호출을 지나면 다시 묻는다) */
   callsAsOf: number;
+  /** 디버거 멈춤 (이벤트로만 안다, M3 2.1) */
+  pause: PauseState;
+  /** 일시정지를 요청했고 아직 경계·폴링 확인 지점에 닿지 않음 (run.pause 응답 pausing) */
+  pausing: boolean;
 }
 
 /** 노드 ID가 `__proto__`여도 자기 속성으로 둔다 (2.6 키 규칙) */
@@ -145,9 +152,13 @@ export class RunModel {
     const e = event as RunEvent;
     const trace = applyEvent(current.trace, e);
     if (trace === current.trace) return;
-    this.store.setState({ current: { ...current, trace } });
-    // 서브그래프 안 스텝인데 호출 관계를 모르면 스냅샷 호출 관계를 받는다 (스냅샷은 첫 스텝 전에 만들어진다)
-    if (e.event === "step.start" && Array.isArray(e.path) && e.path.length > 1) this.syncCalls();
+    const pause = applyPause(current.pause, e);
+    // 멈춤 확정·재개·실행 끝이면 "멈추는 중"이 끝났다
+    const pausing = e.event === "debug.pause" || e.event === "debug.resume" || e.event === "run.end" ? false : current.pausing;
+    this.store.setState({ current: { ...current, trace, pause, pausing } });
+    // 서브그래프 안 스텝인데 호출 관계를 모르면 스냅샷 호출 관계를 받는다 (스냅샷은 첫 스텝 전에 만들어진다).
+    // 서브그래프 안에서 멈췄으면 멈춘 자리까지 따라갈 호출 관계도 받는다
+    if ((e.event === "step.start" || e.event === "debug.pause") && Array.isArray(e.path) && e.path.length > 1) this.syncCalls();
   }
 
   // ── 실행 스냅샷 호출 관계 (run.status calls) ───────────────────────
@@ -163,11 +174,15 @@ export class RunModel {
   /** 호출 관계를 모르는 서브그래프 스텝 중, 지금 관계를 받은 조회보다 뒤에 시작한 것이 있는가 */
   private callsNeeded(current: RunView): boolean {
     const steps = [...current.trace.open.values(), ...current.trace.latest.values()];
-    return steps.some(
-      (rec) =>
-        rec.path.length > 1 &&
-        rec.startSeq > current.callsAsOf &&
-        unresolvedCall(current.trace.graph, rec.path, current.calls) !== null,
+    const paused = current.pause.paused;
+    return (
+      steps.some(
+        (rec) =>
+          rec.path.length > 1 &&
+          rec.startSeq > current.callsAsOf &&
+          unresolvedCall(current.trace.graph, rec.path, current.calls) !== null,
+      ) ||
+      (paused !== null && paused.seq > current.callsAsOf && pauseNeedsCalls(current.trace.graph, paused, current.calls))
     );
   }
 
@@ -228,7 +243,8 @@ export class RunModel {
     this.cursors.ended(p.run_id);
     const current = this.state.current;
     if (current === null || current.runId !== p.run_id) return;
-    this.store.setState({ current: { ...current, phase: "ended", outcome: p.outcome } });
+    const pause = current.pause.paused === null ? current.pause : { ...current.pause, paused: null };
+    this.store.setState({ current: { ...current, phase: "ended", outcome: p.outcome, pause, pausing: false } });
   }
 
   lease(p: NotificationParamsOf<"lease.changed">): void {
@@ -300,6 +316,74 @@ export class RunModel {
     }
   }
 
+  // ── 디버거 (M3 2.3): 판단은 runner, 화면은 이벤트로 안다 ───────────────
+
+  /** 일시정지 (F6): 다음 경계·폴링 확인 지점에서 멈춘다 */
+  async pause(): Promise<void> {
+    const current = this.state.current;
+    if (current === null || current.phase !== "running" || current.pause.paused !== null || current.pausing) return;
+    // 요청 때의 마지막 멈춤·재개 이벤트. 응답 전에 멈춤(또는 멈춤 뒤 재개까지)이 지나갔으면 그 응답은 낡았다
+    const mark = current.pause.debugSeq;
+    try {
+      const { state } = await this.call("run.pause", { run_id: current.runId });
+      const now = this.state.current;
+      if (
+        state === "pausing" &&
+        now?.runId === current.runId &&
+        now.phase === "running" &&
+        now.pause.paused === null &&
+        now.pause.debugSeq === mark
+      ) {
+        this.store.setState({ current: { ...now, pausing: true } });
+      }
+    } catch (err) {
+      this.hooks.note("error", `일시정지하지 못했다: ${toRpcError(err).message}`);
+    }
+  }
+
+  /** 계속·Step (F5·F10·F11·Shift+F11). 멈춘 동안만 */
+  async resume(mode: ResumeMode): Promise<void> {
+    const current = this.state.current;
+    if (current === null || current.phase !== "running" || current.pause.paused === null) return;
+    try {
+      await this.call("run.resume", { run_id: current.runId, mode });
+    } catch (err) {
+      this.hooks.note("error", `재개하지 못했다: ${toRpcError(err).message}`);
+    }
+  }
+
+  /**
+   * 다시 시작 (Ctrl+Shift+F5): daemon run.restart 하나로 취소 → 같은 인자로 새 실행 (원자적, 2.3). 디스크 파일로
+   * 다시 돌므로 저장은 하지 않는다. 새 실행을 따라간다
+   */
+  async restart(): Promise<boolean> {
+    const current = this.state.current;
+    if (current === null || current.phase !== "running" || this.state.starting !== null) return false;
+    const gen = this.generation;
+    this.store.setState({ starting: current.graph });
+    try {
+      let result: ResultOf<"run.restart">;
+      try {
+        result = await this.call("run.restart", { run_id: current.runId });
+      } catch (err) {
+        if (gen === this.generation) this.hooks.note("error", `다시 시작하지 못했다: ${toRpcError(err).message}`);
+        return false;
+      }
+      if (gen !== this.generation) return false;
+      this.follow({
+        runId: result.run_id,
+        graph: result.graph,
+        runDir: result.run_dir,
+        revision: this.hooks.revision(result.graph)?.revision ?? null,
+      });
+      this.hooks.note("info", `실행 ${result.run_id} 다시 시작: ${result.graph}`);
+      await this.subscribe(result.run_id);
+      return true;
+    } finally {
+      if (gen === this.generation) this.store.setState({ starting: null });
+    }
+  }
+
   /**
    * daemon에 붙을 때마다: 따라가는 실행이 없거나 끝났으면 진행 중 실행(run.list)을 찾아 처음부터 구독한다
    * (앱을 다시 열었을 때·CLI 실행). 따라가던 실행은 recovery가 적용한 마지막 seq부터 다시 구독한다
@@ -347,6 +431,8 @@ export class RunModel {
         outcome: null,
         calls: {},
         callsAsOf: 0,
+        pause: NO_PAUSE,
+        pausing: false,
       },
     });
   }

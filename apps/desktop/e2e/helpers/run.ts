@@ -76,7 +76,10 @@ export interface RunSession {
 }
 
 /** 앱을 띄워 이 워크스페이스를 연다. scaleFactor 1 = 시안 비교 스크린샷 */
-export async function openRunApp(ws: RunWorkspace, options: { scaleFactor?: number } = {}): Promise<RunSession> {
+export async function openRunApp(
+  ws: RunWorkspace,
+  options: { scaleFactor?: number; userData?: string } = {},
+): Promise<RunSession> {
   const launched = await launchApp({ env: runEnv(ws), ...options });
   const page = await launched.app.firstWindow();
   await page.waitForLoadState("domcontentloaded");
@@ -105,6 +108,36 @@ export function releaseGate(ws: RunWorkspace, gate: string): void {
 
 export function toolbar(page: Page): Locator {
   return page.locator('[data-part="run-toolbar"]');
+}
+
+const SIAN_MAIN = path.join(import.meta.dirname, "..", "fixtures", "sian-main.graph.json");
+/** 시안 Main 그래프를 실행할 자리 (시안 비교 스크린샷) */
+export const SIAN_RUN_GRAPH = "tests/enchant_loop.graph.json";
+
+/**
+ * e2e/fixtures/sian-main.graph.json(시안 Main 노드 배치)에서 "창 찾기"만 가짜 플랫폼에서 돌도록 게임 실행 노드로
+ * 바꾼 것 (가짜 플랫폼에는 실행 전에 창이 없다)
+ */
+export function runnableSianMain(): string {
+  const graph = JSON.parse(fs.readFileSync(SIAN_MAIN, "utf8")) as { nodes: Record<string, Record<string, unknown>> };
+  graph.nodes.n_attach = {
+    ...graph.nodes.n_attach,
+    type: "core.app.launch",
+    in: {
+      args: { $setting: "game.args" },
+      cwd: { $setting: "game.cwd" },
+      path: { $setting: "game.executable" },
+      timeout_ms: 30000,
+      window_title: { $setting: "game.title" },
+    },
+    next: { attached: "n_repeat" },
+  };
+  return JSON.stringify(graph, null, 2);
+}
+
+/** 디버그 툴바 (시안 "실행 제어", M3 T9). 실행이 있을 때만 있다. 정지 단추는 여기에만 있다 */
+export function debugToolbar(page: Page): Locator {
+  return page.locator('[data-part="debug-toolbar"]');
 }
 
 export async function clickRun(page: Page): Promise<void> {

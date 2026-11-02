@@ -45,9 +45,20 @@ def test_wait_timeout_saves_first_mid_last_and_candidates(tmp_path: Path) -> Non
     evidence = end["evidence"]
     first, mid, last = (f"steps/{step}_{name}.png" for name in ("first", "mid", "fail"))
     assert (evidence["first"], evidence["first_at_ms"]) == (first, 0)
-    assert (evidence["last"], evidence["last_at_ms"]) == (last, 1400)
-    # 표본 중 (0 + 1500)/2 = 750에 가장 가까운 장: 700 ms (차이 50)
-    assert (evidence["mid"], evidence["mid_at_ms"], evidence["mid_offset_ms"]) == (mid, 700, 50)
+    # 찾기는 남은 노드 기한을 **실제 시간**으로 받는다(시계는 가짜). 마지막 찾기(1400 ms)는
+    # 100 ms만 남아, 부하로 찾기가 그보다 오래 걸리면 그 자리에서 timeout이 되어 스텝이 그 캡처
+    # 시각에 끝난다(전체 실행에서 1번 `(mid, 700, 0)`, 검수 T9-1). 그때도 규칙은 같다:
+    # 중간 = (시작 + 끝)/2에 가장 가까운 표본
+    ended = end["duration_ms"]
+    if ended == 1500:
+        assert (evidence["last"], evidence["last_at_ms"]) == (last, 1400)
+        # 표본 중 (0 + 1500)/2 = 750에 가장 가까운 장: 700 ms (차이 50)
+        assert (evidence["mid"], evidence["mid_at_ms"], evidence["mid_offset_ms"]) == (mid, 700, 50)
+    else:
+        assert 0 < ended < 1500 and ended % 100 == 0, ended
+        assert (evidence["last"], evidence["last_at_ms"]) == (last, ended)
+        assert evidence["mid"] == mid
+        assert evidence["mid_offset_ms"] == abs(evidence["mid_at_ms"] - ended // 2) <= 100
     assert "mid_missing" not in evidence
     for path in (first, mid, last):
         assert path in end["artifacts"]

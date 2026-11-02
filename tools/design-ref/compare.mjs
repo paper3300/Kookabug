@@ -32,6 +32,9 @@ export const SCREENS = {
   "inspector-link": { dark: "Main", light: "MainLight" },
   // 실행 중간 시점(강조 노드·상태 줄·실행 로그·파란 상태 바), T11
   "main-running": { dark: "Main", light: "MainLight" },
+  // 디버그 툴바(시안 "실행 제어")·정지 단추 이동·브레이크포인트 점, 멈춘 상태(시안에 없음, U1·U2), M3 T9
+  "main-debug": { dark: "Main", light: "MainLight" },
+  "main-debug-paused": { dark: "Main", light: "MainLight" },
   // target 편집기, T12. Recorder는 다크 시안뿐이라 라이트 앱 화면도 다크 Recorder와 나란히 본다(배치·요소 대조)
   target: { dark: "Recorder", light: "Recorder" },
 };

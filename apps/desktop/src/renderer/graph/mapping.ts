@@ -44,6 +44,8 @@ export interface NodeTypeInfo {
   entry: boolean;
   /** 반복 노드(engine repeat·while)면 한도 입력 이름 (실행 중 "회차 / 한도" 표시, T11) */
   loopLimit: string | null;
+  /** 노드 스키마 effects (capture·input·process). 멈춤 띠의 재개 경고가 관측 노드를 알아본다 (M3 2.9) */
+  effects: readonly string[];
   plugin: string;
   /** 플러그인 판·이름 (노드를 더할 때 그래프 plugins에 적는다, 팔레트 오른쪽 칸) */
   pluginVersion: string;
@@ -172,6 +174,7 @@ export function indexNodeTypes(schemas: readonly unknown[]): Map<string, NodeTyp
         pure: n.pure === true,
         entry: n.engine === "graph_entry",
         loopLimit: n.engine === "repeat" ? "times" : n.engine === "while" ? "max_iterations" : null,
+        effects: Array.isArray(n.effects) ? n.effects.filter((x): x is string => typeof x === "string") : [],
         plugin,
         pluginVersion,
         pluginTitle,

@@ -402,6 +402,15 @@
   flex-direction: column;
 }
 
+/* 탭 내용 + 그 위에 뜨는 디버그 툴바 (M3 T9) */
+.editorContent {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
 /* 탭 줄: 탭(왼쪽, 넘치면 가로 스크롤) + 실행 툴바(오른쪽, 시안 Main) */
 .tabbar {
   flex: 0 0 auto;

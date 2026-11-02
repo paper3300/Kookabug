@@ -41,8 +41,12 @@ def manual() -> str:
     return MANUAL.read_text(encoding="utf-8")
 
 
+M3_SCREENS: Final = frozenset({"main-debug", "main-debug-paused"})
+"""M3에서 늘린 비교 화면 (M3 계획 T9). M2 절차서가 아니라 M3 절차서(T12)가 맡는다."""
+
+
 def compare_screens() -> list[str]:
-    """`compare.mjs`의 SCREENS 중 앱 스크린샷 시나리오가 있는 화면 id, SCREENS 순서.
+    """`compare.mjs`의 SCREENS 중 앱 스크린샷 시나리오가 있는 M2 화면 id, SCREENS 순서.
     시나리오(`shots/*.spec.ts`)는 머리 주석에 `compare.mjs <id…>`를 적는다."""
     text = COMPARE.read_text(encoding="utf-8")
     body = text[text.index("export const SCREENS = {") : text.index("};", text.index("SCREENS"))]
@@ -53,7 +57,7 @@ def compare_screens() -> list[str]:
         assert found is not None, spec
         shot.update(found.group(1).split())
     assert shot <= set(ids), shot - set(ids)
-    return [i for i in ids if i in shot]
+    return [i for i in ids if i in shot and i not in M3_SCREENS]
 
 
 def test_sections_and_result_rows_match() -> None:

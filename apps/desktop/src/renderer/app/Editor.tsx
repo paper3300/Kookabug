@@ -1,6 +1,9 @@
 // 에디터 영역 (시안 Main): 탭(TEST·SUB·TARGET 글자, 저장 안 됨 ●)·경로 표시줄·문서 띠(저장 충돌·저장 실패)·
-// 내용. 그래프 탭은 캔버스(T8), TARGET 탭은 target 편집기(T12). 탭 줄 오른쪽은 실행 툴바(T11)
+// 내용. 그래프 탭은 캔버스(T8), TARGET 탭은 target 편집기(T12). 탭 줄 오른쪽은 실행 툴바(T11).
+// 실행이 있으면 내용 위 가운데에 디버그 툴바, 멈췄으면 경로 표시줄 아래에 멈춤 띠 (M3 T9)
 import type { ReactNode } from "react";
+import { DebugToolbar } from "../debug/DebugToolbar";
+import { PauseBanner } from "../debug/PauseBanner";
 import { GraphCanvas } from "../graph/Canvas";
 import { RunToolbar } from "../run/Toolbar";
 import { TargetEditor } from "../target/TargetEditor";
@@ -157,20 +160,25 @@ export function Editor({ children }: { children?: ReactNode }) {
       </div>
       <Breadcrumb />
       {active !== null && activeTab?.kind === "graph" && <DocBanner path={active} />}
-      {active === null ? (
-        <div className={css.editorEmpty}>
-          <LogoMark className={css.editorEmptyLogo} cutout="var(--kb-editor-bg)" width={110} height={96} />
-          <span>
-            <span className={css.kbd}>Ctrl+P</span> 파일 빠른 열기
-          </span>
-        </div>
-      ) : activeTab?.kind === "graph" ? (
-        <GraphCanvas key={active} path={active} />
-      ) : activeTab?.kind === "target" ? (
-        <TargetEditor key={active} path={active} />
-      ) : (
-        <div className={css.canvas} data-part="canvas" data-path={active} />
-      )}
+      <PauseBanner />
+      {/* 디버그 툴바는 탭 종류와 무관하게 내용 영역 위 가운데에 뜬다 (정지 단추가 여기에만 있다) */}
+      <div className={css.editorContent}>
+        {active === null ? (
+          <div className={css.editorEmpty}>
+            <LogoMark className={css.editorEmptyLogo} cutout="var(--kb-editor-bg)" width={110} height={96} />
+            <span>
+              <span className={css.kbd}>Ctrl+P</span> 파일 빠른 열기
+            </span>
+          </div>
+        ) : activeTab?.kind === "graph" ? (
+          <GraphCanvas key={active} path={active} />
+        ) : activeTab?.kind === "target" ? (
+          <TargetEditor key={active} path={active} />
+        ) : (
+          <div className={css.canvas} data-part="canvas" data-path={active} />
+        )}
+        <DebugToolbar />
+      </div>
       {children}
     </main>
   );

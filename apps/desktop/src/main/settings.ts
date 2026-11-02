@@ -57,6 +57,19 @@ export class Settings {
     writeJson(this.settingsFile, { ...base, theme: mode });
   }
 
+  /** 디버그 툴바 가로 자리 (캔버스 가운데 기준 px, M3 계획 2.9 "자리를 기억한다"). 처음은 가운데(0) */
+  get debugToolbarX(): number {
+    const data = readJson(this.settingsFile) as { debugToolbarX?: unknown } | null;
+    const x = data?.debugToolbarX;
+    return typeof x === "number" && Number.isFinite(x) ? x : 0;
+  }
+
+  set debugToolbarX(x: number) {
+    const data = readJson(this.settingsFile);
+    const base = typeof data === "object" && data !== null && !Array.isArray(data) ? data : {};
+    writeJson(this.settingsFile, { ...base, debugToolbarX: Math.round(x) });
+  }
+
   recent(): RecentProject[] {
     const data = readJson(this.recentFile);
     if (!Array.isArray(data)) return [];

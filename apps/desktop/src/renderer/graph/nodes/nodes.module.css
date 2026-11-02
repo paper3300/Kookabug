@@ -106,6 +106,56 @@
   color: var(--kb-status-fail);
 }
 
+/* 멈춘 노드 (M3 U2, 시안에 없음): 노란 테두리 2px + "⏸ 멈춤 · 이유". 실행 중 강조(파랑)보다 앞선다 */
+.node[data-paused] {
+  border: 2px solid var(--kb-status-warn);
+}
+
+.node[data-paused]:not(.selected) {
+  box-shadow: none;
+}
+
+.status[data-tone="paused"] {
+  color: var(--kb-status-warn);
+  font-weight: 600;
+}
+
+/* 브레이크포인트 점 자리 (M3 U1, 시안에 없음): 머리 왼쪽, 지름 8px 빨간 점 */
+.head {
+  position: relative;
+}
+
+.bpSpot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 10px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.bpDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--kb-debug-stop);
+  opacity: 0;
+}
+
+.bpSpot:hover .bpDot {
+  opacity: 0.4;
+}
+
+.bpSpot[data-on="true"] .bpDot {
+  opacity: 1;
+}
+
 .body {
   padding: 8px 0;
 }

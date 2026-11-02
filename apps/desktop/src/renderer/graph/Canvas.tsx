@@ -24,11 +24,13 @@ import {
   type OnConnectStartParams,
   type XYPosition,
 } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { PALETTE_MIME } from "../palette/groups";
 import { applyEdit, getDoc, saveViewport, setSelection, useDocuments, type GraphDoc } from "../store/documents";
 import { useEditsLocked } from "../store/dialog";
 import { useRegistry } from "../store/registry";
+import { NodeMenu, type NodeMenuAt } from "../debug/NodeMenu";
+import { TabDebugContext, useTabDebugView } from "../debug/view";
 import { TabRunContext, useTabRunView } from "../run/view";
 import css from "./canvas.module.css";
 import { registerCanvas } from "./canvasActions";
@@ -287,11 +289,21 @@ function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
 
   // 실행 중 강조·노드 상태 줄 (T11): 값 사상과 따로 맥락으로 넘긴다 (이벤트마다 사상을 다시 하지 않는다)
   const run = useTabRunView(path, doc.value);
+  // 브레이크포인트 점·멈춘 노드 (M3 T9): 같은 방식
+  const debug = useTabDebugView(path, doc.value);
+  const [menu, setMenu] = useState<NodeMenuAt | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const onNodeContextMenu = useCallback((e: ReactMouseEvent, node: KbFlowNode) => {
+    if (node.type !== "kb") return;
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, node: node.id });
+  }, []);
 
   const empty = flow.nodes.every((n) => n.type !== "kb" && n.type !== "kbGroup");
   return (
     <CanvasPathContext.Provider value={path}>
       <TabRunContext.Provider value={run}>
+      <TabDebugContext.Provider value={debug}>
       <ConnectingContext.Provider value={connecting}>
         <ReactFlow<KbFlowNode, KbFlowEdge>
           ref={wrapper}
@@ -302,6 +314,7 @@ function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeDragStop={onNodeDragStop}
+          onNodeContextMenu={onNodeContextMenu}
           onDelete={onDelete}
           onConnectStart={onConnectStart}
           onConnectEnd={onConnectEnd}
@@ -345,7 +358,9 @@ function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
           </div>
         </ReactFlow>
       </ConnectingContext.Provider>
+      </TabDebugContext.Provider>
       </TabRunContext.Provider>
+      {menu !== null && <NodeMenu graph={path} at={menu} onClose={closeMenu} />}
       {empty && !dropping && <div className={css.emptyHint}>팔레트에서 노드를 끌어 놓으세요</div>}
       {dropping && (
         <div className={css.dropZone} data-part="drop-zone">

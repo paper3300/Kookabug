@@ -1,0 +1,125 @@
+/* 디버그 툴바 (시안 Main "실행 제어")·멈춤 띠·노드 오른쪽 클릭 메뉴. 색은 토큰만 쓴다 */
+
+/* ── 툴바: 캔버스 위 가운데 (시안: top 8px, 가운데, 간격 2px, 안쪽 3px 6px, 모서리 4px) ── */
+.toolbar {
+  position: absolute;
+  top: 8px;
+  z-index: 20;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 6px;
+  background: var(--kb-debug-bg);
+  border: 1px solid var(--kb-debug-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px var(--kb-shadow);
+}
+
+.handle {
+  padding: 0 6px;
+  color: var(--kb-debug-handle);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.handle:active {
+  cursor: grabbing;
+}
+
+.button {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--kb-debug-step);
+}
+
+.button:hover:not(:disabled) {
+  background: var(--kb-hover-bg);
+}
+
+.button:disabled {
+  opacity: 0.4;
+}
+
+/* "멈추는 중": 일시정지 단추가 눌린 채 회색 */
+.button[aria-pressed="true"] {
+  background: var(--kb-hover-bg);
+  color: var(--kb-debug-handle);
+  opacity: 1;
+}
+
+.restart {
+  color: var(--kb-debug-restart);
+}
+
+.stop {
+  color: var(--kb-debug-stop);
+}
+
+/* ── 멈춤 띠 (경로 표시줄 아래, 저장 충돌 띠와 같은 자리·모양) ── */
+.banner {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 12px;
+  background: var(--kb-banner-warn-bg);
+  color: var(--kb-banner-warn-fg);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.bannerTitle {
+  font-weight: 600;
+}
+
+.warning {
+  color: var(--kb-fg-strong);
+}
+
+/* ── 노드 오른쪽 클릭 메뉴 ── */
+.menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 200px;
+  padding: 4px 0;
+  background: var(--kb-menu-bg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px var(--kb-shadow);
+}
+
+.menuItem {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 4px 12px;
+  background: none;
+  border: 0;
+  color: var(--kb-fg);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.menuItem:hover:not(:disabled) {
+  background: var(--kb-list-active-bg);
+  color: var(--kb-list-active-fg);
+}
+
+.menuItem:disabled {
+  opacity: 0.5;
+}
+
+.shortcut {
+  color: var(--kb-fg-muted);
+}

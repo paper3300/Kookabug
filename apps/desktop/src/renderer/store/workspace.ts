@@ -5,6 +5,7 @@ import type { DaemonState, OpenResult, OutputLine, RecentProject } from "../../p
 import type { TreeEntry } from "../explorer/tree";
 import { client, toRpcError } from "../rpc/client";
 import { SessionRecovery } from "../rpc/recovery";
+import { breakpointModel } from "../debug/breakpoints";
 import { runModel } from "../run/runStore";
 import { framesHost, onWorkspaceChanged as onTargetFilesChanged, resetTargets } from "../target/targetStore";
 import {
@@ -102,6 +103,7 @@ function switchProject(root: string | null): void {
   closeAllTabs();
   useUi.setState({ expanded: null, selected: null, quickOpen: false });
   runModel.reset();
+  breakpointModel.reset();
   recovery.reset();
   useWorkspace.setState({
     root,
@@ -136,7 +138,8 @@ async function onDaemonState(state: DaemonState): Promise<void> {
   // 진행 중인 실행 다시 따라가기 (앱을 다시 열었거나 따라가던 실행이 없을 때). 따라가던 실행은 위 복구가
   // 적용한 마지막 seq부터 다시 구독했다
   const runs = kind === "same_connection" ? Promise.resolve() : runModel.syncActive();
-  await Promise.all([refreshTree(), refreshInfo(), loadRegistry(), runs]);
+  // 브레이크포인트는 daemon 파일 값이 기준이다: 붙을 때마다 받는다 (끊긴 동안 다른 창이 바꿨을 수 있다)
+  await Promise.all([refreshTree(), refreshInfo(), loadRegistry(), runs, breakpointModel.load()]);
 }
 
 async function loadRegistry(): Promise<void> {
@@ -175,6 +178,8 @@ export async function initWorkspace(): Promise<void> {
   client().on("run.lagged", (p) => runModel.lagged(p));
   client().on("run.ended", (p) => runModel.ended(p));
   client().on("lease.changed", (p) => runModel.lease(p));
+  breakpointModel.setNote((message) => note("warn", message));
+  client().on("debug.breakpoints.changed", (p) => breakpointModel.changed(p));
   recovery.addRuns(runModel.cursors);
   recovery.addDocs(documentsHost);
   recovery.addFrames(framesHost);

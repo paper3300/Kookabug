@@ -234,13 +234,24 @@ def test_step_over_call_node_skips_inner_steps(tmp_path: Path, spawned: Spawned)
 
 
 def test_step_into_call_node_stops_at_subgraph_first_node(tmp_path: Path, spawned: Spawned) -> None:
+    # 서브그래프 시작점(core.graph.entry)은 동작이 없어 Step 목표가 아니다: 첫 동작 노드에서 멈춘다
     h = start(tmp_path, spawned, call_graph("n_call1"), [bp("n_call1")], sub=sub_graph())
     seen = drive(h, ["step_into", "step_into", "continue"])
     assert seen == [
         (TEST, "n_call1", ["n_call1"], "breakpoint"),
-        (SUB, "n_entry", ["n_call1", "n_entry"], "step"),
         (SUB, "n_in", ["n_call1", "n_in"], "step"),
+        (SUB, "n_in2", ["n_call1", "n_in2"], "step"),
     ]
+    events = finish_pass(h)
+    second = events_of(events, "debug.pause")[1]
+    assert "n_entry" in started_before(events, second)
+
+
+def test_breakpoint_on_entry_node_still_hits(tmp_path: Path, spawned: Spawned) -> None:
+    # 시작점을 건너뛰는 것은 Step 목표뿐이다: 시작점에 건 브레이크포인트는 적중한다
+    h = start(tmp_path, spawned, call_graph("n_call1"), [bp("n_entry", SUB)], sub=sub_graph())
+    seen = drive(h, ["continue"])
+    assert seen == [(SUB, "n_entry", ["n_call1", "n_entry"], "breakpoint")]
     finish_pass(h)
 
 
@@ -468,6 +479,30 @@ def test_gate_decides_reason_and_clears_target() -> None:
     with pytest.raises(NotPaused):
         gate.resume("step_into")
     assert gate.state == "running"
+
+
+def test_gate_step_target_skips_entry_point_but_request_stops() -> None:
+    token = CancelToken()
+    gate = PauseGate(token, ActiveClock(token), [])
+    emitted: list[dict[str, Any]] = []
+    plan: list[ResumeMode] = ["step_into", "continue", "continue"]
+    modes = iter(plan)
+
+    def emit(event: Any) -> None:
+        emitted.append(dict(event))
+        if event["event"] == "debug.pause":
+            mode = next(modes)
+            threading.Timer(0.01, lambda: gate.resume(mode)).start()
+
+    entry = StepPoint("s2", "n_entry", SUB, ("n_call", "n_entry"), entry=True)
+    assert gate.request() == "pausing"
+    gate.at_boundary(point("n_call"), emit)  # request → step_into
+    gate.at_boundary(entry, emit)  # Step 목표는 시작점에서 멈추지 않는다
+    gate.at_boundary(point("n_a", "n_call", graph=SUB), emit)  # 첫 동작 노드
+    assert gate.request() == "pausing"
+    gate.at_boundary(entry, emit)  # 일시정지 요청은 시작점에서도 멈춘다
+    paused = [(e["node"], e["reason"]) for e in emitted if e["event"] == "debug.pause"]
+    assert paused == [("n_call", "request"), ("n_a", "step"), ("n_entry", "request")]
 
 
 def test_gate_breakpoint_key_strips_snapshot_prefix() -> None:

@@ -193,6 +193,13 @@ function start(): void {
       nativeTheme.themeSource = mode as ThemeMode;
       return themeState();
     },
+    debugToolbarGet: () => settings.debugToolbarX,
+    debugToolbarSet(x) {
+      if (typeof x !== "number" || !Number.isFinite(x) || Math.abs(x) > 100_000) {
+        throw new IpcGuardError("debugToolbarSet 인자가 유한한 수가 아니다");
+      }
+      settings.debugToolbarX = x;
+    },
     daemonState: () => manager.state,
     daemonLog: () => output.slice(),
     daemonRetry: () => manager.retry(),

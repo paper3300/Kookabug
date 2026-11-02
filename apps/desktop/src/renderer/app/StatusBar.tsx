@@ -1,6 +1,7 @@
 // 상태 바 (M2 계획 2.8 "상태 바"): 대기 중이면 무채색, 실행 중이면 파랑(시안 Main "▶ 실행 중")이고 회차·경과
-// 시간을 쓴다. 입력 임대권 소유자("입력: 실행 #…"), 연결 상태와 실행 환경(캡처·OCR·Python·플러그인 수).
+// 시간을 쓴다. 디버거로 멈췄으면 파랑 그대로 "⏸ 멈춤 · <노드>"(M3 U2). 입력 임대권 소유자("입력: 실행 #…"), 연결 상태와 실행 환경(캡처·OCR·Python·플러그인 수).
 // 녹화(빨강)·Agent(보라) 상태는 해당 단계에서 붙인다
+import { pausedTitle } from "../debug/PauseBanner";
 import { formatCount, formatElapsed, loopProgress } from "../run/highlight";
 import { useRun, type LeaseOwner } from "../run/runStore";
 import { docLookup, loopLimitOf, useNow } from "../run/view";
@@ -58,6 +59,26 @@ function RunItems() {
   );
 }
 
+/** 실행 중 표시. 멈췄으면 파랑 그대로 "⏸ 멈춤 · <노드 제목>" (M3 U2) */
+function RunState() {
+  const paused = useRun((s) => (s.current?.phase === "running" ? s.current.pause.paused : null));
+  const docs = useDocuments((s) => s.docs);
+  const types = useRegistry((s) => s.types);
+  if (paused !== null) {
+    return (
+      <span className={`${css.statusItem} ${css.statusRunning}`} data-part="run-state" data-paused="true">
+        ⏸ 멈춤 · {pausedTitle(paused, docs, types)}
+      </span>
+    );
+  }
+  return (
+    <span className={`${css.statusItem} ${css.statusRunning}`} data-part="run-state" data-paused="false">
+      <PlayIcon width={10} height={10} />
+      실행 중
+    </span>
+  );
+}
+
 export function StatusBar() {
   const daemon = useWorkspace((s) => s.daemon);
   const info = useWorkspace((s) => s.info);
@@ -74,12 +95,7 @@ export function StatusBar() {
       data-part="statusbar"
       data-running={running}
     >
-      {running && (
-        <span className={`${css.statusItem} ${css.statusRunning}`} data-part="run-state">
-          <PlayIcon width={10} height={10} />
-          실행 중
-        </span>
-      )}
+      {running && <RunState />}
       <span className={css.statusItem} data-status={daemon.status} title={daemon.message}>
         <DotIcon className={running ? undefined : tone} />
         {label}

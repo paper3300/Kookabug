@@ -125,6 +125,8 @@ jobs:
       - run: pnpm --filter @kookabug/desktop shots
       # M2 화면 전체 (사람 확인 목록 Docs/verification/m2-manual.md V절이 이 세트를 본다)
       - run: node tools/design-ref/compare.mjs welcome shell-empty main-canvas main-palette palette-drag connect-drag close-confirm inspector inspector-link main-running target
+      # M3 화면 (디버거 T9, 기록 뷰어 T10·T11이 늘린다. 사람 확인 목록은 T12의 m3-manual.md)
+      - run: node tools/design-ref/compare.mjs main-debug main-debug-paused
       - uses: actions/upload-artifact@v4
         if: always()
         with:
