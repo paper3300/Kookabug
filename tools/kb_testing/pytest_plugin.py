@@ -26,6 +26,7 @@ import pytest
 from kb_testing import desktop, media
 from kb_testing.proc import Spawned
 from kookabug_core.win import Job
+from kookabug_sdk.console import utf8_stdio
 
 __all__ = [
     "INSTALLER_ENV",
@@ -55,6 +56,11 @@ def session_job() -> Job:
 
 def pytest_configure(config: pytest.Config) -> None:
     global _session_job
+    # pytest도 진입점이다. `-s`로 돌리면 검사와 도구 모듈(설치 스모크 단계 출력 등)의 한국어 print가
+    # 파이프로 나가는 stdout(영문 Windows CI = cp1252)에 그대로 써져 UnicodeEncodeError로 죽는다.
+    # 이 프로세스의 stdio만 바꾼다. 검사가 띄우는 하위 프로세스(설치본 CLI 등)는 여전히
+    # 자기 진입점의 utf8_stdio()에 기대야 한다
+    utf8_stdio()
     if _session_job is None:
         job = Job.create(kill_on_close=True).keep_until_exit()
         job.assign_current()

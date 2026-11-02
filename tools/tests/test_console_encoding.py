@@ -1,6 +1,7 @@
 """tools 스크립트가 콘솔 인코딩과 무관하게 한국어를 출력한다 (영문 Windows cp1252)."""
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -34,6 +35,30 @@ def test_help_on_cp1252_console(script: str, description: str) -> None:
     proc = tool(script, "--help")
     assert proc.returncode == 0, proc.stderr
     assert description in proc.stdout
+
+
+PYTEST_PRINT_PROBE = """\
+from pathlib import Path
+
+from installer.smoke import SmokeReport
+
+
+def test_smoke_step_prints_korean() -> None:
+    assert SmokeReport(Path(".")).step("setup.variant", lambda: (True, "설치 폴더 공백 한글")).ok
+"""
+
+
+def test_pytest_s_prints_korean_on_cp1252_console(tmp_path: Path) -> None:
+    # CI installer 잡은 `pytest -s`로 설치 스모크를 돌린다. 단계 출력이 cp1252 stdout에 바로 써진다
+    probe = tmp_path / "test_probe.py"
+    probe.write_text(PYTEST_PRINT_PROBE, encoding="utf-8")
+    cmd = [sys.executable, "-m", "pytest", "-s", "-q", "-p", "no:cacheprovider"]
+    cmd += ["-p", "kb_testing.pytest_plugin", str(probe)]
+    env = {**os.environ, "PYTHONPATH": str(TOOLS)}
+    proc = run_legacy_console(cmd, cwd=tmp_path, env=env)
+    assert proc.returncode == 0, f"{proc.stdout}\n{proc.stderr}"
+    assert "[통과] setup.variant" in proc.stdout
+    assert "설치 폴더 공백 한글" in proc.stdout
 
 
 def test_check_commands_on_cp1252_console() -> None:

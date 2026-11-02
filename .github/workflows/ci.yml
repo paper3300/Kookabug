@@ -28,9 +28,12 @@ jobs:
           enable-cache: true
       - run: uv python install ${{ env.PYTHON_VERSION }}
       # 값 왕복 검사(M2 계획 2.6)가 Node로 packages/schema/src/wire.ts를 그대로 불러 쓴다 (타입 제거 실행)
+      # 이 잡은 pnpm을 설치하지 않는다. setup-node v5는 package.json의 packageManager(pnpm)를 보고
+      # 캐시를 자동으로 켜 pnpm을 찾다 실패하므로 끈다
       - uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
+          package-manager-cache: false
       - run: uv sync --locked --all-packages
       - run: uv run ruff check
       - run: uv run ruff format --check
@@ -120,6 +123,12 @@ jobs:
       - run: pnpm --filter @kookabug/desktop build
       - run: uv sync --locked --all-packages
       - run: uv run pytest -m desktop_build -v
+      # 실행 E2E·스크린샷이 예제 그래프를 실제로 돌린다. enter_world가 OCR 노드를 지나므로 모델이 있어야 한다
+      - uses: actions/cache@v4
+        with:
+          path: build/ocr-models
+          key: ocr-models-${{ hashFiles('python/kookabug_platform/src/kookabug_platform/ocr/models.toml') }}
+      - run: uv run python tools/fetch_ocr_models.py
       - run: pnpm --filter @kookabug/desktop e2e
       # 시안 대비 스크린샷과 나란히 비교 PNG (artifact로 올린다)
       - run: pnpm --filter @kookabug/desktop shots

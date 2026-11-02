@@ -18,6 +18,22 @@ const FRAMES = path.join(REPO_ROOT, "fixtures", "sample-game", "frames");
 const GAME_DIR = path.join(REPO_ROOT, "fixtures", "sample-game");
 const PYTHON = path.join(REPO_ROOT, ".venv", "Scripts", "python.exe");
 const OCR_MODELS = process.env.KOOKABUG_OCR_MODELS ?? path.join(REPO_BUILD, "ocr-models");
+const OCR_MANIFEST = path.join(REPO_ROOT, "python", "kookabug_platform", "src", "kookabug_platform", "ocr", "models.toml");
+
+/**
+ * 예제 그래프(enter_world)는 OCR 노드를 지난다. 모델이 없으면 실행이 error로 끝나 지점·멈춤 대기가 시간 초과로만
+ * 보이므로, 실행 준비 때 모델 표의 파일이 다 있는지 먼저 확인한다 (크기·SHA256은 daemon이 본다)
+ */
+function requireOcrModels(): void {
+  const files = [...fs.readFileSync(OCR_MANIFEST, "utf8").matchAll(/^file\s*=\s*"([^"]+)"/gm)].map((m) => m[1]);
+  const missing = files.filter((f) => !fs.existsSync(path.join(OCR_MODELS, f)));
+  if (files.length === 0 || missing.length > 0) {
+    throw new Error(
+      `OCR 모델이 없다: ${OCR_MODELS} (${missing.join(", ") || "모델 표를 못 읽음"}). ` +
+        "`uv run python tools/fetch_ocr_models.py`로 받는다 (다른 폴더면 KOOKABUG_OCR_MODELS)",
+    );
+  }
+}
 
 export interface RunWorkspace {
   root: string;
@@ -31,6 +47,7 @@ export interface RunWorkspace {
  * 실행할 워크스페이스 사본. gates = 입력 이름(`i`, `mouse:left`) → 지점 이름. 그 입력을 처음 누르기 직전에 선다
  */
 export function prepareRunWorkspace(gates: Record<string, string> = {}, name = "sample-rpg"): RunWorkspace {
+  requireOcrModels();
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), "kb-ws-"));
   const root = path.join(parent, name);
   fs.cpSync(SAMPLE_WORKSPACE, root, { recursive: true, filter: (src) => path.basename(src) !== "runs" });
