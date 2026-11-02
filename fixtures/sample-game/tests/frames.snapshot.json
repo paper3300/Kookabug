@@ -1,0 +1,21 @@
+{
+  "format": "kookabug.sample-frames/0",
+  "renderer": {
+    "windows_build": 26200,
+    "windows_edition": "workstation",
+    "dpi": 96,
+    "font_smoothing": "cleartype"
+  },
+  "scenes": {
+    "inventory": "3a0abd0c00b8e07c66856ed5079e3cc00709d6b8854b3a5e6e816135b3c618cf",
+    "loading": "3a0abd0c00b8e07c66856ed5079e3cc00709d6b8854b3a5e6e816135b3c618cf",
+    "lobby": "3a0abd0c00b8e07c66856ed5079e3cc00709d6b8854b3a5e6e816135b3c618cf",
+    "lobby_server1": "3a0abd0c00b8e07c66856ed5079e3cc00709d6b8854b3a5e6e816135b3c618cf",
+    "lobby_server2": "3a0abd0c00b8e07c66856ed5079e3cc00709d6b8854b3a5e6e816135b3c618cf",
+    "login": "3a0abd0c00b8e07c66856ed5079e3cc00709d6b8854b3a5e6e816135b3c618cf",
+    "login_error": "3a0abd0c00b8e07c66856ed5079e3cc00709d6b8854b3a5e6e816135b3c618cf",
+    "maintenance": "3a0abd0c00b8e07c66856ed5079e3cc00709d6b8854b3a5e6e816135b3c618cf",
+    "title": "3a0abd0c00b8e07c66856ed5079e3cc00709d6b8854b3a5e6e816135b3c618cf",
+    "world": "3a0abd0c00b8e07c66856ed5079e3cc00709d6b8854b3a5e6e816135b3c618cf"
+  }
+}

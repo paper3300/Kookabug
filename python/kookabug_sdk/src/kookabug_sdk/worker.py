@@ -630,6 +630,9 @@ class WorkerHost:
             if isinstance(item, PeerLost):
                 if self._closing.is_set():
                     return  # 정상 종료: 주 스레드가 끝낸다
+                # 검사가 여기서 스스로 끝나기를 막아(주 스레드도 아직 _Stop을 못 받았다) runner가
+                # 죽은 뒤 감독자의 Job 정리가 워커를 끝내는지 경쟁 없이 본다
+                _faults.fault_point("worker.before_lost_exit")
                 self.cancel.set()
                 self._jobs.put(_Stop())
                 self._on_lost()

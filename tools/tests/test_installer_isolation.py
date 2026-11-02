@@ -73,6 +73,7 @@ class FakeMachine:
         monkeypatch.setattr(smoke, "removed_step", lambda root: (not root.exists(), "fake"))
         monkeypatch.setattr(smoke, "hkcu_values", self.hkcu_values)
         monkeypatch.setattr(smoke, "start_menu", lambda: self.menu)
+        monkeypatch.setattr(smoke.shelllink, "is_unicode", lambda link: True)
         monkeypatch.setattr(smoke, "start_product_standin", self.start_standin)
         monkeypatch.setattr(
             smoke,

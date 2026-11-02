@@ -26,7 +26,7 @@ from helpers.supervisor import (
 from kb_testing.proc import Spawned, assert_no_live, barrier, read_fake_input_log, wait_until
 from kookabug_core.record import read_run
 from kookabug_core.supervisor import RunHandle
-from kookabug_core.win import identify, is_alive
+from kookabug_core.win import Process, identify, is_alive
 
 pytestmark = pytest.mark.process
 
@@ -174,9 +174,14 @@ def test_runner_killed_after_run_end_before_run_json(tmp_path: Path, spawned: Sp
 def test_runner_killed_before_worker_shutdown_job_cleans_worker(
     tmp_path: Path, spawned: Spawned
 ) -> None:
-    # 워커 노드가 끝나고 마무리에 들어간 runner를 워커 shutdown 전에 죽인다 → 워커는 Job 정리로 끝남
+    # 워커 노드가 끝나고 마무리에 들어간 runner를 워커 shutdown 전에 죽인다 → 워커는 Job 정리로
+    # 끝남. 워커는 연결을 잃으면 스스로 곧 끝나므로(설계) 그 직전에 멈춰 두어야 Job 정리를 경쟁
+    # 없이 본다 (멈추지 않으면 느린 PC에서 생존 확인 전에 워커가 먼저 끝난다)
     gate = barrier(tmp_path / "barriers" / "before_worker_shutdown")
-    faults = [{"point": "runner.before_worker_shutdown", "role": "runner", "action": gate.action}]
+    faults = [
+        {"point": "runner.before_worker_shutdown", "role": "runner", "action": gate.action},
+        {"point": "worker.before_lost_exit", "role": "worker", "action": "hang"},
+    ]
     graph = (
         tk()
         .entry("n_value")
@@ -189,11 +194,14 @@ def test_runner_killed_before_worker_shutdown_job_cleans_worker(
     worker_ident = identify(worker["pid"])
     assert worker_ident is not None and is_alive(worker_ident)
     idents = job_idents(handle)
-    kill_runner(handle)
-    assert is_alive(worker_ident)  # runner가 죽어도 감독자의 Job 핸들이 있어 워커는 아직 산다
-    outcome = handle.wait(30)
-    assert_runner_died(outcome.run_end)
-    assert outcome.recovered is not None and outcome.recovered.job_terminated
+    with Process.open(worker_ident) as worker_proc:
+        kill_runner(handle)
+        assert is_alive(worker_ident)  # runner가 죽어도 감독자의 Job 핸들이 있어 워커는 아직 산다
+        outcome = handle.wait(30)
+        assert_runner_died(outcome.run_end)
+        assert outcome.recovered is not None and outcome.recovered.job_terminated
+        # 스스로 끝난 것(연결 상실 EXIT_LOST)이 아니라 감독자의 Job 정리(종료 코드 1)로 끝났다
+        assert worker_proc.wait(10) == 1
     assert_no_live(idents)
     assert not [e for e in events(handle) if e["event"] == "worker.exit"]
 

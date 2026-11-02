@@ -213,6 +213,8 @@ def test_points_table_matches_plan() -> None:
         "actor.before_backend",
         "worker.before_hello_reply",
         "worker.in_import",
+        # 워커가 연결 상실로 스스로 끝나기 직전 (runner 죽음 뒤 Job 정리 검사)
+        "worker.before_lost_exit",
         "recovery.runner_exit_observed",
         "recovery.before_finalize",
         "recovery.before_input_recovery",

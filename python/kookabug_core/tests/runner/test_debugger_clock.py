@@ -165,17 +165,19 @@ def test_paused_time_excluded_from_run_deadline(tmp_path: Path, spawned: Spawned
 
 
 def test_paused_time_excluded_from_node_timeout(tmp_path: Path, spawned: Spawned) -> None:
-    # 대기 노드 timeout 2초, 폴링 중 3초 멈춤, 로비는 캡처 10번(활성 약 1.5초) 뒤 → found
-    h = scene_run(tmp_path, wait_graph(2_000), after_frames=10).start(spawned)
+    # 대기 노드 timeout 3초, 폴링 중 4초 멈춤(멈춤만으로 timeout을 넘는다), 로비는 캡처 5번 뒤 →
+    # found. 캡처 한 번(찾기 포함)이 개발 PC 약 150 ms, CI 러너 200 ms 넘게 걸려 캡처 수로 넘어가는
+    # 장면은 활성 시간에 여유를 크게 둔다 (5번 ≈ 0.8~1.2초 ≪ 3초)
+    h = scene_run(tmp_path, wait_graph(3_000), after_frames=5).start(spawned)
     pause_in_poll(h, "n_wait")
-    time.sleep(3.0)
+    time.sleep(4.0)
     assert h.resume() == "running"
     done = h.finish()
     assert done.exit_code == 0, h.stderr()
     assert done.run_end is not None and done.run_end["verdict"] == "pass", done.run_end
     _, end = step_of(done.view.events, "n_wait")
     assert end is not None and end["exit"] == "found", end
-    assert end["duration_ms"] >= 3_000 and end["active_duration_ms"] < 2_000
+    assert end["duration_ms"] >= 4_000 and end["active_duration_ms"] < 3_000
     assert end["attempt"] == 1
 
 
@@ -296,16 +298,16 @@ def test_durations_are_wall_clock_for_parent_child_and_attempts(
     tmp_path: Path, spawned: Spawned
 ) -> None:
     # 검수 M7: 호출 스텝·자식 스텝·재시도 attempt.end의 duration_ms는 멈춘 시간을 포함한 실제
-    # 경과, active_duration_ms는 뺀 값. 첫 시도(timeout 600 ms) 폴링 중 1.5초 멈춤 → 첫 시도
-    # timeout → 둘째 시도에서 found
+    # 경과, active_duration_ms는 뺀 값. 첫 시도(timeout 1000 ms) 폴링 중 1.5초 멈춤 → 첫 시도
+    # timeout → 뒤 시도에서 found
     inner = (
         GraphBuilder("subgraph", interface={"exits": {"done": {"kind": "ok"}}})
         .entry("n_wait")
         .node(
             "n_wait",
             "core.image.wait",
-            inputs={"target": target(LOBBY), "timeout_ms": 600},
-            config={"retry": {"max_attempts": 2}},
+            inputs={"target": target(LOBBY), "timeout_ms": 1_000},
+            config={"retry": {"max_attempts": 4}},
             next={"found": "n_done"},
         )
         .exit("n_done", "done")
@@ -319,8 +321,10 @@ def test_durations_are_wall_clock_for_parent_child_and_attempts(
         .call("n_call", "subgraphs/wait.graph.json", next={"done": "n_pass"})
         .node("n_pass", "core.test.pass")
     )
-    # 첫 시도(600 ms, 100 ms 폴링)는 캡처 7번까지 — 로비는 9번째 캡처 = 둘째 시도
-    h = scene_run(tmp_path, root, after_frames=8)
+    # 첫 시도(1000 ms, 100 ms 폴링)는 캡처 11번까지 — 로비는 12번째 캡처라 첫 시도에서는 못 찾는다.
+    # 시도마다 캡처 수는 캡처 속도에 따라 다르므로(CI 러너는 한 번에 200 ms 넘게) 둘째~넷째 시도
+    # 중 하나에서 찾는다
+    h = scene_run(tmp_path, root, after_frames=11)
     inner.write(h.ws, "subgraphs/wait.graph.json")
     h.start(spawned)
     pause_in_poll(h, "n_wait")
@@ -333,9 +337,11 @@ def test_durations_are_wall_clock_for_parent_child_and_attempts(
     _, call = step_of(events, "n_call")
     _, wait = step_of(events, "n_wait")
     assert call is not None and wait is not None
-    assert wait["attempt"] == 2 and wait["exit"] == "found"
-    (attempt,) = done.of("attempt.end")
-    assert attempt["exit"] == "timeout"
+    assert wait["attempt"] >= 2 and wait["exit"] == "found"
+    attempts = done.of("attempt.end")
+    assert [a["attempt"] for a in attempts] == list(range(1, wait["attempt"]))
+    assert all(a["exit"] == "timeout" for a in attempts), attempts
+    attempt = attempts[0]  # 멈춘 시도
     (resume,) = done.of("debug.resume")
     paused = resume["paused_ms"]
     assert paused >= 1_400

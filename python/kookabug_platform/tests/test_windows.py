@@ -9,13 +9,14 @@ from __future__ import annotations
 import ctypes
 import uuid
 from collections.abc import Iterator
+from ctypes import wintypes
 from pathlib import Path
 
 import pytest
 
 from kb_testing.proc import wait_until
 from kb_testing.sample_game import SampleGame, client_rect, launch_sample_game
-from kookabug_platform.dpi import client_to_screen
+from kookabug_platform.dpi import client_to_screen, per_monitor_v2_thread
 from kookabug_platform.errors import (
     POINT_OBSCURED,
     WINDOW_GONE,
@@ -80,6 +81,27 @@ def independent_monitor_dpi(hwnd: int) -> int:
         return dx.value
     finally:
         u32.SetThreadDpiAwarenessContext(previous)
+
+
+def uncovered_client_point(hwnd: int, popup: int) -> tuple[int, int]:
+    """메인 클라이언트의 오른쪽 아래 점 중 모니터 작업 영역(작업 표시줄 제외) 안이고 팝업 밖인 점.
+
+    CI 러너 화면은 1024x768이라 1024x640 클라이언트 오른쪽 아래가 작업 표시줄 밑이나 화면 밖에
+    놓인다 — 그 점은 실제로 가려져 있으므로 거부가 맞다. 이 검사는 팝업 밖 점의 통과를 본다.
+    """
+    x, y, w, h = client_rect(hwnd)
+    monitor = user32.MONITORINFO()
+    monitor.cbSize = ctypes.sizeof(monitor)
+    box = wintypes.RECT()
+    with per_monitor_v2_thread():
+        handle = user32.MonitorFromWindow(hwnd, user32.MONITOR_DEFAULTTONEAREST)
+        assert user32.GetMonitorInfoW(handle, ctypes.byref(monitor))
+        assert user32.GetWindowRect(popup, ctypes.byref(box))
+    work = monitor.rcWork
+    point = (min(x + w, work.right) - 30, min(y + h, work.bottom) - 30)
+    assert x <= point[0] < x + w and y <= point[1] < y + h, (point, (x, y, w, h))
+    assert not (box.left <= point[0] < box.right and box.top <= point[1] < box.bottom), point
+    return point
 
 
 def refused(code: str, fn: object, *args: object) -> PlatformError:
@@ -202,13 +224,13 @@ def test_foreground_owned_popup_allowed(tmp_path: Path, title: str) -> None:
         check_foreground(game.hwnd)
         check_foreground(popup)
         # 클릭 지점: 팝업이 덮은 메인 클라이언트 점은 거부, 팝업을 대상으로 하면 통과 (N1)
-        x, y, w, h = client_rect(game.hwnd)
+        x, y, _, _ = client_rect(game.hwnd)
         under_popup = (x + 40 + 100, y + 40 + 80)
         err = refused(POINT_OBSCURED, check_point, game.hwnd, under_popup)
         assert f"{title} Notice" in err.message
         check_point(popup, under_popup)
         # 팝업 밖의 메인 클라이언트 점은 통과
-        check_point(game.hwnd, (x + w - 30, y + h - 30))
+        check_point(game.hwnd, uncovered_client_point(game.hwnd, popup))
 
 
 def test_recreated_window_old_ref_gone(tmp_path: Path, title: str) -> None:

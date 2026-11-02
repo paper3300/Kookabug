@@ -63,6 +63,8 @@ POINTS: Final[dict[str, frozenset[Role]]] = {
     "actor.before_backend": _RUNNER,
     "worker.before_hello_reply": _WORKER,
     "worker.in_import": _WORKER,
+    # 연결 상실로 스스로 끝나기 직전 (runner가 죽은 뒤)
+    "worker.before_lost_exit": _WORKER,
     "recovery.runner_exit_observed": _SUPERVISOR,
     "recovery.before_finalize": _SUPERVISOR,
     "recovery.before_input_recovery": _SUPERVISOR,

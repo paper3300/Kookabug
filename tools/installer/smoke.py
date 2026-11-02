@@ -46,7 +46,7 @@ from typing import Any, Final
 
 import license_audit as la
 import native_audit as na
-from installer import build, dllcheck
+from installer import build, dllcheck, shelllink
 from kookabug_sdk.console import utf8_stdio
 
 SMOKE_GRAPH: Final = "tests/smoke_headless.graph.json"
@@ -571,24 +571,9 @@ def start_product_standin(target: Path) -> StandIn:
 
 
 def shortcut_target(link: Path) -> tuple[str, str]:
-    """.lnk의 (대상 경로, 아이콘 위치) — WScript.Shell로 읽는다."""
-    script = (
-        "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:KB_LINK); "
-        "[Console]::OutputEncoding = [Text.Encoding]::UTF8; "
-        "Write-Output $s.TargetPath; Write-Output $s.IconLocation"
-    )
-    proc = subprocess.run(
-        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-        env={**os.environ, "KB_LINK": str(link)},
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=60,
-        check=False,
-    )
-    lines = proc.stdout.splitlines()
-    return (lines[0] if lines else ""), (lines[1] if len(lines) > 1 else "")
+    """.lnk의 (대상 경로, 아이콘 위치). WScript.Shell은 ANSI 코드 페이지 밖 글자를 `?`로 바꿔
+    (cp1252 러너에서 한글 설치 폴더) IShellLinkW로 읽는다 (`shelllink`)."""
+    return shelllink.read_shortcut(link)
 
 
 def wait_no_processes(root: Path, timeout_s: float = PROCESS_EXIT_WAIT_S) -> list[tuple[int, str]]:
@@ -818,16 +803,20 @@ def run_all(
         return path_has(user_path(), bin_dir), f"사용자 PATH에 {bin_dir}"
 
     def shortcut() -> tuple[bool, str]:
-        """시작 메뉴 바로 가기가 설치한 앱 실행 파일(확정 아이콘이 든)을 가리킨다."""
+        """시작 메뉴 바로 가기가 설치한 앱 실행 파일(확정 아이콘이 든)을 가리킨다. 유니코드로
+        저장되어 있어야 다른 로캘에서도 한글 설치 폴더를 가리킨다."""
         link = start_menu() / variant.shortcut
         local = Path(os.environ.get("LOCALAPPDATA", "")) / variant.updater_dir
         exe = target / variant.app_exe
         aim, icon = shortcut_target(link) if link.exists() else ("", "")
+        unicode = link.exists() and shelllink.is_unicode(link)
         points = same_file(aim, exe)
         icon_file, _, icon_index = icon.rpartition(",") if "," in icon else (icon, "", "0")
         icon_ok = same_file(icon_file, exe) and icon_index.strip() == "0"
-        ok = link.exists() and points and icon_ok and local.exists() == before["updater"]
-        detail = f"시작 메뉴 {link.name} 있음={link.exists()}, 대상 {aim!r}, 아이콘 {icon!r}, "
+        ok = link.exists() and unicode and points and icon_ok
+        ok = ok and local.exists() == before["updater"]
+        detail = f"시작 메뉴 {link.name} 있음={link.exists()}, 유니코드={unicode}, "
+        detail += f"대상 {aim!r}, 아이콘 {icon!r}, "
         return ok, detail + f"설치 파일 사본 폴더 남음={local.exists()}"
 
     def do_uninstall() -> tuple[bool, str]:

@@ -60,7 +60,7 @@ uv run python -m sample_game --event-log build/sample-game.jsonl
 
 장면: `title`, `maintenance`, `login`, `login_error`, `lobby`, `lobby_server1`, `lobby_server2`, `loading`, `world`, `inventory`.
 
-- `frames/<장면>.png`: 1024x640·Per-Monitor V2로 띄운 실제 창을 WGC로 캡처한 클라이언트 영역. 그림이나 배치를 바꾸면 `uv run python fixtures/sample-game/tools/snap_frames.py`로 다시 찍는다(대화형 데스크톱 필요). `tests/test_frames_fresh.py`가 지금 그림과 같은지 검사한다
+- `frames/<장면>.png`: 1024x640·Per-Monitor V2로 띄운 실제 창을 WGC로 캡처한 클라이언트 영역. 게임 코드(`sample_game/*.py`)를 바꾸면 `uv run python fixtures/sample-game/tools/snap_frames.py`로 다시 찍는다(대화형 데스크톱 필요). 찍은 PC의 렌더러와 장면마다 찍은 때의 게임 코드 해시가 `tests/frames.snapshot.json`에 남는다(코드를 바꾼 뒤 일부 장면만 찍으면 나머지는 오래된 것으로 남는다). `tests/test_frames_fresh.py`가 어디서나 장면별 해시를, 같은 렌더러(Windows 빌드·판, DPI, 글꼴 다듬기)에서는 지금 그림과의 픽셀을 검사한다
 - `frames/scenario.json`: 가짜 플랫폼(`FakeScenario`)용 장면 전이 표. 상태 기계(`sample_game/flow.py`)와 버튼 배치(`sample_game/layout.py`)에서 `uv run python fixtures/sample-game/tools/gen_scenario.py`가 만든다. `tests/test_scenario.py`가 게임 코드와 같은지 검사한다. 형식은 `sample_game/scenario.py` 맨 위 설명
 
 로그인 칸은 표의 `forms`가 게임과 같은 규칙(칸 클릭·Tab·Backspace·글자 붙이기·최대 길이, 오류 뒤 비밀번호 비우기)으로 따라가고, 로그인 전이는 칸 값이 기본 계정(`qa_tester_01` / `sample-pass-01`)과 같을 때만 로비로 간다(`when.valid`). 글자를 안 넣거나 칸이 틀리면 헤드리스에서도 로그인 오류가 된다. `--account`·`--password`로 바꾼 값은 표에 반영되지 않는다. 표의 실행 가능한 기준 해석은 `sample_game.scenario.Simulator`이고, `tests/test_scenario.py`가 실제 상태 기계와 무작위 입력으로 대조한다.

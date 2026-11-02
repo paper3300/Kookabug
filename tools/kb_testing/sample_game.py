@@ -16,6 +16,7 @@ venv의 `python.exe`는 실제 인터프리터를 자식으로 띄우는 런처�
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import json
 import shutil
 import subprocess
@@ -23,9 +24,10 @@ import sys
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from ctypes import wintypes
+from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Final, Self
@@ -38,12 +40,15 @@ __all__ = [
     "EXAMPLE_SECRETS",
     "EXAMPLE_SECRET_ENV",
     "FRAMES_DIR",
+    "FRAMES_SNAPSHOT",
     "GAME_DIR",
     "WORKSPACE_DIR",
     "SampleGame",
+    "Snap",
     "capture_client",
     "client_rect",
     "copy_example_workspace",
+    "game_code_digest",
     "game_command",
     "game_env",
     "is_window",
@@ -51,12 +56,16 @@ __all__ = [
     "launch_job",
     "launch_sample_game",
     "post_close",
+    "read_frames_snapshot",
+    "renderer_of",
     "snap_scene",
+    "stale_frames",
     "window_owner",
     "window_pid",
     "window_root_owner",
     "window_title",
     "window_visible",
+    "write_frames_snapshot",
 ]
 
 REPO_ROOT: Final = Path(__file__).resolve().parents[2]
@@ -479,7 +488,15 @@ def launch_sample_game(
     return game
 
 
-def snap_scene(scene: str, *, workdir: Path) -> Any:
+@dataclass(frozen=True)
+class Snap:
+    pixels: Any
+    """클라이언트 영역 BGR `numpy` 배열."""
+    renderer: dict[str, Any]
+    """그 그림을 그린 환경 (`renderer_of`)."""
+
+
+def snap_scene(scene: str, *, workdir: Path) -> Snap:
     """그 장면의 대표 상태를 그린 게임 창을 캡처한다 (화면 PNG와 그 신선도 검사가 같이 쓴다).
 
     찍는 동안 장면이 바뀌었으면(타이머 등) 실패한다 — 다른 장면을 그 이름으로 남기지 않게.
@@ -490,9 +507,113 @@ def snap_scene(scene: str, *, workdir: Path) -> Any:
         later = [e for e in game.events() if e["event"] == "screen" and e["seq"] > shown["seq"]]
         if later:
             raise AssertionError(f"{scene}를 찍는 동안 장면이 바뀌었다: {later}")
+        renderer = renderer_of(game.ready)
     if pixels.shape[:2] != (SNAP_SIZE[1], SNAP_SIZE[0]):
         raise AssertionError(f"{scene} 캡처 크기가 다르다: {pixels.shape}")
-    return pixels
+    return Snap(pixels, renderer)
+
+
+# ---------------------------------------------------------------- 화면 PNG 기록
+
+FRAMES_SNAPSHOT: Final = GAME_DIR / "tests" / "frames.snapshot.json"
+"""커밋된 화면 PNG를 찍은 렌더러와 장면별 찍은 때의 게임 코드 해시 (`snap_frames.py`가 쓴다).
+설치본에 들어가는 `frames/` 밖에 둔다 — 찍은 PC 정보라 예제가 아니다."""
+FRAMES_SNAPSHOT_FORMAT: Final = "kookabug.sample-frames/0"
+SPI_GETFONTSMOOTHING: Final = 0x004A
+SPI_GETFONTSMOOTHINGTYPE: Final = 0x200A
+FE_FONTSMOOTHINGCLEARTYPE: Final = 2
+
+_SystemParametersInfoW = _sig(
+    _user32.SystemParametersInfoW,
+    wintypes.BOOL,
+    wintypes.UINT,
+    wintypes.UINT,
+    ctypes.c_void_p,
+    wintypes.UINT,
+)
+
+
+def _spi_uint(action: int) -> int:
+    value = wintypes.UINT()
+    if not _SystemParametersInfoW(action, 0, ctypes.byref(value), 0):
+        raise OSError(f"SystemParametersInfoW({action:#x}) 실패")
+    return value.value
+
+
+def renderer_of(ready: Mapping[str, Any]) -> dict[str, Any]:
+    """게임 그림의 픽셀을 바꾸는 환경: Windows 빌드·판(창 모서리·테두리·글꼴 파일), 창 DPI, 글꼴
+    다듬기. 같은 게임 코드라도 이것이 다르면 픽셀이 다르다 (예: 화면 PNG의 클라이언트 아래
+    모서리에는 Windows 11 둥근 창 모서리가 찍혀 있고, CI 러너는 Server 판이다). 글꼴 이름은 UI
+    언어에 따라 현지화되어(`맑은 고딕`·`Malgun Gothic`) 넣지 않는다 — 글꼴이 없으면 게임이 뜨지
+    않는다."""
+    version = sys.getwindowsversion()
+    if not _spi_uint(SPI_GETFONTSMOOTHING):
+        smoothing = "off"
+    elif _spi_uint(SPI_GETFONTSMOOTHINGTYPE) == FE_FONTSMOOTHINGCLEARTYPE:
+        smoothing = "cleartype"
+    else:
+        smoothing = "standard"
+    return {
+        "windows_build": version.build,
+        "windows_edition": "workstation" if version.product_type == 1 else "server",
+        "dpi": int(ready["dpi"]),
+        "font_smoothing": smoothing,
+    }
+
+
+def game_code_digest() -> str:
+    """화면 PNG가 따르는 게임 코드(`sample_game/*.py`)와 찍는 조건의 SHA-256. 줄 끝은 LF로 맞춘다
+    (체크아웃 설정에 따라 CRLF가 된다)."""
+    digest = hashlib.sha256()
+    for path in sorted((GAME_DIR / "sample_game").glob("*.py")):
+        digest.update(path.name.encode() + b"\0")
+        digest.update(path.read_bytes().replace(b"\r\n", b"\n") + b"\0")
+    digest.update(json.dumps(SNAP_OPTIONS).encode())
+    return digest.hexdigest()
+
+
+def read_frames_snapshot(path: Path | None = None) -> dict[str, Any]:
+    """화면 PNG 기록 (`path` 기본은 `FRAMES_SNAPSHOT`): `renderer`와 장면별 찍은 때의 게임 코드
+    해시 `scenes`."""
+    path = FRAMES_SNAPSHOT if path is None else path
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if (
+        not isinstance(data, dict)
+        or data.get("format") != FRAMES_SNAPSHOT_FORMAT
+        or not isinstance(data.get("renderer"), dict)
+        or not isinstance(data.get("scenes"), dict)
+    ):
+        raise ValueError(f"{path}: {FRAMES_SNAPSHOT_FORMAT} 형식(renderer·scenes)이 아니다")
+    return data
+
+
+def write_frames_snapshot(
+    renderer: Mapping[str, Any], scenes: Iterable[str], path: Path | None = None
+) -> None:
+    """방금 찍은 `scenes`만 지금 게임 코드 해시로 기록한다. 찍지 않은 장면은 예전 해시를 그대로
+    두어 코드가 바뀌었으면 계속 오래된 것으로 남는다(일부만 다시 찍어 나머지를 인증하지 않게).
+    렌더러가 기록과 다르면 예전 장면 기록은 버린다 — 다른 렌더러의 PNG는 같은 기준이 아니다."""
+    path = FRAMES_SNAPSHOT if path is None else path
+    recorded: dict[str, str] = {}
+    if path.exists():
+        before = read_frames_snapshot(path)
+        if before["renderer"] == dict(renderer):
+            recorded = dict(before["scenes"])
+    digest = game_code_digest()
+    recorded.update(dict.fromkeys(scenes, digest))
+    body = {
+        "format": FRAMES_SNAPSHOT_FORMAT,
+        "renderer": dict(renderer),
+        "scenes": dict(sorted(recorded.items())),
+    }
+    path.write_text(json.dumps(body, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def stale_frames(scenes: Iterable[str]) -> list[str]:
+    """찍은 때의 게임 코드 해시가 지금과 다르거나 기록이 없는 장면."""
+    recorded = read_frames_snapshot()["scenes"]
+    digest = game_code_digest()
+    return [scene for scene in scenes if recorded.get(scene) != digest]
 
 
 def copy_example_workspace(dest: Path, local: Mapping[str, Any] | None = None) -> Path:
