@@ -1,0 +1,582 @@
+/* 기록 뷰어 (시안 RunViewer, M3 T10). 색은 tokens.css의 --kb-run-* 와 역할 토큰만 쓴다 */
+
+/* ── 사이드바 실행 목록 ───────────────────────────────────────── */
+.list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 8px;
+}
+
+.group {
+  height: var(--kb-row-height);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  font-size: var(--kb-font-size-small);
+  font-weight: 700;
+  color: var(--kb-sidebar-fg);
+}
+
+.run {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 12px 5px 24px;
+  background: none;
+  border: 0;
+  text-align: left;
+  color: var(--kb-sidebar-fg);
+  font-size: var(--kb-font-size);
+}
+
+.run:hover {
+  background: var(--kb-hover-bg);
+}
+
+.run[aria-current="true"] {
+  background: var(--kb-list-active-bg);
+  color: var(--kb-list-active-fg);
+}
+
+.dot {
+  margin-top: 5px;
+  flex: 0 0 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--kb-run-dot-skipped);
+}
+
+.dot[data-tone="pass"] {
+  background: var(--kb-run-dot-pass);
+}
+
+.dot[data-tone="fail"] {
+  background: var(--kb-run-dot-fail);
+}
+
+.dot[data-tone="error"] {
+  background: var(--kb-run-dot-error);
+}
+
+.dot[data-tone="running"] {
+  background: var(--kb-status-run);
+}
+
+.runText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.runTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.runName {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.runMeta {
+  font-size: var(--kb-font-size-small);
+  color: var(--kb-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border-radius: 2px;
+  font-size: 10px;
+  line-height: 16px;
+  background: var(--kb-run-badge-fail-bg);
+  color: var(--kb-run-badge-fail-fg);
+}
+
+.badge[data-kind="debug"] {
+  background: var(--kb-run-badge-debug-bg);
+  color: var(--kb-run-badge-debug-fg);
+}
+
+.badge[data-kind="flaky"] {
+  background: var(--kb-run-badge-flaky-bg);
+  color: var(--kb-run-badge-flaky-fg);
+}
+
+.listNote {
+  padding: 6px 20px;
+  font-size: 12px;
+  color: var(--kb-fg-muted);
+}
+
+/* 액티비티 바 배지 (지난 열람 이후 실패 수) */
+.activityBadge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--kb-accent);
+  color: var(--kb-button-primary-fg);
+  font-size: 9px;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* ── RUN 탭 ──────────────────────────────────────────────────── */
+.tab {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--kb-editor-bg);
+  overflow: hidden;
+}
+
+.head {
+  flex: 0 0 auto;
+  padding: 14px 20px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  border-bottom: 1px solid var(--kb-border);
+}
+
+.headText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.headTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--kb-fg-strong);
+}
+
+.verdict {
+  padding: 1px 8px;
+  border-radius: 2px;
+  font-size: 12px;
+  background: var(--kb-run-skip-bg);
+  color: var(--kb-fg-muted);
+}
+
+.verdict[data-tone="fail"],
+.verdict[data-tone="error"] {
+  background: var(--kb-run-badge-fail-bg);
+  color: var(--kb-run-badge-fail-fg);
+}
+
+.verdict[data-tone="pass"] {
+  background: var(--kb-run-pass-bg);
+  color: var(--kb-run-pass-fg);
+}
+
+.verdict[data-tone="running"] {
+  background: var(--kb-chip-graph-bg);
+  color: var(--kb-chip-graph-fg);
+}
+
+.headMeta {
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+}
+
+.subtabs {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 4px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--kb-border);
+  font-size: var(--kb-font-size-small);
+  letter-spacing: 0.04em;
+}
+
+.subtab {
+  padding: 9px 8px 8px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  color: var(--kb-fg-muted);
+  font-size: var(--kb-font-size-small);
+  letter-spacing: 0.04em;
+}
+
+.subtab[aria-selected="true"] {
+  padding-bottom: 7px;
+  color: var(--kb-fg-strong);
+  border-bottom-color: var(--kb-accent);
+}
+
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.message {
+  padding: 20px;
+  color: var(--kb-fg-muted);
+}
+
+/* ── 스텝 타임라인 ───────────────────────────────────────────── */
+.timeline {
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid var(--kb-border);
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding-right: 8px;
+  border-radius: 2px;
+  font-size: 12px;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.row:hover {
+  background: var(--kb-hover-bg);
+}
+
+.row[aria-selected="true"] {
+  background: var(--kb-list-active-bg);
+  color: var(--kb-list-active-fg);
+}
+
+.caret {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+}
+
+.status {
+  flex: 0 0 auto;
+  min-width: 52px;
+  padding: 0 6px;
+  border-radius: 2px;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  background: var(--kb-run-pass-bg);
+  color: var(--kb-run-pass-fg);
+}
+
+.status[data-status="fail"],
+.status[data-status="error"] {
+  background: var(--kb-run-fail-bg);
+  color: var(--kb-run-fail-fg);
+  outline: 1px solid var(--kb-run-fail-outline);
+}
+
+.status[data-status="running"] {
+  background: var(--kb-chip-graph-bg);
+  color: var(--kb-chip-graph-fg);
+}
+
+.status[data-status="aborted"],
+.status[data-status="cancelled"] {
+  background: var(--kb-run-skip-bg);
+  color: var(--kb-fg-muted);
+}
+
+.rowTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowMeta {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+  color: var(--kb-fg-muted);
+  font-family: var(--kb-font-mono);
+  font-size: 11px;
+}
+
+.tag {
+  padding: 0 5px;
+  border-radius: 2px;
+  font-size: 10px;
+  line-height: 16px;
+  background: var(--kb-run-skip-bg);
+  color: var(--kb-fg-muted);
+  font-family: var(--kb-font);
+}
+
+.more {
+  margin: 2px 0;
+  padding: 0 8px;
+  height: 22px;
+  background: none;
+  border: 0;
+  color: var(--kb-link-fg);
+  font-size: 12px;
+}
+
+/* 반복 회차 (시안 "2,981회차 · 스텝 4개", 회차별 소요 시간 막대) */
+.iterations {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px 8px;
+}
+
+.iterHead {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--kb-fg-muted);
+}
+
+.bars {
+  display: flex;
+  gap: 2px;
+  height: 18px;
+  align-items: flex-end;
+}
+
+.bar {
+  flex: 1 1 0;
+  min-width: 2px;
+  padding: 0;
+  border: 0;
+  background: var(--kb-run-bar);
+}
+
+.bar[data-late="true"] {
+  background: var(--kb-run-bar-late);
+}
+
+.bar[data-failed="true"],
+.bar[aria-pressed="true"] {
+  background: var(--kb-run-bar-selected);
+}
+
+.iterNote {
+  font-size: 11px;
+  color: var(--kb-fg-muted);
+}
+
+/* ── 스크린샷 줄·후보 표 ─────────────────────────────────────── */
+.stepHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px 0;
+  font-size: 12px;
+}
+
+.stepTitle {
+  color: var(--kb-fg-strong);
+}
+
+.stepPath {
+  color: var(--kb-fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.button {
+  margin-left: auto;
+  flex: 0 0 auto;
+  background: var(--kb-input-bg);
+  color: var(--kb-fg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  padding: 0 12px;
+  height: 26px;
+  font-size: 12px;
+}
+
+.shots {
+  padding: 14px 20px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.shot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.shotHead {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.shotLabel {
+  color: var(--kb-fg-strong);
+}
+
+.shotTime {
+  color: var(--kb-fg-muted);
+  font-family: var(--kb-font-mono);
+  font-size: 11px;
+}
+
+.frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--kb-run-shot-bg);
+  border: 1px solid var(--kb-run-shot-border);
+  overflow: hidden;
+}
+
+.frameImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.frameInner {
+  position: absolute;
+}
+
+.candidate {
+  position: absolute;
+  border: 1px dashed var(--kb-run-candidate);
+}
+
+.candidateScore {
+  position: absolute;
+  font-size: 10px;
+  color: var(--kb-run-candidate);
+  font-family: var(--kb-font-mono);
+  white-space: nowrap;
+}
+
+.omit {
+  aspect-ratio: 16 / 9;
+  box-sizing: border-box;
+  background: repeating-linear-gradient(135deg, var(--kb-run-omit-stripe-a) 0 8px, var(--kb-run-omit-stripe-b) 8px 16px);
+  border: 1px dashed var(--kb-run-omit-border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px;
+  text-align: center;
+}
+
+.omitTitle {
+  font-size: 11px;
+  color: var(--kb-run-omit-fg);
+}
+
+.omitReason {
+  font-size: 10px;
+  color: var(--kb-fg-muted);
+}
+
+.tables {
+  padding: 0 20px 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.box {
+  flex: 1 1 300px;
+  border: 1px solid var(--kb-border);
+}
+
+.boxHead {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--kb-border);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-family: var(--kb-font-mono);
+}
+
+.table th {
+  padding: 6px 12px;
+  font-weight: 400;
+  color: var(--kb-fg-muted);
+  text-align: left;
+}
+
+.table td {
+  padding: 6px 12px;
+  border-top: 1px solid var(--kb-border);
+}
+
+.scoreTop {
+  color: var(--kb-status-fail);
+}
+
+.scoreRest {
+  color: var(--kb-fg-muted);
+}
+
+.kv {
+  padding: 8px 12px;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 6px 10px;
+  line-height: 1.5;
+  font-size: 12px;
+}
+
+.kvKey {
+  color: var(--kb-fg-muted);
+}
+
+.pre {
+  margin: 0;
+  padding: 14px 20px;
+  font-family: var(--kb-font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}

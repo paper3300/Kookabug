@@ -7,6 +7,9 @@ import { client, toRpcError } from "../rpc/client";
 import { SessionRecovery } from "../rpc/recovery";
 import { breakpointModel } from "../debug/breakpoints";
 import { runModel } from "../run/runStore";
+import { connectRunViewer } from "../runs/live";
+import { runIndexModel } from "../runs/runIndexStore";
+import { runListModel } from "../runs/runListStore";
 import { framesHost, onWorkspaceChanged as onTargetFilesChanged, resetTargets } from "../target/targetStore";
 import {
   documentsHost,
@@ -103,6 +106,8 @@ function switchProject(root: string | null): void {
   closeAllTabs();
   useUi.setState({ expanded: null, selected: null, quickOpen: false });
   runModel.reset();
+  runIndexModel.reset();
+  runListModel.reset();
   breakpointModel.reset();
   recovery.reset();
   useWorkspace.setState({
@@ -139,7 +144,7 @@ async function onDaemonState(state: DaemonState): Promise<void> {
   // 적용한 마지막 seq부터 다시 구독했다
   const runs = kind === "same_connection" ? Promise.resolve() : runModel.syncActive();
   // 브레이크포인트는 daemon 파일 값이 기준이다: 붙을 때마다 받는다 (끊긴 동안 다른 창이 바꿨을 수 있다)
-  await Promise.all([refreshTree(), refreshInfo(), loadRegistry(), runs, breakpointModel.load()]);
+  await Promise.all([refreshTree(), refreshInfo(), loadRegistry(), runs, breakpointModel.load(), runListModel.reload()]);
 }
 
 async function loadRegistry(): Promise<void> {
@@ -176,7 +181,13 @@ export async function initWorkspace(): Promise<void> {
     }
   });
   client().on("run.lagged", (p) => runModel.lagged(p));
-  client().on("run.ended", (p) => runModel.ended(p));
+  client().on("run.ended", (p) => {
+    runModel.ended(p);
+    // 끝난 실행: 목록 요약(판정·배지)과 열린 RUN 탭 색인을 다시 읽는다
+    void runListModel.reload();
+    runIndexModel.noteSeq(p.run_id, 0, true);
+  });
+  connectRunViewer();
   client().on("lease.changed", (p) => runModel.lease(p));
   breakpointModel.setNote((message) => note("warn", message));
   client().on("debug.breakpoints.changed", (p) => breakpointModel.changed(p));

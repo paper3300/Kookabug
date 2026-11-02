@@ -80,6 +80,17 @@
   font-family: var(--kb-font);
 }
 
+/* 실행 로그 맨 위 "실패 보기" (기록 뷰어로 이동, M3 T10) */
+.logAction {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--kb-link-fg);
+  font-size: inherit;
+  font-family: var(--kb-font);
+  text-align: left;
+}
+
 .logLine {
   display: flex;
   gap: 14px;

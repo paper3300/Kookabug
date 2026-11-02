@@ -41,7 +41,7 @@ def manual() -> str:
     return MANUAL.read_text(encoding="utf-8")
 
 
-M3_SCREENS: Final = frozenset({"main-debug", "main-debug-paused"})
+M3_SCREENS: Final = frozenset({"main-debug", "main-debug-paused", "runviewer"})
 """M3에서 늘린 비교 화면 (M3 계획 T9). M2 절차서가 아니라 M3 절차서(T12)가 맡는다."""
 
 

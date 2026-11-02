@@ -3,8 +3,12 @@ import { create } from "zustand";
 
 export type PanelTab = "problems" | "output" | "runlog" | "result";
 
+/** 사이드바 보기 (액티비티 바): 탐색기·실행 기록 (M3 T10) */
+export type SideView = "explorer" | "runs";
+
 interface UiState {
   quickOpen: boolean;
+  sideView: SideView;
   panelTab: PanelTab;
   expanded: Set<string> | null;
   selected: string | null;
@@ -15,6 +19,7 @@ interface UiState {
 
 export const useUi = create<UiState>(() => ({
   quickOpen: false,
+  sideView: "explorer",
   panelTab: "output",
   expanded: null,
   selected: null,

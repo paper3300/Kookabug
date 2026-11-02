@@ -98,6 +98,8 @@ export interface GraphDoc {
   edits: number;
   /** 디스크에서 다시 열기 요청 세대. 늦게 온 옛 응답은 버린다 */
   reloadSeq: number;
+  /** 실행 폴더(runs/ 아래)의 스냅샷 그래프: 편집·저장하지 않는다 (graph.open read_only, M3 2.10) */
+  readOnly: boolean;
 }
 
 interface DocumentsState {
@@ -159,6 +161,7 @@ function emptyDoc(path: string): GraphDoc {
     saves: 0,
     edits: 0,
     reloadSeq: 0,
+    readOnly: false,
   };
 }
 
@@ -188,6 +191,7 @@ function opened(doc: GraphDoc, result: GraphOpenResult, on: string | null): Part
   return {
     ...counted(doc, result.doc_id, on),
     status: "ready",
+    readOnly: result.read_only === true,
     baseRevision: result.revision,
     value: result.value,
     dirty: false,
@@ -318,9 +322,9 @@ function setView(path: string, patch: (view: DocView) => Partial<DocView>): void
 
 // ── 편집·실행 취소·저장 (T9) ──────────────────────────────────────
 
-/** 편집할 수 있는 문서 (열렸고 값이 있음) */
+/** 편집할 수 있는 문서 (열렸고 값이 있고 스냅샷이 아님) */
 function editable(doc: GraphDoc | undefined): doc is GraphDoc & { value: GraphValue } {
-  return doc !== undefined && doc.status === "ready" && doc.value !== null;
+  return doc !== undefined && doc.status === "ready" && doc.value !== null && !doc.readOnly;
 }
 
 function dirtyOf(doc: GraphDoc, value: GraphValue): boolean {

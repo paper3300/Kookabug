@@ -420,7 +420,7 @@
     },
     "StepNode": {
       "additionalProperties": false,
-      "description": "색인의 스텝 하나 (events.jsonl의 step.start·attempt.end·step.end를 합친 것)",
+      "description": "색인의 스텝 하나 (events.jsonl의 step.start·attempt.end·step.end를 합친 것). 반복 스텝(iterations가 있음)의 status·exit·t_end·duration_ms·message는 반복 전체다: 반복 노드에 마지막으로 도착한 스텝이 반복을 끝냈으면(done·한도 fail) 그 스텝 것, 본문 실패·중단으로 돌아오지 못했으면 마지막 회차의 가장 나쁜 결과(그 회차가 성공뿐이면 진행 중 실행은 running·t_end null, 끝난 실행은 aborted)와 그 회차 끝 시각, exit null. duration_ms는 첫 도착 시작부터 그 끝까지(벽시계). active_duration_ms는 없다. 노드별 통계(stats)는 도착마다의 실제 스텝 값이다",
       "properties": {
         "active_duration_ms": {
           "description": "멈춘 시간을 뺀 경과 (step.end에 있을 때만)",

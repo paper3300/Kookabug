@@ -169,6 +169,10 @@ def test_index_tree_and_failure_chain(tmp_path: Path, snapshot: bool) -> None:
     assert out["failure_chain"] == [loop["step"], run_end["failure_step"]]
     failing = next(s for s in out["steps"] if s["step"] == run_end["failure_step"])
     assert (failing["node"], failing["iteration"], failing["status"]) == ("n_chk", 2, "fail")
+    # 반복 스텝 줄은 반복 전체: 반복 노드로 돌아오지 못하고 마지막 회차에서 실패 (T7 검수 Low)
+    assert (loop["status"], loop["exit"], loop["t_end"]) == ("fail", None, failing["t_end"])
+    assert loop["duration_ms"] is not None
+    assert loop["duration_ms"] >= sum(i["duration_ms"] for i in iterations)
 
     # 회차 아래 스텝: 호출 → 안쪽 반복 → 검사 → 되돌아옴
     total, page = index.children(loop["step"], 0, 0, 50, state="ended", thumbs=frozenset())
@@ -186,6 +190,12 @@ def test_index_tree_and_failure_chain(tmp_path: Path, snapshot: bool) -> None:
     assert [i["iteration"] for i in inner_loop["iterations"]] == [0, 1]
     total, body = index.children(inner_loop["step"], 1, 0, 50, state="ended", thumbs=frozenset())
     assert [s["node"] for s in body] == ["n_log", "n_in"] and body[-1]["exit"] == "done"
+    # done으로 끝난 반복: 마지막 도착(되돌아옴) 스텝의 결과·출구·끝 시각
+    assert (inner_loop["status"], inner_loop["exit"], inner_loop["t_end"]) == (
+        "success",
+        "done",
+        body[-1]["t_end"],
+    )
     # 회차 없이 부르면 모든 회차 (마지막 회차는 검사가 실패해 되돌아오지 않는다)
     total, every = index.children(loop["step"], None, 0, 2, state="ended", thumbs=frozenset())
     assert total == loop["children"] == 4 + 4 + 3 and len(every) == 2
@@ -371,6 +381,55 @@ def synthetic_loop(iterations: int, body: int) -> list[dict[str, Any]]:
         }
     )
     return events
+
+
+def test_index_loop_row_is_whole_loop_last_arrival(tmp_path: Path) -> None:
+    """반복 스텝 줄의 status·exit·t_end·duration_ms는 마지막 도착 기준 (진행 중·캐시 복원 포함)."""
+    events = synthetic_loop(3, 1)
+    for i, event in enumerate(events):
+        if "step" in event:
+            event["t"] = f"2026-11-02T00:00:{i:02d}.000Z"
+    folder = write_events(tmp_path / "run", events)
+    index = RunIndex(folder).update()
+    out = result(index)
+    loop = next(s for s in out["steps"] if s["node"] == "n_loop")
+    last = max((r for r in index.rows.values() if r.node == "n_loop"), key=lambda r: r.t_start)
+    assert (loop["status"], loop["exit"], loop["t_end"]) == ("success", "done", last.t_end)
+    first = index.rows[loop["step"]]
+    assert first.exit == "body" and first.t_end != loop["t_end"]
+    assert last.t_end is not None
+    seconds = int(last.t_end[17:19]) - int(first.t_start[17:19])
+    assert loop["duration_ms"] == seconds * 1000 > 0
+    # 캐시에서 되살려도 같다
+    restored = RunIndex.from_cache(folder, index.to_cache())
+    assert result(restored)["steps"] == out["steps"]
+
+    # 진행 중: 두 번째 회차 본문이 끝나고 되돌아오기 전 → 반복은 실행 중, 끝 없음
+    cut = next(
+        i for i, e in enumerate(events) if e.get("event") == "step.end" and e.get("iteration") == 1
+    )
+    live = write_events(tmp_path / "live", events[: cut + 1])
+    running = (
+        RunIndex(live)
+        .update()
+        .result(run_dir="runs/live", state="running", run_json=None, video=None, thumbs=frozenset())
+    )
+    loop = next(s for s in running["steps"] if s["node"] == "n_loop")
+    assert (loop["status"], loop["exit"], loop["t_end"], loop["duration_ms"]) == (
+        "running",
+        None,
+        None,
+        None,
+    )
+    # 같은 폴더를 끝난 실행으로 보면 반복은 중단
+    ended = (
+        RunIndex(live)
+        .update()
+        .result(run_dir="runs/live", state="ended", run_json=None, video=None, thumbs=frozenset())
+    )
+    loop = next(s for s in ended["steps"] if s["node"] == "n_loop")
+    assert (loop["status"], loop["exit"]) == ("aborted", None)
+    assert loop["t_end"] is not None
 
 
 def test_index_loop_iterations_summarized_10k_steps_under_2s(tmp_path: Path) -> None:

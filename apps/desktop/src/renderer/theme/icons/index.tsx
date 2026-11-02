@@ -72,6 +72,16 @@ export function ExplorerIcon(props: IconProps) {
   );
 }
 
+/** 액티비티 바 "실행 기록" (시안 RunViewer) */
+export function HistoryIcon(props: IconProps) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true" {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
 /** 섹션 머리 펼침 (시안 Main 사이드바) */
 export function ChevronDownIcon(props: IconProps) {
   return (

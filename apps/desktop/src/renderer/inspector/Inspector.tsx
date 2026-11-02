@@ -351,7 +351,8 @@ function Body({ path }: { path: string }) {
   const node = nodes.find((n) => n.id === doc.view.selected);
   if (node === undefined) return <div className={css.empty}>노드를 고르면 속성이 보여요</div>;
   const titles = new Map(nodes.map((n) => [n.id, n.title ?? types.get(n.type)?.title ?? n.id]));
-  const ctx: EditorContext = { locked, titleOf: (id) => titles.get(id) ?? id, graph: path };
+  // 실행 스냅샷 그래프는 읽기 전용이다 (M3 2.10)
+  const ctx: EditorContext = { locked: locked || doc.readOnly, titleOf: (id) => titles.get(id) ?? id, graph: path };
   const view = inspectNode(node, doc.shapes, types, doc.diagnostics, path);
   return (
     <div className={css.body} data-part="inspector-body" data-node={node.id}>

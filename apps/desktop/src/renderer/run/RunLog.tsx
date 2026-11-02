@@ -1,6 +1,7 @@
 // 실행 로그 패널 (시안 Main 하단 "실행 로그"): 시각(실행 시작부터)·수준·노드·메시지, 새 줄이 위.
 // 열린 스텝은 맨 위 RUN 줄로 흐르는 시간을 보인다. 수준 색은 RUN·OK·WARN·INFO (2.8 "패널")
 import { useMemo } from "react";
+import { openRun } from "../runs/open";
 import { useDocuments } from "../store/documents";
 import { useRegistry } from "../store/registry";
 import { formatClock, runningText, stepLabel, type LogEntry, type LogLevel } from "./highlight";
@@ -48,6 +49,8 @@ export function RunLog() {
   const lookup = docLookup(docs);
   const typeTitle = typeTitleOf(types);
   const start = trace.startT;
+  const verdict = current.outcome?.verdict ?? trace.end?.verdict ?? null;
+  const failed = current.phase === "ended" && (verdict === "fail" || verdict === "error");
   return (
     <div
       data-part="run-log"
@@ -56,6 +59,14 @@ export function RunLog() {
       data-steps-ended={trace.stepsEnded}
       data-phase={current.phase}
     >
+      {/* 기록 뷰어로 실패 노드까지 한 번에 (M3 T10) */}
+      {failed && (
+        <div className={css.logLine} data-part="runlog-failure-link">
+          <button type="button" className={css.logAction} data-part="runlog-show-failure" onClick={() => openRun(current.runId, current.graph)}>
+            실패 보기 — 기록 뷰어에서 실패한 노드와 화면을 열어요
+          </button>
+        </div>
+      )}
       {lines.map((l) => (
         <div key={l.key} className={css.logLine} data-level={l.level}>
           <span className={css.logTime}>{formatClock(start === null ? 0 : l.t - start)}</span>

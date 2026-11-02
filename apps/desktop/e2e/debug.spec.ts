@@ -154,12 +154,14 @@ test("test_step_over_into_out_buttons_and_keys", async () => {
   // 입력 노드가 받는 Match는 입력 서비스가 다시 찾으므로 재개 경고가 없다
   await expect(page.locator('[data-part="resume-warning"]')).toHaveCount(0);
 
-  // Shift+F11 서브그래프에서 나오기: 호출이 돌아온 뒤 루트의 다음 노드
+  // Shift+F11 서브그래프에서 나오기: 호출이 돌아온 뒤 루트의 다음 노드 (호출이 낸 창을 현재 창으로 정하는 노드)
   await expect(button(page, "서브그래프에서 나오기")).toBeEnabled();
   await expect(button(page, "서브그래프로 들어가기 F11")).toBeEnabled();
   await page.keyboard.press("Shift+F11");
-  await expect(banner(page)).toHaveAttribute("data-node", "n_press_i", { timeout: 60_000 });
+  await expect(banner(page)).toHaveAttribute("data-node", "n_use_window", { timeout: 60_000 });
   await tabOf(page, INVENTORY).locator("button").first().click();
+  await expectPausedAt(page, "n_use_window", "step");
+  await page.keyboard.press("F10");
   await expectPausedAt(page, "n_press_i", "step");
   await page.keyboard.press("F10");
   await expectPausedAt(page, "n_check_inventory", "step");
@@ -173,13 +175,14 @@ test("test_step_over_into_out_buttons_and_keys", async () => {
     ["n_launch", "step", 2],
     ["n_wait_title", "step", 2],
     ["n_click_start", "step", 2],
+    ["n_use_window", "step", 1],
     ["n_press_i", "step", 1],
     ["n_check_inventory", "step", 1],
   ]);
   const modes = readEvents(ws, await runId(page))
     .filter((e) => e.event === "debug.resume")
     .map((e) => e.mode);
-  expect(modes).toEqual(["step_into", "step_over", "step_over", "step_out", "step_over", "continue"]);
+  expect(modes).toEqual(["step_into", "step_over", "step_over", "step_out", "step_over", "step_over", "continue"]);
 });
 
 test("test_pause_during_wait_then_resume", async () => {

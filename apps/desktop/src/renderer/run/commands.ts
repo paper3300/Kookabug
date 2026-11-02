@@ -3,8 +3,10 @@
 
 export interface RunTabLike {
   path: string;
-  kind: "graph" | "target";
+  kind: "graph" | "target" | "run";
   graphKind?: string | null;
+  /** 실행 스냅샷 그래프 (읽기 전용, M3 T10): 실행하지 않는다 */
+  snapshot?: boolean;
 }
 
 export interface RunAvailabilityInput {
@@ -30,12 +32,15 @@ export interface RunAvailability {
 export function runAvailability({ tab, connected, running, starting }: RunAvailabilityInput): RunAvailability {
   const graph = tab?.kind === "graph" ? tab : undefined;
   const subgraph = graph?.graphKind === "subgraph";
-  const path = graph !== undefined && !subgraph ? graph.path : null;
+  const snapshot = graph?.snapshot === true;
+  const path = graph !== undefined && !subgraph && !snapshot ? graph.path : null;
   const canRun = path !== null && connected && !running && starting === null;
   const runTitle =
     graph === undefined
       ? "그래프 탭에서 실행해요"
-      : subgraph
+      : snapshot
+        ? "실행 기록의 스냅샷은 실행하지 않아요"
+        : subgraph
         ? "서브그래프는 테스트에서 불러 실행해요"
         : running
           ? "실행이 끝나면 다시 실행할 수 있어요"

@@ -7,8 +7,12 @@
   마지막 자식이다
 - 반복 노드는 스냅샷 그래프의 노드 종류로 안다. 스냅샷이 없는 폴더(예전 실행)는 출구 `body`로 나간
   스텝을 반복 스텝으로 본다
-- 반복 스텝의 필드는 그 스텝(첫 도착) 것 그대로다. 반복 전체는 `iterations`(회차·시작·경과·가장 나쁜
-  결과·안쪽 호출을 포함한 스텝 수)로 본다
+- 반복 스텝 줄의 `status`·`exit`·`t_end`·`duration_ms`·`message`는 **반복 전체**다(M3
+  T10): 반복 노드에 마지막으로 도착한 스텝(되돌아옴)이 반복을 끝냈으면(`done`·한도 fail) 그
+  스텝 것, 본문 실패·중단으로 반복 노드로 돌아오지 못했으면 마지막 회차의 가장 나쁜 결과와 끝
+  시각(출구 없음)이다. 그래서 실패 사슬의 반복 원소가 실패로 보인다. 노드별 통계는 도착마다의
+  실제 스텝 값 그대로다. 회차별은 `iterations`(회차·시작·경과·가장 나쁜 결과·안쪽 호출을 포함한
+  스텝 수)로 본다
 - **실패 사슬**: `run.end.failure_step`에서 색인 부모를 따라 루트까지. 입력 계산 실패도 그 스텝의
   `step.start`·`step.end`가 있으므로 사슬 끝이 된다. 경계 취소는 실패 스텝이 없다(빈 사슬)
 - 노드별 통계(끝난 스텝만), 멈춤 구간, 영상(`video/index.json`, 없으면 `segments.jsonl`), 썸네일은
@@ -225,6 +229,8 @@ class _Iter:
     open: int = 0
     worst: int = 0
     end_ms: int | None = None
+    t_end: str | None = None
+    """끝 시각이 가장 늦은 안쪽 스텝의 `t_end`."""
 
 
 @dataclass(slots=True)
@@ -261,6 +267,8 @@ class RunIndex:
         self._iter_children: dict[tuple[str, int], list[str]] = {}
         self._iters: dict[str, dict[int, _Iter]] = {}
         self._loops: dict[str | None, list[_Loop]] = {}
+        self._last_arrival: dict[str, str] = {}
+        """반복 스텝 → 반복 노드에 마지막으로 도착한 스텝 (되돌아옴)."""
         self._frame_graphs: dict[str | None, str] = {}
 
     # ------------------------------------------------------------ 읽기
@@ -384,6 +392,8 @@ class RunIndex:
         """부모의 자식 목록과 감싼 반복 회차들에 더한다 (`_start`·캐시 복원)."""
         parent = row.parent
         self._children.setdefault(parent, []).append(row.step)
+        if row.reentry and parent is not None:
+            self._last_arrival[parent] = row.step
         if parent is not None:
             parent_row = self.rows.get(parent)
             if parent_row is not None:
@@ -455,7 +465,8 @@ class RunIndex:
             item = self._iters[loop_step][iteration]
             item.open -= 1
             item.worst = max(item.worst, rank)
-            item.end_ms = end_ms if item.end_ms is None else max(item.end_ms, end_ms)
+            if item.end_ms is None or end_ms >= item.end_ms:
+                item.end_ms, item.t_end = end_ms, row.t_end
 
     def _track_loop(self, row: StepRow) -> None:
         stack = self._loops.setdefault(row.frame, [])
@@ -541,8 +552,41 @@ class RunIndex:
         if calls is not None:
             out["calls"] = calls
         if row.loop:
-            out["iterations"] = self.iterations(row.step, state)
+            iterations = self.iterations(row.step, state)
+            out["iterations"] = iterations
+            self._loop_result(row, out, state)
         return out
+
+    def _loop_result(self, row: StepRow, out: dict[str, Any], state: RunState) -> None:
+        """반복 스텝 줄을 반복 전체 결과로 바꾼다 (모듈 설명 "반복 스텝 줄")."""
+        last_step = self._last_arrival.get(row.step)
+        last = None if last_step is None else self.rows.get(last_step)
+        out.pop("active_duration_ms", None)
+        out.pop("message", None)
+        if (
+            last is not None
+            and last.status is not None
+            and (last.exit != LOOP_EXIT or last.status != "success")
+        ):
+            # 반복 노드가 반복을 끝냈다 (done, 한도 fail, 오류)
+            status, exit_, t_end = last.status, last.exit, last.t_end
+            if last.message is not None:
+                out["message"] = last.message
+        else:
+            # 반복 노드로 돌아오지 못하고 끝났거나 아직 도는 중: 마지막 회차가 결과다
+            iters = self._iters.get(row.step, {})
+            item = iters[max(iters)] if iters else None
+            worst = 0 if item is None else item.worst
+            if item is not None and item.open > 0:
+                worst = max(worst, _RANK["running" if state == "running" else "aborted"])
+            if worst == _RANK["success"]:
+                worst = _RANK["running" if state == "running" else "aborted"]
+            status, exit_ = _STATUS_OF[worst], None
+            t_end = None if status == "running" or item is None else item.t_end
+        out["status"], out["exit"], out["t_end"] = status, exit_, t_end
+        out["duration_ms"] = (
+            None if t_end is None else max(0, _safe_ms(t_end) - _safe_ms(row.t_start))
+        )
 
     def iterations(self, loop_step: str, state: RunState = "ended") -> list[dict[str, Any]]:
         """반복 스텝의 회차 요약 (`IterationSummary`, 회차 순). 끝나지 않은 회차는 경과가 None."""

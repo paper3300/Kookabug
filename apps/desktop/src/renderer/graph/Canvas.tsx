@@ -102,8 +102,10 @@ function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
   const { expanded: expandedList, selection, viewport, focus, auto } = doc.view;
   const expanded = useMemo(() => new Set(expandedList), [expandedList]);
   const selected = useMemo(() => new Set(selection), [selection]);
-  // 대화 상자·저장하고 닫기 중에는 끌기·잇기·지우기를 끈다 (값 명령도 store가 거부한다)
-  const locked = useEditsLocked();
+  // 대화 상자·저장하고 닫기 중에는 끌기·잇기·지우기를 끈다 (값 명령도 store가 거부한다).
+  // 실행 스냅샷 그래프는 늘 읽기 전용이다 (M3 2.10)
+  const dialogLocked = useEditsLocked();
+  const locked = dialogLocked || doc.readOnly;
   const [connecting, setConnecting] = useState<PinEnd | null>(null);
   const revealInputs = connecting?.kind === "data";
   const flow = useMemo(
@@ -231,11 +233,11 @@ function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
   const [dropping, setDropping] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
   const onDragOver = useCallback((e: DragEvent) => {
-    if (!e.dataTransfer.types.includes(PALETTE_MIME)) return;
+    if (doc.readOnly || !e.dataTransfer.types.includes(PALETTE_MIME)) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
     setDropping(true);
-  }, []);
+  }, [doc.readOnly]);
   const onDragLeave = useCallback((e: DragEvent) => {
     if (!(e.relatedTarget instanceof Node) || !e.currentTarget.contains(e.relatedTarget)) setDropping(false);
   }, []);
@@ -293,17 +295,18 @@ function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
   const debug = useTabDebugView(path, doc.value);
   const [menu, setMenu] = useState<NodeMenuAt | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  // 스냅샷 그래프에는 브레이크포인트를 걸지 않는다 (브레이크포인트는 워크스페이스 그래프 경로가 열쇠)
   const onNodeContextMenu = useCallback((e: ReactMouseEvent, node: KbFlowNode) => {
-    if (node.type !== "kb") return;
+    if (node.type !== "kb" || doc.readOnly) return;
     e.preventDefault();
     setMenu({ x: e.clientX, y: e.clientY, node: node.id });
-  }, []);
+  }, [doc.readOnly]);
 
   const empty = flow.nodes.every((n) => n.type !== "kb" && n.type !== "kbGroup");
   return (
     <CanvasPathContext.Provider value={path}>
       <TabRunContext.Provider value={run}>
-      <TabDebugContext.Provider value={debug}>
+      <TabDebugContext.Provider value={doc.readOnly ? null : debug}>
       <ConnectingContext.Provider value={connecting}>
         <ReactFlow<KbFlowNode, KbFlowEdge>
           ref={wrapper}
@@ -361,7 +364,7 @@ function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
       </TabDebugContext.Provider>
       </TabRunContext.Provider>
       {menu !== null && <NodeMenu graph={path} at={menu} onClose={closeMenu} />}
-      {empty && !dropping && <div className={css.emptyHint}>팔레트에서 노드를 끌어 놓으세요</div>}
+      {empty && !dropping && !doc.readOnly && <div className={css.emptyHint}>팔레트에서 노드를 끌어 놓으세요</div>}
       {dropping && (
         <div className={css.dropZone} data-part="drop-zone">
           <span className={css.dropHint}>여기에 놓으면 노드를 더해요</span>
@@ -417,6 +420,7 @@ export function GraphCanvas({ path }: { path: string }) {
       data-path={path}
       data-status={doc?.status ?? "loading"}
       data-dirty={doc?.dirty ?? false}
+      data-readonly={doc?.readOnly ?? false}
       data-saves={doc?.saves ?? 0}
       data-revision={doc?.baseRevision ?? ""}
     >

@@ -14,7 +14,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(HERE, "..", "..");
 export const DESIGN_DIR = path.join(REPO_ROOT, "Docs", "Design", "UX 시안 v0.1");
 export const OUT_DIR = path.join(REPO_ROOT, "build", "design-ref");
-export const DEFAULT_SCREENS = ["Main", "MainLight", "Recorder", "Setup0Welcome", "Setup0WelcomeLight"];
+export const DEFAULT_SCREENS = ["Main", "MainLight", "Recorder", "RunViewer", "Setup0Welcome", "Setup0WelcomeLight"];
 
 // 페이지와 로컬 자원을 서비스하는 가짜 주소. 그 밖의 요청은 막고 센다
 export const LOCAL_ORIGIN = "http://design-ref.local";

@@ -4,6 +4,7 @@
 import { pausedTitle } from "../debug/PauseBanner";
 import { formatCount, formatElapsed, loopProgress } from "../run/highlight";
 import { useRun, type LeaseOwner } from "../run/runStore";
+import { openRun } from "../runs/open";
 import { docLookup, loopLimitOf, useNow } from "../run/view";
 import { useDocuments } from "../store/documents";
 import { useRegistry } from "../store/registry";
@@ -43,10 +44,22 @@ function RunItems() {
     const verdict = current.outcome?.verdict ?? trace.end?.verdict ?? null;
     const label = verdict === null ? "끝남" : (VERDICT[verdict as keyof typeof VERDICT] ?? verdict);
     const ms = trace.end?.durationMs ?? null;
+    const failed = verdict === "fail" || verdict === "error";
     return (
       <span className={css.statusItem} data-part="run-result" data-verdict={verdict ?? ""}>
         마지막 실행 {label}
         {ms !== null ? ` · ${formatElapsed(ms)}` : ""}
+        {/* 기록 뷰어로 실패 노드까지 한 번에 (M3 완료 기준 1) */}
+        {failed && (
+          <button
+            type="button"
+            className={css.statusLink}
+            data-part="status-show-failure"
+            onClick={() => openRun(current.runId, current.graph)}
+          >
+            실패 보기
+          </button>
+        )}
       </span>
     );
   }

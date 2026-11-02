@@ -37,6 +37,8 @@ export const SCREENS = {
   "main-debug-paused": { dark: "Main", light: "MainLight" },
   // target 편집기, T12. Recorder는 다크 시안뿐이라 라이트 앱 화면도 다크 Recorder와 나란히 본다(배치·요소 대조)
   target: { dark: "Recorder", light: "Recorder" },
+  // 기록 뷰어(사이드바 실행 목록·RUN 머리·타임라인·스크린샷 줄·후보 표), M3 T10. RunViewer도 다크 시안뿐이다
+  runviewer: { dark: "RunViewer", light: "RunViewer" },
 };
 
 function pngSize(file) {

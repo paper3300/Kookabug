@@ -481,6 +481,11 @@
   color: var(--kb-kind-target);
 }
 
+/* RUN·SNAPSHOT (시안 RunViewer 탭) */
+.kindRun {
+  color: var(--kb-kind-run);
+}
+
 .tabClose {
   width: 20px;
   height: 20px;
@@ -770,6 +775,16 @@
   gap: 6px;
   padding: 0 10px;
   height: 100%;
+}
+
+/* 상태 바 "실패 보기" (기록 뷰어로 이동, M3 T10) */
+.statusLink {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font-size: 12px;
+  text-decoration: underline;
 }
 
 .statusOk {

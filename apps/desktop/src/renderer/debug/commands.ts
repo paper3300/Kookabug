@@ -48,7 +48,8 @@ export function toggleSelectedBreakpoints(): void {
   const { active, tabs } = useTabs.getState();
   if (active === null || tabs.find((t) => t.path === active)?.kind !== "graph") return;
   const doc = useDocuments.getState().docs.get(active);
-  if (doc === undefined || doc.value === null || doc.view.selection.length === 0) return;
+  // 실행 스냅샷 그래프(읽기 전용)에는 걸지 않는다
+  if (doc === undefined || doc.value === null || doc.readOnly || doc.view.selection.length === 0) return;
   const next = toggleMany(breakpointModel.list, active, doc.view.selection, doc.value, useRegistry.getState().types);
   if (next !== null) void breakpointModel.set(next);
 }

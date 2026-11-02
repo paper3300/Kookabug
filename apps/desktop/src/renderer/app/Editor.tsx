@@ -6,6 +6,7 @@ import { DebugToolbar } from "../debug/DebugToolbar";
 import { PauseBanner } from "../debug/PauseBanner";
 import { GraphCanvas } from "../graph/Canvas";
 import { RunToolbar } from "../run/Toolbar";
+import { RunTab } from "../runs/RunTab";
 import { TargetEditor } from "../target/TargetEditor";
 import { targetDirty, useTargets } from "../target/targetStore";
 import { useRun } from "../run/runStore";
@@ -42,12 +43,17 @@ function Tabs() {
             role="tab"
             aria-selected={selected}
             data-path={tab.path}
+            data-kind={badge.text}
             data-dirty={dirty}
             className={css.tab}
             title={tab.path}
           >
             <button type="button" className={css.tabLabel} onClick={() => activateTab(tab.path)}>
-              <span className={`${css.kind} ${badge.tone === "target" ? css.kindTarget : css.kindTest}`}>{badge.text}</span>
+              <span
+                className={`${css.kind} ${badge.tone === "target" ? css.kindTarget : badge.tone === "run" ? css.kindRun : css.kindTest}`}
+              >
+                {badge.text}
+              </span>
               {tab.title}
             </button>
             <button
@@ -69,9 +75,11 @@ function Tabs() {
 function Breadcrumb() {
   const name = useWorkspace((s) => s.name);
   const active = useTabs((s) => s.active);
+  const tab = useTabs((s) => s.tabs.find((t) => t.path === s.active));
   const run = useRun((s) => s.current);
   const doc = useDocuments((s) => (active === null ? undefined : s.docs.get(active)));
-  const parts = active === null || name === null ? [] : [name, ...active.split("/")];
+  const parts =
+    active === null || name === null ? [] : tab?.kind === "run" ? [name, "실행 기록", tab.title] : [name, ...active.split("/")];
   return (
     <div aria-label="경로" className={css.breadcrumb} data-part="breadcrumb">
       {parts.map((p, i) => (
@@ -152,6 +160,10 @@ function DocBanner({ path }: { path: string }) {
 export function Editor({ children }: { children?: ReactNode }) {
   const active = useTabs((s) => s.active);
   const activeTab = useTabs((s) => s.tabs.find((t) => t.path === s.active));
+  const liveRun = useRun((s) => s.current?.runId ?? null);
+  // RUN 탭(기록 뷰어)에는 멈춤 띠를 띄우지 않고, 디버그 툴바는 그 탭이 지금 따라가는 실행일 때만 띄운다 (M3 T10)
+  const runTab = activeTab?.kind === "run";
+  const showDebug = !runTab || activeTab.runId === liveRun;
   return (
     <main className={css.editorMain}>
       <div className={css.tabbar} data-part="tabbar">
@@ -160,8 +172,8 @@ export function Editor({ children }: { children?: ReactNode }) {
       </div>
       <Breadcrumb />
       {active !== null && activeTab?.kind === "graph" && <DocBanner path={active} />}
-      <PauseBanner />
-      {/* 디버그 툴바는 탭 종류와 무관하게 내용 영역 위 가운데에 뜬다 (정지 단추가 여기에만 있다) */}
+      {!runTab && <PauseBanner />}
+      {/* 디버그 툴바는 내용 영역 위 가운데에 뜬다 (정지 단추가 여기에만 있다) */}
       <div className={css.editorContent}>
         {active === null ? (
           <div className={css.editorEmpty}>
@@ -174,10 +186,12 @@ export function Editor({ children }: { children?: ReactNode }) {
           <GraphCanvas key={active} path={active} />
         ) : activeTab?.kind === "target" ? (
           <TargetEditor key={active} path={active} />
+        ) : activeTab?.kind === "run" && activeTab.runId !== undefined ? (
+          <RunTab key={active} runId={activeTab.runId} />
         ) : (
           <div className={css.canvas} data-part="canvas" data-path={active} />
         )}
-        <DebugToolbar />
+        {showDebug && <DebugToolbar />}
       </div>
       {children}
     </main>
