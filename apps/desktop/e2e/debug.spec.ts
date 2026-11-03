@@ -40,10 +40,13 @@ const banner = (page: Page): Locator => page.locator('[data-part="pause-banner"]
 const runState = (page: Page): Locator => page.locator('[data-part="run-state"]');
 const runId = async (page: Page): Promise<string> => (await toolbar(page).getAttribute("data-run-id"))!;
 
-/** 그 노드에서 멈췄다 (노란 테두리·상태 줄·멈춤 띠) */
+/**
+ * 그 노드에서 멈췄다 (노란 테두리·상태 줄·멈춤 띠). 툴바 `data-state`는 재개 이벤트가 오기 전까지 앞
+ * 멈춤 그대로 paused라, 다음 멈춤은 그 노드의 표시로 기다린다 (상한은 멈춤 기다림과 같은 60초)
+ */
 async function expectPausedAt(page: Page, node: string, reason: "breakpoint" | "step" | "request", banneredNode = node): Promise<void> {
-  await expect(debugToolbar(page)).toHaveAttribute("data-state", "paused", { timeout: 60_000 });
-  await expect(runNode(page, node)).toHaveAttribute("data-paused", reason);
+  await expect(runNode(page, node)).toHaveAttribute("data-paused", reason, { timeout: 60_000 });
+  await expect(debugToolbar(page)).toHaveAttribute("data-state", "paused");
   await expect(page.locator('[data-part="node"][data-paused]')).toHaveCount(1);
   await expect(banner(page)).toHaveAttribute("data-node", banneredNode);
   await expect(banner(page)).toHaveAttribute("data-reason", reason);

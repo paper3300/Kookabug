@@ -569,8 +569,22 @@ def _simple(*, end: str = "core.test.pass", ms: int = DELAY) -> Any:
     return g.node("n_end", end)
 
 
+def _recorded(run_dir: Path, node: str = "n_a_w", segments: int = 1) -> Any:
+    """`node` 끝(아직 스택에 있다, 게이트 기록)에서 조각 `segments`개에 칸이 쓰일 때까지 붙잡는다.
+
+    녹화 첫 칸은 늦을 수 있다(설계상 허용, 2초 전까지는 조각도 빈 구간도 없다). 느린 러너에서
+    0.6초 장면이 끝나기 200 ms 전까지 첫 프레임이 안 오면 칸 없는 조각은 버려져, 보관 검사가
+    지우거나 남길 조각이 없다 (CI 수정 6)."""
+    return on_event("step.end", node, lambda p, g: wait_slots(run_dir, segments))
+
+
 def test_failed_only_deleted_on_pass(tmp_path: Path) -> None:
-    ran = run_video(tmp_path, _simple(), ws_record={"video": "failed_only"})
+    ran = run_video(
+        tmp_path,
+        _simple(),
+        ws_record={"video": "failed_only"},
+        hooks=[_recorded(tmp_path / "run")],
+    )
     assert ran.result.verdict == "pass"
     assert ran.index is not None
     assert ran.index["segments"] == [] and ran.index["status"] == "recorded"
@@ -582,7 +596,12 @@ def test_failed_only_deleted_on_pass(tmp_path: Path) -> None:
     ("end", "verdict"), [("core.test.fail", "fail"), ("testkit.boom", "error")]
 )
 def test_failed_only_kept_on_fail_and_error(tmp_path: Path, end: str, verdict: str) -> None:
-    ran = run_video(tmp_path, _simple(end=end), ws_record={"video": "failed_only"})
+    ran = run_video(
+        tmp_path,
+        _simple(end=end),
+        ws_record={"video": "failed_only"},
+        hooks=[_recorded(tmp_path / "run")],
+    )
     assert ran.result.verdict == verdict
     assert ran.index is not None and ran.index["deleted"] == []
     kept = ran.index["segments"]
@@ -596,6 +615,7 @@ def test_user_cancel_deletes_failed_only(tmp_path: Path) -> None:
         tmp_path,
         _simple(),
         ws_record={"video": "failed_only"},
+        hooks=[_recorded(tmp_path / "run")],
         run_end={"verdict": "error", "code": "cancelled", "cancel_reason": "cancelled"},
     )
     assert ran.index is not None and ran.index["segments"] == []
@@ -606,7 +626,9 @@ def test_user_cancel_deletes_failed_only(tmp_path: Path) -> None:
 
 
 def test_on_segments_always_kept(tmp_path: Path) -> None:
-    ran = run_video(tmp_path, _simple(), ws_record={"video": "on"})
+    ran = run_video(
+        tmp_path, _simple(), ws_record={"video": "on"}, hooks=[_recorded(tmp_path / "run")]
+    )
     assert ran.index is not None and ran.index["deleted"] == []
     assert ran.index["segments"] and all(s["mode"] == "on" for s in ran.index["segments"])
 
@@ -623,13 +645,15 @@ def test_lower_layer_on_cannot_loosen_workspace_default(
     show(g, "n_a", "a", "n_end", record={"video": "on"})
     g.node("n_end", "core.test.pass")
     ws_record = None if ws_video is None else {"video": ws_video}
-    ran = run_video(tmp_path, g, ws_record=ws_record)
+    ran = run_video(tmp_path, g, ws_record=ws_record, hooks=[_recorded(tmp_path / "run")])
     assert ran.result.verdict == "pass"
     assert ran.written  # 녹화는 했고
     assert ran.index is not None and ran.index["segments"] == []
     assert {d["reason"] for d in ran.index["deleted"]} == {"run_pass"}
     # 워크스페이스가 on이면 같은 그래프의 조각이 남는다
-    kept = run_video(tmp_path / "on", g, ws_record={"video": "on"})
+    kept = run_video(
+        tmp_path / "on", g, ws_record={"video": "on"}, hooks=[_recorded(tmp_path / "on" / "run")]
+    )
     assert kept.index is not None and kept.index["segments"]
     assert all(s["mode"] == "on" for s in kept.index["segments"])
 
@@ -654,7 +678,12 @@ def test_mixed_modes_split_segments(tmp_path: Path) -> None:
     )
     show(g, "n_c", "c", "n_pass")
     g.node("n_pass", "core.test.pass")
-    ran = run_video(tmp_path, g)
+    # on 조각(n_a)과 failed_only 조각(n_b)에 칸이 있어야 모드별 나눔·보관을 본다
+    ran = run_video(
+        tmp_path,
+        g,
+        hooks=[_recorded(tmp_path / "run"), _recorded(tmp_path / "run", "n_b_w", 2)],
+    )
     modes = [s["mode"] for s in ran.segments()]
     assert "on" in modes and "failed_only" in modes
     assert ran.index is not None

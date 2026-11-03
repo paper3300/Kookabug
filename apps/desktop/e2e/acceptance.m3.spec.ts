@@ -258,9 +258,14 @@ test("test_viewer_expand_screenshots_compare", async () => {
 const button = (page: Page, name: string): Locator => debugToolbar(page).getByRole("button", { name, exact: true });
 const banner = (page: Page): Locator => page.locator('[data-part="pause-banner"]');
 
+/**
+ * 그 노드에서 멈췄다. 툴바 `data-state`는 재개 이벤트(`debug.resume`)가 오기 전까지 앞 멈춤 그대로
+ * paused라 단추를 누른 직후에는 바로 맞는다 — 다음 멈춤은 배너의 노드로 기다린다 (서브그래프에서
+ * 나오기는 남은 서브그래프 대기·입력 노드를 다 돈 뒤에 멈춘다. 기다림 상한은 멈춤 기다림과 같은 60초)
+ */
 async function expectPausedAt(page: Page, node: string, reason: "breakpoint" | "step"): Promise<void> {
-  await expect(debugToolbar(page)).toHaveAttribute("data-state", "paused", { timeout: 60_000 });
-  await expect(banner(page)).toHaveAttribute("data-node", node);
+  await expect(banner(page)).toHaveAttribute("data-node", node, { timeout: 60_000 });
+  await expect(debugToolbar(page)).toHaveAttribute("data-state", "paused");
   await expect(banner(page)).toHaveAttribute("data-reason", reason);
 }
 
