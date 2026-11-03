@@ -60,9 +60,15 @@ POINTS: Final[dict[str, frozenset[Role]]] = {
     "runner.before_lease_release": _RUNNER,
     "runner.after_hello": _RUNNER,
     "runner.before_validate": _RUNNER,
+    # 취소 순서를 시작하기 직전 (`Controller.cancel`, 이벤트 = 취소 사유: 늦은 취소 처리 흉내)
+    "runner.before_cancel": _RUNNER,
+    # 받은 제어 요청을 처리하기 직전 (`Controller._handle`, 이벤트 = 메서드: 늦은 수신 처리 흉내)
+    "runner.before_control": _RUNNER,
     "actor.before_backend": _RUNNER,
     "worker.before_hello_reply": _WORKER,
     "worker.in_import": _WORKER,
+    # `worker.shutdown`에 답하기 직전 (끝나지 않는 워커 흉내)
+    "worker.before_shutdown_reply": _WORKER,
     # 연결 상실로 스스로 끝나기 직전 (runner가 죽은 뒤)
     "worker.before_lost_exit": _WORKER,
     "recovery.runner_exit_observed": _SUPERVISOR,

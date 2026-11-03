@@ -432,7 +432,7 @@ export interface RunEndEvent {
   verdict: Verdict;
 }
 /**
- * 실행 단위로 남기지 않은 기록 (스텝 Omitted와 같은 모양). video/encoder_stuck: 녹화 스레드가 3초 안에 끝나지 않아 runner가 영상 파일을 건드리지 않고 포기했다 — runner 종료를 확인한 감독자가 video/를 지운다
+ * 실행 단위로 남기지 않은 기록 (스텝 Omitted와 같은 모양). video/encoder_stuck: 녹화 스레드가 기다림 상한(3초, 마무리 유예가 짧으면 유예에서 기록 여유를 뺀 시간) 안에 끝나지 않아 runner가 영상 파일을 건드리지 않고 포기했다 — runner 종료를 확인한 감독자가 video/를 지운다
  */
 export interface RunOmitted {
   kind: "video";

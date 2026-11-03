@@ -15,7 +15,9 @@
 
 - 하드 종료 타이머: `cancel()` 또는 runner의 `runner.stopping` 알림을 처음 받은 때부터
   `shutdown_grace_ms`가 지나도 runner가 살아 있으면. 외부 취소 없이 기한 초과·정상 마무리에서 멈춘
-  runner도 같은 규칙이다. runner의 자기 종료 감시자(`self_kill_margin_ms` 뒤)는 그 뒤의 안전망이다
+  runner도 같은 규칙이다. runner의 자기 종료 감시자(`self_kill_margin_ms` 뒤)는 그 뒤의 안전망이다.
+  `run.cancel`에는 타이머의 기한(절대 단조 시각 `hard_stop_at_mono` + 남은 시간 `hard_stop_in_ms`)을
+  실어 runner가 마무리 예산을 그 기한에 맞추게 한다 (타이머는 미루지 않는다)
 - 제어 채널을 잃었을 때(EOF·송신 실패·쓰기 기한 초과) — runner를 더 제어할 수 없으므로 곧바로.
   단 `runner.stopping`을 받은 뒤의 EOF는 runner가 마무리 끝에 채널을 닫은 것일 수 있으므로 하드
   종료 타이머에 맡긴다
@@ -303,6 +305,8 @@ class RunHandle:
         self._trace = owner.trace
         self._lock = threading.Lock()
         self._timer: threading.Timer | None = None
+        self._armed_at: float | None = None
+        """하드 종료 타이머를 건 실제 단조 시각 (`run.cancel`에 남은 시간을 실어 보낸다)."""
         self._closing = False
         self._spec_writer: threading.Thread | None = None
         self._finish_lock = threading.Lock()
@@ -496,12 +500,34 @@ class RunHandle:
 
     def cancel(self) -> ControlState | None:
         """취소를 요청하고 하드 종료 타이머를 건다. runner의 답(상태)을 주고, 답을 못 받으면
-        None (그래도 타이머·채널 상실 규칙이 runner를 끝낸다)."""
+        None (그래도 타이머·채널 상실 규칙이 runner를 끝낸다).
+
+        타이머가 있으면 그 기한을 같이 보낸다: 절대 단조 시각(`hard_stop_at_mono` — 같은 PC의
+        `time.monotonic`은 시스템 전역 QPC라 runner와 원점이 같다는 계약)과 보내기 직전에 잰 남은
+        시간(`hard_stop_in_ms`). runner는 취소를 늦게 받거나 늦게 처리해도 이 기한 전에 `run.end`·
+        `run.json`을 쓰도록 녹화 기다림을 줄인다. 타이머는 미루지 않는다 (먼저 건 타이머가
+        그대로)."""
         self._arm()
+        at = self.hard_stop_at_mono()
+        params = None
+        if at is not None:
+            left = max(0, int((at - time.monotonic()) * 1000))
+            params = {"hard_stop_at_mono": at, "hard_stop_in_ms": left}
         try:
-            return self._call("run.cancel")
+            return self._call("run.cancel", params)
         except ControlError:
             return None
+
+    def hard_stop_at_mono(self) -> float | None:
+        """걸린 하드 종료 타이머가 끝내는 단조 시각 (`time.monotonic` 초, 타이머가 없으면 None)."""
+        with self._lock:
+            armed_at = self._armed_at
+        return None if armed_at is None else armed_at + self.spec.shutdown_grace_ms / 1000
+
+    def hard_stop_in_ms(self) -> int | None:
+        """걸린 하드 종료 타이머까지 남은 실제 시간 (ms, 타이머가 없으면 None)."""
+        at = self.hard_stop_at_mono()
+        return None if at is None else max(0, int((at - time.monotonic()) * 1000))
 
     def pause(self) -> ControlState:
         return self._call("run.pause")
@@ -524,6 +550,7 @@ class RunHandle:
         with self._lock:
             if self._timer is not None:
                 return
+            self._armed_at = time.monotonic()
             self._timer = threading.Timer(self.spec.shutdown_grace_ms / 1000, self.hard_stop)
             self._timer.daemon = True
             self._timer.start()
@@ -532,6 +559,7 @@ class RunHandle:
         with self._lock:
             if self._timer is not None:
                 self._timer.cancel()
+            self._armed_at = None
 
     def hard_stop(self) -> None:
         """`TerminateProcess(runner, 4)` (살아 있을 때만). 기다리지 않고 바로 돌아온다 — 신호

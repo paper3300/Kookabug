@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 from helpers.graphs import GraphBuilder
@@ -15,6 +17,7 @@ from helpers.runner import RunnerHarness, step_of
 
 from kb_testing.proc import Spawned, barrier, wait_until
 from kookabug_core.inputs import ACTOR_THREAD_NAME
+from kookabug_core.supervisor import RunHandle
 
 pytestmark = pytest.mark.process
 
@@ -150,3 +153,58 @@ def test_journal_write_failure_exits_3_and_supervisor_finalizes(
 
 def lease_run_id(h: RunnerHarness) -> str:
     return h.run_dir.name.rsplit("_", 1)[1]
+
+
+# ---------------------------------------------------------------- 마무리 중 도착한 취소 (CI 수정 5)
+
+
+def cancel_after_pass(h: RunnerHarness, monkeypatch: pytest.MonkeyPatch) -> None:
+    """감독자 `cancel()`이 타이머를 건 뒤, 그래프가 pass로 마무리에 들어갈 때까지 `run.cancel`
+    송신을 늦춘다 — runner는 이미 마무리 기다림을 시작한 뒤에 더 이른 종료 기한을 받는다."""
+    original = RunHandle._call
+
+    def late_send(self: RunHandle, method: str, params: dict[str, Any] | None = None) -> Any:
+        if method == "run.cancel":
+            h.wait_event("step.start", node="n_pass")
+            time.sleep(0.1)
+        return original(self, method, params)
+
+    monkeypatch.setattr(RunHandle, "_call", late_send)
+
+
+def assert_pass_kept_before_hard_stop(h: RunnerHarness, done: Any) -> None:
+    assert done.exit_code == 0, (done.exit_code, done.run_end, h.stderr())
+    assert not h.hard_stopped
+    run_end = done.run_end
+    assert run_end is not None and run_end["finalized_by"] == "runner"
+    assert (run_end["verdict"], run_end["code"]) == ("pass", "test_pass"), run_end
+    assert run_end["cancel_reason"] == "cancelled"
+    events = done.view.events
+    _, pass_end = step_of(events, "n_pass")
+    (requested,) = done.of("cancel.requested")
+    assert pass_end is not None and events.index(pass_end) < events.index(requested)
+
+
+def test_hung_worker_wait_shrinks_when_cancel_arrives_while_finishing(
+    tmp_path: Path, spawned: Spawned, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 정상 판정 뒤 끝나지 않는 워커를 기다리는 중(워커 유예 10초)에 외부 취소가 도착해 종료 기한이
+    # 요청 + 3초로 당겨지면, 워커 기다림이 바로 줄어 워커를 끝내고 하드 종료 전에 pass를 기록한다.
+    # 고정 기다림(처음 잰 stopping + 유예에서 기록 여유를 뺀 때 ≈ 요청 + 3.15초)이면 하드 종료
+    # (exit 4)
+    faults = [{"point": "worker.before_shutdown_reply", "role": "worker", "action": "hang"}]
+    g = tk().entry("n_d")
+    g.node("n_d", "core.flow.delay", inputs={"ms": 1_550}, next={"done": "n_pass"})
+    g.node("n_pass", "core.test.pass")
+    h = RunnerHarness.make(
+        tmp_path, g, faults=faults, shutdown_grace_ms=3_000, worker_cancel_grace_ms=10_000
+    )
+    cancel_after_pass(h, monkeypatch)
+    h.start(spawned)
+    h.wait_event("step.start", node="n_d")
+    time.sleep(0.4)
+    assert h.cancel() == "cancelling"  # 감독자 타이머는 요청 때 걸렸다 (pass는 약 1.15초 뒤)
+    done = h.finish()
+    assert_pass_kept_before_hard_stop(h, done)
+    (exit,) = done.of("worker.exit")
+    assert exit["reason"] == "killed_after_grace"

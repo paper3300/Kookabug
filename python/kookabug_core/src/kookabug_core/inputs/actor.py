@@ -199,6 +199,14 @@ class InputActor:
             thread.join(timeout)
         return self.quiesced
 
+    def join(self, timeout: float) -> bool:
+        """`stop()` 뒤 액터 스레드가 끝나기를 더 기다린다. 끝났으면(또는 시작하지 않았으면) True."""
+        thread = self._thread
+        if thread is None:
+            return True
+        thread.join(max(0.0, timeout))
+        return not thread.is_alive()
+
     @property
     def gate_closed(self) -> bool:
         return self.gate.is_set()

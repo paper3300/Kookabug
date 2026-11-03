@@ -469,19 +469,23 @@ def test_wait_stable_resume_restarts_from_new_frames(tmp_path: Path, spawned: Sp
 def test_poll_pause_inside_node_timeout_exceeds_both_then_passes(
     tmp_path: Path, spawned: Spawned
 ) -> None:
-    # 검수 M7: 노드 timeout 1초·전체 기한 2초인 실행이 대기 폴링 중 4초 멈춘 뒤에도 pass.
-    # 경과(duration_ms)는 실제 시간이라 멈춘 시간을 포함하고, active_duration_ms는 뺀 값이다
+    # 검수 M7: 노드 timeout 3초·전체 기한 4초인 실행이 대기 폴링 중 5초 멈춘 뒤에도 pass (멈춤만으로
+    # 두 기한을 다 넘는다). 경과(duration_ms)는 실제 시간이라 멈춘 시간을 포함하고,
+    # active_duration_ms는 뺀 값이다. 활성 시간(캡처·찾기 4번 + 폴링 쉼 0.3초)이 느린 러너에서 1초를
+    # 넘으므로 기한에 여유를 둔다. 판정 뒤 녹화 마무리도 활성 시간이라 가짜 인코더로 녹화한다
+    # (바쁜 CPU에서 실제 인코더 닫기가 전체 기한 검사를 흔든다)
     g = launch_then("n_wait")
     g.node(
         "n_wait",
         "core.image.wait",
-        inputs={"target": target(LOBBY), "timeout_ms": 1_000},
+        inputs={"target": target(LOBBY), "timeout_ms": 3_000},
         next={"found": "n_pass"},
     )
     g.node("n_pass", "core.test.pass")
-    h = title_run(tmp_path, g, after_frames=3, deadline_ms=2_000).start(spawned)
+    h = title_run(tmp_path, g, after_frames=3, deadline_ms=4_000, env_extra=FAKE_VIDEO)
+    h.start(spawned)
     pause_in_poll(h, "n_wait")
-    time.sleep(4.0)
+    time.sleep(5.0)
     assert not h.has_event("cancel.requested")
     assert h.resume() == "running"
     done = h.finish()
@@ -493,9 +497,9 @@ def test_poll_pause_inside_node_timeout_exceeds_both_then_passes(
     assert end is not None and end["exit"] == "found" and end["attempt"] == 1
     (resume,) = done.of("debug.resume")
     paused = resume["paused_ms"]
-    assert paused >= 3_900
-    assert end["duration_ms"] >= paused > 1_000 > end["active_duration_ms"]
-    assert run_end["duration_ms"] >= paused > 2_000 > run_end["active_duration_ms"]
+    assert paused >= 4_900
+    assert end["duration_ms"] >= paused > 3_000 > end["active_duration_ms"]
+    assert run_end["duration_ms"] >= paused > 4_000 > run_end["active_duration_ms"]
     assert run_end["active_duration_ms"] < run_end["duration_ms"]
     assert (run_end["paused_ms"], run_end["debug_intervened"]) == (paused, True)
     run_json = done.run_json

@@ -210,9 +210,15 @@ def test_points_table_matches_plan() -> None:
         "runner.before_lease_release",
         "runner.after_hello",
         "runner.before_validate",
+        # CI 수정 5: 취소 순서 시작 직전 (늦은 취소 처리 흉내)
+        "runner.before_cancel",
+        # CI 수정 5: 받은 제어 요청 처리 직전 (늦은 수신 처리 흉내)
+        "runner.before_control",
         "actor.before_backend",
         "worker.before_hello_reply",
         "worker.in_import",
+        # CI 수정 5: worker.shutdown에 답하기 직전 (끝나지 않는 워커)
+        "worker.before_shutdown_reply",
         # 워커가 연결 상실로 스스로 끝나기 직전 (runner 죽음 뒤 Job 정리 검사)
         "worker.before_lost_exit",
         "recovery.runner_exit_observed",

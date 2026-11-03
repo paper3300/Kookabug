@@ -617,6 +617,8 @@ class WorkerHost:
                     case "node.invoke":
                         self._invoke(job)
                     case "worker.shutdown":
+                        # 마무리 요청에 답하기 직전 (끝나지 않는 워커 흉내)
+                        _faults.fault_point("worker.before_shutdown_reply")
                         # 닫기 전에 표시한다: close()가 incoming에 넣는 PeerLost를 분배 스레드가
                         # 연결 상실(os._exit(EXIT_LOST))로 처리하지 않게
                         self._closing.set()

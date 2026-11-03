@@ -3,9 +3,10 @@
 **제어 스레드**는 감독자의 제어 요청(`run.cancel`·`run.pause`·`run.resume {mode}`·
 `run.breakpoints`)을 받는 즉시 답하고,
 감독자 사망(자기 종료 감시자가 세운 값)과 테스트 전체 기한을 20ms마다 본다. 전체 기한은 실행기
-런타임과 같은 활성 시계(멈춘 시간을 뺀 시계, M3 2.2)로 본다. 노드를 실행하지 않고,
-`run.end`·`run.json`·임대권 놓기·입력 백엔드 호출을 하지 않는다. 저널에는 `cancel.requested`·
-`control.lost`만 쓴다(`run.end` 뒤에는 작성기가 거부하므로 버려진다).
+런타임과 같은 활성 시계(멈춘 시간을 뺀 시계, M3 2.2)로 보고, 주 스레드가 판정을 확정해 마무리를
+시작하면(`finishing`) 더 보지 않는다 — 마무리는 판정을 바꾸지 않고 실제 시간 유예가 따로 있다.
+노드를 실행하지 않고, `run.end`·`run.json`·임대권 놓기·입력 백엔드 호출을 하지 않는다. 저널에는
+`cancel.requested`·`control.lost`만 쓴다(`run.end` 뒤에는 작성기가 거부하므로 버려진다).
 
 **취소 순서** (`Controller.cancel`, 사유 `cancelled`·`deadline_exceeded`·`supervisor_lost`)
 
@@ -36,6 +37,7 @@ from __future__ import annotations
 import contextlib
 import queue
 import threading
+import time
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, Final, Literal
 
@@ -47,6 +49,7 @@ from kookabug_core.runner.clock import ActiveClock
 from kookabug_core.runner.watchdog import Watchdog
 from kookabug_core.schema import check_shape
 from kookabug_core.workerhost import WorkerProcess
+from kookabug_sdk import _faults
 from kookabug_sdk.rpc import INVALID_PARAMS, METHOD_NOT_FOUND, Incoming, PeerLost, RpcPeer
 
 __all__ = [
@@ -60,6 +63,7 @@ __all__ = [
     "PauseWhere",
     "PollPoint",
     "StopReason",
+    "cancel_hard_stop_at",
 ]
 
 CONTROL_THREAD_NAME: Final = "kookabug-runner-control"
@@ -75,6 +79,33 @@ type PauseReason = Literal["breakpoint", "step", "request"]
 
 NOT_PAUSED: Final = "not_paused"
 """`run.resume`(Step)을 멈추지 않은 runner가 거절할 때 오류 `data.reason` (code invalid_params)."""
+
+
+_CLOCK_SLACK_S: Final = 0.005
+"""감독자가 보낸 절대 기한을 "유예보다 멀다"고 판정할 때 봐주는 부동소수 오차."""
+
+
+def cancel_hard_stop_at(
+    params: Mapping[str, Any], received: float, shutdown_grace_s: float
+) -> float | None:
+    """`run.cancel` params(형식 확인 뒤)에서 하드 종료 기한(이 프로세스의 단조 시각)을 정한다.
+
+    - `hard_stop_at_mono`(절대): 같은 PC에서 `time.monotonic`은 시스템 전역 QPC라 감독자와 원점이
+      같다는 계약으로, 전달·처리 지연과 상관없이 정확하다. 그래도 그대로 믿지 않는다. 꺼낸 시각
+      + `hard_stop_in_ms`와 비교해 이른 쪽을 쓰고, 이미 지났거나 꺼낸 시각 + 마무리 유예보다 멀면
+      (감독자는 꺼낸 시각 전에 타이머를 걸었으므로 그럴 수 없다 — 시계 원점이 다르다고 본다)
+      꺼낸 시각을 기한으로 해 녹화를 기다리지 않고 바로 기록하게 한다
+    - `hard_stop_in_ms`만(절대 시각 없음): 꺼낸 시각 + 남은 시간. 전달 지연만큼 늦게 잡힐 수 있다
+    - 둘 다 없으면 None (`runner.stopping` 시각 + 유예로 본다)
+    """
+    left = params.get("hard_stop_in_ms")
+    relative = received + left / 1000 if isinstance(left, int) else None
+    absolute = params.get("hard_stop_at_mono")
+    if not isinstance(absolute, (int, float)) or isinstance(absolute, bool):
+        return relative
+    if absolute <= received or absolute > received + shutdown_grace_s + _CLOCK_SLACK_S:
+        return received  # 말이 안 되는 기한: 보수적으로 지금
+    return float(absolute) if relative is None else min(float(absolute), relative)
 
 
 class NotPaused(Exception):
@@ -317,6 +348,14 @@ class Controller:
         self._cancel_logged = False
         self._record_lock = threading.Lock()  # `cancel.requested` 차지·기록을 한 번에
         self._stopping_sent = False
+        self.stopping_at: float | None = None
+        """`runner.stopping`을 처음 보낸 실제 단조 시각 (감독자 하드 종료 타이머의 시작점)."""
+        self._finishing = False
+        self._hard_stop_at: float | None = None
+        """감독자가 `run.cancel`로 알린 하드 종료 기한 (실제 단조 시각)."""
+        self._deadline_listeners: list[threading.Event] = []
+        """종료 기한(`finish_by`)이 바뀔 수 있을 때 세우는 Event (마무리의 기다림이 깨어 다시
+        잰다)."""
         self._channel_lost = False
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, name=CONTROL_THREAD_NAME, daemon=True)
@@ -336,6 +375,53 @@ class Controller:
         self._stop.set()
         if self._thread.is_alive() and self._thread is not threading.current_thread():
             self._thread.join(1.0)
+
+    def finishing(self) -> None:
+        """판정이 확정돼 주 스레드가 마무리를 시작한다: 이 뒤로는 전체 기한 감시를 끝낸다.
+
+        마무리(녹화 정리·`run.end`·`run.json`)는 판정을 바꾸지 않으므로 기한이 지나도 취소 사유를
+        붙이지 않는다. 마무리의 실제 시간 유예(감독자 하드 종료·자기 종료 감시자)와 감독자 사망
+        감시·외부 취소는 그대로다. 이미 시작된 취소는 그대로 남는다."""
+        with self._lock:
+            self._finishing = True
+
+    def _note_hard_stop(self, at: float) -> None:
+        with self._lock:
+            if self._hard_stop_at is None or at < self._hard_stop_at:
+                self._hard_stop_at = at
+        self._deadline_changed()
+
+    def add_deadline_listener(self, event: threading.Event) -> None:
+        """종료 기한이 바뀔 수 있으면(감독자가 알린 하드 종료·취소 시작·`runner.stopping`) `event`를
+        세운다. 마무리가 녹화·워커·액터를 기다리는 동안 더 이른 기한이 알려지면 바로 깨어 기다림을
+        줄인다. 받은 쪽은 깨면 `finish_by`를 다시 읽는다 (신호에 값은 없다)."""
+        with self._lock:
+            self._deadline_listeners.append(event)
+
+    def remove_deadline_listener(self, event: threading.Event) -> None:
+        with self._lock, contextlib.suppress(ValueError):
+            self._deadline_listeners.remove(event)
+
+    def _deadline_changed(self) -> None:
+        with self._lock:
+            listeners = list(self._deadline_listeners)
+        for event in listeners:
+            event.set()
+
+    def finish_by(self, shutdown_grace_ms: int) -> float | None:
+        """runner가 끝나야 하는 가장 이른 실제 단조 시각 (모르면 None). 알려진 종료 기한 중 가장
+        이른 것이다: 감독자가 `run.cancel`로 알린 하드 종료 기한, 감시자가 알아챈 감독자 사망 +
+        유예(자기 종료), 처음 보낸 `runner.stopping` + 유예(감독자가 받은 뒤 거는 타이머라 실제
+        기한은 이보다 늦다). 마무리는 이 시각에서 기록 여유를 뺀 때까지만 녹화를 기다린다."""
+        grace_s = shutdown_grace_ms / 1000
+        with self._lock:
+            times = [t for t in (self._hard_stop_at,) if t is not None]
+            if self.stopping_at is not None:
+                times.append(self.stopping_at + grace_s)
+        lost_at = self.watchdog.supervisor_lost_at
+        if lost_at is not None:
+            times.append(lost_at + self.watchdog.shutdown_grace_s)
+        return min(times) if times else None
 
     def journal_ready(self, emit: Emit) -> None:
         """저널이 열렸다. 그 전에 취소됐으면 `cancel.requested`를 지금 남긴다."""
@@ -380,6 +466,8 @@ class Controller:
             if self._stopping_sent:
                 return
             self._stopping_sent = True
+            self.stopping_at = time.monotonic()
+        self._deadline_changed()
         peer = self.peer
         if peer is not None:
             with contextlib.suppress(PeerLost):
@@ -388,9 +476,15 @@ class Controller:
     # ------------------------------------------------------------ 취소 순서
 
     def cancel(self, reason: CancelReason) -> bool:
-        """취소 순서를 시작한다 (처음 한 번만, 사유는 처음 것). 어느 스레드에서 불러도 된다."""
+        """취소 순서를 시작한다 (처음 한 번만, 사유는 처음 것). 어느 스레드에서 불러도 된다.
+        마무리를 시작한 뒤(`finishing`)의 기한 초과는 무시한다 — 제어 스레드가 기한을 본 직후
+        주 스레드가 판정을 확정해도 확정 뒤에는 취소가 시작되지 않는다."""
+        if self._reason is None:
+            _faults.fault_point("runner.before_cancel", event=reason)
         with self._lock:
             if self._reason is not None:
+                return False
+            if reason == "deadline_exceeded" and self._finishing:
                 return False
             self._reason = reason
             actor = self._actor
@@ -403,6 +497,8 @@ class Controller:
         if worker is not None:
             worker.cancel()
         self.notify_stopping(reason)
+        # 감독자 사망 취소면 사망 + 유예가 새 종료 기한이다 (stopping을 이미 보냈어도 알린다)
+        self._deadline_changed()
         self.record_cancel()
         return True
 
@@ -421,7 +517,7 @@ class Controller:
             if self._reason is None:
                 if self.watchdog.supervisor_lost:
                     self.cancel("supervisor_lost")
-                elif self.clock.now_ms() >= self.deadline_at_ms:
+                elif not self._finishing and self.clock.now_ms() >= self.deadline_at_ms:
                     self.cancel("deadline_exceeded")
             peer = self.peer
             if peer is None or self._channel_lost:
@@ -441,7 +537,16 @@ class Controller:
 
     def _handle(self, peer: RpcPeer, request: Incoming) -> None:
         method = request.method
+        # 받은 제어 요청을 처리하기 직전 (이벤트 = 메서드: 늦은 수신 처리 흉내)
+        _faults.fault_point("runner.before_control", event=method)
         if method == "run.cancel":
+            received = time.monotonic()
+            params = request.params
+            # 감독자가 이미 건 하드 종료 기한 (형식이 틀려도 취소는 받는다)
+            if not check_shape(params, "rpc", ref="#/$defs/RunCancelParams"):
+                at = cancel_hard_stop_at(params, received, self.watchdog.shutdown_grace_s)
+                if at is not None:
+                    self._note_hard_stop(at)
             self._respond(peer, request, "cancelling")
             self.cancel("cancelled")
         elif method == "run.pause":

@@ -17,13 +17,19 @@
    액터 시작 → 플랫폼의 입력 서비스에 붙임. `windows`는 SendInput 백엔드 + 입력 직전 확인
 9. `Executor.run` (주 스레드). 워커 노드의 `ctx` 요청도 주 스레드가 처리한다
 
-**정상 마무리** (주 스레드만): 종료 단계 진입(감시자 무장, 감독자에 `runner.stopping`) → 녹화
-멈춤 신호(M3) → 워커 `shutdown` → 액터 `STOP`·`join`(유예의 절반) → 녹화 스레드 종료 확인(신호부터
-실제 시간 3초) → (quiesced면) 플랫폼 닫기(캡처 세션·추적기 스레드) → `run.end`(녹화 스레드가 안
+**정상 마무리** (주 스레드만): 종료 단계 진입(감시자 무장, 제어기 전체 기한 감시 끝 — 판정 확정 뒤
+마무리에는 기한 취소가 붙지 않는다, 감독자에 `runner.stopping`) → 녹화 멈춤 신호(M3) → 워커
+`shutdown` → 액터 `STOP`·`join`(유예의 절반) → 녹화 스레드 종료 확인(처음 보낸 `runner.stopping`부터
+실제 시간 3초, 단 실제로 적용되는 가장 이른 종료 기한 — 감독자가 `run.cancel`로 알린 하드 종료,
+감독자 사망 + 유예, `runner.stopping` + 유예 중 가장 이른 것(`Controller.finish_by`) — 에서
+기록 여유 1초(유예가 2초 미만이면 유예의 절반)를 뺀 때를 넘지 않음 — 하드 종료 전에 영상 포기·기록이
+끝나게) → (quiesced면) 플랫폼 닫기(캡처 세션·추적기 스레드) → `run.end`(녹화 스레드가 안
 끝났으면 `omitted` `video`/`encoder_stuck`) → 녹화 스레드가 끝났을 때만 영상 마무리
 (`finalize_video` — 안 끝났으면 `video/`를 건드리지 않고 감독자가 runner 종료 뒤 지운다) →
 `run.json` 완료(영상 요약) → quiesced였으면 임대권 깨끗하게 놓기(아니면 놓지 않고 끝남 — 감독자
-복구 경로·다음 획득자가 처리) → 저널 닫기 → 종료 코드 0.
+복구 경로·다음 획득자가 처리) → 저널 닫기 → 종료 코드 0. 워커·액터·녹화 기다림의 끝은 모두
+그때 아는 종료 기한에서 기록 여유를 뺀 때(`_cutoff`)이고, 기다리는 도중 더 이른 기한이 알려지면
+(제어기의 기한 갱신 신호) 바로 다시 잰다.
 
 **영상** (M3 2.5): 녹화 프레임을 줄 수 있는 플랫폼(`windows`, 장면 `fake`)이면 시작 순서와 겹쳐
 인코더 열기 시험을 띄우고(`EncoderProbe`), 실행기를 시작할 때 녹화 게이트와 녹화 스레드를 붙인다.
@@ -111,17 +117,39 @@ __all__ = [
     "EXIT_OK",
     "EXIT_RECORD_FAILED",
     "EXIT_START_FAILED",
+    "FINISH_RESERVE_S",
     "Runner",
     "RunnerPlatform",
+    "finish_reserve_s",
     "unix_micros",
+    "video_wait_s",
 ]
 
 EXIT_OK: Final = 0
 EXIT_START_FAILED: Final = 2
 EXIT_RECORD_FAILED: Final = 3
 HELLO_TIMEOUT_S: Final = 30.0
+_FINISH_SLICE_S: Final = 0.05
+"""마무리에서 끝을 신호로 받지 못하는 대상(액터 스레드)을 다시 보는 간격."""
+FINISH_RESERVE_S: Final = 1.0
+"""마무리 유예에서 녹화 기다림 뒤의 최종 기록(`run.end`·영상 마무리·`run.json`·임대권·채널 닫기)에
+남겨 두는 실제 시간 (유예가 짧으면 그 절반)."""
 _FILETIME_UNIX_EPOCH: Final = 116_444_736_000_000_000
 _PACKAGES: Final = ("kookabug_core", "kookabug_sdk", "kookabug_nodes")
+
+
+def finish_reserve_s(shutdown_grace_ms: int) -> float:
+    """종료 기한 앞에 최종 기록용으로 남기는 실제 시간: 1초, 유예가 2초보다 짧으면 유예의 절반."""
+    return min(FINISH_RESERVE_S, max(0.0, shutdown_grace_ms / 1000) / 2)
+
+
+def video_wait_s(shutdown_grace_ms: int) -> float:
+    """종료 기한이 `runner.stopping` + `shutdown_grace_ms`일 때(정상 마무리·기한 초과) 녹화 스레드
+    종료를 기다리는 상한. 기본은 `STOP_GRACE_S`(3초)지만 감독자 하드 종료보다 먼저 영상 포기·
+    `run.end`·`run.json`까지 끝나도록 유예에서 기록 여유를 뺀 시간을 넘지 않는다. 더 이른 기한
+    (외부 취소·감독자 사망)이 알려져 있으면 `_finish`가 그 기한으로 더 줄인다."""
+    grace_s = max(0.0, shutdown_grace_ms / 1000)
+    return max(0.0, min(STOP_GRACE_S, grace_s - finish_reserve_s(shutdown_grace_ms)))
 
 
 def unix_micros(ident: ProcessId) -> int:
@@ -760,23 +788,53 @@ class Runner:
             # 실행기가 제어 스레드보다 먼저 기한을 본 경우도 같은 취소 경로로 모은다
             # (cancel.requested·cancel_reason·runner.stopping이 남는다. 이미 시작됐으면 그대로)
             self.controller.cancel("deadline_exceeded")
+        # 판정이 확정됐다: 이 뒤로 전체 기한 감시를 끝낸다 (마무리는 판정을 바꾸지 않는다. 마무리의
+        # 실제 시간 유예·감독자 사망 감시는 그대로)
+        self.controller.finishing()
         self.controller.notify_stopping(self.controller.cancel_reason or "finish")
-        # 판정이 확정됐다: 녹화를 멈춘다 (신호만 먼저 — 유예 3초는 워커·액터 정리와 겹친다)
+        # 녹화를 멈춘다 (신호만 먼저 — 녹화 기다림은 워커·액터 정리와 겹친다). 3초는 처음 보낸
+        # `runner.stopping`부터 재고, 끝은 실제로 적용되는 가장 이른 종료 기한(감독자가 알린 하드
+        # 종료·감독자 사망 뒤 자기 종료·stopping + 유예)에서 기록 여유를 뺀 때를 넘지 않는다
         recorder = self.video
-        stop_at = time.monotonic()
+        stop_at = self.controller.stopping_at or time.monotonic()
         if recorder is not None:
             recorder.request_stop()
-
-        _faults.fault_point("runner.before_worker_shutdown")
-        if self.worker is not None:
-            with contextlib.suppress(Exception):
-                self.worker.shutdown(spec.worker_cancel_grace_ms)
-        quiesced = True
-        if self.actor is not None:
-            quiesced = self.actor.stop(spec.shutdown_grace_ms / 2 / 1000)
-        # 녹화 스레드가 끝났는지 실제 시간 3초까지 본다. 안 끝났으면 그 실행의 영상을 포기하고
-        # video/ 파일을 건드리지 않는다 (runner 종료를 확인한 감독자가 지운다, 2차 검수 N2)
-        writer_done = recorder is None or recorder.join(STOP_GRACE_S - (time.monotonic() - stop_at))
+        # 마무리의 모든 기다림(워커·액터·녹화)은 고정 예산이 아니라 `cutoff()`까지다. 기다리는
+        # 동안 더 이른 종료 기한(마무리 중 도착한 외부 취소·감독자 사망)이 알려지면 제어기가
+        # `wake`를 세워 바로 다시 잰다
+        wake = threading.Event()
+        self.controller.add_deadline_listener(wake)
+        try:
+            _faults.fault_point("runner.before_worker_shutdown")
+            if self.worker is not None:
+                with contextlib.suppress(Exception):
+                    self.worker.shutdown(
+                        spec.worker_cancel_grace_ms, cutoff=lambda: self._cutoff(stop_at)
+                    )
+            quiesced = True
+            if self.actor is not None:
+                self.actor.stop(0)
+                actor = self.actor
+                self._wait_until(
+                    lambda: actor.join(0),
+                    time.monotonic() + spec.shutdown_grace_ms / 2 / 1000,
+                    stop_at,
+                    wake,
+                    slice_s=_FINISH_SLICE_S,
+                )
+                quiesced = actor.quiesced
+            # 녹화 스레드가 끝났는지 실제 시간 3초(`stopping_at`부터)까지, 단 `cutoff()`까지만
+            # 본다. 안 끝났으면 그 실행의 영상을 포기하고 video/ 파일을 건드리지 않는다 (runner
+            # 종료를 확인한 감독자가 지운다, 2차 검수 N2). 하드 종료보다 먼저 `run.end`·`run.json`을
+            # 쓰게 한다. 녹화 스레드가 끝나도 `wake`가 선다
+            writer_done = True
+            if recorder is not None:
+                recorder.notify_on_exit(wake)
+                writer_done = self._wait_until(
+                    lambda: recorder.exited, stop_at + STOP_GRACE_S, stop_at, wake
+                ) and recorder.join(_FINISH_SLICE_S)
+        finally:
+            self.controller.remove_deadline_listener(wake)
         close = getattr(self.platform, "close", None)
         if close is not None and quiesced:
             # 액터가 멈춘 뒤에만 (멈춘 액터는 입력 직전 확인으로 추적기를 더 부르지 않는다).
@@ -842,6 +900,37 @@ class Runner:
             traceback.print_exc()
             return None  # 감독자 복구 경로가 다시 마무리한다
         return None if index is None else video_summary(index)
+
+    def _cutoff(self, stop_at: float) -> float:
+        """마무리 기다림의 끝 (단조 시각): 지금 아는 가장 이른 종료 기한에서 기록 여유를 뺀 때."""
+        grace_ms = self.spec.shutdown_grace_ms
+        assert self.controller is not None
+        finish_by = self.controller.finish_by(grace_ms)
+        if finish_by is None:
+            finish_by = stop_at + grace_ms / 1000
+        return finish_by - finish_reserve_s(grace_ms)
+
+    def _wait_until(
+        self,
+        done: Callable[[], bool],
+        cap_at: float,
+        stop_at: float,
+        wake: threading.Event,
+        *,
+        slice_s: float | None = None,
+    ) -> bool:
+        """`done()`이 참이 되거나 `min(cap_at, cutoff())`가 지날 때까지 기다린다. `done()`을 준다.
+
+        `wake`가 서면(종료 기한 갱신·기다리는 대상의 끝) 바로 깨어 다시 잰다. 신호를 놓치지 않게
+        상태를 읽기 전에 지운다. `done`의 변화를 신호로 받지 못하는 대상은 `slice_s`마다 본다."""
+        while True:
+            wake.clear()
+            if done():
+                return True
+            left = min(cap_at, self._cutoff(stop_at)) - time.monotonic()
+            if left <= 0:
+                return done()
+            wake.wait(left if slice_s is None else min(left, slice_s))
 
     def _run_end_event(self, end: _End) -> dict[str, Any]:
         duration_ms = int((time.monotonic() - self.started) * 1000)

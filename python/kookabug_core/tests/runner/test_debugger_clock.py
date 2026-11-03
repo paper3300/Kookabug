@@ -30,6 +30,7 @@ from kb_testing.sample_game import FRAMES_DIR
 from kookabug_core.engine import ExecOptions, RunResult
 from kookabug_core.engine.debug import StepPoint
 from kookabug_core.record import Journal
+from kookabug_core.record.video import TEST_ENV as VIDEO_TEST_ENV
 from kookabug_core.runner import Controller, Runner, RunSpec, Watchdog
 from kookabug_core.runner import run as run_module
 from kookabug_core.runner.clock import ActiveClock
@@ -40,6 +41,7 @@ from kookabug_core.win import current
 pytestmark = pytest.mark.process
 
 LOBBY = "targets/lobby.target.json"
+FAKE_ENCODER = {VIDEO_TEST_ENV: json.dumps({"encoder": "fake"})}
 
 
 # ---------------------------------------------------------------- 도우미
@@ -89,7 +91,11 @@ def wait_graph(timeout_ms: int, *, retry: Mapping[str, Any] | None = None) -> Gr
 
 
 def scene_run(tmp_path: Path, graph: GraphBuilder, after_frames: int, **kw: Any) -> RunnerHarness:
+    """가짜 장면 실행. 녹화는 가짜 인코더로 한다: 판정 뒤 녹화 마무리(최대 `STOP_GRACE_S`)도 활성
+    시간이라, CPU가 바쁜 러너에서 실제 Media Foundation 인코더를 닫는 시간이 전체 기한 검사를
+    흔든다 (멈춤과 시계가 이 파일의 대상이고 인코더는 아니다)."""
     scenario = write_scenario(tmp_path / "scene", after_frames)
+    kw["env_extra"] = {**FAKE_ENCODER, **kw.get("env_extra", {})}
     h = RunnerHarness.make(tmp_path, graph, plugin_modules=(), scenario=str(scenario), **kw)
     write_target(h.ws, LOBBY, image="lobby.png")
     return h
@@ -182,10 +188,12 @@ def test_paused_time_excluded_from_node_timeout(tmp_path: Path, spawned: Spawned
 
 
 def test_poll_pause_exceeds_both_deadlines_then_passes(tmp_path: Path, spawned: Spawned) -> None:
-    # 검수 M7: 노드 timeout 1초·전체 기한 2초인 실행이 노드 폴링 중 4초 멈춘 뒤에도 pass
-    h = scene_run(tmp_path, wait_graph(1_000), after_frames=3, deadline_ms=2_000).start(spawned)
+    # 검수 M7: 노드 timeout 3초·전체 기한 4초인 실행이 노드 폴링 중 5초 멈춘 뒤에도 pass (멈춤만으로
+    # 두 기한을 다 넘는다). 로비는 캡처 4번째에 보여 활성 시간 = 캡처·찾기 4번 + 폴링 쉼 3번(0.3초).
+    # 개발 PC 약 0.5초, CPU를 2코어로 묶고 부하를 건 환경·CI 러너 약 1.2초라 1초 timeout은 빠듯했다
+    h = scene_run(tmp_path, wait_graph(3_000), after_frames=3, deadline_ms=4_000).start(spawned)
     pause_in_poll(h, "n_wait")
-    time.sleep(4.0)
+    time.sleep(5.0)
     assert not h.has_event("cancel.requested")
     assert h.resume() == "running"
     done = h.finish()
@@ -194,8 +202,9 @@ def test_poll_pause_exceeds_both_deadlines_then_passes(tmp_path: Path, spawned: 
     assert run_end is not None and run_end["verdict"] == "pass", run_end
     _, end = step_of(done.view.events, "n_wait")
     assert end is not None and end["exit"] == "found"
-    assert end["duration_ms"] >= 4_000 > 1_000 > end["active_duration_ms"]
-    assert run_end["duration_ms"] >= 4_000 > 2_000 > run_end["active_duration_ms"]
+    assert run_end["paused_ms"] >= 4_900
+    assert end["duration_ms"] >= 5_000 > 3_000 > end["active_duration_ms"]
+    assert run_end["duration_ms"] >= 5_000 > 4_000 > run_end["active_duration_ms"]
 
 
 def test_deadline_still_fires_on_active_time(tmp_path: Path, spawned: Spawned) -> None:

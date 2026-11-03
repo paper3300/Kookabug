@@ -82,7 +82,9 @@ MISSED_SLOTS: Final = 10
 """보류가 아닌 반복이 이만큼(2초) 넘게 이어지면 조각을 닫는다 (`capture_missed`)."""
 MAX_LONG_SIDE: Final = 1920
 STOP_GRACE_S: Final = 3.0
-"""녹화 멈춤 유예: 녹화 스레드가 이 안에 끝나지 않으면 그 실행의 영상을 포기한다 (2차 검수 N2)."""
+"""녹화 멈춤 유예: 녹화 스레드가 이 안에 끝나지 않으면 그 실행의 영상을 포기한다 (2차 검수 N2).
+runner는 마무리 유예(`shutdown_grace_ms`)가 짧으면 이보다 짧게 기다린다
+(`runner.run.video_wait_s`)."""
 VIDEO_DIR: Final = "video"
 WRITER_FILE: Final = ".writer"
 """녹화 스레드가 살아 있는 동안 삭제 공유 없이 열어 두는 표시 파일."""
@@ -724,7 +726,10 @@ class VideoRecorder:
         self.grab_error: str | None = None
         """녹화 프레임을 가져오지 못한 첫 이유 (진단용, stderr에 한 번 남긴다)."""
         self._offset = gate.wall() - gate.mono()
-        self._thread = threading.Thread(target=self._main, name="kookabug-video", daemon=True)
+        self._exit_lock = threading.Lock()
+        self._exited = False
+        self._exit_listeners: list[threading.Event] = []
+        self._thread = threading.Thread(target=self._run, name="kookabug-video", daemon=True)
 
     def wall_of(self, mono: float) -> float:
         return mono + self._offset
@@ -747,6 +752,31 @@ class VideoRecorder:
     def stop(self, grace_s: float = STOP_GRACE_S) -> bool:
         self.request_stop()
         return self.join(grace_s)
+
+    @property
+    def exited(self) -> bool:
+        """녹화 스레드 본체가 끝났다 (영상 파일을 더 쓰지 않는다. 스레드 객체는 곧 끝난다)."""
+        with self._exit_lock:
+            return self._exited
+
+    def notify_on_exit(self, event: threading.Event) -> None:
+        """녹화 스레드 본체가 끝나면 `event`를 세운다 (이미 끝났으면 바로). 마무리가 다른 신호(종료
+        기한 갱신)와 한 Event로 함께 기다릴 때 쓴다."""
+        with self._exit_lock:
+            if not self._exited:
+                self._exit_listeners.append(event)
+                return
+        event.set()
+
+    def _run(self) -> None:
+        try:
+            self._main()
+        finally:
+            with self._exit_lock:
+                self._exited = True
+                listeners, self._exit_listeners = self._exit_listeners, []
+            for event in listeners:
+                event.set()
 
     @property
     def alive(self) -> bool:

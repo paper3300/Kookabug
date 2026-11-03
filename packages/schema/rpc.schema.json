@@ -827,6 +827,21 @@
       "title": "RunBreakpointsParams",
       "type": "object"
     },
+    "RunCancelParams": {
+      "additionalProperties": false,
+      "description": "run.cancel (감독자 → runner) params: 감독자가 이미 건 하드 종료 타이머의 기한. 타이머는 미루지 않는다. runner는 이 기한에서 기록 여유를 뺀 때까지만 녹화를 기다리고 그 전에 run.end·run.json을 쓴다. hard_stop_at_mono: 하드 종료 시각의 단조 시계 초(Python time.monotonic). 감독자·runner는 같은 Windows PC의 프로세스이고 time.monotonic은 시스템 전역 QueryPerformanceCounter라 원점이 같다는 것이 계약이다 — 전달 지연과 상관없이 정확한 기한이다. hard_stop_in_ms: 보내기 직전에 잰 남은 실제 시간(ms). runner는 min(hard_stop_at_mono, 꺼낸 시각 + hard_stop_in_ms)를 기한으로 쓰고(어느 쪽도 늦게 잡지 않게), hard_stop_at_mono가 이미 지났거나 꺼낸 시각 + 마무리 유예보다 멀면(시계 원점이 다르다고 본다) 녹화를 기다리지 않고 바로 기록한다. hard_stop_at_mono 없이 hard_stop_in_ms만 오면 꺼낸 시각 + 남은 시간을 쓰지만 전달 지연만큼 늦게 잡힐 수 있다(상한 없음). params가 없으면 runner.stopping 시각 + shutdown_grace_ms로 본다 (M0b 호출과 같다)",
+      "properties": {
+        "hard_stop_at_mono": {
+          "type": "number"
+        },
+        "hard_stop_in_ms": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "title": "RunCancelParams",
+      "type": "object"
+    },
     "RunResumeParams": {
       "additionalProperties": false,
       "description": "run.resume (감독자 → runner) params. mode를 빼거나 params가 없으면 continue (M0b 호출과 같다). Step 목표는 멈춘 자리의 호출 깊이로 정한다 (M3). 멈춰 있지 않은데 step_*이면 runner는 아무것도 바꾸지 않고 invalid_params 오류(data {reason: not_paused, state})로 답한다",

@@ -431,8 +431,17 @@ class WorkerProcess:
     def exit_reason(self) -> ExitReason | None:
         return self._exit_reason
 
-    def shutdown(self, grace_ms: int = DEFAULT_SHUTDOWN_GRACE_MS) -> None:
-        """마무리: `worker.shutdown`을 보내고 유예 안에 끝나기를 기다린다. 넘기면 끝낸다."""
+    def shutdown(
+        self,
+        grace_ms: int = DEFAULT_SHUTDOWN_GRACE_MS,
+        *,
+        cutoff: Callable[[], float] | None = None,
+    ) -> None:
+        """마무리: `worker.shutdown`을 보내고 유예 안에 끝나기를 기다린다. 넘기면 끝낸다.
+
+        `cutoff`(단조 시각을 주는 함수)를 주면 그 시각에서도 기다림을 끝낸다. 기다리는 동안
+        `_POLL_S`마다 다시 읽으므로 더 이른 시각이 알려지면 바로 줄어든다 (runner 마무리가 하드
+        종료 기한 안에 기록을 끝내게)."""
         with self._lock:
             timer = self._timer
         if timer is not None:
@@ -443,11 +452,18 @@ class WorkerProcess:
         if self.peer is not None:
             with contextlib.suppress(PeerLost):
                 self.peer.request("worker.shutdown")
-        try:
-            exit_code = self.proc.wait(grace_ms / 1000)
-        except subprocess.TimeoutExpired:
-            self.kill("killed_after_grace")
-            return
+        end = time.monotonic() + grace_ms / 1000
+        while True:
+            limit = end if cutoff is None else min(end, cutoff())
+            left = limit - time.monotonic()
+            if left <= 0:
+                self.kill("killed_after_grace")
+                return
+            try:
+                exit_code = self.proc.wait(left if cutoff is None else min(left, _POLL_S))
+            except subprocess.TimeoutExpired:
+                continue
+            break
         self._exited("shutdown", exit_code)
         if self.peer is not None:
             self.peer.close()

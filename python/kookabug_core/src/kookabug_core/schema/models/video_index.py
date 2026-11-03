@@ -92,7 +92,7 @@ class VideoReason(
             "backend_missing", "encoder_open_failed", "encoder_stuck", "mf_missing", "write_failed"
         ],
         Field(
-            description="영상이 없거나 멈춘 이유. mf_missing: Media Foundation이 없음, backend_missing: OpenCV MSMF 백엔드 없음, encoder_open_failed: 인코더 열기 실패, write_failed: 녹화 중 쓰기 실패, encoder_stuck: 녹화 스레드가 3초 안에 끝나지 않아 영상을 포기",
+            description="영상이 없거나 멈춘 이유. mf_missing: Media Foundation이 없음, backend_missing: OpenCV MSMF 백엔드 없음, encoder_open_failed: 인코더 열기 실패, write_failed: 녹화 중 쓰기 실패, encoder_stuck: 녹화 스레드가 기다림 상한(3초, 마무리 유예가 짧으면 유예에서 기록 여유를 뺀 시간) 안에 끝나지 않아 영상을 포기",
             title="VideoReason",
         ),
     ]

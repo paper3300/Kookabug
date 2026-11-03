@@ -34,7 +34,7 @@ from kookabug_core.record import RunView, read_run, read_run_json
 from kookabug_core.record.runfolder import RunFolder
 from kookabug_core.recovery import RecoverResult
 from kookabug_core.runner.control import ControlState
-from kookabug_core.runner.spec import PlatformSpec
+from kookabug_core.runner.spec import DEFAULT_SHUTDOWN_GRACE_MS, PlatformSpec
 from kookabug_core.supervisor import RunHandle, StartOptions, Supervisor
 from kookabug_core.win import CHILD_FLAGS, Job, Process, ProcessId, identify
 from kookabug_core.workspace import Workspace
@@ -86,7 +86,9 @@ class RunnerHarness:
     hooks: Mapping[str, Mapping[str, str]] = field(default_factory=dict[str, Mapping[str, str]])
     fake_input: bool = True
     deadline_ms: int = 60_000
-    shutdown_grace_ms: int = 3_000
+    shutdown_grace_ms: int = DEFAULT_SHUTDOWN_GRACE_MS
+    """제품 기본(5초). 녹화 기다림 상한(3초) + 최종 기록 여유(1초)보다 길어 정상 마무리가 하드
+    종료와 겨루지 않는다 (짧은 유예의 마무리는 `test_finish_lifecycle.py`가 따로 본다)."""
     self_kill_margin_ms: int = 10_000
     worker_cancel_grace_ms: int = 1_000
     worker_start_timeout_ms: int = 30_000
