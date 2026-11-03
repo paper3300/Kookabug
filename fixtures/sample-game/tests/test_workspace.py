@@ -68,9 +68,11 @@ SCREEN_OF: Final = {
 
 
 def run_headless(
-    tmp_path: Path, ocr_models: Path, graph: str, *args: str
+    tmp_path: Path, ocr_models: Path, graph: str, *args: str, redact: bool = False
 ) -> tuple[int, dict[str, Any]]:
-    ws = copy_example_workspace(tmp_path)
+    """예제 사본을 CLI로 돌린다. `redact`면 사본에만 `record.redact_secrets: true` (예제 원본은
+    기본값 — 비밀값을 가리지 않는다)."""
+    ws = copy_example_workspace(tmp_path, redact_secrets=redact)
     env = cli_env(tmp_path, None, **EXAMPLE_SECRET_ENV, KOOKABUG_OCR_MODELS=str(ocr_models))
     done = run_cli(
         ["run", graph, "--platform-fake", "fake-platform.json", "--json", *args],
@@ -273,14 +275,17 @@ def test_inventory_open_pass_headless(tmp_path: Path, ocr_models: Path) -> None:
     box = match["rect"]
     x, y = box["x"] + box["width"] // 2, box["y"] + box["height"] // 2
     assert match["method"] == "ocr" and 262 <= x < 762 and 200 <= y < 264, match
-    # 비밀번호는 기록에 남지 않는다
+    # 예제는 기본값(비밀값 가림 꺼짐)이라 비밀번호 입력 스텝도 기록에 원문이 남는다 (D3)
     text = (Path(out["run_dir"]) / "events.jsonl").read_text(encoding="utf-8")
-    assert SECRETS["accounts.qa_tester_01"] not in text
+    assert SECRETS["accounts.qa_tester_01"] in text
 
 
 @pytest.mark.process
 def test_login_fail_profile_fail_headless(tmp_path: Path, ocr_models: Path) -> None:
-    code, out = run_headless(tmp_path, ocr_models, INVENTORY_OPEN, "--profile", "login_fail")
+    # 비밀값 가림을 켠 사본 (아래 비밀번호 스텝 생략·기록 가림 검사)
+    code, out = run_headless(
+        tmp_path, ocr_models, INVENTORY_OPEN, "--profile", "login_fail", redact=True
+    )
     assert (code, out["verdict"], out["code"]) == (1, "fail", "unhandled_fail"), out
     # 실패 위치: 월드 접속 (연결하지 않은 login_failed 출구)
     assert out["failure_titles"] == ["월드 접속"]

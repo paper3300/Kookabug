@@ -195,6 +195,8 @@ def test_handled_fail_branch_still_keeps_its_evidence(tmp_path: Path) -> None:
 # ---------------------------------------------------------------- 비밀값을 넘기는 호출 (M1 T12)
 
 SECRETS = {"acc.pw": "hunter2"}
+REDACT = {"redact_secrets": True}
+"""비밀값 가림을 켠 워크스페이스 기록 정책 (기본은 가리지 않는다, D3)."""
 
 
 def write_login_sub(ws: Workspace, *, secret_last: bool) -> None:
@@ -215,7 +217,7 @@ def write_login_sub(ws: Workspace, *, secret_last: bool) -> None:
 def test_call_with_secret_input_keeps_fail_evidence_from_inner_frame(tmp_path: Path) -> None:
     """호출 노드가 비밀값을 넘겨도 호출 스텝의 실패 증거는 막지 않는다 (스키마 6장). 그 프레임은
     비밀값을 받지 않은 안쪽 스텝이 얻은 것이다. 호출 스텝 구간의 영상 생략은 그대로다."""
-    ws = make_workspace(tmp_path)
+    ws = make_workspace(tmp_path, record=REDACT)
     write_login_sub(ws, secret_last=False)
     g = tk().entry("n_call").call("n_call", SUB, inputs={"pw": secret("acc.pw")})
     ran = run_graph(ws, g, frames=FRAMES, secrets=SECRETS)
@@ -233,7 +235,7 @@ def test_call_with_secret_input_keeps_fail_evidence_from_inner_frame(tmp_path: P
 def test_call_with_secret_input_inner_secret_frame_still_blocked(tmp_path: Path) -> None:
     """마지막 프레임을 비밀값을 받은 안쪽 스텝이 얻었으면 획득 당시 표시가 막는다 — 안쪽 스텝이
     스스로 남길 수 있는 것보다 넓게 남기지 않는다."""
-    ws = make_workspace(tmp_path)
+    ws = make_workspace(tmp_path, record=REDACT)
     write_login_sub(ws, secret_last=True)
     g = tk().entry("n_call").call("n_call", SUB, inputs={"pw": secret("acc.pw")})
     ran = run_graph(ws, g, frames=FRAMES, secrets=SECRETS)

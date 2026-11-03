@@ -107,6 +107,8 @@ class _Primitive:
     amount: int = 0
     wait_ms: float = 0
     """이 동작 전에 기다리는 시간 (드래그 보간). 게이트가 닫히면 바로 깬다."""
+    guarded: bool = True
+    """입력 직전 확인을 한다 (`tap_unguarded`만 False)."""
 
 
 @dataclass(slots=True)
@@ -286,6 +288,15 @@ class InputActor:
         ups = [_Primitive("up", k) for k in reversed(keys)]
         self._submit(downs + ups, step, target)
 
+    def tap_unguarded(self, key: str, *, step: str | None = None) -> None:
+        """키 하나를 입력 직전 확인 **없이** 누르고 뗀다 — 실행 첫 창을 앞으로 가져오는 Alt(D1)
+        전용이다. 대상 창이 아직 앞에 없어 포그라운드 확인을 통과할 수 없기 때문이다. 게이트·입력
+        기록(`input.down` 먼저)·실패 정리(누른 키를 바로 뗌)·복구는 다른 요청과 같다."""
+        keys = _keys(key)
+        downs = [_Primitive("down", k, guarded=False) for k in keys]
+        ups = [_Primitive("up", k) for k in reversed(keys)]
+        self._submit(downs + ups, step, None)
+
     def press(self, key: str, *, target: object | None = None, step: str | None = None) -> None:
         """키(조합)를 눌러 둔다 — 누르고 있기의 앞 요청. 떼기는 `release` 또는 `RELEASE_ALL`."""
         self._submit([_Primitive("down", k) for k in _keys(key)], step, target)
@@ -413,7 +424,7 @@ class InputActor:
             case "down":
                 key = primitive.key
                 assert key is not None
-                screen = self._check("down", request, primitive.at)
+                screen = self._check("down", request, primitive.at) if primitive.guarded else None
                 self._record("input.down", key, step)
                 try:
                     _faults.fault_point("actor.before_backend", event="down")

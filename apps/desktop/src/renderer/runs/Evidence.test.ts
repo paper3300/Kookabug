@@ -1,6 +1,6 @@
 // 스크린샷 줄 칸 (M3 계획 2.6·2.10, T10 완료 기준)
 import { describe, expect, test } from "vitest";
-import { candidateRows, evidenceCells } from "./evidenceCells";
+import { candidateRows, evidenceCells, headMessage } from "./evidenceCells";
 import { step } from "./fixtures.testutil";
 import type { StepDetail, StepNode } from "./runIndexStore";
 
@@ -85,5 +85,24 @@ describe("evidenceCells", () => {
       { rank: 1, score: 0.81, x: 384, y: 432, scale: 1, pass: true },
       { rank: 2, score: 0.33, x: 902, y: 140, scale: 0.95, pass: false },
     ]);
+  });
+});
+
+describe("headMessage", () => {
+  test("test_error_step_shows_error_code_and_message", () => {
+    // 오류 스텝: 이유는 step.end.error에만 있다 (에디터 NodeResult와 같은 "code: message")
+    const s = step("s3", { status: "error", exit: null });
+    const d = detail(s, { error: { code: "window_not_foreground", message: "게임 창이 앞에 있지 않습니다" } });
+    expect(headMessage(s, d)).toBe("window_not_foreground: 게임 창이 앞에 있지 않습니다");
+    // 상세를 아직 못 읽었으면 색인 message만
+    expect(headMessage(s, null)).toBeNull();
+  });
+
+  test("test_non_error_step_keeps_message", () => {
+    const s = step("s4", { status: "fail", exit: "timeout", message: "stale_observation: 오래됨" });
+    expect(headMessage(s, detail(s, {}))).toBe("stale_observation: 오래됨");
+    const ok = step("s5");
+    expect(headMessage(ok, detail(ok, { message: "끝" }))).toBe("끝");
+    expect(headMessage(ok, detail(ok, {}))).toBeNull();
   });
 });

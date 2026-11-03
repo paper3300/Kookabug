@@ -185,7 +185,7 @@
     },
     "CtxLogParams": {
       "additionalProperties": false,
-      "description": "ctx.log (워커 → runner). message는 str()로 만든 것(비밀값은 가려짐)",
+      "description": "ctx.log (워커 → runner). message는 str()로 만든 문자열, 비밀값·비밀값 메시지면 그 wire 값({\"$kb\": \"secret\"|\"secret_message\", ...}) — 가릴지는 runner가 기록 정책(record.redact_secrets)으로 정한다",
       "properties": {
         "invoke": {
           "$ref": "#/$defs/InvokeId"
@@ -194,7 +194,7 @@
           "enum": ["debug", "info", "warn", "error"]
         },
         "message": {
-          "type": "string"
+          "$ref": "#/$defs/WireValue"
         }
       },
       "required": ["invoke", "level", "message"],
@@ -728,7 +728,15 @@
           "enum": ["ok", "fail", null]
         },
         "message": {
-          "type": ["string", "null"]
+          "anyOf": [
+            {
+              "type": ["string", "null"]
+            },
+            {
+              "$ref": "#/$defs/SecretMessageWire"
+            }
+          ],
+          "description": "노드 메시지. 비밀값이 든 메시지(SDK SecretMessage)는 가린 글·원문을 둘 다 싣고, 무엇을 기록할지는 runner가 record.redact_secrets로 정한다"
         },
         "outputs": {
           "$ref": "#/$defs/WireValue"
@@ -1025,6 +1033,24 @@
       },
       "required": ["reason"],
       "title": "RunnerStoppingParams",
+      "type": "object"
+    },
+    "SecretMessageWire": {
+      "additionalProperties": false,
+      "description": "비밀값이 든 메시지 (kookabug_sdk.codec, SDK SecretMessage): 가린 글(masked)과 원문(raw). 원문은 인증된 파이프로만 간다",
+      "properties": {
+        "$kb": {
+          "const": "secret_message"
+        },
+        "masked": {
+          "type": "string"
+        },
+        "raw": {
+          "type": "string"
+        }
+      },
+      "required": ["$kb", "masked", "raw"],
+      "title": "SecretMessageWire",
       "type": "object"
     },
     "SuccessResponse": {

@@ -13,7 +13,7 @@ import pytest
 
 from kb_testing.fake_win32 import FakeWindowApi
 from kookabug_platform.errors import POINT_OBSCURED, WINDOW_NOT_FOREGROUND, PlatformError
-from kookabug_platform.windows import check_foreground, check_point, is_owned_by
+from kookabug_platform.windows import bring_to_front, check_foreground, check_point, is_owned_by
 
 A, A_CHILD, B, C, S, X = 0x100, 0x101, 0x200, 0x300, 0x400, 0x500
 PT = (300, 200)
@@ -96,3 +96,90 @@ def test_owner_chain_walk(api: FakeWindowApi) -> None:
     # 소유 순환(비정상)에서도 끝난다
     api.windows[A].owner = C
     assert not is_owned_by(C, S, api)
+
+
+# ---------------------------------------------------------------- 앞으로 가져오기 (D1)
+
+
+class LockedForeground:
+    """포그라운드 잠금 흉내: `unlock`에 적은 방법부터 `SetForegroundWindow`가 먹힌다."""
+
+    def __init__(
+        self, unlock: str | None, *, alt_sent: bool = True, user_alt: bool = False
+    ) -> None:
+        self.unlock = unlock
+        self.alt_sent = alt_sent
+        self.user_alt = user_alt
+        self.fg = X
+        self.calls: list[str] = []
+        self.alt_down = False
+
+    def is_window(self, hwnd: int) -> bool:
+        return hwnd != 0
+
+    def restore(self, hwnd: int) -> None:
+        self.calls.append("restore")
+
+    def is_foreground(self, hwnd: int) -> bool:
+        return self.fg == hwnd
+
+    def _try(self, hwnd: int, how: str) -> None:
+        self.calls.append(how)
+        order = ("direct", "attach", "alt")
+        if self.unlock is not None and order.index(how) >= order.index(self.unlock):
+            self.fg = hwnd
+
+    def set_foreground(self, hwnd: int) -> None:
+        self._try(hwnd, "alt" if self.alt_down else "direct")
+
+    def set_foreground_attached(self, hwnd: int) -> None:
+        self._try(hwnd, "attach")
+
+    def alt_held(self) -> bool:
+        return self.user_alt
+
+    def tap_alt(self) -> bool:
+        """`bring_to_front`에 넘기는 탭 (runner에서는 입력 액터)."""
+        self.calls.append("tap_alt")
+        self.alt_down = self.alt_sent
+        return self.alt_sent
+
+
+@pytest.mark.parametrize("unlock", ["direct", "attach", "alt"])
+def test_bring_to_front_tries_in_order(unlock: str) -> None:
+    ops = LockedForeground(unlock)
+    assert bring_to_front(A, tap_alt=ops.tap_alt, ops=ops) == unlock
+    steps = ["restore", "direct", "attach", "tap_alt", "alt"]
+    assert ops.calls == steps[: steps.index(unlock) + 1]
+
+
+def test_bring_to_front_without_input_never_taps_alt() -> None:
+    # 입력을 보내지 않는 경로(노드 activate·데스크톱 검사·진단): Alt를 넣지 않고 실패
+    ops = LockedForeground("alt")
+    assert bring_to_front(A, ops=ops) is None
+    assert "tap_alt" not in ops.calls and ops.fg == X
+
+
+def test_bring_to_front_skips_alt_when_user_holds_alt() -> None:
+    # 사람이 Alt를 누르고 있으면 합성 누르기·떼기로 그 상태를 풀지 않는다
+    ops = LockedForeground("alt", user_alt=True)
+    assert bring_to_front(A, tap_alt=ops.tap_alt, ops=ops) is None
+    assert ops.calls == ["restore", "direct", "attach"]
+
+
+def test_bring_to_front_already_and_failures() -> None:
+    ops = LockedForeground(None)
+    ops.fg = A
+    assert bring_to_front(A, tap_alt=ops.tap_alt, ops=ops) == "already"
+    assert ops.calls == ["restore"]
+    # 잠금을 못 넘음 (보이지 않는 창을 쥔 상위 권한 프로그램 등): None, 예외 없음
+    locked = LockedForeground(None)
+    assert bring_to_front(A, tap_alt=locked.tap_alt, ops=locked) is None
+    assert locked.calls == ["restore", "direct", "attach", "tap_alt", "alt"]
+    # Alt가 들어가지 않았으면(게이트 닫힘·주입 실패) 다시 해 보지 않는다
+    blocked = LockedForeground("alt", alt_sent=False)
+    assert bring_to_front(A, tap_alt=blocked.tap_alt, ops=blocked) is None
+    assert blocked.calls[-1] == "tap_alt"
+    # 없는 창
+    none = LockedForeground("direct")
+    assert bring_to_front(0, tap_alt=none.tap_alt, ops=none) is None

@@ -10,6 +10,7 @@ from kookabug_core.record.policy import (
     find_secret,
     graph_source,
     node_source,
+    workspace_policy,
 )
 from kookabug_sdk import Secret
 
@@ -31,6 +32,18 @@ def test_default_is_on() -> None:
     assert policy.sources == {}
     assert StepPolicy(policy).screenshot_block() is None
     assert StepPolicy(policy).video == "on"
+
+
+def test_redact_secrets_workspace_only_default_false() -> None:
+    # D3: 비밀값 가림은 워크스페이스 층에서만 정하고, 없으면 false
+    assert workspace_policy(None, "kookabug.json#/record").redact_secrets is False
+    assert workspace_policy({"video": "on"}, "k").redact_secrets is False
+    on = workspace_policy({"redact_secrets": True}, "k")
+    assert on.redact_secrets is True and on.video == "failed_only"
+    # 아래 층(테스트·서브그래프·노드)을 더해도 그대로, 아래 층의 값은 보지 않는다
+    lower = on.layer({"screenshots": "off", "redact_secrets": False}, "g#/record")
+    assert lower.redact_secrets is True and lower.screenshots == "off"
+    assert RecordPolicy().layer({"redact_secrets": True}, "g").redact_secrets is False
 
 
 @pytest.mark.parametrize("level", LEVELS)

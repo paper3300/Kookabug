@@ -798,3 +798,81 @@ def test_repeat_down_in_one_request_release_order_agrees(tmp_path: Path, end: st
     finally:
         rig.actor.stop(10)
         journal.close()
+
+
+# ── P1 D1: 실행 첫 창을 앞으로 가져오는 Alt (tap_unguarded) ─────────────────────
+
+
+def test_tap_unguarded_skips_guard_but_records(tmp_path: Path) -> None:
+    # 대상 창이 아직 앞에 없어 포그라운드 확인을 할 수 없다: 확인 없이, 기록·떼기는 그대로
+    guard = Guard(tmp_path / "input.jsonl", fail=lambda op, n: True)
+    rig = Rig(tmp_path, guard=guard)
+    rig.actor.start()
+    rig.actor.tap_unguarded("alt", step="s1")
+    assert guard.calls == []
+    assert rig.ops() == [("down", "alt"), ("up", "alt")]
+    assert [(e["event"], e["step"]) for e in rig.events] == [
+        ("input.down", "s1"),
+        ("input.up", "s1"),
+    ]
+    assert rig.actor.held == []
+    # 다른 요청은 여전히 확인을 거친다
+    with pytest.raises(EngineError):
+        rig.actor.key("alt")
+    assert rig.actor.stop(10)
+
+
+def test_tap_unguarded_refused_when_gate_closed(tmp_path: Path) -> None:
+    # 취소·마무리로 게이트가 닫혔으면 백엔드를 부르지 않는다
+    rig = Rig(tmp_path)
+    rig.actor.start()
+    rig.actor.close_gate()
+    with pytest.raises(Cancelled):
+        rig.actor.tap_unguarded("alt")
+    assert rig.actor.stop(10)
+    assert [op for op in rig.ops() if op[1] == "alt"] == []
+    assert rig.events == []
+
+
+class _CountingSend:
+    """SendInput 흉내: 호출마다 `results`의 개수만큼 넣었다고 돌려준다 (0 = 하나도 못 넣음)."""
+
+    def __init__(self, results: list[int]) -> None:
+        self.results = results
+        self.calls: list[int] = []
+
+    def __call__(self, inputs: Any) -> int:
+        self.calls.append(len(inputs))
+        return self.results.pop(0) if self.results else len(inputs)
+
+
+@pytest.mark.parametrize(
+    "results",
+    [
+        [0],  # 누르기를 못 넣음 → 실패, 떼기를 보낸다 (눌렸을 수 있음으로 기록됐다)
+        [1, 1],  # 정상
+        [1, 0, 1],  # 떼기 실패 → 실패 정리가 다시 뗀다
+    ],
+    ids=["down_0", "ok", "up_0"],
+)
+def test_tap_unguarded_partial_send_never_leaves_alt_down(
+    tmp_path: Path, results: list[int]
+) -> None:
+    sendinput = pytest.importorskip("kookabug_platform.sendinput")
+    send = _CountingSend(list(results))
+    events: list[dict[str, Any]] = []
+    actor = InputActor(
+        sendinput.SendInputBackend(send=send), emit=lambda e: events.append(dict(e))
+    ).start()
+    try:
+        if results == [1, 1]:
+            actor.tap_unguarded("alt")
+        else:
+            with pytest.raises(OSError):
+                actor.tap_unguarded("alt")
+        assert actor.held == []  # 액터 기준 눌린 키 없음
+        # 기록상으로도 눌린 채 남지 않는다 (마지막 기록이 떼기)
+        assert [e["event"] for e in events][-1] == "input.up"
+        assert send.calls[-1] == 1  # 마지막 SendInput은 떼기 하나
+    finally:
+        assert actor.stop(10)

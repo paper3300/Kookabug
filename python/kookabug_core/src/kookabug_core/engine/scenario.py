@@ -803,8 +803,9 @@ class ScenarioPlatform:
         self.scenario.game_of(window)
         return (width, height) == self.scenario.client_size
 
-    def activate(self, window: WindowRef) -> None:
+    def activate(self, window: WindowRef) -> bool:
         self.scenario.game_of(window)
+        return True
 
     def launch(self, path: str, args: Sequence[str], cwd: str | None) -> ProcessRef:
         return self.scenario.launch_game(path, args).process

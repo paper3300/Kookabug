@@ -10,6 +10,11 @@
 - `testkit.read_text`: `text`(string)를 주는 `done` / 출력 없는 `unreadable`(fail)
 - `testkit.input.tap`: 가짜 입력 (`effects={"input"}`)
 - `testkit.input.sneak`: `effects` 선언 없이 입력 (→ error)
+- `testkit.secret_message`: 비밀값·비밀값 메시지(`message_with_secrets`) 로그와 그 메시지의 fail
+  (기록 정책이 워커 경계에서도 같은지)
+- `testkit.secret_message_output`: 비밀값 메시지를 출력(`details`)에도 넣는다 (워커 출력은 거부,
+  runner 안은 기록 정책대로 가린 글·원문 하나만 기록)
+- `testkit.log_values`: None·정수·dict·비밀값을 담은 dict를 로그로 (문자열 아닌 로그가 `str()`로)
 - `testkit.boom`: 예외 → error
 - `testkit.fail_once`: 입력 `exit`로 정한 출구로 나간다 (출구 연결 시나리오용)
 - `testkit.flow.choose`: `DynamicExits` + 기본값 있는 config (`exits`, 기본 `["done"]`)

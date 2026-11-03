@@ -33,9 +33,11 @@ __all__ = [
     "ProcessRef",
     "Rect",
     "Secret",
+    "SecretMessage",
     "Target",
     "WindowInfo",
     "WindowRef",
+    "message_with_secrets",
     "pin_type",
     "plugin_type",
 ]
@@ -70,6 +72,42 @@ class Secret:
 
     def __hash__(self) -> int:
         return hash((Secret, self._value))
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class SecretMessage:
+    """비밀값이 든 메시지 (`Result.fail`의 `message` 등). 실행 기록에 남길 때 워크스페이스
+    `record.redact_secrets`가 켜져 있으면 `masked`, 아니면 `raw`를 쓴다. `str()`은 늘 `masked`다.
+
+    `message_with_secrets()`로 만든다 (비밀값이 없으면 그냥 `str`이 나온다)."""
+
+    masked: str
+    raw: str
+
+    def __str__(self) -> str:
+        return self.masked
+
+    def __repr__(self) -> str:
+        return f"SecretMessage({self.masked!r})"
+
+    def __contains__(self, part: str) -> bool:
+        """가린 글 안에 있는가 (`str` 메시지처럼 `in`으로 본다)."""
+        return part in self.masked
+
+
+def message_with_secrets(
+    build: typing.Callable[[typing.Callable[[Any], str]], str],
+) -> str | SecretMessage:
+    """`build(show)`로 메시지를 두 번 만든다: `show`가 비밀값을 가리는 판(`str`)과 원문을 꺼내는
+    판(`Secret.reveal`). 둘이 같으면 `str`, 다르면 `SecretMessage`.
+
+    `show`는 값 하나를 글로 바꾼다 — 비밀값이 아니면 `str(value)`. 다른 표기(JSON·`repr`)가
+    필요하면 `build` 안에서 `show`를 그 표기 함수에 넘긴다 (예: `json.dumps(v, default=show)`).
+    """
+    masked = build(str)
+    raw = build(lambda v: v.reveal() if isinstance(v, Secret) else str(v))
+    return masked if raw == masked else SecretMessage(masked, raw)
 
 
 @dataclass(frozen=True, slots=True)

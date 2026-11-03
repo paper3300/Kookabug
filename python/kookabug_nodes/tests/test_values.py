@@ -2,7 +2,15 @@ from typing import Any
 
 import pytest
 
-from kookabug_nodes.values import compare, text_format, var_get, var_set
+from kookabug_nodes.values import (
+    calc,
+    calc_values,
+    compare,
+    text_format,
+    var_add,
+    var_get,
+    var_set,
+)
 from kookabug_sdk import Secret
 from kookabug_sdk.pure import PureContextViolation
 from kookabug_sdk.testing import fake_context
@@ -182,3 +190,77 @@ def test_var_get_is_pure() -> None:
 def test_var_set_empty_name_error() -> None:
     with pytest.raises(ValueError):
         var_set(fake_context(), name="", value=1)
+
+
+# ---------------------------------------------------------------- 산술 (G17)
+
+
+@pytest.mark.parametrize(
+    ("a", "op", "b", "expected"),
+    [
+        (2, "+", 3, 5),
+        (2, "-", 5, -3),
+        (4, "*", 2.5, 10.0),
+        (7, "/", 2, 3.5),
+        (6, "/", 3, 2.0),
+        (7, "//", 2, 3),
+        (7, "%", 3, 1),
+        (-7, "%", 3, 2),  # Python 규칙: 나머지 부호는 b
+        (6, "%", 3, 0),  # "N번째마다"
+        (7.5, "//", 2, 3.0),
+    ],
+)
+def test_calc_ops(a: Any, op: str, b: Any, expected: Any) -> None:
+    got = calc(fake_context(), a=a, op=op, b=b).outputs["result"]  # type: ignore[arg-type]
+    assert got == expected and type(got) is type(expected)
+
+
+@pytest.mark.parametrize(
+    ("a", "op", "b", "error"),
+    [
+        (1, "/", 0, ValueError),
+        (1, "%", 0, ValueError),
+        (1.5, "//", 0.0, ValueError),
+        (True, "+", 1, TypeError),
+        ("1", "+", 1, TypeError),
+        (None, "*", 2, TypeError),
+        (Secret("1"), "+", 1, TypeError),
+        (2**53 - 1, "+", 1, ValueError),
+        (1e308, "*", 10, ValueError),
+        (1, "**", 2, ValueError),
+    ],
+)
+def test_calc_errors(a: Any, op: str, b: Any, error: type[Exception]) -> None:
+    with pytest.raises(error):
+        calc_values(a, op, b)
+
+
+def test_calc_is_pure_and_typed() -> None:
+    schema = calc.schema()
+    assert schema["pure"] is True
+    assert schema["inputs"]["op"]["enum"] == ["+", "-", "*", "/", "//", "%"]
+    assert schema["outputs"] == {"result": {"type": "float"}}
+    # 순수 노드에서도 계산된다 (PureContext)
+    assert calc(fake_context(pure=True), a=9, op="%", b=4).outputs == {"result": 1}
+
+
+def test_var_add_counter() -> None:
+    ctx = fake_context(vars={"n": 0})
+    assert var_add(ctx, name="n").outputs == {"value": 1}
+    assert var_add(ctx, name="n", amount=2).outputs == {"value": 3}
+    assert var_add(ctx, name="n", amount=0.5).outputs == {"value": 3.5}
+    assert ctx.vars.values == {"n": 3.5}
+
+
+@pytest.mark.parametrize(
+    ("vars_", "error"), [({}, KeyError), ({"n": "3"}, TypeError), ({"n": None}, TypeError)]
+)
+def test_var_add_errors(vars_: dict[str, Any], error: type[Exception]) -> None:
+    ctx = fake_context(vars=vars_)
+    with pytest.raises(error):
+        var_add(ctx, name="n")
+    assert ctx.vars.values == vars_  # 실패하면 바꾸지 않는다
+    with pytest.raises(ValueError):
+        var_add(fake_context(), name="")
+    with pytest.raises(PureContextViolation):
+        var_add(fake_context(vars={"n": 1}, pure=True), name="n")

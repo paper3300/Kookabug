@@ -129,6 +129,19 @@ def test_changed_notification_within_2s(ws: Path) -> None:
         assert not [p for p in seen if p.startswith("runs")]
 
 
+def test_info_deadline_from_workspace_run(ws: Path) -> None:
+    # 툴바 기한 "기본"에 보일 값: kookabug.json run.deadline_ms, 없으면 30분 (G11)
+    config = json.loads((ws / "kookabug.json").read_text(encoding="utf-8-sig"))
+    config["run"] = {**config.get("run", {}), "deadline_ms": 5_400_000}
+    (ws / "kookabug.json").write_text(json.dumps(config), encoding="utf-8")
+    with ThreadDaemon(ws) as d, d.client() as client:
+        assert client.call("workspace.info")["deadline_ms"] == 5_400_000
+    del config["run"]["deadline_ms"]
+    (ws / "kookabug.json").write_text(json.dumps(config), encoding="utf-8")
+    with ThreadDaemon(ws) as d, d.client() as client:
+        assert client.call("workspace.info")["deadline_ms"] == 30 * 60 * 1000
+
+
 def test_info_profiles_and_status_fields(ws: Path, tmp_path: Path) -> None:
     with ThreadDaemon(ws) as d, d.client() as client:
         info = client.call("workspace.info")
@@ -136,6 +149,8 @@ def test_info_profiles_and_status_fields(ws: Path, tmp_path: Path) -> None:
     assert info["profiles"] == ["login_fail", "maintenance"]
     # 보관 정책 (기록 뷰어 상태 바, M3 T11): 없는 값은 기본값
     assert info["retention"] == {"passed_days": 14, "failed_days": 60, "keep_last": 50}
+    # 실행 기한 기본값 (툴바 "기본", G11): 예제 워크스페이스의 run.deadline_ms (5분)
+    assert info["deadline_ms"] == 300_000
     assert info["diagnostics"] == []
     core = [p for p in info["plugins"] if p["id"] == "core"]
     assert len(core) == 1 and core[0]["version"]

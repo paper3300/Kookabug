@@ -8,8 +8,8 @@
 import re
 from typing import Annotated
 
-from kookabug_nodes._observe import locate, plain, poll, read_area
-from kookabug_sdk import Context, Exit, Input, Result, Retry, Secret, node
+from kookabug_nodes._observe import locate, plain, poll, read_area, shown_text
+from kookabug_sdk import Context, Exit, Input, Result, Retry, Secret, message_with_secrets, node
 from kookabug_sdk.context import Deadline
 from kookabug_sdk.types import Image, Match, OcrResult, Rect, Target
 
@@ -113,7 +113,6 @@ def text(
         name = region.name if isinstance(region, Target) else "?"
         return Result.fail("fail", f"영역 target '{name}'이(가) 보이지 않는다", text="")
     read = last[0].text
-    shown = str(read) if isinstance(read, Secret) else repr(read)
     wanted = (
         f"{equals!r}와(과) 같지"
         if equals is not None
@@ -121,4 +120,8 @@ def text(
         if contains is not None
         else f"/{regex}/에 맞지"
     )
-    return Result.fail("fail", f"읽은 글자 {shown}이(가) {wanted} 않는다", text=read)
+    # 민감 target의 글자는 기록 정책(record.redact_secrets)대로 가리거나 원문으로 남는다
+    message = message_with_secrets(
+        lambda s: f"읽은 글자 {shown_text(read, s)}이(가) {wanted} 않는다"
+    )
+    return Result.fail("fail", message, text=read)

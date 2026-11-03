@@ -835,7 +835,7 @@
     },
     {
       "category": "log",
-      "description": "실행 기록에 메시지를 남긴다. 비밀값은 가려서 남긴다.",
+      "description": "실행 기록에 메시지를 남긴다. 비밀값은 워크스페이스 `record.redact_secrets`가 켜져 있을 때만\n가려서 남긴다.",
       "exits": [
         {
           "kind": "ok",
@@ -893,6 +893,38 @@
       "pure": true,
       "title": "비교",
       "type": "core.logic.compare",
+      "version": 1
+    },
+    {
+      "category": "value",
+      "description": "`a op b`(더하기·빼기·곱하기·나누기·몫·나머지). 정수끼리면 정수(`/`는 실수)다. \"N번째마다\"는\n`index % N`을 `core.logic.compare`로 0과 비교한다.",
+      "inputs": {
+        "a": {
+          "type": "float"
+        },
+        "b": {
+          "type": "float"
+        },
+        "op": {
+          "enum": [
+            "+",
+            "-",
+            "*",
+            "/",
+            "//",
+            "%"
+          ],
+          "type": "string"
+        }
+      },
+      "outputs": {
+        "result": {
+          "type": "float"
+        }
+      },
+      "pure": true,
+      "title": "계산",
+      "type": "core.math.calc",
       "version": 1
     },
     {
@@ -1229,6 +1261,36 @@
       "pure": true,
       "title": "문자열 조합",
       "type": "core.text.format",
+      "version": 1
+    },
+    {
+      "category": "value",
+      "description": "숫자 변수에 `amount`(기본 1)를 더해 저장하고 새 값을 낸다 (카운터). 변수가 없거나 숫자가\n아니면 error — 먼저 `core.var.set`으로 처음 값을 정한다.",
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": [
+            "value"
+          ]
+        }
+      ],
+      "inputs": {
+        "amount": {
+          "default": 1,
+          "type": "float"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "outputs": {
+        "value": {
+          "type": "float"
+        }
+      },
+      "title": "변수 더하기",
+      "type": "core.var.add",
       "version": 1
     },
     {

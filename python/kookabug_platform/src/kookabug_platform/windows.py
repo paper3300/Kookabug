@@ -12,17 +12,19 @@
   않아 관측과 입력 대상이 어긋나기 때문이다. 팝업을 누르려면 그 팝업을 `attach(owned=True)`로 대상
   창으로 바꾼다.
 
-이 모듈은 입력을 보내지 않는다. 입력 직전 확인의 순서·스레드는 액터(T5)가 정한다.
+이 모듈은 입력을 보내지 않는다 — `bring_to_front`의 Alt 누르기·떼기는 부르는 쪽이 준
+`tap_alt`(runner 입력 액터)가 넣고, runner 플랫폼이 실행 첫 창을 앞으로 가져올 때만 준다(D1). 입력
+직전 확인의 순서·스레드는 액터(T5)가 정한다.
 """
 
 from __future__ import annotations
 
 import ctypes
 import re
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from ctypes import wintypes
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, Final, Protocol
 
 from kookabug_platform.dpi import per_monitor_v2_thread
 from kookabug_platform.errors import (
@@ -38,8 +40,12 @@ from kookabug_platform.win32 import dwmapi, kernel32, shcore, user32
 from kookabug_platform.win32.api import DEFAULT_API, WindowApi
 
 __all__ = [
+    "WIN32_FOREGROUND",
+    "ForegroundOps",
+    "Win32Foreground",
     "WindowInfo",
     "activate",
+    "bring_to_front",
     "check_foreground",
     "check_input_desktop",
     "check_integrity",
@@ -336,17 +342,45 @@ def check_input_desktop(api: WindowApi = DEFAULT_API) -> None:
 # ---------------------------------------------------------------- 조작
 
 
-def activate(hwnd: int) -> bool:
-    """최선 노력으로 앞으로 가져온다. 예외를 던지지 않는다. 포그라운드가 됐으면 True.
+class ForegroundOps(Protocol):
+    """`bring_to_front`가 쓰는 Win32 조작 (검사가 바꿔 끼운다)."""
 
-    입력 경로는 이것을 부르지 않는다(U1: 포커스를 잃으면 입력하지 않고 오류). `launch`·`attach`·
-    `set_current`가 창을 정한 직후 한 번 부른다.
-    """
-    try:
-        if not user32.IsWindow(hwnd):
-            return False
+    def is_window(self, hwnd: int) -> bool: ...
+    def restore(self, hwnd: int) -> None:
+        """최소화돼 있으면 되살린다."""
+        ...
+
+    def is_foreground(self, hwnd: int) -> bool: ...
+    def set_foreground(self, hwnd: int) -> None:
+        """`BringWindowToTop` + `SetForegroundWindow`."""
+        ...
+
+    def set_foreground_attached(self, hwnd: int) -> None:
+        """지금 포그라운드 스레드에 입력 큐를 붙이고(`AttachThreadInput`) 앞으로, 그다음 뗀다."""
+        ...
+
+    def alt_held(self) -> bool:
+        """Alt가 지금 눌려 있다 (사람이 누르고 있음 등 — 합성 떼기로 그 상태를 바꾸지 않는다)."""
+        ...
+
+
+class Win32Foreground:
+    def is_window(self, hwnd: int) -> bool:
+        return bool(user32.IsWindow(hwnd))
+
+    def restore(self, hwnd: int) -> None:
         if user32.IsIconic(hwnd):
             user32.ShowWindow(hwnd, user32.SW_RESTORE)
+
+    def is_foreground(self, hwnd: int) -> bool:
+        fg = user32.GetForegroundWindow()
+        return bool(fg) and user32.GetAncestor(fg, user32.GA_ROOT) == hwnd
+
+    def set_foreground(self, hwnd: int) -> None:
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+
+    def set_foreground_attached(self, hwnd: int) -> None:
         fg = user32.GetForegroundWindow()
         fg_thread = user32.GetWindowThreadProcessId(fg, None) if fg else 0
         me = kernel32.GetCurrentThreadId()
@@ -354,13 +388,74 @@ def activate(hwnd: int) -> bool:
             fg_thread and fg_thread != me and user32.AttachThreadInput(me, fg_thread, 1)
         )
         try:
-            user32.BringWindowToTop(hwnd)
-            user32.SetForegroundWindow(hwnd)
+            self.set_foreground(hwnd)
         finally:
             if attached:
                 user32.AttachThreadInput(me, fg_thread, 0)
-        fg = user32.GetForegroundWindow()
-        return bool(fg) and user32.GetAncestor(fg, user32.GA_ROOT) == hwnd
+
+    def alt_held(self) -> bool:
+        return bool(int(user32.GetAsyncKeyState(VK_MENU)) & 0x8000)
+
+
+VK_MENU: Final = 0x12
+WIN32_FOREGROUND: Final[ForegroundOps] = Win32Foreground()
+
+
+def bring_to_front(
+    hwnd: int,
+    *,
+    tap_alt: Callable[[], bool] | None = None,
+    ops: ForegroundOps = WIN32_FOREGROUND,
+) -> str | None:
+    """창을 포그라운드로. 된 방법(`already`·`direct`·`attach`·`alt`)을, 못 했으면 None을 준다.
+
+    Windows는 포그라운드 잠금으로 다른 프로세스의 `SetForegroundWindow`를 막는다(작업 표시줄만
+    깜박임). 차례대로 해 본다:
+
+    1. `direct`: 그냥 `SetForegroundWindow` — 포그라운드 창이 없는 등 문서의 허용 조건이면 된다
+    2. `attach`: 지금 포그라운드 스레드에 `AttachThreadInput`으로 붙어 같은 입력 상태를 쓰고 다시
+       한다. 포그라운드 프로세스가 더 높은 무결성(관리자로 도는 보안·근태 프로그램 등)이면 붙기가
+       거부된다
+    3. `alt`(`tap_alt`를 줬을 때만): Alt 누르기·떼기를 넣은 뒤 다시 한다.
+       `LockSetForegroundWindow` 문서대로 시스템은 사용자가 Alt를 누르면 `SetForegroundWindow`
+       호출을 다시 허용한다(포그라운드 잠금 해제). Alt만 눌렀다 떼면 문자가 들어가지 않고, 그 Alt는
+       아직 포그라운드인 다른 프로그램이 받는다(그 창의 메뉴 표시줄이 켜질 수 있다). UIPI(상위
+       무결성 포그라운드)에 막히면 주입도 전환도 안 될 수 있다. Alt가 이미 눌려 있으면(사람이 누르는
+       중) 넣지 않는다 — 합성 떼기가 그 상태를 풀기 때문이다. `tap_alt`는 runner의 입력 액터를 거쳐
+       임대권·게이트·입력 기록·복구를 지키고, 실행 첫 창 가져오기에서만 준다
+
+    `AllowSetForegroundWindow`는 이미 포그라운드 권한이 있는 프로세스가 남에게 넘기는 함수라, 다른
+    프로그램이 포그라운드를 쥔 경우에는 도움이 안 된다. `SPI_SETFOREGROUNDLOCKTIMEOUT`은 시스템
+    전체 설정을 바꾸므로 쓰지 않는다.
+    """
+    if not ops.is_window(hwnd):
+        return None
+    ops.restore(hwnd)
+    if ops.is_foreground(hwnd):
+        return "already"
+    ops.set_foreground(hwnd)
+    if ops.is_foreground(hwnd):
+        return "direct"
+    ops.set_foreground_attached(hwnd)
+    if ops.is_foreground(hwnd):
+        return "attach"
+    if tap_alt is not None and not ops.alt_held() and tap_alt():
+        ops.set_foreground(hwnd)
+        if ops.is_foreground(hwnd):
+            return "alt"
+    return None
+
+
+def activate(hwnd: int, *, tap_alt: Callable[[], bool] | None = None) -> bool:
+    """최선 노력으로 앞으로 가져온다(`bring_to_front`). 예외를 던지지 않는다. 포그라운드가 됐으면
+    True.
+
+    입력 경로는 이것을 부르지 않는다(U1: 실행 도중 포커스를 잃으면 입력하지 않고 오류). `launch`·
+    `attach`·`set_current`가 창을 정한 직후 한 번 부르고(입력 없이), 실행에서 처음 정한 창은
+    실행기가 가져온다(D1, runner 플랫폼 `bring_forward`만 `tap_alt`를 준다).
+    """
+    try:
+        return bring_to_front(hwnd, tap_alt=tap_alt) is not None
     except Exception:
         return False
 

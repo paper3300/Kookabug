@@ -210,6 +210,25 @@ describe("시작", () => {
     expect(model.store.getState().blocked).toBeNull();
   });
 
+  test("test_deadline_sent_only_when_chosen", async () => {
+    // G11: 툴바에서 기한을 고르면 run.start deadline_ms, 기본이면 보내지 않는다(kookabug.json → 30분)
+    replies.set("run.start", () => {
+      throw new RpcError(-32100, "거부", { code: "run_busy" });
+    });
+    await model.start(GRAPH);
+    expect(calls.filter((c) => c.method === "run.start").at(-1)!.params).not.toHaveProperty("deadline_ms");
+    model.setDeadline(2 * 60 * 60_000);
+    await model.start(GRAPH);
+    expect(calls.filter((c) => c.method === "run.start").at(-1)!.params.deadline_ms).toBe(7_200_000);
+    // 틀린 값은 받지 않는다
+    model.setDeadline(0);
+    model.setDeadline(1.5);
+    expect(model.store.getState().deadlineMs).toBe(7_200_000);
+    model.setDeadline(null);
+    await model.start(GRAPH);
+    expect(calls.filter((c) => c.method === "run.start").at(-1)!.params).not.toHaveProperty("deadline_ms");
+  });
+
   test("test_calls_loaded_from_snapshot_on_nested_step", async () => {
     let statusCalls = 0;
     replies.set("run.status", () => {

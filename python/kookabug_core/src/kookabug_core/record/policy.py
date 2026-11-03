@@ -5,8 +5,9 @@
   항목마다 한 번이라도 `off`면 `off`이고 아래에서 다시 켤 수 없다. `video`는
   `on` < `failed_only` < `off`로 센 쪽이 이긴다
 - 정책을 끈 곳(`source`)은 그 항목을 처음 가장 세게 만든 층이다 (위가 아래를 이긴다)
-- 스텝의 입력(재귀)에 비밀값이 있으면 그 스텝의 스크린샷·영상을 남기지 않는다 (`secret_input`).
-  단 서브그래프 호출 스텝의 실패·예외 증거는 비밀값 입력으로 막지 않는다 (`Recorder`, M1 T12)
+- 워크스페이스 `record.redact_secrets`가 true일 때만: 스텝의 입력(재귀)에 비밀값이 있으면 그 스텝의
+  스크린샷·영상을 남기지 않는다 (`secret_input`). 단 서브그래프 호출 스텝의 실패·예외 증거는 비밀값
+  입력으로 막지 않는다 (`Recorder`, M1 T12). 기본(false)은 비밀값 스텝도 그대로 남긴다 (D3)
 
     policy = RecordPolicy().layer(ws.config.get("record"), "kookabug.json#/record")
     policy.screenshots  # "on" | "off"
@@ -65,6 +66,9 @@ class RecordPolicy:
     screenshots: ScreenshotMode = "on"
     video: VideoMode = "on"
     sources: Mapping[str, str] = field(default_factory=dict[str, str])
+    redact_secrets: bool = False
+    """비밀값 가림 (워크스페이스 `record.redact_secrets`, 기본 false — 2026-11-03 사용자 결정 D3).
+    아래 층이 바꾸지 않는다."""
 
     def layer(self, record: Mapping[str, Any] | None, source: str) -> RecordPolicy:
         """한 층(`record` 객체, 없으면 그대로)을 더한다. 더 엄격한 값만 받아들인다."""
@@ -114,9 +118,13 @@ DEFAULT_VIDEO: Final[VideoMode] = "failed_only"
 
 
 def workspace_policy(record: Mapping[str, Any] | None, source: str) -> RecordPolicy:
-    """워크스페이스 층: `record`에 `video`가 없으면 기본값 `failed_only`(정한 곳 없음)."""
+    """워크스페이스 층: `record`에 `video`가 없으면 기본값 `failed_only`(정한 곳 없음).
+    `redact_secrets`는 이 층에서만 정한다 (없으면 false)."""
     has_video = isinstance(record, Mapping) and record.get("video") in _VIDEO_MODES
-    base = RecordPolicy() if has_video else RecordPolicy(video=DEFAULT_VIDEO)
+    redact = isinstance(record, Mapping) and record.get("redact_secrets") is True
+    base = RecordPolicy(redact_secrets=redact)
+    if not has_video:
+        base = replace(base, video=DEFAULT_VIDEO)
     return base.layer(record if isinstance(record, Mapping) else None, source)
 
 

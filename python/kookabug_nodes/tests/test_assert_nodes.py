@@ -15,7 +15,7 @@ from helpers.run import tk
 from kb_testing.sample_game import FRAMES_DIR
 from kookabug_core.registry import default_registry
 from kookabug_nodes.assert_ import not_visible, text, visible
-from kookabug_sdk import Secret
+from kookabug_sdk import Secret, SecretMessage
 from kookabug_sdk.testing import fake_context, load_target
 from kookabug_sdk.types import Rect, Target
 
@@ -144,8 +144,10 @@ def test_text_sensitive_masks_failure_message(tmp_path: Path, targets: Any) -> N
     assert result.exit == "fail"
     read = result.outputs["text"]
     assert isinstance(read, Secret) and read.reveal() == "Gold 12,345"
-    message = result.message or ""
-    assert "***" in message and "12,345" not in message
+    message = result.message
+    assert isinstance(message, SecretMessage)
+    assert "***" in message.masked and "12,345" not in message.masked and "***" in str(message)
+    assert "'Gold 12,345'" in message.raw  # 가림을 끈 실행 기록에는 원문 (P1 검수 4)
     # 맞으면 ok, 글자는 비밀값으로
     ok = text(fake_context(frames=[WORLD]), region=gold, contains="12,345")
     assert ok.exit == "ok" and isinstance(ok.outputs["text"], Secret)

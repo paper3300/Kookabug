@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from kookabug_sdk.types import SecretMessage
+
 __all__ = ["ExitKind", "NodeContractError", "Result"]
 
 type ExitKind = Literal["ok", "fail"]
@@ -22,12 +24,15 @@ class Result:
     exit: str | None
     kind: ExitKind | None
     outputs: Mapping[str, Any] = field(default_factory=dict)
-    message: str | None = None
+    message: str | SecretMessage | None = None
+    """`SecretMessage`면 실행 기록에 남길 때 `record.redact_secrets`에 따라 가린 글·원문 중 하나."""
 
     @classmethod
     def ok(cls, exit: str, /, **outputs: Any) -> Result:
         return cls(exit, "ok", dict(outputs))
 
     @classmethod
-    def fail(cls, exit: str, /, message: str | None = None, **outputs: Any) -> Result:
+    def fail(
+        cls, exit: str, /, message: str | SecretMessage | None = None, **outputs: Any
+    ) -> Result:
         return cls(exit, "fail", dict(outputs), message)

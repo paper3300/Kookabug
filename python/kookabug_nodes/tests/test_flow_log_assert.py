@@ -3,7 +3,7 @@ import pytest
 from kookabug_nodes.flow import branch, delay
 from kookabug_nodes.log import log_message
 from kookabug_nodes.test import assert_compare
-from kookabug_sdk import Secret
+from kookabug_sdk import Secret, SecretMessage
 from kookabug_sdk.testing import FakeClock, fake_context
 
 
@@ -62,7 +62,14 @@ def test_assert_compare_ok_fail() -> None:
 def test_assert_compare_fail_message_masks_secret() -> None:
     fail = assert_compare(fake_context(), a=[Secret("hunter2")], op="==", b="other")
     assert fail.exit == "fail"
-    assert fail.message == '["***"] == "other"이(가) 아니다'
+    # 가린 글과 원문 둘 다 싣는다 — 실행 기록은 record.redact_secrets로 고른다 (P1 검수 4)
+    assert fail.message == SecretMessage(
+        '["***"] == "other"이(가) 아니다', '["hunter2"] == "other"이(가) 아니다'
+    )
+    assert str(fail.message) == '["***"] == "other"이(가) 아니다'
+    # 비밀값이 없으면 그냥 문자열
+    plain = assert_compare(fake_context(), a=1, op="==", b=2)
+    assert plain.message == "1 == 2이(가) 아니다"
 
 
 def test_assert_compare_retry_never() -> None:

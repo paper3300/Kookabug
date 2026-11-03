@@ -1,6 +1,30 @@
 // 실행·정지 활성 조건: 툴바·메뉴 "실행"·F5가 같은 함수를 쓴다 (M2 T14 조율자 결정)
 import { describe, expect, test } from "vitest";
-import { runAvailability, type RunAvailabilityInput } from "./commands";
+import { deadlineOptions, formatDeadline, runAvailability, type RunAvailabilityInput } from "./commands";
+
+describe("deadline", () => {
+  test("test_format_deadline", () => {
+    expect([90_000, 300_000, 1_800_000, 3_600_000, 5_400_000, 30_000].map(formatDeadline)).toEqual([
+      "2분",
+      "5분",
+      "30분",
+      "1시간",
+      "1시간 30분",
+      "30초",
+    ]);
+  });
+
+  test("test_deadline_options_default_label_and_custom_value", () => {
+    const opts = deadlineOptions(1_800_000, null);
+    expect(opts[0]).toEqual({ value: "", label: "기본 (30분)", ms: null });
+    expect(opts.map((o) => o.label).slice(1)).toEqual(["5분", "10분", "30분", "1시간", "2시간", "4시간", "8시간"]);
+    // 워크스페이스 정보가 없으면 "기본"만, 고정 값에 없는 고른 값은 순서대로 끼운다
+    const custom = deadlineOptions(undefined, 45 * 60_000);
+    expect(custom[0].label).toBe("기본");
+    expect(custom.map((o) => o.value)).toContain(String(45 * 60_000));
+    expect(custom.findIndex((o) => o.ms === 45 * 60_000)).toBe(4);
+  });
+});
 
 const TEST_TAB = { path: "tests/a.graph.json", kind: "graph", graphKind: "test" } as const;
 const idle: RunAvailabilityInput = { tab: TEST_TAB, connected: true, running: false, starting: null };

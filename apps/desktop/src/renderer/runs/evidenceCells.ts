@@ -70,6 +70,16 @@ export function stepEnd(detail: StepDetail): events.StepEndEvent | null {
   return (end as events.StepEndEvent | undefined) ?? null;
 }
 
+/**
+ * 증거 머리에 쓸 이유. 오류가 있는 step.end는 `code: message`(에디터 실행 결과 NodeResult와 같은 규칙),
+ * 아니면 색인의 message. 상세를 아직 못 읽었으면 색인 message만
+ */
+export function headMessage(step: StepNode, detail: StepDetail | null): string | null {
+  const end = detail === null ? null : stepEnd(detail);
+  if (end?.error !== undefined) return `${end.error.code}: ${end.error.message}`;
+  return step.message ?? end?.message ?? null;
+}
+
 function lastLabel(step: StepNode, end: events.StepEndEvent | null): string {
   if (end?.message?.startsWith("stale_observation") === true || step.message?.startsWith("stale_observation") === true) {
     return "오래된 관측";

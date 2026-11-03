@@ -99,20 +99,6 @@
       "title": "Profile",
       "type": "object"
     },
-    "RecordPolicy": {
-      "additionalProperties": false,
-      "description": "기록 정책. 상위(워크스페이스 → 테스트 → 서브그래프 → 노드)에서 끈 것은 하위에서 켤 수 없다",
-      "properties": {
-        "screenshots": {
-          "enum": ["off", "on"]
-        },
-        "video": {
-          "enum": ["failed_only", "off", "on"]
-        }
-      },
-      "title": "RecordPolicy",
-      "type": "object"
-    },
     "Retention": {
       "additionalProperties": false,
       "description": "실행 기록 보관",
@@ -188,6 +174,24 @@
       },
       "title": "Settings",
       "type": "object"
+    },
+    "WorkspaceRecordPolicy": {
+      "additionalProperties": false,
+      "description": "워크스페이스 기록 정책: 그래프 RecordPolicy(screenshots·video)에 비밀값 가림 스위치를 더한 것. 상위에서 끈 것은 하위에서 켤 수 없다",
+      "properties": {
+        "redact_secrets": {
+          "description": "비밀값 가림. true면 비밀값을 받은 스텝의 스크린샷·영상과 민감 target의 OCR 글자를 남기지 않고 이벤트·로그·실행 기록의 비밀값을 ***로 가린다. 없으면 false(개발 환경 도구라 그대로 남긴다)",
+          "type": "boolean"
+        },
+        "screenshots": {
+          "enum": ["off", "on"]
+        },
+        "video": {
+          "enum": ["failed_only", "off", "on"]
+        }
+      },
+      "title": "WorkspaceRecordPolicy",
+      "type": "object"
     }
   },
   "$id": "urn:kookabug:workspace:0",
@@ -214,7 +218,7 @@
       "type": "object"
     },
     "record": {
-      "$ref": "#/$defs/RecordPolicy"
+      "$ref": "#/$defs/WorkspaceRecordPolicy"
     },
     "retention": {
       "$ref": "#/$defs/Retention"

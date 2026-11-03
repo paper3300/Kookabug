@@ -35,7 +35,9 @@ def test_secret_reason_masked_in_verdict_and_events(
     node_type: str, verdict: str, tmp_path: Path
 ) -> None:
     g = GraphBuilder().entry("n_end").node("n_end", node_type, inputs={"reason": secret("pw")})
-    ran = run_graph(make_workspace(tmp_path), g, secrets={"pw": "hunter2"})
+    # 비밀값 가림을 켠 워크스페이스 (기본은 원문, D3)
+    ws = make_workspace(tmp_path, record={"redact_secrets": True})
+    ran = run_graph(ws, g, secrets={"pw": "hunter2"})
     r = ran.result
     assert (r.verdict, r.reason) == (verdict, "***")
     assert "hunter2" not in repr(r)

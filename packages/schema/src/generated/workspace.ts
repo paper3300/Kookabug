@@ -21,7 +21,7 @@ export interface Workspace {
   profiles?: {
     [k: string]: Profile | undefined;
   };
-  record?: RecordPolicy;
+  record?: WorkspaceRecordPolicy;
   retention?: Retention;
   run?: RunConditions;
   settings?: Settings;
@@ -100,12 +100,16 @@ export interface Settings {
   [k: string]: unknown | undefined;
 }
 /**
- * 기록 정책. 상위(워크스페이스 → 테스트 → 서브그래프 → 노드)에서 끈 것은 하위에서 켤 수 없다
+ * 워크스페이스 기록 정책: 그래프 RecordPolicy(screenshots·video)에 비밀값 가림 스위치를 더한 것. 상위에서 끈 것은 하위에서 켤 수 없다
  *
  * This interface was referenced by `Workspace`'s JSON-Schema
- * via the `definition` "RecordPolicy".
+ * via the `definition` "WorkspaceRecordPolicy".
  */
-export interface RecordPolicy {
+export interface WorkspaceRecordPolicy {
+  /**
+   * 비밀값 가림. true면 비밀값을 받은 스텝의 스크린샷·영상과 민감 target의 OCR 글자를 남기지 않고 이벤트·로그·실행 기록의 비밀값을 ***로 가린다. 없으면 false(개발 환경 도구라 그대로 남긴다)
+   */
+  redact_secrets?: boolean;
   screenshots?: "off" | "on";
   video?: "failed_only" | "off" | "on";
 }

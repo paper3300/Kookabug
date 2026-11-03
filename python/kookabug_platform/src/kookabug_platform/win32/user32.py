@@ -189,6 +189,7 @@ SetThreadDpiAwarenessContext = bind(
     _dll, "SetThreadDpiAwarenessContext", ctypes.c_void_p, ctypes.c_void_p
 )
 SendInput = bind(_dll, "SendInput", UINT, UINT, ctypes.POINTER(INPUT), ctypes.c_int)
+GetAsyncKeyState = bind(_dll, "GetAsyncKeyState", ctypes.c_short, ctypes.c_int)
 MapVirtualKeyW = bind(_dll, "MapVirtualKeyW", UINT, UINT, UINT)
 GetSystemMetrics = bind(_dll, "GetSystemMetrics", ctypes.c_int, ctypes.c_int)
 OpenInputDesktop = bind(_dll, "OpenInputDesktop", wintypes.HANDLE, DWORD, BOOL, DWORD)

@@ -92,11 +92,12 @@ def test_thumbnail_follows_screenshot_policy_and_capture_mark(tmp_path: Path) ->
     assert (omitted["kind"], omitted["reason"]) == ("thumbnail", "policy_off")
     assert "n_wait" in omitted["source"]
 
-    # 비밀값 입력 스텝 → secret_input
+    # 비밀값 입력 스텝(비밀값 가림 켬) → secret_input
     sec = launch(tk().entry("n_launch"), "n_shot").node(
         "n_shot", "testkit.shot", inputs={"captures": 2, "value": secret("acc.pw")}
     )
-    ran = run_scene(tmp_path / "secret", sec, secrets={"acc.pw": "hunter2"})
+    redact = {"redact_secrets": True}
+    ran = run_scene(tmp_path / "secret", sec, secrets={"acc.pw": "hunter2"}, ws_record=redact)
     assert ran.thumbs() == set()
     (omitted,) = ran.end("n_shot")["omitted"]
     assert (omitted["kind"], omitted["reason"]) == ("thumbnail", "secret_input")
@@ -125,6 +126,7 @@ def test_thumbnail_follows_screenshot_policy_and_capture_mark(tmp_path: Path) ->
         call,
         secrets={"acc.pw": "hunter2"},
         subgraphs={"subs/s.graph.json": sub},
+        ws_record=redact,
     )
     assert ran.result.verdict == "pass", ran.result.reason
     assert ran.thumbs() == {f"thumbs/{ran.step('n_plain')}.jpg"}
@@ -151,7 +153,7 @@ def test_thumbnail_follows_screenshot_policy_and_capture_mark(tmp_path: Path) ->
         .node("n_own", "testkit.shot", next=PASS)
         .node("n_pass", "core.test.pass")
     )
-    ran = run_scene(tmp_path / "mark", mark, secrets={"acc.pw": "hunter2"})
+    ran = run_scene(tmp_path / "mark", mark, secrets={"acc.pw": "hunter2"}, ws_record=redact)
     assert ran.result.verdict == "pass", ran.result.reason
     assert ran.thumbs() == {f"thumbs/{ran.step('n_own')}.jpg"}
     (blocked,) = ran.end("n_reuse")["omitted"]
@@ -159,6 +161,7 @@ def test_thumbnail_follows_screenshot_policy_and_capture_mark(tmp_path: Path) ->
 
     # Recorder 단위: 직접 캡처하지 않은 스텝은 썸네일을 남기지 않는다
     recorder = Recorder(MemoryArtifacts(), _Frames())
+    recorder.redact_secrets = True
     recorder.open_step("s1", RecordPolicy())
     recorder.note_inputs("s1", {"v": _secret()}, "g#/nodes/n/in")
     recorder.captured("s1", Image(4, 3), StagedFrame("k1", "px"))

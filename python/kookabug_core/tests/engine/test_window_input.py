@@ -12,10 +12,13 @@ from typing import Any
 import pytest
 from helpers.graphs import link, make_workspace, subgraph_interface
 from helpers.m1 import ScenePlatform, clicks, run_on
-from helpers.run import run_graph, tk
+from helpers.run import TEST, run_graph, tk
+from testkit import registry_with_testkit
 
-from kookabug_core.engine import InProcessInvoker
+from kookabug_core.engine import ExecOptions, Executor, FakeClock, InProcessInvoker, MemoryArtifacts
+from kookabug_core.engine.context import FOREGROUND_NOT_ACQUIRED
 from kookabug_core.ir import Node
+from kookabug_core.loader import load_program
 from kookabug_core.registry import NodeDef
 from kookabug_sdk import Result
 from kookabug_sdk.context import Context
@@ -174,3 +177,93 @@ def test_subgraph_window_change_not_leaked(tmp_path: Path) -> None:
     assert ran.end("n_w")["outputs"]["handle"] == a  # 안에서 띄운 창은 밖의 현재 창이 아니다
     # exit 노드의 공통 window는 서브그래프 출력으로 새지 않는다
     assert ran.end("n_call")["outputs"] == {}
+
+
+class ForegroundPlatform(ScenePlatform):
+    """`bring_forward`(실행 첫 창, 입력까지 쓸 수 있음)와 `activate`(노드의 입력 없는 최선 노력)를
+    따로 기록하고 `acquired`를 돌려준다 (포그라운드 잠금 흉내)."""
+
+    acquired: bool = True
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.activated: list[int] = []
+        self.forward: list[tuple[int, str | None]] = []
+
+    def activate(self, window: WindowRef) -> bool:
+        self.activated.append(window.handle)
+        return self.acquired
+
+    def bring_forward(self, window: WindowRef, step: str | None) -> bool:
+        self.forward.append((window.handle, step))
+        return self.acquired
+
+
+def _two_launches() -> Any:
+    return (
+        tk()
+        .entry("n_a")
+        .node("n_a", "testkit.m1.launch", inputs={"path": "game.exe"}, next={"done": "n_b"})
+        .node("n_b", "testkit.m1.launch", inputs={"path": "game.exe"}, next={"done": "n_pass"})
+        .node("n_pass", "core.test.pass")
+    )
+
+
+def test_first_window_of_run_brought_forward_once(tmp_path: Path) -> None:
+    """D1: 실행에서 현재 창이 처음 정해질 때 실행기가 한 번 `bring_forward`(Alt까지 쓸 수 있는
+    경로)로 가져온다. 같은 스텝의 노드 `activate`는 건너뛰고, 그 뒤 창을 정한 노드는 입력 없는
+    `activate`만 간다 — 두 번째 창 전환에 Alt가 없다 (P1 검수 3)."""
+    platform = ForegroundPlatform(ScenePlatform.sample().scenario)
+    ran = run_on(make_workspace(tmp_path), _two_launches(), platform)
+    assert ran.result.verdict == "pass", ran.result.reason
+    a = ran.end("n_a")["outputs"]["handle"]
+    b = ran.end("n_b")["outputs"]["handle"]
+    assert platform.forward == [(a, ran.end("n_a")["step"])]
+    assert platform.activated == [b]
+    assert [e for e in ran.of("log") if e["level"] == "warn"] == []
+
+
+def test_first_window_foreground_failure_warns_and_continues(tmp_path: Path) -> None:
+    """앞으로 못 가져와도 실행을 막지 않고 warn 로그 하나 (그 스텝, foreground_not_acquired)."""
+    platform = ForegroundPlatform(ScenePlatform.sample().scenario)
+    platform.acquired = False
+    ran = run_on(make_workspace(tmp_path), _two_launches(), platform)
+    assert ran.result.verdict == "pass", ran.result.reason
+    warns = [e for e in ran.of("log") if e["level"] == "warn"]
+    assert len(warns) == 1
+    assert warns[0]["step"] == ran.end("n_a")["step"] and warns[0]["node"] == "n_a"
+    assert warns[0]["message"].startswith(f"{FOREGROUND_NOT_ACQUIRED}: ")
+
+
+def test_first_window_without_node_activate(tmp_path: Path) -> None:
+    """`activate`를 부르지 않는 노드(`set_window`만)가 정한 첫 창도 실행기가 가져온다. 두 번째
+    `set_window`(실행 도중)는 가져오지 않는다 (U1)."""
+    ws = make_workspace(tmp_path)
+    g = (
+        tk()
+        .entry("n_start")
+        .node(
+            "n_start", "testkit.m1.set_window", inputs={"title": "unused"}, next={"done": "n_wait"}
+        )
+        .node(
+            "n_wait",
+            "testkit.observe.wait",
+            inputs={"expect": "lobby", "timeout_ms": 0},
+            config={"retry": {"max_attempts": 2}},
+            next={"found": "n_pass"},
+        )
+        .node("n_pass", "core.test.pass")
+    )
+    g.write(ws, TEST)
+    platform = ForegroundPlatform(ScenePlatform.sample().scenario)
+    executor = Executor(
+        registry_with_testkit(),
+        platform=platform,
+        clock=FakeClock(),
+        artifacts=MemoryArtifacts(),
+        invoker=RetrySetsWindow(A),  # n_start: set_window(A)만, n_wait: set_window(B)
+    )
+    result = executor.run(load_program(ws, TEST), ExecOptions(run_id="r1"))
+    assert result.verdict == "pass", result.reason
+    assert [h for h, _ in platform.forward] == [A.handle]
+    assert platform.activated == []  # 두 번째 set_window(B)는 가져오지 않는다

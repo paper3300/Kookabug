@@ -7,6 +7,10 @@
 - `$kb` 키를 가진 사용자 dict는 `{"$kb": "dict", "value": {...}}`로 감싼다 (태그와 헷갈리지 않게)
 - `Secret`은 경계 너머에서도 `Secret`이다. 원문은 인증된 로컬 파이프로만 가고, 인코딩한 값을
   `repr()`·`str()`로 찍어도(로그) 가린 값만 나온다
+- `SecretMessage`(비밀값이 든 메시지)는 **메시지 필드 전용**이다(`encode_message`·`decode_message`:
+  `ctx.log`·노드 결과 `message`). wire는 `{"$kb": "secret_message", "masked", "raw"}`이고 가린 글·
+  원문 중 무엇을 기록할지는 runner가 정한다. 노드 출력·변수 같은 값(`encode`·`decode`)에서는
+  거부한다 — 값 안에 들어가면 실행 기록이 원문을 함께 남길 수 있기 때문이다
 
 숫자 범위·NaN·중첩 한도는 RPC 피어가 보내기 전에 검사한다 (`kookabug_sdk.rpc`).
 """
@@ -28,12 +32,13 @@ from kookabug_sdk.types import (
     ProcessRef,
     Rect,
     Secret,
+    SecretMessage,
     Target,
     WindowInfo,
     WindowRef,
 )
 
-__all__ = ["TAG", "CodecError", "decode", "encode"]
+__all__ = ["TAG", "CodecError", "decode", "decode_message", "encode", "encode_message"]
 
 TAG: Final = "$kb"
 
@@ -51,12 +56,25 @@ class _SecretWire(dict[str, Any]):
     __str__ = __repr__
 
 
+class _SecretMessageWire(dict[str, Any]):
+    """인코딩한 비밀값 메시지. JSON으로는 원문도 나가고 `repr()`·`str()`에는 가린 글만 나온다."""
+
+    def __repr__(self) -> str:
+        return f"{{'{TAG}': 'secret_message', 'masked': {self.get('masked')!r}}}"
+
+    __str__ = __repr__
+
+
 def encode(value: Any) -> Any:
     """값 → JSON 값."""
     if value is None or isinstance(value, bool | int | float | str):
         return value
     if isinstance(value, Secret):
         return _SecretWire({TAG: "secret", "value": value.reveal()})
+    if isinstance(value, SecretMessage):
+        # 메시지 필드 전용(`encode_message`). 노드 출력·변수 같은 값으로는 보내지 않는다 — 실행
+        # 기록이 값 안의 원문(raw)까지 남기는 길을 열지 않게
+        raise CodecError("비밀값 메시지(SecretMessage)는 메시지(ctx.log·결과 message)로만 보낸다")
     if isinstance(value, list | tuple):
         items: list[Any] | tuple[Any, ...] = value
         return [encode(v) for v in items]
@@ -168,6 +186,37 @@ def _image(value: Image) -> dict[str, Any]:
     }
 
 
+def encode_message(message: object) -> Any:
+    """메시지 필드(`ctx.log`의 `message`, 노드 결과 `message`)의 wire 값: None·문자열은 그대로,
+    `Secret`은 비밀값 wire, `SecretMessage`는 `{"$kb": "secret_message", "masked", "raw"}`(원문은
+    인증된 파이프로만, 찍으면 가린 글). 그 밖의 값은 `str()`."""
+    if message is None or isinstance(message, str):
+        return message
+    if isinstance(message, Secret):
+        return encode(message)
+    if isinstance(message, SecretMessage):
+        return _SecretMessageWire(
+            {TAG: "secret_message", "masked": message.masked, "raw": message.raw}
+        )
+    return str(message)
+
+
+def decode_message(value: Any) -> str | Secret | SecretMessage | None:
+    """`encode_message`의 반대. 메시지가 아닌 모양은 `CodecError`."""
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        data: dict[str, Any] = value
+        if data.get(TAG) == "secret_message":
+            _fields(data, "masked", "raw")
+            return SecretMessage(_str(data["masked"]), _str(data["raw"]))
+        if data.get(TAG) == "secret":
+            found = decode(data)
+            if isinstance(found, Secret):
+                return found
+    raise CodecError(f"메시지가 아니다: {type(value).__name__}")
+
+
 def decode(value: Any) -> Any:
     """JSON 값 → 값. 모르는 태그·틀린 모양은 `CodecError`."""
     if value is None or isinstance(value, bool | int | float | str):
@@ -250,6 +299,8 @@ def _decode_tagged(tag: Any, data: dict[str, Any]) -> Any:
         case "secret":
             _fields(data, "value")
             return Secret(_str(data["value"]))
+        case "secret_message":
+            raise CodecError("비밀값 메시지(secret_message)는 메시지 필드에서만 읽는다")
         case "rect":
             return _decode_rect(data)
         case "point":

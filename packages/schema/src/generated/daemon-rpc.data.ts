@@ -3254,6 +3254,12 @@ export const daemonRpcSchema: unknown = {
       "additionalProperties": false,
       "description": "루트(절대 경로), kookabug.json 요약(프로필 이름·진단), 플러그인, 상태 바용 실행 환경",
       "properties": {
+        "deadline_ms": {
+          "description": "run.start에 deadline_ms를 주지 않았을 때의 실행 전체 기한 (kookabug.json run.deadline_ms, 없으면 30분). 실행 툴바의 기한 고르기가 \"기본\"에 보인다",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
         "diagnostics": {
           "items": {
             "$ref": "#/$defs/Diagnostic"

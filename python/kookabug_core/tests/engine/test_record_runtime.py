@@ -31,6 +31,8 @@ SUB = "subgraphs/s.graph.json"
 INNER = "subgraphs/inner.graph.json"
 TEST_FILE = "tests/t.graph.json"
 FRAMES = ["a", "b", "c"]
+REDACT = {"redact_secrets": True}
+"""비밀값 가림을 켠 워크스페이스 기록 정책 (기본은 가리지 않는다, D3)."""
 
 
 def run(ws: Workspace, g: Any, **kw: Any) -> Ran:
@@ -59,7 +61,7 @@ def sub_off(ws: Workspace, inner: Any, *, record: dict[str, Any] | None = None) 
 
 
 def test_secret_input_node_screenshots_omitted(tmp_path: Path) -> None:
-    ws = make_workspace(tmp_path)
+    ws = make_workspace(tmp_path, record=REDACT)
     g = (
         tk()
         .entry("n_shot")
@@ -88,7 +90,7 @@ def test_secret_input_node_screenshots_omitted(tmp_path: Path) -> None:
             "n_shot", "testkit.shot", inputs={"save": True, "boom": True, "value": secret("acc.pw")}
         )
     )
-    ran = run(make_workspace(tmp_path / "2"), g, secrets={"acc.pw": "hunter2"})
+    ran = run(make_workspace(tmp_path / "2", record=REDACT), g, secrets={"acc.pw": "hunter2"})
     assert (ran.result.verdict, ran.result.failure_path) == ("error", ("n_shot",))
     assert [(o["name"], o["reason"]) for o in omitted(ran, "n_shot")] == [
         ("shot", "secret_input"),
@@ -110,7 +112,7 @@ def test_secret_nested_in_list_input_omits(tmp_path: Path) -> None:
         )
         .node("n_pass", "core.test.pass")
     )
-    ran = run(make_workspace(tmp_path), g, secrets={"acc.pw": "hunter2"})
+    ran = run(make_workspace(tmp_path, record=REDACT), g, secrets={"acc.pw": "hunter2"})
     assert ran.result.verdict == "pass"
     (entry,) = omitted(ran, "n_shot")
     assert entry["reason"] == "secret_input"
@@ -138,7 +140,7 @@ def test_secret_via_var_get_any_pin_omits(tmp_path: Path) -> None:
         )
         .node("n_pass", "core.test.pass")
     )
-    ran = run(make_workspace(tmp_path), g, secrets={"acc.pw": "hunter2"})
+    ran = run(make_workspace(tmp_path, record=REDACT), g, secrets={"acc.pw": "hunter2"})
     assert ran.result.verdict == "pass"
     assert [(o["reason"], o["source"]) for o in omitted(ran, "n_shot")] == [
         ("secret_input", f"{TEST_FILE}#/nodes/n_shot/in/value")
@@ -452,7 +454,7 @@ def _bytes_capture_saved_outside(
 ) -> tuple[Path, list[dict[str, Any]]]:
     """바이트만 있는 캡처(`frame`·`path` 없음 가능)를 막힌 서브그래프 안에서 얻어 출력으로 내보내고,
     켜진 노드가 캡처 없이 저장한다. 실제 `FileArtifacts`를 쓴다."""
-    ws = make_workspace(tmp_path / "ws")
+    ws = make_workspace(tmp_path / "ws", record=REDACT)
     iface = subgraph_interface(outputs={"img": {"nullable": True, "type": "image"}})
     (
         tk(
@@ -515,7 +517,7 @@ def test_bytes_only_capture_keeps_capture_policy_outside(
 
 def test_video_allowed_query(tmp_path: Path) -> None:
     # 워크스페이스에서 on을 명시한다 (정하지 않으면 failed_only — 아래 기본값 검사)
-    ws = make_workspace(tmp_path, record={"video": "on"})
+    ws = make_workspace(tmp_path, record={"video": "on", **REDACT})
     sub_off(
         ws,
         lambda g: (
@@ -671,7 +673,7 @@ def test_ocr_text_artifact_is_last_read(tmp_path: Path) -> None:
 
 
 def test_sensitive_ocr_text_artifact_omitted_with_reason(tmp_path: Path) -> None:
-    ws = make_workspace(tmp_path)
+    ws = make_workspace(tmp_path, record=REDACT)
     ran = _run_ocr(ws, _read_graph(_gold_target(ws, sensitive=True)))
     assert ran.result.verdict == "pass", ran.result.reason
     end = ran.end("n_read")
@@ -694,8 +696,105 @@ def test_ocr_text_artifact_follows_screenshot_policy(tmp_path: Path) -> None:
     assert ran.artifacts.texts == {}
 
 
-def test_secret_derived_from_sensitive_flows_as_secret(tmp_path: Path) -> None:
+def test_default_keeps_secret_screens_and_values(tmp_path: Path) -> None:
+    """D3: 워크스페이스가 `record.redact_secrets`를 켜지 않으면(기본) 비밀값을 받은 스텝의
+    스크린샷을 남기고 이벤트·로그·판정 사유에 원문을 남긴다. 비밀값 형식(`secret`)은 그대로다."""
+    g = (
+        tk()
+        .entry("n_shot")
+        .node(
+            "n_shot",
+            "testkit.shot",
+            inputs={"save": True, "value": secret("acc.pw")},
+            next={"done": "n_log"},
+        )
+        .node("n_log", "core.log.message", inputs={"text": secret("acc.pw")}, next={"done": "n_x"})
+        .node("n_x", "core.test.pass", inputs={"reason": secret("acc.pw")})
+    )
+    ran = run(make_workspace(tmp_path), g, secrets={"acc.pw": "hunter2"})
+    assert (ran.result.verdict, ran.result.reason) == ("pass", "hunter2")
+    assert omitted(ran, "n_shot") == []
+    assert ran.end("n_shot")["outputs"]["saved"] is not None
+    assert ran.artifacts.saved != {}
+    (log,) = [e for e in ran.of("log") if e["node"] == "n_log"]
+    assert log["message"] == "hunter2"
+    # false를 명시해도 같다
+    again = run(
+        make_workspace(tmp_path / "2", record={"redact_secrets": False}),
+        g,
+        secrets={"acc.pw": "hunter2"},
+    )
+    assert omitted(again, "n_shot") == [] and "hunter2" in repr(again.events)
+
+
+def test_default_keeps_sensitive_ocr_text(tmp_path: Path) -> None:
+    """D3: 민감 target으로 읽은 글자도 기본은 OCR 글자 기록·이벤트에 그대로 남는다 (값은 여전히
+    secret 형식이라 string 핀에는 못 간다)."""
     ws = make_workspace(tmp_path)
+    ran = _run_ocr(ws, _read_graph(_gold_target(ws, sensitive=True)))
+    assert ran.result.verdict == "pass", ran.result.reason
+    end = ran.end("n_read")
+    assert "omitted" not in end
+    assert list(ran.artifacts.texts.values()) == [GOLD_TEXT]
+    assert end["outputs"]["text"] == GOLD_TEXT and end["outputs"]["number"] is None
+
+
+@pytest.mark.parametrize("redact", [False, True], ids=["default", "redact"])
+def test_compare_fail_message_follows_policy(tmp_path: Path, redact: bool) -> None:
+    """P1 검수 4: 서로 다른 두 비밀값 비교 실패 메시지·판정 사유는 기본이면 원문, 가림을 켜면
+    예전처럼 가린 글."""
+    g = tk().entry("n_cmp")
+    g.node("n_cmp", "core.assert.compare", inputs={"a": secret("a"), "op": "==", "b": secret("b")})
+    ws = make_workspace(tmp_path, record=REDACT if redact else None)
+    ran = run(ws, g, secrets={"a": "hunter2", "b": "hunter3"})
+    expected = '"***" == "***"이(가) 아니다' if redact else '"hunter2" == "hunter3"이(가) 아니다'
+    assert ran.result.verdict == "fail"
+    assert ran.end("n_cmp")["message"] == expected
+    assert ran.result.reason is not None and ran.result.reason.endswith(expected)
+    assert ("hunter2" in repr(ran.events)) is not redact
+
+
+class _PlainWordPlatform(_OcrPlatform):
+    """숫자 없는 글자 (`parse: number`가 `unreadable`로 끝난다)."""
+
+    def read_text(self, image: Image, *, region: Any, sensitive: bool, limits: Any) -> OcrResult:
+        text: str | Secret = Secret("Gold") if sensitive else "Gold"
+        return OcrResult(text, (OcrLine(text, Rect(20, 20, 240, 52), 0.9),), 0.9)
+
+
+@pytest.mark.parametrize("redact", [False, True], ids=["default", "redact"])
+def test_sensitive_ocr_fail_messages_follow_policy(tmp_path: Path, redact: bool) -> None:
+    """P1 검수 4: 민감 target으로 읽은 글자가 든 실패 메시지(`assert.text`·`ocr.read`)도 기록 정책을
+    따른다. 출력 `text`는 여전히 비밀값 형식이다."""
+    ws = make_workspace(tmp_path, record=REDACT if redact else None)
+    rel = _gold_target(ws, sensitive=True)
+    g = tk().entry("n_text")
+    g.node(
+        "n_text",
+        "core.assert.text",
+        inputs={"region": {"$target": rel}, "equals": "Gold 0", "timeout_ms": 0},
+    )
+    ran = _run_ocr(ws, g)
+    shown = "***" if redact else repr(GOLD_TEXT)
+    assert ran.end("n_text")["message"] == f"읽은 글자 {shown}이(가) 'Gold 0'와(과) 같지 않는다"
+
+    g = tk().entry("n_read")
+    g.node("n_read", "core.ocr.read", inputs={"region": {"$target": rel}, "parse": "number"})
+    g.write(ws, TEST_FILE)
+    result = Executor(
+        registry_with_testkit(),
+        platform=_PlainWordPlatform(FRAMES),
+        clock=FakeClock(),
+        artifacts=MemoryArtifacts(),
+    ).run(load_program(ws, TEST_FILE, secrets=MemorySecrets({})), ExecOptions(run_id="r2"))
+    (start,) = [e for e in result.events if e["event"] == "step.start" and e["node"] == "n_read"]
+    (end,) = [e for e in result.events if e["event"] == "step.end" and e["step"] == start["step"]]
+    shown = "***" if redact else "'Gold'"
+    assert end["message"] == f"읽은 글자 {shown}에 수가 없다"
+
+
+def test_secret_derived_from_sensitive_flows_as_secret(tmp_path: Path) -> None:
+    ws = make_workspace(tmp_path, record=REDACT)
     rel = _gold_target(ws, sensitive=True)
     g = _read_graph(rel, then="n_log")
     g.node(

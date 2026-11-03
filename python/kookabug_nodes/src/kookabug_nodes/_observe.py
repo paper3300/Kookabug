@@ -36,6 +36,7 @@ __all__ = [
     "reset_observations",
     "save_last",
     "sensitive",
+    "shown_text",
 ]
 
 POLL_MS: Final = 100
@@ -172,6 +173,15 @@ def read_area(
 def plain(text: str | Secret) -> str:
     """비교용 원문 (노드 안에서만 쓰고 출력·메시지에는 넣지 않는다)."""
     return text.reveal() if isinstance(text, Secret) else text
+
+
+def shown_text(text: str | Secret, show: Callable[[Any], str]) -> str:
+    """메시지에 넣는 읽은 글자: 평문은 `repr`, 비밀값은 `show`가 가린 값(`***`)이면 그대로, 원문을
+    꺼냈으면 `repr`. `message_with_secrets`의 `show`를 받아 기록 정책을 따른다."""
+    if not isinstance(text, Secret):
+        return repr(text)
+    shown = show(text)
+    return shown if shown == str(text) else repr(shown)
 
 
 def line_match(

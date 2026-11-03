@@ -1277,6 +1277,10 @@ export interface WindowInfo {
  * via the `definition` "WorkspaceInfoResult".
  */
 export interface WorkspaceInfoResult {
+  /**
+   * run.start에 deadline_ms를 주지 않았을 때의 실행 전체 기한 (kookabug.json run.deadline_ms, 없으면 30분). 실행 툴바의 기한 고르기가 "기본"에 보인다
+   */
+  deadline_ms?: number;
   diagnostics: Diagnostic[];
   plugins: PluginSummary[];
   profiles: string[];

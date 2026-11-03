@@ -21,6 +21,7 @@ from helpers.run import tk
 from helpers.runner import RunnerHarness, step_of
 from helpers.video import (
     SCENES,
+    VIDEO_ON_REDACT,
     Blocker,
     go,
     launch,
@@ -50,6 +51,7 @@ TEST_GRAPH = "tests/t.graph.json"
 SUB = "subgraphs/s.graph.json"
 INNER = "subgraphs/inner.graph.json"
 DELAY = 600
+PW = {"acc.pw": "hunter2"}
 """장면 하나를 보여 주는 시간 (ms). 칸 3장이 넘는다."""
 
 
@@ -113,7 +115,7 @@ def _secret_tree(tmp_path: Path) -> Any:
 
 def test_secret_call_blocks_video_for_whole_call_subtree(tmp_path: Path) -> None:
     g, subs = _secret_tree(tmp_path)
-    ran = run_video(tmp_path, g, subgraphs=subs, secrets={"acc.pw": "hunter2"})
+    ran = run_video(tmp_path, g, subgraphs=subs, secrets=PW, ws_record=VIDEO_ON_REDACT)
     assert ran.result.verdict == "pass", ran.result.reason
     markers = ran.markers()
     assert {"a", "b"} <= markers
@@ -128,7 +130,7 @@ def test_secret_call_blocks_video_for_whole_call_subtree(tmp_path: Path) -> None
 def test_secret_call_screenshot_exception_unchanged(tmp_path: Path) -> None:
     # 영상 차단은 스택에서 따로 센다: 비밀값을 받지 않는 안쪽 스텝의 스크린샷은 M1 규칙대로 남는다
     g, subs = _secret_tree(tmp_path)
-    ran = run_video(tmp_path, g, subgraphs=subs, secrets={"acc.pw": "hunter2"})
+    ran = run_video(tmp_path, g, subgraphs=subs, secrets=PW, ws_record=VIDEO_ON_REDACT)
     _, shot = ran.step("n_shot")
     assert shot is not None and shot["outputs"]["saved"] is None
     assert [o["reason"] for o in shot["omitted"]] == ["secret_input"]
@@ -148,7 +150,7 @@ def test_secret_call_fail_evidence_still_saved(tmp_path: Path) -> None:
     show(sub, "n_c", "c", "n_shot", ms=300)
     sub.node("n_shot", "testkit.shot", next={"done": "n_x"})
     sub.exit("n_x", "bad")
-    ran = run_video(tmp_path, g, subgraphs={SUB: sub}, secrets={"acc.pw": "hunter2"})
+    ran = run_video(tmp_path, g, subgraphs={SUB: sub}, secrets=PW, ws_record=VIDEO_ON_REDACT)
     assert ran.result.verdict == "fail"
     _, call = ran.step("n_call")
     assert call is not None
@@ -175,7 +177,7 @@ def test_child_end_or_exception_does_not_reopen_parent_block(tmp_path: Path) -> 
     show(sub, "n_d", "d", "n_back")
     show(sub, "n_back", "idle", "n_x", ms=0)
     sub.exit("n_x", "done")
-    ran = run_video(tmp_path, g, subgraphs={SUB: sub}, secrets={"acc.pw": "hunter2"})
+    ran = run_video(tmp_path, g, subgraphs={SUB: sub}, secrets=PW, ws_record=VIDEO_ON_REDACT)
     assert not ({"c", "d"} & ran.markers())
     # 게이트 단위: 자식이 예외로 닫혀도 부모 차단은 그대로
     gate = VideoGate()
@@ -222,7 +224,8 @@ def test_pending_gate_blocks_new_pixels_until_classified(tmp_path: Path) -> None
     ran = run_video(
         tmp_path,
         g,
-        secrets={"acc.pw": "hunter2"},
+        secrets=PW,
+        ws_record=VIDEO_ON_REDACT,
         hooks=[
             on_event("step.end", "n_a", recording(1)),
             on_event("step.start", "n_secret", to("c", 0.6)),
@@ -328,7 +331,8 @@ def test_secret_input_step_has_no_frames(tmp_path: Path) -> None:
     ran = run_video(
         tmp_path,
         g,
-        secrets={"acc.pw": "hunter2"},
+        secrets=PW,
+        ws_record=VIDEO_ON_REDACT,
         hooks=[
             on_event("step.start", "n_secret", at_start),
             on_event("step.end", "n_secret", at_end),
@@ -428,7 +432,7 @@ def test_gaps_recorded_with_reasons(tmp_path: Path) -> None:
     )
     show(g, "n_b", "b", "n_pass")
     g.node("n_pass", "core.test.pass")
-    ran = run_video(tmp_path, g, secrets={"acc.pw": "hunter2"})
+    ran = run_video(tmp_path, g, secrets=PW, ws_record=VIDEO_ON_REDACT)
     reasons = [gap["gap"] for gap in ran.gaps()]
     assert reasons[:1] == ["no_window"], reasons
     assert "policy_off" in reasons and "secret_input" in reasons
@@ -770,7 +774,7 @@ def test_input_eval_failure_records_error_step_and_failure_step(
     assert end["status"] == "error" and end["error"]["code"] == "type_mismatch"
     assert done.run_json is not None and done.run_json["video"]["status"] in ("recorded", "none")
     # 같은 그래프를 한 프로세스에서: 실패 스텝이 닫히면 게이트 보류도 풀린다
-    ran = run_video(tmp_path / "inproc", graph(), secrets={"acc.pw": "hunter2"})
+    ran = run_video(tmp_path / "inproc", graph(), secrets=PW, ws_record=VIDEO_ON_REDACT)
     assert ran.result.code == "type_mismatch"
     view = ran.gate.view()
     assert view.state != "pending" and view.gap != "secret_input"

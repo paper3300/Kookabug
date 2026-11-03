@@ -52,9 +52,9 @@
 | `core.assert.compare` | 값 비교 검증 (예: 구매 후 골드가 줄었는지). `op`는 `core.logic.compare`와 같다 (8장) | `a`, `op`, `b` | | **ok**, fail |
 
 - 화면 검증(`visible`·`not_visible`·`text`)은 바로 바뀌지 않는 화면을 위해 `timeout_ms`(기본 5초) 동안 다시 보고, 그 안에 한 번이라도 맞으면 `ok`, 아니면 `fail`이다. `timeout_ms: 0`이면 지금 화면을 한 번만 본다
-- `assert.text`는 `equals`(앞뒤 공백 무시 같음)·`contains`·`regex` 중 하나. `text`(마지막으로 읽은 글자)는 `fail`에서도 준다. 민감 target 영역이면 `text`는 비밀값이고 실패 메시지에 가린 값만 쓴다
+- `assert.text`는 `equals`(앞뒤 공백 무시 같음)·`contains`·`regex` 중 하나. `text`(마지막으로 읽은 글자)는 `fail`에서도 준다. 민감 target 영역이면 `text`는 비밀값이고, 실패 메시지의 읽은 글자는 워크스페이스 `record.redact_secrets`가 켜져 있으면 가린 값(`***`), 기본(꺼짐)은 원문이다(`assert.compare`·`ocr.read`의 메시지도 같다)
 
-`core.test.*`의 `reason`은 `string|secret`이다 (생략 가능). 비밀값이 든 사유(`core.text.format` 결과 등)도 받고, 판정 사유와 실행 기록에는 가린 값(`***`)만 남는다. 받는 값만 넓힌 것이라 노드 `version`은 1 그대로다.
+`core.test.*`의 `reason`은 `string|secret`이다 (생략 가능). 비밀값이 든 사유(`core.text.format` 결과 등)도 받는다. 워크스페이스 `record.redact_secrets`가 켜져 있으면 판정 사유와 실행 기록에 가린 값(`***`)만 남고, 기본(꺼짐)은 원문이 남는다. 받는 값만 넓힌 것이라 노드 `version`은 1 그대로다.
 
 ## 3. 앱·창
 
@@ -70,6 +70,7 @@
 - `close`는 창에 닫기를 보내고 `force_after_ms`(기본 5초) 안에 끝나지 않으면 강제로 끝내고 `timeout`으로 나간다
 - `attach`는 기본으로 소유자 없는 창만 찾는다. 대화 상자 같은 소유 팝업을 대상 창으로 삼으려면 `owned: true`
 - `launch`·`attach`·`set_current`는 창을 정한 직후 한 번 앞으로 가져온다(최선 노력). 입력 노드는 가져오지 않는다
+- 실행에서 현재 창이 **처음** 정해질 때(위 노드든 플러그인 노드의 `ctx.set_window`든)는 실행기가 그 창을 앞으로 가져온다. 다른 프로그램이 포그라운드를 쥐고 있어도(포그라운드 잠금) `AttachThreadInput`, 그래도 안 되면 Alt 누르기·떼기로 잠금을 푼다 — Alt는 입력 임대권을 가진 실행(입력 노드가 있는 그래프)에서 입력 액터로만 넣고(기록·복구 포함), Alt가 이미 눌려 있으면 넣지 않는다. 그 뒤의 창 전환은 입력 없이 최선 노력이다. 못 가져오면 실행을 막지 않고 `warn` 로그(`foreground_not_acquired: …`)를 남긴다. 실행 **도중** 포커스를 잃은 창은 다시 가져오지 않는다 — 키보드 입력 노드가 `window_not_foreground` 오류다
 - `set_size`의 `client_size`는 `[너비, 높이]`(물리 픽셀)이고 대상은 그 스텝의 창이다
 
 ## 4. 화면·이미지
@@ -108,7 +109,7 @@
 
 `parse: "number"`는 천 단위 구분(`,`·공백, 세 자리 묶음)을 빼고 처음 나오는 수(부호·소수점 포함)를 `number`로 낸다. 수가 없으면 `unreadable`.
 
-`sensitive: true` target으로 읽은 `text`는 `secret`이고, `number`는 `null`이다(숫자 비밀 타입이 없다). 그 OCR 텍스트는 기록에 남기지 않는다(`omitted.reason = "sensitive_target"`).
+`sensitive: true` target으로 읽은 `text`는 `secret`이고, `number`는 `null`이다(숫자 비밀 타입이 없다). 워크스페이스 `record.redact_secrets`가 켜져 있으면 그 OCR 텍스트는 기록에 남기지 않는다(`omitted.reason = "sensitive_target"`). 기본(꺼짐)은 남긴다.
 
 `region`은 찾기 대상(`$target` — 지금 화면에서 찾은 상자 안을 읽는다. 지금 없으면 `read`는 `unreadable`, 기다리는 노드는 계속 기다린다) 또는 사각형 `[x, y, w, h]`(클라이언트 픽셀, [[그래프 JSON 스키마 v0]] 1장 "상수"). 화면 비율로 잡을 영역은 target(`search.region`이 정규화 좌표)으로 쓴다. 기준 요소 옆을 읽는 Anchor 방식은 target 파일의 옵션으로 둔다. `region`이 없으면 화면 전체를 읽는데, 큰 화면은 작은 글자를 놓치지 않도록 원래 해상도 타일로 나눠 검출하므로 느리다(1920×1080 약 1.5초, 4K 약 5초). `wait_text`처럼 되풀이해 읽는 노드는 영역을 주는 것이 기본이다.
 
@@ -127,7 +128,7 @@
 - 위치: `match`는 target의 클릭 지점, 점은 클라이언트 픽셀이고 그래프 상수로는 `[x, y]`로 쓴다(실행 전 검증이 모양을 보고 실행기가 점으로 바꾼다 — [[그래프 JSON 스키마 v0]] 1장 "상수"). `drag`의 `start`·`end`는 둘 다 받는다
 - `button`은 `left`·`right`·`middle`·`x1`·`x2`, `count` 2면 이중 클릭. `drag`의 `duration_ms` 기본은 300
 - `keys`는 키 하나나 `+`로 이은 조합(`ctrl+a`). `hold_ms`만큼 누르고 있다가 뗀다
-- `type_text`의 `target`(생략 가능)은 지금 화면에서 한 번 찾아 그 칸을 먼저 클릭한다. 못 찾으면 `error`다 — 칸이 뜰 때까지는 대기 노드로 기다린다. `clear`는 입력 전에 `ctrl+a` → `backspace`로 칸을 비운다(전체 선택이 없는 칸은 끝 글자 하나만 지워진다). `text`가 비밀값이면 기록에 남지 않는다
+- `type_text`의 `target`(생략 가능)은 지금 화면에서 한 번 찾아 그 칸을 먼저 클릭한다. 못 찾으면 `error`다 — 칸이 뜰 때까지는 대기 노드로 기다린다. `clear`는 입력 전에 `ctrl+a` → `backspace`로 칸을 비운다(전체 선택이 없는 칸은 끝 글자 하나만 지워진다). `text`가 비밀값이면 비밀값 가림(`record.redact_secrets`)을 켠 워크스페이스에서 그 스텝 화면·영상이 남지 않는다
 
 ## 7. 흐름
 
@@ -149,7 +150,9 @@
 |---|---|---|---|---|
 | `core.var.set` | 그래프 변수에 저장 (호출 프레임 안에서만) | `name`, `value` | | **done** |
 | `core.var.get` | 그래프 변수 읽기 (exec 없는 순수 노드) | `name`, `default` | `value` | |
+| `core.var.add` | 숫자 변수에 더해 저장 (카운터) | `name`, `amount` | `value` | **done** |
 | `core.logic.compare` | 비교 (exec 없는 순수 노드) | `a`, `op`, `b` | `result` | |
+| `core.math.calc` | 산술 (exec 없는 순수 노드) | `a`, `op`, `b` | `result` | |
 | `core.text.format` | 문자열 조합 (exec 없는 순수 노드) | `template`, `values` | `text` | |
 
 순수 노드는 exec 핀이 없고, 값이 필요할 때 계산한다 (Unreal 순수 노드). 부작용이 없어야 한다. 평가 시점과 반복 규칙은 [[그래프 JSON 스키마 v0]] 7장.
@@ -159,6 +162,13 @@
   - `==`·`!=`는 JSON 값으로 비교한다. 타입이 다르면 다른 값이다 (`true`와 `1`은 다르고, `1`과 `1.0`은 같다)
   - 대소 비교는 숫자끼리·문자열끼리만 된다. 다른 타입끼리는 `error`
   - `contains`: `a`가 문자열이면 `b`(문자열)가 들어 있는지, `a`가 목록이면 `b`와 같은 원소가 있는지. 그 외는 `error`
+- `math.calc`의 `op`: `+`, `-`, `*`, `/`, `//`(몫), `%`(나머지)
+  - 숫자끼리만 된다(`true`·문자열·`null`·비밀값은 `error`). 입력·출력 핀 타입은 `float`이고 정수도 받는다
+  - 정수끼리의 `+`·`-`·`*`·`//`·`%`는 정수, `/`나 실수가 끼면 실수다 (`7 / 2 = 3.5`, `6 / 3 = 2.0`)
+  - `//`·`%`는 Python 규칙이다: 나머지의 부호는 `b`를 따른다 (`-7 % 3 = 2`)
+  - 0으로 나누기(`/`·`//`·`%`), 무한대·NaN, JSON 정수 한도 ±(2^53-1)를 넘는 결과는 `error`
+  - "N번째마다": 반복의 `index`를 `math.calc`(`% N`)로 나누고 `logic.compare`로 0과 비교해 `flow.branch`로 가른다
+- `var.add`: 변수 `name`에 `amount`(기본 1)를 `math.calc`의 `+` 규칙으로 더해 저장하고 새 값을 `value`로 낸다. 변수가 없거나 숫자가 아니면 `error`다 — 처음 값은 `var.set`으로 정한다
 - `text.format`: `template`의 `{이름}`을 `values`(`dict[str,any]`)의 값으로 바꾼다. `{{`·`}}`는 중괄호 자체
   - 자리 표시는 `{이름}`만 된다. 속성·인덱스 접근(`{a.b}`, `{a[0]}`)·형식 지정(`{a:>3}`, 빈 지정자 `{a:}`, `{a!r}`)·빈 `{}`·짝 없는 중괄호·`values`에 없는 이름은 `error`
   - 문자열이 아닌 값은 JSON 표기로 넣는다 (`true`, `null`, `[1, 2]`)
@@ -170,7 +180,7 @@
 |---|---|---|---|---|
 | `core.log.message` | 실행 기록에 메시지 남김 | `level`, `text` | | **done** |
 
-`level`은 `info`(기본)·`warn`·`error`. `text`는 `string|secret`이고 비밀값은 가려서 남긴다.
+`level`은 `info`(기본)·`warn`·`error`. `text`는 `string|secret`이다. 비밀값은 워크스페이스 `record.redact_secrets`가 켜져 있으면 가려서(`***`), 기본(꺼짐)은 그대로 남긴다.
 
 ## 10. Agent
 
@@ -215,3 +225,6 @@
 | M1 화면·이미지·검증·OCR 노드: 기다림(100 ms 간격, `timeout_ms: 0` = 한 번), 실패 시 마지막 프레임 `_timeout`·`_not_found`, `wait_any` 이름 일치, `image.click`·`ocr.click_text`의 기다림(`timeout_ms`)·`button`, `wait_stable`의 `tolerance`(기본 0.001), 화면 검증의 기다림과 `assert.text` 비교, `region` 사각형은 클라이언트 픽셀 `[x, y, w, h]`(정규화 사각형이 아님), 점 상수는 실행기의 일반 규칙 (2·4·5·6장) | 화면은 바로 바뀌지 않아 검증도 잠깐 다시 봐야 한다. 정지 화면은 같은 프레임의 반복이라 오류가 아니다. 버튼 한 줄 강조(약 0.006)를 멈춘 화면으로 보면 애니메이션 끝을 놓친다. SDK의 `Rect`가 클라이언트 픽셀이고, 화면 비율에 따르는 영역은 target(정규화 `search.region`)이 맡는다 |
 | OCR `match`가 영역 종류와 무관하게 캡처 시점 관측을 실음, 화면 밖 픽셀 영역은 `error` (4·5장) | 사각형·전체 화면 OCR의 `match`에 관측이 없으면 읽은 뒤 창 크기·DPI가 바뀌어도 옛 좌표를 눌렀다. 화면 밖 영역은 비교·읽을 픽셀이 없는데 "안 변함"으로 판정됐다 |
 | M1 공통 입력 `window`의 규칙: 받는 노드(exec 노드 전부, 같은 이름 입력이 있으면 그 입력), 타입·`null`, 바뀌는 범위, `core.graph.call`이면 서브그래프가 이어받는 창 (공통 입력) | "모든 exec 노드"만으로는 같은 이름 입력을 가진 노드와 서브그래프 호출에서 뜻이 정해지지 않는다 |
+| 산술 `core.math.calc`·`core.var.add` (8장) | 사용자 결정 G17(2026-11-03): "N번째마다"·카운터 흐름을 만들 수 없었다. 연산마다 노드를 두지 않고 `op` 입력으로 묶는다(이 문서 기준) |
+| 실행 첫 창을 실행기가 앞으로 가져옴(포그라운드 잠금을 넘음, 실패는 `warn`) (3장) | 사용자 결정 D1(2026-11-03): 보이지 않는 창을 가진 다른 프로그램이 포그라운드를 쥐면 게임이 뒤에 남아 첫 키 입력부터 오류였다. 실행 도중 포커스를 잃은 경우는 그대로 오류(U1) |
+| 비밀값 가림은 워크스페이스 `record.redact_secrets`가 켜졌을 때만 (2·5·6·9장) | 사용자 결정 D3(2026-11-03): 개발 환경 전용 도구라 비밀값까지 기록에 남겨도 된다. 옛 동작은 설정으로 되살린다 |

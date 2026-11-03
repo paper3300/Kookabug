@@ -95,9 +95,11 @@ export interface RunState {
   lease: LeaseOwner | null;
   /** 실행 프로필 (kookabug.json profiles). null = 기본 */
   profile: string | null;
+  /** 실행 전체 기한 (run.start deadline_ms). null = 기본 (kookabug.json run.deadline_ms, 없으면 30분) */
+  deadlineMs: number | null;
 }
 
-const INITIAL: RunState = { current: null, starting: null, blocked: null, lease: null, profile: null };
+const INITIAL: RunState = { current: null, starting: null, blocked: null, lease: null, profile: null, deadlineMs: null };
 
 export interface RunHooks {
   /** 출력 패널 줄 */
@@ -259,6 +261,12 @@ export class RunModel {
     this.store.setState({ profile, ...(blocked !== null && blocked.profile !== profile ? { blocked: null } : {}) });
   }
 
+  /** 다음 실행의 전체 기한 (null = 기본). 넘으면 지금처럼 error(deadline_exceeded) */
+  setDeadline(deadlineMs: number | null): void {
+    if (deadlineMs !== null && !(Number.isSafeInteger(deadlineMs) && deadlineMs >= 1)) return;
+    this.store.setState({ deadlineMs });
+  }
+
   dismissBlocked(): void {
     this.store.setState({ blocked: null });
   }
@@ -286,9 +294,14 @@ export class RunModel {
       }
       const revision = this.hooks.revision(path)?.revision ?? null;
       const profile = this.state.profile;
+      const deadline = this.state.deadlineMs;
       let result: ResultOf<"run.start">;
       try {
-        result = await this.call("run.start", { path, ...(profile === null ? {} : { profile }) });
+        result = await this.call("run.start", {
+          path,
+          ...(profile === null ? {} : { profile }),
+          ...(deadline === null ? {} : { deadline_ms: deadline }),
+        });
       } catch (err) {
         if (gen !== this.generation) return false;
         this.refused(path, profile, err);

@@ -45,7 +45,7 @@ def node_functions() -> dict[str, NodeFunction]:
 
 def test_core_node_types_exact(schema: dict[str, Any]) -> None:
     types = [n["type"] for n in schema["nodes"]]
-    assert len(types) == 38
+    assert len(types) == 40
     assert set(types) == CORE_NODE_TYPES
     assert schema["plugin"]["id"] == "core"
 
@@ -57,7 +57,7 @@ def test_engine_nodes_exact(nodes: dict[str, dict[str, Any]]) -> None:
 
 def test_sdk_nodes_exact(nodes: dict[str, dict[str, Any]]) -> None:
     assert {t for t, n in nodes.items() if "engine" not in n} == SDK_NODE_TYPES
-    assert len(SDK_NODE_TYPES) == 30
+    assert len(SDK_NODE_TYPES) == 32
 
 
 def test_schema_matches_node_schema_metaschema(schema: dict[str, Any]) -> None:
@@ -91,6 +91,7 @@ def test_node_kinds(nodes: dict[str, dict[str, Any]]) -> None:
     assert {t for t, n in nodes.items() if n.get("pure")} == {
         "core.var.get",
         "core.logic.compare",
+        "core.math.calc",
         "core.text.format",
     }
     assert {t for t, n in nodes.items() if n.get("assertion")} == {

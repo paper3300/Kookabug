@@ -29,6 +29,7 @@ from typing import Any, cast
 from kookabug_core.engine.context import InputObserver, ObservationLimits
 from kookabug_core.engine.errors import EngineError
 from kookabug_core.inputs import PlatformUnavailable
+from kookabug_core.inputs.actor import InputActor
 from kookabug_core.inputs.service import InputService, InputSink
 from kookabug_core.record.artifacts import (
     CaptureMeta,
@@ -46,7 +47,7 @@ from kookabug_platform.engines import RunEngines, deadline_of
 from kookabug_platform.errors import PlatformError
 from kookabug_platform.frames import FrameStore, encode_png
 from kookabug_platform.tracker import WindowBinding, WindowTracker
-from kookabug_sdk.context import InputApi
+from kookabug_sdk.context import Cancelled, InputApi
 from kookabug_sdk.errors import ObservationTimeout
 from kookabug_sdk.types import (
     Image,
@@ -104,6 +105,7 @@ class WindowsPlatform:
         self._processes: dict[int, Process] = {}
         # 입력 액터는 runner가 임대권을 얻은 뒤 붙인다 (`attach_input`)
         self.service = InputService(cast(InputSink, _NoSink()), self)
+        self._actor: InputActor | None = None
 
     # ------------------------------------------------------------ 수명
 
@@ -134,6 +136,7 @@ class WindowsPlatform:
     def attach_input(self, sink: InputSink) -> None:
         """입력 액터를 붙인다 (그 뒤 `ctx.input` 요청이 액터 큐로 간다)."""
         self.service.sink = sink
+        self._actor = sink if isinstance(sink, InputActor) else None
 
     def close(self) -> bool:
         """캡처 세션을 모두 멈추고 추적기 스레드를 멈춘다. 세션이 전부 끝났으면 True."""
@@ -286,10 +289,28 @@ class WindowsPlatform:
     def set_client_size(self, window: WindowRef, width: int, height: int) -> bool:
         return wins.set_client_size(self.resolve(window).hwnd, width, height)
 
-    def activate(self, window: WindowRef) -> None:
-        # 최선 노력: 닫힌 창도 예외 없이 넘어간다 (다음 관측·입력이 window_gone으로 알린다)
-        with contextlib.suppress(PlatformError):
-            wins.activate(self.resolve(window).hwnd)
+    def activate(self, window: WindowRef) -> bool:
+        # 최선 노력, 입력 없이: 닫힌 창도 예외 없이 넘어간다 (다음 관측·입력이 window_gone으로
+        # 알린다)
+        try:
+            hwnd = self.resolve(window).hwnd
+        except PlatformError:
+            return False
+        return wins.activate(hwnd)
+
+    def bring_forward(self, window: WindowRef, step: str | None) -> bool:
+        """실행 첫 창을 앞으로 (D1, 실행기가 실행에서 한 번만 부른다). 입력 없는 방법이 안 되면
+        포그라운드 잠금을 풀려고 Alt 누르기·떼기를 **입력 액터로** 넣는다 — 임대권을 가진 실행
+        (그래프에 입력 노드가 있어 액터가 붙은 실행)만, 게이트가 열려 있을 때만, 입력 기록·복구와
+        함께. 액터가 없으면(입력 없는 그래프 — 키보드 입력이 없으니 포그라운드도 필요 없다) Alt 없이
+        끝난다."""
+        try:
+            hwnd = self.resolve(window).hwnd
+        except PlatformError:
+            return False
+        actor = self._actor
+        tap = None if actor is None else (lambda: _tap_alt(actor, step))
+        return wins.activate(hwnd, tap_alt=tap)
 
     # ------------------------------------------------------------ 프로세스
 
@@ -351,3 +372,14 @@ def _ref_of(binding: WindowBinding, title: str) -> WindowRef:
 
 def _window_timeout() -> BaseException:
     return ObservationTimeout("창이 기한 안에 뜨지 않았다")
+
+
+def _tap_alt(actor: InputActor, step: str | None) -> bool:
+    """포그라운드 잠금을 풀 Alt 하나 (입력 액터: 게이트가 닫혔거나 넣지 못하면 False — 액터가 누른
+    키는 실패 정리·복구가 뗀다)."""
+    try:
+        actor.tap_unguarded("alt", step=step)
+    except Exception, Cancelled:
+        # 게이트가 닫혔으면(취소·마무리) 넣지 않았다 — 취소는 다음 확인 지점이 알린다
+        return False
+    return True

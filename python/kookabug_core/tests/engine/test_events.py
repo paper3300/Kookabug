@@ -6,7 +6,7 @@ from helpers.graphs import GraphBuilder, make_workspace, subgraph_interface
 from helpers.run import run_graph, tk
 
 from kookabug_core.engine import event_value
-from kookabug_sdk import Secret
+from kookabug_sdk import Secret, SecretMessage
 from kookabug_sdk.types import Match, Rect
 
 OUTER = "subgraphs/outer.graph.json"
@@ -134,3 +134,10 @@ def test_event_value_masks_secrets_and_flattens_types() -> None:
         },
         "xs": [1, ["***"]],
     }
+
+
+def test_event_value_secret_message_one_text_by_policy() -> None:
+    # P1 검수 A3-1: 값 안의 비밀값 메시지는 dataclass로 풀지 않고 정책대로 글 하나만
+    value = {"details": {"message": SecretMessage("read=***", "read=hunter2")}}
+    assert event_value(value) == {"details": {"message": "read=***"}}
+    assert event_value(value, redact=False) == {"details": {"message": "read=hunter2"}}

@@ -60,6 +60,7 @@ from kookabug_sdk.types import (
     ProcessRef,
     Rect,
     Secret,
+    SecretMessage,
     Target,
     WindowInfo,
     WindowRef,
@@ -67,8 +68,10 @@ from kookabug_sdk.types import (
 
 __all__ = [
     "DEFAULT_CAPTURE_TIMEOUT_MS",
+    "FOREGROUND_NOT_ACQUIRED",
     "ArtifactStore",
     "FindReportingPlatform",
+    "ForegroundPlatform",
     "ObservationLimits",
     "ObservingPlatform",
     "PixelPlatform",
@@ -81,6 +84,8 @@ __all__ = [
 
 DEFAULT_CAPTURE_TIMEOUT_MS: Final = 2000
 """`run.capture_timeout_ms` 기본값 (조율자 결정 Q2)."""
+FOREGROUND_NOT_ACQUIRED: Final = "foreground_not_acquired"
+"""실행 첫 대상 창을 앞으로 가져오지 못했을 때 `warn` 로그 메시지의 머리 (실행은 계속한다)."""
 OBSERVATIONS_KEPT: Final = 256
 """캡처 시점 관측을 기억하는 최근 캡처 수 (OCR 결과에 실을 때 찾는다)."""
 _WAIT_SLICE_MS: Final = 50
@@ -182,7 +187,10 @@ class WindowPlatform(Protocol):
     ) -> WindowRef | None: ...
     def window_info(self, window: WindowRef) -> WindowInfo: ...
     def set_client_size(self, window: WindowRef, width: int, height: int) -> bool: ...
-    def activate(self, window: WindowRef) -> None: ...
+    def activate(self, window: WindowRef) -> bool | None:
+        """최선 노력으로 앞으로. 포그라운드가 됐으면 True, 못 가져왔으면 False, 모르면 None."""
+        ...
+
     def launch(self, path: str, args: Sequence[str], cwd: str | None) -> ProcessRef: ...
     def close_process(self, process: ProcessRef, force_after_ms: int) -> bool: ...
     def process_window(
@@ -199,6 +207,15 @@ class _WindowState(Protocol):
     def client_size(self) -> tuple[int, int]: ...
     @property
     def dpi(self) -> int: ...
+
+
+@runtime_checkable
+class ForegroundPlatform(Protocol):
+    """실행 첫 창을 앞으로 가져오는 플랫폼 (D1). 노드의 `activate`(입력 없는 최선 노력)와 달리
+    포그라운드 잠금을 풀 입력(runner 입력 액터를 거친 Alt)까지 쓸 수 있다. 실행기가 실행에서 처음
+    `set_window`할 때 한 번만 부른다. 없으면 `activate`를 쓴다."""
+
+    def bring_forward(self, window: WindowRef, step: str | None) -> bool | None: ...
 
 
 @runtime_checkable
@@ -256,6 +273,8 @@ class Runtime:
     2.6). 한 번만 불린다."""
     observed: FrameRef | None = None
     """처음 관측."""
+    foreground_tried: bool = False
+    """이 실행에서 현재 창이 처음 정해질 때 그 창을 앞으로 가져오기를 했다 (D1, 한 번만)."""
 
     @property
     def epoch(self) -> int:
@@ -409,7 +428,8 @@ class FrameVars:
 
 
 class StepLog:
-    """`ctx.log` → `log` 이벤트. 메시지는 `str()`로 남기므로 비밀값은 가려진다."""
+    """`ctx.log` → `log` 이벤트. 메시지는 `str()`로 남긴다. 비밀값은 `record.redact_secrets`가 켜진
+    실행만 가리고, 아니면 원문이다 (D3)."""
 
     def __init__(self, runtime: Runtime, step: str, node: str) -> None:
         self._runtime = runtime
@@ -417,11 +437,18 @@ class StepLog:
         self._node = node
 
     def _emit(self, level: str, message: object) -> None:
+        redact = self._runtime.recorder.redact_secrets
+        if isinstance(message, Secret) and not redact:
+            text = message.reveal()
+        elif isinstance(message, SecretMessage):
+            text = message.masked if redact else message.raw
+        else:
+            text = str(message)
         self._runtime.emit(
             {
                 "event": "log",
                 "level": level,
-                "message": str(message),
+                "message": text,
                 "node": self._node,
                 "step": self._step,
             }
@@ -560,8 +587,12 @@ class _StepOcr:
         if seen is not None:
             # 읽은 이미지의 캡처 시점 관측 (읽는 동안 창이 바뀌어도 그때 것 — 줄 Match 재검증용)
             result = replace(result, frame_info=seen[0], window=seen[1])
-        # 기록: 스텝의 마지막 OCR 글자 (sensitive면 남기지 않고 생략 이유만 — 스키마 6장)
-        text = "" if sensitive or isinstance(result.text, Secret) else result.text
+        # 기록: 스텝의 마지막 OCR 글자 (비밀값 가림이 켜진 실행에서 sensitive면 남기지 않고 생략
+        # 이유만 — 스키마 6장. 꺼져 있으면 원문, D3)
+        if isinstance(result.text, Secret):
+            text = "" if runtime.recorder.redact_secrets else result.text.reveal()
+        else:
+            text = "" if sensitive and runtime.recorder.redact_secrets else result.text
         runtime.recorder.ocr_read(self._ctx.step, image, text, sensitive=sensitive)
         runtime.check()
         return result
@@ -588,6 +619,8 @@ class _StepWindows:
 
     def activate(self, window: WindowRef) -> None:
         self._ctx.runtime.check()
+        if self._ctx.brought_forward == window:
+            return  # 이 스텝의 set_window가 실행 첫 창으로 방금 앞으로 가져왔다
         self._platform.activate(window)
 
 
@@ -680,6 +713,9 @@ class StepContext:
         self._pure = pure
         self.stale: StaleObservation | None = None
         """이 스텝의 입력이 재검증으로 거부됐다 (노드가 삼켜도 처리되지 않은 fail)."""
+        self.brought_forward: WindowRef | None = None
+        """이 스텝의 `set_window`가 실행 첫 창으로 앞으로 가져온 창 (뒤따르는 `activate`는
+        건너뛴다)."""
 
     @property
     def runtime(self) -> Runtime:
@@ -752,8 +788,42 @@ class StepContext:
         return cast(ProcessApi, _Unavailable("process"))
 
     def set_window(self, window: WindowRef) -> None:
-        """호출 프레임의 현재 창을 바꾼다 (다음 스텝부터). 이 스텝의 창·입력 요청은 그대로다."""
+        """호출 프레임의 현재 창을 바꾼다 (다음 스텝부터). 이 스텝의 창·입력 요청은 그대로다.
+
+        실행에서 처음 정하는 창이면 그 창을 한 번 앞으로 가져온다 (D1: 실행 시작 때 게임 창을
+        앞으로). 못 가져와도 실행은 막지 않고 `warn` 로그를 남긴다 — 그 뒤 키보드 입력이
+        포그라운드 확인에서 `window_not_foreground`로 알린다. 실행 **도중** 포커스를 잃은 창은 다시
+        가져오지 않는다(U1).
+        """
         self._frame.current_window = window
+        runtime = self._runtime
+        platform = runtime.platform
+        if runtime.foreground_tried or not isinstance(platform, WindowPlatform):
+            return
+        runtime.foreground_tried = True
+        self.brought_forward = window
+        try:
+            if isinstance(platform, ForegroundPlatform):
+                acquired = platform.bring_forward(window, self._step)
+            else:
+                acquired = platform.activate(window)
+        except Exception:
+            acquired = False  # 창 문제는 다음 관측·입력이 알린다
+        if acquired is False:
+            runtime.emit(
+                {
+                    "event": "log",
+                    "level": "warn",
+                    "message": (
+                        f"{FOREGROUND_NOT_ACQUIRED}: 실행 첫 대상 창 "
+                        f"{window.title!r} (HWND {window.handle:#x})을(를) 앞으로 가져오지 "
+                        "못했다 (다른 프로그램이 포그라운드를 쥐고 있을 수 있다). "
+                        "키보드 입력 노드는 창이 앞에 올 때까지 window_not_foreground로 끝난다"
+                    ),
+                    "node": self._node.id,
+                    "step": self._step,
+                }
+            )
 
     def capture(self, region: Rect | None = None, *, deadline: Deadline | None = None) -> Image:
         runtime = self._runtime

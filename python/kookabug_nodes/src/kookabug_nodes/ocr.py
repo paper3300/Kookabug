@@ -20,8 +20,19 @@ from kookabug_nodes._observe import (
     poll,
     read_area,
     save_last,
+    shown_text,
 )
-from kookabug_sdk import Context, Exit, Input, Output, Result, Retry, Secret, node
+from kookabug_sdk import (
+    Context,
+    Exit,
+    Input,
+    Output,
+    Result,
+    Retry,
+    Secret,
+    message_with_secrets,
+    node,
+)
 from kookabug_sdk.context import Deadline
 from kookabug_sdk.types import Image, Match, OcrLine, OcrResult, Rect, Target
 
@@ -80,11 +91,6 @@ def find_text(
     return None
 
 
-def _shown(text: str | Secret) -> str:
-    """메시지에 넣는 읽은 글자 (비밀값은 가린 채)."""
-    return str(text) if isinstance(text, Secret) else repr(text)
-
-
 @node(
     type="core.ocr.read",
     version=1,
@@ -115,7 +121,9 @@ def read(
         return Result.fail("unreadable", "글자를 읽지 못했다")
     number = parse_number(raw) if parse == "number" else None
     if parse == "number" and number is None:
-        return Result.fail("unreadable", f"읽은 글자 {_shown(result.text)}에 수가 없다")
+        text = result.text
+        message = message_with_secrets(lambda s: f"읽은 글자 {shown_text(text, s)}에 수가 없다")
+        return Result.fail("unreadable", message)
     return Result.ok(
         "done",
         text=result.text,

@@ -203,7 +203,8 @@ def test_public_fail_exit_not_double_propagated(tmp_path: Path) -> None:
 
 
 def test_secret_input_masked_in_events(tmp_path: Path) -> None:
-    ws = make_workspace(tmp_path)
+    # 비밀값 가림을 켠 워크스페이스 (기본은 원문, D3 — test_record_runtime의 기본값 검사)
+    ws = make_workspace(tmp_path, record={"redact_secrets": True})
     (
         sub(inputs={"password": "secret"})
         .entry("n_log")

@@ -229,13 +229,15 @@ def test_evidence_omitted_for_secret_or_off(tmp_path: Path) -> None:
     assert ("screenshot", "fail", "policy_off") in reasons
     assert ("thumbnail", None, "policy_off") in reasons
 
-    # 비밀값 입력 스텝: 예외로 끝나도 첫·중간·마지막을 남기지 않는다
+    # 비밀값 입력 스텝(비밀값 가림 켬): 예외로 끝나도 첫·중간·마지막을 남기지 않는다
     sec = launch(tk().entry("n_launch"), "n_shot").node(
         "n_shot",
         "testkit.shot",
         inputs={"captures": 5, "gap_ms": 100, "boom": True, "value": secret("pw")},
     )
-    ran = run_scene(tmp_path / "secret", sec, secrets={"pw": "hunter2"})
+    ran = run_scene(
+        tmp_path / "secret", sec, secrets={"pw": "hunter2"}, ws_record={"redact_secrets": True}
+    )
     end = ran.end("n_shot")
     valid(end)
     assert "evidence" not in end and "artifacts" not in end

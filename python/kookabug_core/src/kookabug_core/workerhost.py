@@ -48,7 +48,7 @@ from kookabug_core.registry import (
 )
 from kookabug_core.win.process import ProcessId, identify, spawn
 from kookabug_sdk import NodeContractError, Result
-from kookabug_sdk.codec import CodecError, decode, encode
+from kookabug_sdk.codec import CodecError, decode, decode_message, encode
 from kookabug_sdk.context import (
     Cancelled,
     Context,
@@ -76,7 +76,17 @@ from kookabug_sdk.rpc import (
     RpcError,
     RpcPeer,
 )
-from kookabug_sdk.types import Image, Match, Point, ProcessRef, Rect, Secret, Target, WindowRef
+from kookabug_sdk.types import (
+    Image,
+    Match,
+    Point,
+    ProcessRef,
+    Rect,
+    Secret,
+    SecretMessage,
+    Target,
+    WindowRef,
+)
 from kookabug_sdk.worker import ENV_KEY, ENV_PIPE, PROTOCOL
 
 __all__ = [
@@ -742,7 +752,13 @@ class CtxServer:
                 level = _param(params, "level", str)
                 if level not in _LOG_LEVELS:
                     raise _BadParams(f"모르는 level {level!r}")
-                getattr(ctx.log, level)(_param(params, "message", str))
+                try:
+                    message = decode_message(params.get("message"))
+                except CodecError as exc:
+                    raise _BadParams(f"'message': {exc}") from exc
+                if message is None:
+                    raise _BadParams("'message'가 없다")
+                getattr(ctx.log, level)(message)
                 return {}
             case "ctx.vars.get":
                 name = _param(params, "name", str)
@@ -884,12 +900,10 @@ class WorkerInvoker:
             # 노드가 재검증 실패를 삼키고 끝냈어도 그 입력은 하지 않았다 (처리되지 않은 fail)
             raise server.stale
         try:
-            result = Result(
-                reply["exit"],
-                reply["kind"],
-                decode(reply["outputs"]),
-                reply.get("message"),
-            )
+            message = decode_message(reply.get("message"))
+            if message is not None and not isinstance(message, str | SecretMessage):
+                raise TypeError(f"message는 문자열·비밀값 메시지다: {type(message).__name__}")
+            result = Result(reply["exit"], reply["kind"], decode(reply["outputs"]), message)
         except (KeyError, TypeError, CodecError) as exc:
             raise NodeContractError(f"{nodedef.type}: 워커 결과를 읽을 수 없다: {exc!r}") from exc
         if not isinstance(result.outputs, dict):

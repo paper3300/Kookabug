@@ -19,9 +19,11 @@ import pytest
 
 from kookabug_core.engine.context import ObservationLimits
 from kookabug_core.engine.errors import EngineError
+from kookabug_core.inputs import InputActor, NoneBackend
 from kookabug_platform.capture import CapturedFrame, FrameInfo
 from kookabug_platform.platform import WindowsPlatform
 from kookabug_platform.tracker import WindowBinding, WindowTracker
+from kookabug_sdk.context import Cancelled
 from kookabug_sdk.types import FrameRef, Match, Rect, WindowRef
 
 HWND = 0x100
@@ -180,3 +182,60 @@ def test_other_live_window_is_window_mismatch(monkeypatch: pytest.MonkeyPatch) -
     match = observed(platform, WindowRef(HWND, "Game"))
     assert send(platform, WindowRef(OTHER, "Other"), match) == "window_mismatch"
     assert sink.calls == []
+
+
+# ---------------------------------------------------------------- 실행 첫 창 (D1, P1 검수 2·3)
+
+
+class TapActor(InputActor):
+    """`tap_unguarded`만 기록하는 액터 (시작하지 않는다 — 백엔드 호출 없음)."""
+
+    def __init__(self, gate_closed: bool = False) -> None:
+        super().__init__(NoneBackend())
+        self.taps: list[tuple[str, str | None]] = []
+        self.gate_closed_ = gate_closed
+
+    def tap_unguarded(self, key: str, *, step: str | None = None) -> None:
+        if self.gate_closed_:
+            raise Cancelled("입력이 막혔다")
+        self.taps.append((key, step))
+
+
+def _foreground_calls(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
+    """`wins.activate`에 탭을 줬는지 남기고, 주었으면 그 탭을 부른다(잠금이 끝까지 안 풀린 경우)."""
+    seen: list[bool] = []
+
+    def activate(hwnd: int, *, tap_alt: Any = None) -> bool:
+        seen.append(tap_alt is not None)
+        if tap_alt is not None:
+            tap_alt()
+        return False
+
+    monkeypatch.setattr("kookabug_platform.platform.wins.activate", activate)
+    return seen
+
+
+def test_activate_never_taps_alt(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 노드의 activate(launch·attach·set_current, 첫 창 뒤의 창 바꾸기)는 입력 없는 경로만
+    platform, _, _ = platform_with(monkeypatch)
+    actor = TapActor()
+    platform.attach_input(actor)
+    seen = _foreground_calls(monkeypatch)
+    assert platform.activate(WindowRef(HWND, "Game")) is False
+    assert seen == [False] and actor.taps == []
+
+
+def test_bring_forward_taps_only_through_attached_actor(monkeypatch: pytest.MonkeyPatch) -> None:
+    platform, _, _ = platform_with(monkeypatch)  # 입력 싱크가 액터가 아니다 (임대권 없는 실행)
+    seen = _foreground_calls(monkeypatch)
+    platform.bring_forward(WindowRef(HWND, "Game"), "s1")
+    assert seen == [False]  # 액터(임대권)가 없으면 Alt 없이
+    actor = TapActor()
+    platform.attach_input(actor)
+    platform.bring_forward(WindowRef(HWND, "Game"), "s1")
+    assert seen == [False, True] and actor.taps == [("alt", "s1")]
+    # 게이트가 닫혔으면 액터가 거절하고 예외 없이 False
+    closed = TapActor(gate_closed=True)
+    platform.attach_input(closed)
+    assert platform.bring_forward(WindowRef(HWND, "Game"), "s2") is False
+    assert closed.taps == []

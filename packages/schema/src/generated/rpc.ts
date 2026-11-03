@@ -190,7 +190,7 @@ export interface CtxInputTypeTextParams {
   text: WireValue;
 }
 /**
- * ctx.log (워커 → runner). message는 str()로 만든 것(비밀값은 가려짐)
+ * ctx.log (워커 → runner). message는 str()로 만든 문자열, 비밀값·비밀값 메시지면 그 wire 값({"$kb": "secret"|"secret_message", ...}) — 가릴지는 runner가 기록 정책(record.redact_secrets)으로 정한다
  *
  * This interface was referenced by `RpcMessageDefs`'s JSON-Schema
  * via the `definition` "CtxLogParams".
@@ -198,7 +198,7 @@ export interface CtxInputTypeTextParams {
 export interface CtxLogParams {
   invoke: InvokeId;
   level: "debug" | "info" | "warn" | "error";
-  message: string;
+  message: WireValue;
 }
 /**
  * ctx.ocr.read (워커 → runner). image는 참조 이미지나 파일·바이트 이미지, region은 rect 또는 null, sensitive면 글자가 비밀값으로 온다
@@ -481,8 +481,22 @@ export interface NodeInvokeParams {
 export interface NodeInvokeResult {
   exit: string | null;
   kind: "ok" | "fail" | null;
-  message: string | null;
+  /**
+   * 노드 메시지. 비밀값이 든 메시지(SDK SecretMessage)는 가린 글·원문을 둘 다 싣고, 무엇을 기록할지는 runner가 record.redact_secrets로 정한다
+   */
+  message: (string | null) | SecretMessageWire;
   outputs: WireValue;
+}
+/**
+ * 비밀값이 든 메시지 (kookabug_sdk.codec, SDK SecretMessage): 가린 글(masked)과 원문(raw). 원문은 인증된 파이프로만 간다
+ *
+ * This interface was referenced by `RpcMessageDefs`'s JSON-Schema
+ * via the `definition` "SecretMessageWire".
+ */
+export interface SecretMessageWire {
+  $kb: "secret_message";
+  masked: string;
+  raw: string;
 }
 /**
  * 응답이 없는 알림 (예: 취소)

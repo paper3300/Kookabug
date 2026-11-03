@@ -47,3 +47,39 @@ export function runAvailability({ tab, connected, running, starting }: RunAvaila
           : "실행 (F5)";
   return { path, canRun, canStop: running, runTitle };
 }
+
+// ── 실행 기한 (G11) ────────────────────────────────────────────
+
+const MINUTE_MS = 60_000;
+
+/** 툴바 기한 고르기의 고정 값 (분). 그 밖의 값은 kookabug.json run.deadline_ms로 정한다 */
+export const DEADLINE_PRESETS_MIN: readonly number[] = [5, 10, 30, 60, 120, 240, 480];
+
+/** 기한 글 ("90초", "5분", "1시간 30분") */
+export function formatDeadline(ms: number): string {
+  if (ms < MINUTE_MS) return `${Math.ceil(ms / 1000)}초`;
+  const minutes = Math.round(ms / MINUTE_MS);
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${minutes}분`;
+  return rest === 0 ? `${hours}시간` : `${hours}시간 ${rest}분`;
+}
+
+export interface DeadlineOption {
+  /** select 값: "" = 기본 */
+  value: string;
+  label: string;
+  ms: number | null;
+}
+
+/**
+ * 기한 고르기 항목. 첫 항목 "기본"은 run.start에 기한을 주지 않는 것이고 글에 워크스페이스 기본값
+ * (`workspace.info` deadline_ms)을 붙인다. 지금 고른 값이 고정 값에 없으면 그 값도 넣는다
+ */
+export function deadlineOptions(workspaceDefaultMs: number | null | undefined, selectedMs: number | null): DeadlineOption[] {
+  const base = workspaceDefaultMs === null || workspaceDefaultMs === undefined ? "기본" : `기본 (${formatDeadline(workspaceDefaultMs)})`;
+  const values = DEADLINE_PRESETS_MIN.map((m) => m * MINUTE_MS);
+  if (selectedMs !== null && !values.includes(selectedMs)) values.push(selectedMs);
+  values.sort((a, b) => a - b);
+  return [{ value: "", label: base, ms: null }, ...values.map((ms) => ({ value: String(ms), label: formatDeadline(ms), ms }))];
+}

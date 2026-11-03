@@ -190,7 +190,8 @@ def no_keys_left() -> Iterator[None]:
 def test_sample_game_enter_world_and_inventory_open_pass(
     tmp_path: Path, ocr_models: Path, mode: str
 ) -> None:
-    ws = copy_example_workspace(tmp_path)
+    # 실제 게임 판은 비밀번호가 기록에 없는지도 본다: 비밀값 가림을 켠 사본 (예제 원본은 기본값)
+    ws = copy_example_workspace(tmp_path, redact_secrets=True)
     if mode == "headless":
         code, out = run_example(ws, tmp_path, ocr_models, INVENTORY_OPEN, *FAKE)
         assert (code, out["verdict"], out["code"]) == (0, "pass", "assertion_passed"), out

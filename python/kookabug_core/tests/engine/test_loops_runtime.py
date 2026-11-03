@@ -569,3 +569,27 @@ def test_loop_respects_test_deadline(tmp_path: Path) -> None:
     assert (r.verdict, r.code, r.failure_path) == ("error", "deadline_exceeded", ("n_delay",))
     assert ran.clock.now_ms() == 550
     assert len(ran.starts("n_delay")) == 6
+
+
+def test_every_nth_iteration_with_math_and_counter(tmp_path: Path) -> None:
+    """G17: 산술 노드로 "N번째마다" — 7번 반복하며 `index % 3 == 0`일 때만 카운터(`var.add`)를
+    올리고, 끝나면 카운터가 3(0·3·6회차)인지 본다."""
+    init = {"name": "hits", "value": 0}
+    g = tk().entry("n_init").node("n_init", "core.var.set", inputs=init, next={"done": "n_loop"})
+    repeat(g, "n_loop", 7, "n_branch", "n_check")
+    g.node("n_mod", "core.math.calc", inputs={"a": link("n_loop.index"), "op": "%", "b": 3})
+    g.node("n_zero", "core.logic.compare", inputs={"a": link("n_mod.result"), "op": "==", "b": 0})
+    g.node(
+        "n_branch",
+        "core.flow.branch",
+        inputs={"condition": link("n_zero.result")},
+        next={"true": "n_add"},
+    )
+    g.node("n_add", "core.var.add", inputs={"name": "hits"})
+    g.node("n_get", "core.var.get", inputs={"name": "hits"})
+    g.node("n_check", "core.assert.compare", inputs={"a": link("n_get.value"), "op": "==", "b": 3})
+    ran = run_graph(make_workspace(tmp_path), g)
+    assert ran.result.verdict == "pass", ran.result.reason
+    assert exits(ran, "n_branch") == ["true", "false", "false", "true", "false", "false", "true"]
+    adds = {e["step"] for e in ran.starts("n_add")}
+    assert [e["outputs"]["value"] for e in ran.of("step.end") if e["step"] in adds] == [1, 2, 3]

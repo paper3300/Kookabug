@@ -9,7 +9,14 @@ from typing import Any
 
 import pytest
 
-from kookabug_sdk.codec import TAG, CodecError, decode, encode
+from kookabug_sdk.codec import (
+    TAG,
+    CodecError,
+    decode,
+    decode_message,
+    encode,
+    encode_message,
+)
 from kookabug_sdk.types import (
     FrameRef,
     Image,
@@ -20,9 +27,11 @@ from kookabug_sdk.types import (
     ProcessRef,
     Rect,
     Secret,
+    SecretMessage,
     Target,
     WindowInfo,
     WindowRef,
+    message_with_secrets,
 )
 
 BOUND = WindowRef(0x1234, "게임", pid=4321, process_created="133700000000000000", binding="b3")
@@ -105,6 +114,42 @@ def test_secret_stays_secret_masked_in_repr() -> None:
     assert isinstance(back["pw"], Secret) and back["pw"].reveal() == "pw-원문"
     assert repr(back["pw"]) == "Secret('***')"
     assert isinstance(back["items"][0], Secret)
+
+
+def test_secret_message_keeps_both_texts_masked_in_repr() -> None:
+    # P1 검수 A2-1: 비밀값 메시지는 가린 글·원문을 둘 다 경계 너머로 (runner가 정책으로 고른다)
+    message = message_with_secrets(lambda show: f"read={show(Secret('원문-값'))}")
+    assert isinstance(message, SecretMessage)
+    encoded = encode_message(message)
+    assert "원문-값" not in repr(encoded) and "원문-값" not in str(encoded)
+    assert "원문-값" in json.dumps(encoded, ensure_ascii=False)
+    back = decode_message(json.loads(json.dumps(encoded)))
+    assert back == SecretMessage("read=***", "read=원문-값")
+    with pytest.raises(CodecError):
+        decode_message({TAG: "secret_message", "masked": "x"})
+    # 메시지 필드의 다른 모양: 없음·문자열·비밀값
+    assert decode_message(encode_message(None)) is None
+    assert decode_message(encode_message("평문")) == "평문"
+    assert decode_message(encode_message(Secret("s"))) == Secret("s")
+    with pytest.raises(CodecError):
+        decode_message({"a": 1})
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        SecretMessage("read=***", "read=원문"),
+        {"details": {"message": SecretMessage("read=***", "read=원문")}},
+        [SecretMessage("a", "b")],
+    ],
+    ids=["top", "nested", "list"],
+)
+def test_secret_message_rejected_as_value(value: Any) -> None:
+    # P1 검수 A3-1: 메시지 필드 전용 — 노드 출력·변수 같은 값으로는 경계를 넘지 못한다
+    with pytest.raises(CodecError, match="SecretMessage"):
+        encode(value)
+    with pytest.raises(CodecError):
+        decode({"details": {TAG: "secret_message", "masked": "a", "raw": "b"}})
 
 
 def test_user_dict_with_kb_key_escaped() -> None:

@@ -10,11 +10,12 @@ from typing import Any
 
 import pytest
 from helpers.graphs import GraphBuilder, link, make_workspace, secret
-from helpers.run import tk
+from helpers.run import run_graph, tk
 from helpers.worker import WorkerHarness, worker_env
 
 from kookabug_core.engine import InProcessInvoker, NodeInvoker, RunResult
 from kookabug_core.ir import Node
+from kookabug_core.record.journal import Journal
 from kookabug_core.registry import NodeDef
 from kookabug_sdk import Result
 from kookabug_sdk.context import Context
@@ -27,7 +28,8 @@ FRAME = "frames/title.png"
 
 def harness(tmp_path: Path, graph: GraphBuilder, **kw: Any) -> WorkerHarness:
     settings = kw.pop("settings", None)
-    ws = make_workspace(tmp_path / "ws", settings=settings)
+    record = kw.pop("record", None)
+    ws = make_workspace(tmp_path / "ws", settings=settings, record=record)
     graph.write(ws, TEST)
     kw.setdefault("env", worker_env(tmp_path))
     return WorkerHarness(ws, TEST, tmp_path, **kw)
@@ -264,6 +266,7 @@ def test_secret_input_reaches_node_masked_in_events(tmp_path: Path) -> None:
         frames=[FRAME],
         secrets={"accounts.pw": raw},
         trace=lambda _, body: messages.append(body),
+        record={"redact_secrets": True},  # 비밀값 가림 켬 (기본은 원문, D3)
     )
     result = h.run_all()
     assert result.verdict == "pass", result.reason
@@ -278,6 +281,166 @@ def test_secret_input_reaches_node_masked_in_events(tmp_path: Path) -> None:
     assert end["omitted"][0]["reason"] == "secret_input"
     # 원문은 인증된 파이프로만 (워커가 노드에 Secret을 줘야 하므로)
     assert any(raw.encode() in m for m in messages)
+
+
+def _secret_message_graph() -> GraphBuilder:
+    return (
+        tk().entry("n_msg").node("n_msg", "testkit.secret_message", inputs={"value": secret("pw")})
+    )
+
+
+def _secret_message_record(result: RunResult) -> dict[str, Any]:
+    logs = [e["message"] for e in result.events if e["event"] == "log"]
+    (end,) = [e for e in result.events if e["event"] == "step.end" and e["status"] == "fail"]
+    return {"logs": logs, "message": end["message"], "reason": result.reason}
+
+
+def _secret_message_expected(redact: bool) -> dict[str, Any]:
+    value = "***" if redact else "worker-original"
+    return {
+        "logs": [value, f"read={value}"],
+        "message": f"read={value}",
+        "reason": f"처리되지 않은 fail: read={value}",
+    }
+
+
+@pytest.mark.parametrize("redact", [False, True], ids=["default", "redact"])
+def test_worker_secret_message_follows_policy(tmp_path: Path, redact: bool) -> None:
+    """P1 검수 A2-1: 워커 노드의 비밀값 메시지(`message_with_secrets`)도 가린 글·원문을 둘 다
+    경계 너머로 보내고, runner가 기록 정책으로 고른다 — 로그·실패 메시지·최종 사유 모두."""
+    h = harness(
+        tmp_path,
+        _secret_message_graph(),
+        secrets={"pw": "worker-original"},
+        record={"redact_secrets": redact},
+    )
+    result = h.run_all()
+    assert result.verdict == "fail", result.reason
+    assert _secret_message_record(result) == _secret_message_expected(redact)
+
+
+@pytest.mark.parametrize("redact", [False, True], ids=["default", "redact"])
+def test_in_process_secret_message_follows_policy(tmp_path: Path, redact: bool) -> None:
+    """같은 노드를 runner 안(코어 노드 경로)에서 돌려도 결과가 같다."""
+    ws = make_workspace(tmp_path / "ws", record={"redact_secrets": redact})
+    ran = run_graph(ws, _secret_message_graph(), secrets={"pw": "worker-original"})
+    assert ran.result.verdict == "fail", ran.result.reason
+    assert _secret_message_record(ran.result) == _secret_message_expected(redact)
+
+
+def _journaled(tmp_path: Path, events: list[dict[str, Any]]) -> str:
+    """제품 `Journal`로 디스크에 쓴 events.jsonl 내용."""
+    path = tmp_path / "journal" / "events.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    journal = Journal(path, "r1")
+    try:
+        for event in events:
+            journal.emit({k: v for k, v in event.items() if k not in ("run", "seq", "t")})
+    finally:
+        journal.close()
+    return path.read_text(encoding="utf-8-sig")
+
+
+def _output_graph() -> GraphBuilder:
+    return (
+        tk()
+        .entry("n_out")
+        .node("n_out", "testkit.secret_message_output", inputs={"value": secret("pw")})
+    )
+
+
+@pytest.mark.parametrize("redact", [False, True], ids=["default", "redact"])
+def test_worker_secret_message_in_output_rejected(tmp_path: Path, redact: bool) -> None:
+    """P1 검수 A3-1: 비밀값 메시지는 메시지 필드 전용이다. 워커가 출력(`Any`) 안에 넣으면 인코딩을
+    거부해 그 스텝은 error이고, 어느 정책이든 이벤트·디스크 기록에 원문(raw)이 출력으로 새지
+    않는다."""
+    h = harness(
+        tmp_path,
+        _output_graph(),
+        secrets={"pw": "worker-original"},
+        record={"redact_secrets": redact},
+    )
+    result = h.run_all()
+    assert result.verdict == "error", result.reason
+    assert "SecretMessage" in (result.reason or "")
+    recorded = _journaled(tmp_path, result.events)
+    assert "worker-original" not in recorded
+    assert '"raw"' not in recorded
+
+
+@pytest.mark.parametrize("redact", [False, True], ids=["default", "redact"])
+def test_in_process_secret_message_in_output_follows_policy(tmp_path: Path, redact: bool) -> None:
+    """runner 안(코어 노드 경로)에서 출력에 비밀값 메시지가 들어가면 이벤트에는 정책대로 가린 글·
+    원문 중 **하나만** 글로 남는다 (masked·raw를 같이 풀지 않는다) — 디스크 기록까지."""
+    ws = make_workspace(tmp_path / "ws", record={"redact_secrets": redact})
+    ran = run_graph(ws, _output_graph(), secrets={"pw": "worker-original"})
+    assert ran.result.verdict == "fail", ran.result.reason
+    (end,) = [e for e in ran.result.events if e["event"] == "step.end" and e["status"] == "fail"]
+    value = "read=***" if redact else "read=worker-original"
+    assert end["message"] == value
+    assert end["outputs"] == {"details": {"message": value}}
+    recorded = _journaled(tmp_path, ran.result.events)
+    assert ("worker-original" in recorded) is not redact
+    assert '"raw"' not in recorded and '"masked"' not in recorded
+
+
+_LOGGED_VALUES = ["None", "5", "{'k': 1}", "{'pw': Secret('***')}"]
+"""`testkit.log_values`의 로그: 문자열 아닌 값은 P1 전과 같이 `str()` (dict 안 비밀값은 그 repr이
+늘 가린 값이다 — 비밀값 자체를 준 로그만 기록 정책을 따른다)."""
+
+
+@pytest.mark.parametrize("redact", [False, True], ids=["default", "redact"])
+def test_worker_log_non_string_values_like_before(tmp_path: Path, redact: bool) -> None:
+    """P1 검수 A4-1: 워커 `ctx.log(None)`이 메시지 없음으로 거부되지 않고 `"None"`. 정수·dict도
+    runner와 같은 글이다 (결과 `message`의 None = 메시지 없음과 따로)."""
+    g = (
+        tk()
+        .entry("n_log")
+        .node(
+            "n_log", "testkit.log_values", inputs={"value": secret("pw")}, next={"done": "n_pass"}
+        )
+    )
+    g.node("n_pass", "core.test.pass")
+    h = harness(tmp_path, g, secrets={"pw": "hunter2"}, record={"redact_secrets": redact})
+    result = h.run_all()
+    assert result.verdict == "pass", result.reason
+    assert [e["message"] for e in result.events if e["event"] == "log"] == _LOGGED_VALUES
+    # 같은 노드를 runner 안에서
+    ws = make_workspace(tmp_path / "inproc", record={"redact_secrets": redact})
+    ran = run_graph(ws, g, secrets={"pw": "hunter2"})
+    assert ran.result.verdict == "pass", ran.result.reason
+    assert [e["message"] for e in ran.of("log")] == _LOGGED_VALUES
+
+
+def test_secret_input_kept_in_events_by_default(tmp_path: Path) -> None:
+    """D3: 비밀값 가림이 꺼진(기본) 워크스페이스는 워커 노드의 비밀값 출력·로그·스크린샷을 그대로
+    남긴다. 노드는 여전히 Secret으로 받는다."""
+    graph = (
+        tk()
+        .entry("n_rt")
+        .node(
+            "n_rt",
+            "testkit.ctx_roundtrip",
+            inputs={"value": secret("accounts.pw"), "message": "pw"},
+            next={"done": "n_log"},
+        )
+        .node(
+            "n_log",
+            "core.log.message",
+            inputs={"text": secret("accounts.pw")},
+            next={"done": "n_pass"},
+        )
+        .node("n_pass", "core.test.pass")
+    )
+    raw = "s3cr3t-값"
+    h = harness(tmp_path, graph, frames=[FRAME, FRAME], secrets={"accounts.pw": raw})
+    result = h.run_all()
+    assert result.verdict == "pass", result.reason
+    end = end_of(result, "n_rt")
+    assert end["outputs"]["value_type"] == "secret"
+    assert end["outputs"]["value"] == raw
+    assert end["outputs"]["saved"] is not None and "omitted" not in end
+    assert h.events.has_log(raw)
 
 
 def test_image_output_keeps_capture_identity(tmp_path: Path) -> None:

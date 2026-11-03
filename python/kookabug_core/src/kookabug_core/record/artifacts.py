@@ -18,6 +18,8 @@
 - 서브그래프 호출 스텝의 실패·예외 증거는 호출 노드의 비밀값 입력으로 막지 않는다(구간 끄기와 획득
   당시 표시는 본다). 그 프레임은 안쪽 스텝이 얻은 것이고, 비밀값을 받은 안쪽 스텝의 프레임은 획득
   당시 표시로 막히므로 안쪽 스텝 각각이 남길 수 있는 것보다 넓게 남기지 않는다 (M1 T12)
+- 비밀값 가림(`redact_secrets`, 워크스페이스 `record.redact_secrets`)이 꺼져 있으면(기본, D3) 비밀값
+  입력·민감 target으로는 막지 않는다. 아래 `secret_input`·`sensitive_target`은 켜져 있을 때만이다
 - OCR 글자: 스텝 안에서 마지막으로 읽은 글자를 스텝을 닫을 때 `steps/<스텝>_ocr.txt`로 남긴다.
   `sensitive` target으로 읽은 적이 있으면 남기지 않고 `sensitive_target`, 그 밖에는 스크린샷과
   같은 정책(구간 끄기·비밀값 입력·획득 당시 표시)을 따른다 — 화면에서 읽은 글자도 화면이다
@@ -442,6 +444,9 @@ class Recorder:
         """막힌 캡처만 (`capture_id` → 표시). 없으면 얻을 때 허용된 것이다."""
         self._thumbs: dict[LoopKey, list[tuple[tuple[LoopKey, ...], str]]] = {}
         """반복 회차 → 그 회차 안에서 남긴 썸네일 (회차 사슬, 경로)."""
+        self.redact_secrets = False
+        """워크스페이스 `record.redact_secrets` (실행기가 정한다). false면 비밀값 입력 스텝의 화면,
+        민감 target의 OCR 글자, 텍스트 artifact의 비밀값을 그대로 남긴다 (D3)."""
 
     # ------------------------------------------------------------ 스텝 수명
 
@@ -463,10 +468,13 @@ class Recorder:
         self._policies[step] = record.policy
 
     def note_inputs(self, step: str, inputs: Mapping[str, Any], where: str) -> None:
-        """스텝 시작 때 계산한 입력. 비밀값이 있으면 그 스텝의 스크린샷을 막는다.
+        """스텝 시작 때 계산한 입력. 비밀값 가림(`redact_secrets`)이 켜져 있고 비밀값이 있으면 그
+        스텝의 스크린샷·영상을 막는다.
 
         `where`는 노드 입력의 위치(`<그래프>#/nodes/<노드>/in`)로, 생략 이유의 `source` 앞에 붙는다.
         """
+        if not self.redact_secrets:
+            return
         found = find_secret(inputs)
         if found is None:
             return
@@ -726,6 +734,7 @@ class Recorder:
         record = self._open.get(step)
         if record is None:
             return
+        sensitive = sensitive and self.redact_secrets
         record.ocr = _OcrRead(text, image, sensitive)
         record.ocr_sensitive = record.ocr_sensitive or sensitive
 
@@ -748,9 +757,10 @@ class Recorder:
         record.omitted.append(entry)
 
     def text(self, step: str, name: str, value: Any) -> str:
-        """텍스트 artifact. 비밀값은 가린다 (M0b는 텍스트 구간 끄기가 없다)."""
+        """텍스트 artifact. 비밀값 가림이 켜져 있으면 비밀값은 가린다 (M0b는 텍스트 구간 끄기가
+        없다)."""
         record = self._open[step]
-        path = self.store.save_text(step, name, _masked_text(value))
+        path = self.store.save_text(step, name, _masked_text(value, redact=self.redact_secrets))
         record.artifacts.append(path)
         return path
 
@@ -802,12 +812,14 @@ def _capture_ids(value: Any) -> list[int]:
     return found
 
 
-def _masked_text(value: Any) -> str:
+def _masked_text(value: Any, *, redact: bool) -> str:
     # engine 패키지가 이 모듈을 import한다 (engine/__init__ → context → Recorder). 순환을 피한다
     from kookabug_core.engine.events import event_value
 
     if isinstance(value, str):
         return value
     if isinstance(value, Secret):
-        return Secret.MASK
-    return json.dumps(event_value(value), ensure_ascii=False, sort_keys=True, indent=2)
+        return Secret.MASK if redact else value.reveal()
+    return json.dumps(
+        event_value(value, redact=redact), ensure_ascii=False, sort_keys=True, indent=2
+    )

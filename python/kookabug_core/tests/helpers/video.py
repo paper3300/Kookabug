@@ -69,6 +69,8 @@ COLORS: Final = {
 """장면 → BGR 색."""
 SIZE: Final = (320, 200)
 VIDEO_ON: Final[Mapping[str, Any]] = {"video": "on"}
+VIDEO_ON_REDACT: Final[Mapping[str, Any]] = {"video": "on", "redact_secrets": True}
+"""비밀값 가림을 켠 워크스페이스 (기본은 가리지 않는다, D3)."""
 """`run_video`의 기본 워크스페이스 정책: 조각 파일을 보려고 `on` (기본값 `failed_only`는 pass에서
 지운다 — `ws_record=None`이면 워크스페이스에 `record`가 없다)."""
 TEST: Final = "tests/t.graph.json"

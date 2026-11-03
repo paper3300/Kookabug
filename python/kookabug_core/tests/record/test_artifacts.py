@@ -80,6 +80,7 @@ def test_paths_match_memory_artifacts_shape(tmp_path: Path) -> None:
 
 def test_text_record_masks_secret(tmp_path: Path) -> None:
     recorder = Recorder(FileArtifacts(tmp_path))
+    recorder.redact_secrets = True
     recorder.open_step("s1", RecordPolicy())
     structured = recorder.text("s1", "values.json", {"pw": Secret("hunter2"), "n": [1, "a"]})
     plain = recorder.text("s1", "pw.txt", Secret("hunter2"))
@@ -90,6 +91,18 @@ def test_text_record_masks_secret(tmp_path: Path) -> None:
     assert (tmp_path / plain).read_text(encoding="utf-8") == "***"
     for path in (tmp_path / "steps").iterdir():
         assert b"hunter2" not in path.read_bytes()
+
+
+def test_text_record_keeps_secret_by_default(tmp_path: Path) -> None:
+    # D3: 비밀값 가림이 꺼진(기본) 실행은 텍스트 artifact에 원문을 남긴다
+    recorder = Recorder(FileArtifacts(tmp_path))
+    assert recorder.redact_secrets is False
+    recorder.open_step("s1", RecordPolicy())
+    structured = recorder.text("s1", "values.json", {"pw": Secret("hunter2")})
+    plain = recorder.text("s1", "pw.txt", Secret("hunter2"))
+    recorder.close_step("s1")
+    assert '"pw": "hunter2"' in (tmp_path / structured).read_text(encoding="utf-8")
+    assert (tmp_path / plain).read_text(encoding="utf-8") == "hunter2"
 
 
 def test_recorder_omits_without_touching_store(tmp_path: Path) -> None:

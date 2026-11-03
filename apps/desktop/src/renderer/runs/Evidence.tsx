@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { formatClock } from "../run/highlight";
 import { CompareBox } from "./Compare";
-import { candidateRows, evidenceCells, fileUrl, fitted, stepEnd, type EvidenceCell, type Size } from "./evidenceCells";
+import { candidateRows, evidenceCells, fileUrl, fitted, headMessage, stepEnd, type EvidenceCell, type Size } from "./evidenceCells";
 import { isoMs, stepTitle, type TypeTitle } from "./labels";
 import { runIndexModel, type RunViewState, type StepDetail, type StepNode } from "./runIndexStore";
 import css from "./runs.module.css";
@@ -148,6 +148,7 @@ export function Evidence({
   const clockOf = (cell: EvidenceCell) =>
     cell.atMs === null || stepStart === null || runStart === null ? "" : formatClock(stepStart - runStart + cell.atMs).slice(0, -2);
   const cells = typeof detail === "object" ? evidenceCells(step, detail, testGraph) : [];
+  const reason = headMessage(step, typeof detail === "object" ? detail : null);
   const video = videoHeader(index.video, index.run?.video as { status?: unknown; deleted?: unknown } | undefined);
   const showVideo = video.toggle && view.media === "video" && index.video !== null;
   return (
@@ -156,7 +157,7 @@ export function Evidence({
         <span className={css.stepTitle}>{stepTitle(view, step, typeTitle)}</span>
         <span className={css.stepPath} title={step.path.join(" › ")}>
           {step.graph}
-          {step.message !== undefined ? ` · ${step.message}` : ""}
+          {reason !== null ? ` · ${reason}` : ""}
         </span>
         {video.toggle ? (
           <div className={css.mediaToggle} role="group" aria-label="스크린샷 또는 영상" data-part="media-toggle">

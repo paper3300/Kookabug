@@ -7,7 +7,17 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Literal
 
-from kookabug_sdk import Config, Context, DynamicExits, Exit, Output, Result, Retry, node
+from kookabug_sdk import (
+    Config,
+    Context,
+    DynamicExits,
+    Exit,
+    Output,
+    Result,
+    Retry,
+    message_with_secrets,
+    node,
+)
 from kookabug_sdk.types import Image, Match, Point, Rect, Secret
 
 # 워커는 이 모듈의 이름공간에서 노드를 모은다 (`collect_plugins`): M1 노드도 여기 이름으로 둔다
@@ -167,6 +177,44 @@ def input_tap(ctx: Context, x: int, y: int) -> Result:
 def input_sneak(ctx: Context) -> Result:
     """`effects`에 `input`을 선언하지 않고 누른다 (→ error)."""
     ctx.input.click(Point(0, 0))
+    return Result.ok("done")
+
+
+@node(
+    type="testkit.secret_message",
+    version=1,
+    title="비밀값 메시지",
+    exits=[Exit("bad", "fail")],
+)
+def secret_message(ctx: Context, value: Secret) -> Result:
+    """비밀값 그대로·비밀값 메시지(`message_with_secrets`)를 로그로 남기고 그 메시지로 fail
+    (P1: 워커 경계에서도 기록 정책을 따르는지)."""
+    text = message_with_secrets(lambda show: f"read={show(value)}")
+    ctx.log.info(value)
+    ctx.log.info(text)
+    return Result.fail("bad", text)
+
+
+@node(
+    type="testkit.secret_message_output",
+    version=1,
+    title="출력 속 비밀값 메시지",
+    exits=[Exit("bad", "fail", outputs=["details"])],
+    outputs={"details": Any},
+)
+def secret_message_output(ctx: Context, value: Secret) -> Result:
+    """비밀값 메시지를 메시지와 **출력**(`details.message`)에 같이 넣는다 (P1: 출력으로는 원문이
+    새지 않는지 — 워커 경계는 거부, runner 안은 기록 정책대로 하나만)."""
+    text = message_with_secrets(lambda show: f"read={show(value)}")
+    return Result.fail("bad", text, details={"message": text})
+
+
+@node(type="testkit.log_values", version=1, title="값 로그", exits=[Exit("done", "ok")])
+def log_values(ctx: Context, value: Secret) -> Result:
+    """문자열이 아닌 값(None·정수·dict·비밀값을 담은 dict)을 로그에 그대로 준다 (P1: 예전처럼
+    `str()`로 기록되는지 — 워커 경계 포함)."""
+    for item in (None, 5, {"k": 1}, {"pw": value}):
+        ctx.log.info(item)
     return Result.ok("done")
 
 
@@ -487,6 +535,9 @@ NODES = (
     read_text,
     input_tap,
     input_sneak,
+    secret_message,
+    secret_message_output,
+    log_values,
     boom,
     fail_once,
     choose,

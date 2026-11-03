@@ -53,18 +53,6 @@ class PermissionVerdict(RootModel[Literal["allow", "ask", "deny"]]):
     root: Annotated[Literal["allow", "ask", "deny"], Field(title="PermissionVerdict")]
 
 
-class RecordPolicy(BaseModel):
-    """
-    기록 정책. 상위(워크스페이스 → 테스트 → 서브그래프 → 노드)에서 끈 것은 하위에서 켤 수 없다
-    """
-
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    screenshots: Literal["off", "on"] | None = None
-    video: Literal["failed_only", "off", "on"] | None = None
-
-
 class Retention(BaseModel):
     """
     실행 기록 보관
@@ -146,6 +134,24 @@ class Settings(
     ]
 
 
+class WorkspaceRecordPolicy(BaseModel):
+    """
+    워크스페이스 기록 정책: 그래프 RecordPolicy(screenshots·video)에 비밀값 가림 스위치를 더한 것. 상위에서 끈 것은 하위에서 켤 수 없다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    redact_secrets: Annotated[
+        bool | None,
+        Field(
+            description="비밀값 가림. true면 비밀값을 받은 스텝의 스크린샷·영상과 민감 target의 OCR 글자를 남기지 않고 이벤트·로그·실행 기록의 비밀값을 ***로 가린다. 없으면 false(개발 환경 도구라 그대로 남긴다)"
+        ),
+    ] = None
+    screenshots: Literal["off", "on"] | None = None
+    video: Literal["failed_only", "off", "on"] | None = None
+
+
 class PermissionRule(BaseModel):
     """
     권한 규칙 하나. rule은 "도구" 또는 "도구(인자 패턴)". 도구·인자 모두 glob(*, ?), 대소문자 구분
@@ -197,7 +203,7 @@ class Workspace(BaseModel):
     profiles: (
         dict[Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]+$")], Profile] | None
     ) = None
-    record: RecordPolicy | None = None
+    record: WorkspaceRecordPolicy | None = None
     retention: Retention | None = None
     run: RunConditions | None = None
     settings: Settings | None = None

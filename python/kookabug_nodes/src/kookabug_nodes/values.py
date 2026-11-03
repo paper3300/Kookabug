@@ -1,22 +1,29 @@
-"""값 노드: 변수, 비교, 문자열 조합.
+"""값 노드: 변수, 비교, 산술, 문자열 조합.
 
-비교 규칙(`compare_values`)은 `core.assert.compare`도 같이 쓴다.
+비교 규칙(`compare_values`)은 `core.assert.compare`도 같이 쓴다. 산술 규칙(`calc_values`)은
+`core.math.calc`와 `core.var.add`가 같이 쓴다.
 """
 
 import json
-from collections.abc import Mapping
+import math
+from collections.abc import Callable, Mapping
 from typing import Any, Literal
 
 from kookabug_sdk import OMITTED, Context, Exit, Result, Secret, node
 
 __all__ = [
+    "CALC_OPS",
     "OPS",
+    "CalcOp",
     "CompareOp",
+    "calc",
+    "calc_values",
     "compare",
     "compare_values",
     "format_template",
     "show",
     "text_format",
+    "var_add",
     "var_get",
     "var_set",
 ]
@@ -101,12 +108,15 @@ def compare_values(a: Any, op: str, b: Any) -> bool:
     raise ValueError(f"모르는 op {op!r}. 가능한 값: {list(OPS)}")
 
 
-def show(value: object) -> str:
-    """메시지용 값 표기. 비밀값은 가린다."""
+def show(value: object, text: Callable[[object], str] = str) -> str:
+    """메시지용 값 표기 (JSON). 비밀값은 `text`로 바꾼다 — 기본은 가린 값.
+
+    실행 기록에 남는 메시지는 `message_with_secrets(lambda s: ... show(v, s) ...)`로 만들어 기록
+    정책(`record.redact_secrets`)을 따르게 한다."""
     try:
-        return json.dumps(value, ensure_ascii=False, default=str)
+        return json.dumps(value, ensure_ascii=False, default=text)
     except ValueError:
-        return str(value)
+        return text(value)
 
 
 @node(
@@ -120,6 +130,60 @@ def show(value: object) -> str:
 def compare(ctx: Context, a: Any, op: CompareOp, b: Any) -> dict[str, Any]:
     """`a op b`의 참·거짓. 대소 비교는 숫자끼리·문자열끼리만 된다."""
     return {"result": compare_values(a, op, b)}
+
+
+# ---------------------------------------------------------------- 산술
+
+CalcOp = Literal["+", "-", "*", "/", "//", "%"]
+CALC_OPS: tuple[str, ...] = ("+", "-", "*", "/", "//", "%")
+MAX_SAFE_INT = 2**53 - 1
+"""JSON 정수 한도 (그래프 값 규칙, 스키마 v0 1장). 넘는 정수 결과는 error."""
+
+
+def calc_values(a: Any, op: str, b: Any) -> int | float:
+    """`a op b`. 숫자끼리만(bool 제외), 아니면 TypeError(→ error).
+
+    정수끼리의 `+`·`-`·`*`·`//`·`%`는 정수, `/`나 실수가 끼면 실수다. `//`·`%`는 Python 규칙
+    (나머지의 부호는 `b`를 따른다: `-7 % 3 == 2`). 0으로 나누기·무한대·NaN·JSON 정수 한도를 넘는
+    결과는 ValueError.
+    """
+    if not (_is_number(a) and _is_number(b)):
+        raise TypeError(f"'{op}'는 숫자끼리만 계산한다 ({_kind(a)} {op} {_kind(b)})")
+    if op in ("/", "//", "%") and b == 0:
+        raise ValueError(f"0으로 나눌 수 없다 ({show(a)} {op} 0)")
+    if op == "+":
+        result = a + b
+    elif op == "-":
+        result = a - b
+    elif op == "*":
+        result = a * b
+    elif op == "/":
+        result = a / b
+    elif op == "//":
+        result = a // b
+    elif op == "%":
+        result = a % b
+    else:
+        raise ValueError(f"모르는 op {op!r}. 가능한 값: {list(CALC_OPS)}")
+    if isinstance(result, int) and abs(result) > MAX_SAFE_INT:
+        raise ValueError(f"결과가 정수 한도 ±(2^53-1)를 넘는다 ({show(a)} {op} {show(b)})")
+    if isinstance(result, float) and not math.isfinite(result):
+        raise ValueError(f"결과가 유한한 수가 아니다 ({show(a)} {op} {show(b)})")
+    return result
+
+
+@node(
+    type="core.math.calc",
+    version=1,
+    title="계산",
+    category="value",
+    pure=True,
+    outputs={"result": float},
+)
+def calc(ctx: Context, a: float, op: CalcOp, b: float) -> dict[str, Any]:
+    """`a op b`(더하기·빼기·곱하기·나누기·몫·나머지). 정수끼리면 정수(`/`는 실수)다. "N번째마다"는
+    `index % N`을 `core.logic.compare`로 0과 비교한다."""
+    return {"result": calc_values(a, op, b)}
 
 
 # ---------------------------------------------------------------- 문자열 조합
@@ -228,6 +292,26 @@ def var_set(ctx: Context, name: str, value: Any) -> Result:
         raise ValueError("변수 이름이 비었다")
     ctx.vars.set(name, value)
     return Result.ok("done")
+
+
+@node(
+    type="core.var.add",
+    version=1,
+    title="변수 더하기",
+    category="value",
+    exits=[Exit("done", "ok")],
+    outputs={"value": float},
+)
+def var_add(ctx: Context, name: str, amount: float = 1) -> Result:
+    """숫자 변수에 `amount`(기본 1)를 더해 저장하고 새 값을 낸다 (카운터). 변수가 없거나 숫자가
+    아니면 error — 먼저 `core.var.set`으로 처음 값을 정한다."""
+    if not name:
+        raise ValueError("변수 이름이 비었다")
+    if not ctx.vars.has(name):
+        raise KeyError(f"변수 '{name}'이(가) 없다 (core.var.set으로 처음 값을 먼저 정한다)")
+    value = calc_values(ctx.vars.get(name), "+", amount)
+    ctx.vars.set(name, value)
+    return Result.ok("done", value=value)
 
 
 @node(

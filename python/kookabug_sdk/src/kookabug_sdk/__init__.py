@@ -16,7 +16,7 @@ from kookabug_sdk.decorators import (
 )
 from kookabug_sdk.errors import ObservationTimeout, RunnerError, StaleObservation
 from kookabug_sdk.result import NodeContractError, Result
-from kookabug_sdk.types import Secret
+from kookabug_sdk.types import Secret, SecretMessage, message_with_secrets
 
 __version__ = "0.1.0.dev0"
 
@@ -37,6 +37,8 @@ __all__ = [
     "Retry",
     "RunnerError",
     "Secret",
+    "SecretMessage",
     "StaleObservation",
+    "message_with_secrets",
     "node",
 ]

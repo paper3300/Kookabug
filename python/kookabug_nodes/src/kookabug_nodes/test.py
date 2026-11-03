@@ -6,7 +6,7 @@
 from typing import Any
 
 from kookabug_nodes.values import CompareOp, compare_values, show
-from kookabug_sdk import Context, Exit, Result, Secret, node
+from kookabug_sdk import Context, Exit, Result, Secret, message_with_secrets, node
 
 
 @node(
@@ -61,4 +61,6 @@ def assert_compare(ctx: Context, a: Any, op: CompareOp, b: Any) -> Result:
     """`a op b`가 참인지 검증한다. 예: 구매 후 골드가 줄었는지."""
     if compare_values(a, op, b):
         return Result.ok("ok")
-    return Result.fail("fail", message=f"{show(a)} {op} {show(b)}이(가) 아니다")
+    # 비밀값은 기록 정책(record.redact_secrets)대로 가리거나 원문으로 남는다
+    message = message_with_secrets(lambda s: f"{show(a, s)} {op} {show(b, s)}이(가) 아니다")
+    return Result.fail("fail", message=message)

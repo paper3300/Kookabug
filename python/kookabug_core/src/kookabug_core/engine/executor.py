@@ -93,7 +93,7 @@ from kookabug_core.registry import NodeDef, Registry, default_registry
 from kookabug_core.validate import validate
 from kookabug_core.validate.pins import COMMON_WINDOW, node_pins
 from kookabug_core.workspace import WORKSPACE_FILE, SettingLookup
-from kookabug_sdk import Result, Secret
+from kookabug_sdk import Result, Secret, SecretMessage
 from kookabug_sdk.context import Deadline
 from kookabug_sdk.errors import StaleObservation
 from kookabug_sdk.types import FrameRef, WindowRef
@@ -271,6 +271,7 @@ class Executor:
             workspace_record if isinstance(workspace_record, Mapping) else None,
             graph_source(WORKSPACE_FILE),
         ).layer(root.record, graph_source(root.path))
+        recorder.redact_secrets = policy.redact_secrets
         top = Frame(root, (), None, 0, {}, record_policy=policy)
         if self.video is not None:
             self.video.set_base(policy.video)
@@ -372,6 +373,16 @@ class _Run:
         self.steps = 0
         self.assertions = 0
         self.scopes = LoopScopes(runtime.program, runtime.registry)
+
+    def _value(self, value: Any) -> Any:
+        """이벤트에 남길 값 (비밀값은 `record.redact_secrets`가 켜진 실행만 가린다, D3)."""
+        return event_value(value, redact=self.rt.recorder.redact_secrets)
+
+    def _message(self, message: str | SecretMessage | None) -> str | None:
+        """노드 메시지 (비밀값 메시지는 가림이 켜진 실행만 가린 글, D3)."""
+        if isinstance(message, SecretMessage):
+            return message.masked if self.rt.recorder.redact_secrets else message.raw
+        return message
 
     def execute(self, frame: Frame) -> Judgement:
         try:
@@ -562,7 +573,7 @@ class _Run:
                 outcome.kind, Cause(step, path, f"test_{outcome.kind}", outcome.reason or default)
             )
         if isinstance(outcome, FrameExit):
-            end.update(status="success", exit=None, outputs=event_value(outcome.outputs))
+            end.update(status="success", exit=None, outputs=self._value(outcome.outputs))
             self._finish(end, began, frame, node)
             return outcome
 
@@ -577,10 +588,11 @@ class _Run:
         end.update(
             status="success" if outcome.kind == "ok" else "fail",
             exit=outcome.exit,
-            outputs=event_value(outcome.outputs),
+            outputs=self._value(outcome.outputs),
         )
-        if outcome.kind == "fail" and outcome.message:
-            end["message"] = outcome.message
+        message = self._message(outcome.message)
+        if outcome.kind == "fail" and message:
+            end["message"] = message
         if outcome.kind == "fail":
             # fail 출구로 나간 스텝은 연결과 상관없이 자기(와 안쪽) 프레임으로 증거를 남긴다 —
             # 연결된 분기가 경로 끝에서 처리되지 않은 fail이 되면 이 스텝이 실패 위치다 (M1 2.15).
@@ -598,7 +610,7 @@ class _Run:
                 step,
                 path,
                 "fail",
-                outcome.message or f"'{node.id}'이(가) fail 출구 '{outcome.exit}'로 나갔다",
+                message or f"'{node.id}'이(가) fail 출구 '{outcome.exit}'로 나갔다",
             )
             if target is None:
                 raise _Unhandled(cause)
@@ -704,7 +716,8 @@ class _Run:
         if engine in _TERMINALS:
             reason = inputs.get("reason")
             if isinstance(reason, Secret):
-                reason = str(reason)  # 판정 사유·기록에는 가린 값만 (P12)
+                # 비밀값 가림이 켜진 실행만 판정 사유·기록에 가린 값 (P12, D3)
+                reason = str(reason) if self.rt.recorder.redact_secrets else reason.reveal()
             return _TerminalEnd(_TERMINALS[engine], reason if isinstance(reason, str) else None)
         if engine in _LOOPS:
             trace.outputs = {}  # 회차 번호(`index`)는 관측과 무관하다
@@ -755,14 +768,14 @@ class _Run:
                 "duration_ms": rt.wall_clock.now_ms() - began,
                 "event": "attempt.end",
                 "exit": result.exit,
-                "outputs": event_value(result.outputs),
+                "outputs": self._value(result.outputs),
                 "status": "fail",
                 "step": step,
             }
             if "iteration" in end:
                 record["iteration"] = end["iteration"]
             if result.message:
-                record["message"] = result.message
+                record["message"] = self._message(result.message)
             rt.emit(record)
             attempt += 1
         return result

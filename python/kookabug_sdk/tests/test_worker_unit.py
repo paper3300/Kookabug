@@ -145,7 +145,12 @@ def test_ctx_requests_and_encoded_values() -> None:
     calls = dict(runner.calls)
     # 모든 요청에 이 실행의 번호가 실린다
     assert all(params["invoke"] == 7 for _, params in runner.calls)
-    assert calls["ctx.log"] == {"invoke": 7, "level": "warn", "message": "***"}
+    # 비밀값 로그는 비밀값 그대로 보낸다 — 가릴지는 runner가 기록 정책으로 정한다 (D3)
+    assert calls["ctx.log"] == {
+        "invoke": 7,
+        "level": "warn",
+        "message": {"$kb": "secret", "value": "원문"},
+    }
     assert calls["ctx.input.click"] == {
         "invoke": 7,
         "at": {"$kb": "point", "x": 1, "y": 2},

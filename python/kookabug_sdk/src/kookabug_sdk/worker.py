@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any, Final, Protocol
 
 from kookabug_sdk import _faults
-from kookabug_sdk.codec import CodecError, decode, encode
+from kookabug_sdk.codec import CodecError, decode, encode, encode_message
 from kookabug_sdk.console import utf8_stdio
 from kookabug_sdk.context import (
     ArtifactsApi,
@@ -79,6 +79,7 @@ from kookabug_sdk.types import (
     ProcessRef,
     Rect,
     Secret,
+    SecretMessage,
     Target,
     WindowInfo,
     WindowRef,
@@ -398,8 +399,13 @@ class _RemoteLog:
         self._ctx = ctx
 
     def _log(self, level: str, message: object) -> None:
-        # str()로 보내므로 비밀값은 가려진다 (runner의 StepLog와 같다)
-        self._ctx.call("ctx.log", {"level": level, "message": str(message)})
+        # 비밀값은 비밀값 그대로 보낸다 — 가릴지는 runner의 StepLog가 기록 정책으로 정한다
+        # 비밀값·비밀값 메시지만 wire 값으로(가릴지는 runner가 정한다). 그 밖의 값은 runner의
+        # StepLog와 같이 str() — None도 "None"이다 (결과 message의 None = 메시지 없음과 다르다)
+        wire = (
+            encode_message(message) if isinstance(message, Secret | SecretMessage) else str(message)
+        )
+        self._ctx.call("ctx.log", {"level": level, "message": wire})
 
     def debug(self, message: object) -> None:
         self._log("debug", message)
@@ -689,7 +695,9 @@ class WorkerHost:
                 "exit": result.exit,
                 "kind": result.kind,
                 "outputs": encode(dict(result.outputs)),
-                "message": result.message,
+                # 비밀값 메시지는 가린 글·원문을 둘 다 보낸다 — 무엇을 기록할지는 runner가
+                # 기록 정책(record.redact_secrets)으로 정한다
+                "message": encode_message(result.message),
             }
         except BaseException as exc:  # 노드 코드의 어떤 예외도 오류 응답으로 (워커는 계속 산다)
             reply_error = error_reply(exc)

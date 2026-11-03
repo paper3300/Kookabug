@@ -17,6 +17,7 @@ from typing import Any, Final
 
 from kookabug_core import documents
 from kookabug_core.documents import DocumentError
+from kookabug_core.supervisor import DEFAULT_DEADLINE_MS
 from kookabug_core.workspace import Workspace, WorkspaceError
 from kookabug_daemon.documents import GRAPH_SUFFIX, resolve_path
 from kookabug_daemon.methods import Call, MethodSpec
@@ -116,6 +117,7 @@ def _info_sync(call: Call) -> dict[str, Any]:
     return {
         "root": str(root),
         "profiles": workspace.profile_names(),
+        "deadline_ms": workspace.run_conditions().deadline_ms or DEFAULT_DEADLINE_MS,
         "retention": workspace.retention(),
         "diagnostics": [d.to_dict() for d in workspace.diagnostics],
         "plugins": [registry.plugin_info(p) for p in sorted(registry.plugins)],

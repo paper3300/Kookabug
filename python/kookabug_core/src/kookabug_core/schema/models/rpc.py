@@ -310,6 +310,19 @@ class RunnerStoppingParams(BaseModel):
     reason: Literal["cancelled", "deadline_exceeded", "finish", "supervisor_lost"]
 
 
+class SecretMessageWire(BaseModel):
+    """
+    비밀값이 든 메시지 (kookabug_sdk.codec, SDK SecretMessage): 가린 글(masked)과 원문(raw). 원문은 인증된 파이프로만 간다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    field_kb: Annotated[Literal["secret_message"], Field(alias="$kb")]
+    masked: str
+    raw: str
+
+
 class SuccessResponse(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -459,7 +472,7 @@ class CtxInputTypeTextParams(BaseModel):
 
 class CtxLogParams(BaseModel):
     """
-    ctx.log (워커 → runner). message는 str()로 만든 것(비밀값은 가려짐)
+    ctx.log (워커 → runner). message는 str()로 만든 문자열, 비밀값·비밀값 메시지면 그 wire 값({"$kb": "secret"|"secret_message", ...}) — 가릴지는 runner가 기록 정책(record.redact_secrets)으로 정한다
     """
 
     model_config = ConfigDict(
@@ -467,7 +480,7 @@ class CtxLogParams(BaseModel):
     )
     invoke: InvokeId
     level: Literal["debug", "info", "warn", "error"]
-    message: str
+    message: WireValue
 
 
 class CtxOcrReadParams(BaseModel):
@@ -739,7 +752,12 @@ class NodeInvokeResult(BaseModel):
     )
     exit: str | None
     kind: Literal["ok", "fail"] | None
-    message: str | None
+    message: Annotated[
+        str | SecretMessageWire | None,
+        Field(
+            description="노드 메시지. 비밀값이 든 메시지(SDK SecretMessage)는 가린 글·원문을 둘 다 싣고, 무엇을 기록할지는 runner가 record.redact_secrets로 정한다"
+        ),
+    ]
     outputs: WireValue
 
 

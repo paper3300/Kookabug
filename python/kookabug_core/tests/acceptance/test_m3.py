@@ -51,7 +51,16 @@ from helpers.graphs import (
 from helpers.m1 import write_target
 from helpers.run import tk
 from helpers.runner import TEST, RunnerHarness, step_of
-from helpers.video import COLORS, go, launch, on_event, run_video, switch, write_scenario
+from helpers.video import (
+    COLORS,
+    VIDEO_ON_REDACT,
+    go,
+    launch,
+    on_event,
+    run_video,
+    switch,
+    write_scenario,
+)
 
 from kb_testing.proc import Spawned, wait_until
 from kb_testing.sample_game import FRAMES_DIR
@@ -705,7 +714,7 @@ def test_record_off_and_secret_call_spans_absent_from_video(
     # 실제 runner + 가짜 인코더 (워크스페이스 on이라 pass여도 조각이 남는다): 모든 조각의 모든 칸
     g, subs = hidden_tree()
     h = video_run(tmp_path, g)
-    make_workspace(h.ws.root, record={"video": "on"})
+    make_workspace(h.ws.root, record=VIDEO_ON_REDACT)
     for rel, sub in subs.items():
         sub.write(h.ws, rel)
     done = h.start(spawned).finish()
@@ -766,7 +775,13 @@ def classify_flash() -> Callable[[dict[str, Any], Any, Any], None]:
 def flash_run(tmp_path: Path, **kw: Any) -> Any:
     g, subs = hidden_tree()
     return run_video(
-        tmp_path, g, subgraphs=subs, secrets={"acc.pw": "hunter2"}, hooks=[classify_flash()], **kw
+        tmp_path,
+        g,
+        subgraphs=subs,
+        secrets={"acc.pw": "hunter2"},
+        ws_record=VIDEO_ON_REDACT,
+        hooks=[classify_flash()],
+        **kw,
     )
 
 

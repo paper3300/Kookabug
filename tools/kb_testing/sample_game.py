@@ -625,12 +625,16 @@ def stale_frames(scenes: Iterable[str]) -> list[str]:
     return [scene for scene in scenes if recorded.get(scene) != digest]
 
 
-def copy_example_workspace(dest: Path, local: Mapping[str, Any] | None = None) -> Path:
+def copy_example_workspace(
+    dest: Path, local: Mapping[str, Any] | None = None, *, redact_secrets: bool = False
+) -> Path:
     """예제 워크스페이스를 `dest/sample-game/workspace`로(화면 PNG는 옆 `frames`로) 복사하고
     `.kookabug/local.json`(기본 `EXAMPLE_LOCAL`)을 쓴다. 복사한 워크스페이스 루트를 돌려준다.
 
     실행 기록(`runs/`)이 레포에 생기지 않게 복사해서 돌린다. 가짜 플랫폼 사양
     (`fake-platform.json`)의 장면 표 경로 `../frames/scenario.json`이 복사본에서도 맞는다.
+    `redact_secrets`면 사본의 `kookabug.json`에만 `record.redact_secrets: true`를 넣는다(비밀값
+    가림을 검사할 때 — 예제 원본은 기본값, 가리지 않음).
     """
     root = dest / "sample-game"
     ignore = shutil.ignore_patterns("runs", ".kookabug")
@@ -642,4 +646,9 @@ def copy_example_workspace(dest: Path, local: Mapping[str, Any] | None = None) -
     settings = dict(EXAMPLE_LOCAL if local is None else local)
     body = {"format": "kookabug.local/0", "settings": settings}
     path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+    if redact_secrets:
+        config_path = ws / "kookabug.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["record"] = {**config.get("record", {}), "redact_secrets": True}
+        config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
     return ws
