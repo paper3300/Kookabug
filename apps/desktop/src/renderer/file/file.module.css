@@ -1,0 +1,125 @@
+/* 보기 탭 (다듬기 P1-B): 읽기 전용 파일 내용 */
+.view {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--kb-editor-bg);
+  color: var(--kb-fg);
+}
+
+.head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 26px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--kb-border);
+  color: var(--kb-fg-muted);
+  font-size: var(--kb-font-size-small);
+}
+
+.readonly {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--kb-badge-bg);
+  color: var(--kb-badge-fg);
+}
+
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+}
+
+.note {
+  padding: 6px 12px;
+  background: var(--kb-banner-info-bg);
+  color: var(--kb-banner-info-fg);
+  font-size: var(--kb-font-size-small);
+}
+
+.code {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: var(--kb-font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  user-select: text;
+  white-space: pre;
+}
+
+.wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.line {
+  min-height: 1.6em;
+}
+
+.key {
+  color: var(--kb-link-fg);
+}
+
+.string {
+  color: var(--kb-pin-text);
+}
+
+.number {
+  color: var(--kb-pin-number);
+}
+
+.literal {
+  color: var(--kb-kind-target);
+}
+
+.punct {
+  color: var(--kb-fg-muted);
+}
+
+.imageWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+}
+
+.imageSize {
+  color: var(--kb-fg-muted);
+  font-size: var(--kb-font-size-small);
+  font-family: var(--kb-font-mono);
+}
+
+.image {
+  max-width: 100%;
+  border: 1px solid var(--kb-border);
+  background: var(--kb-target-frame-bg);
+}
+
+.message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--kb-fg-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.message strong {
+  color: var(--kb-fg);
+  font-weight: 600;
+}
+
+.messagePath {
+  font-family: var(--kb-font-mono);
+  font-size: 12px;
+}

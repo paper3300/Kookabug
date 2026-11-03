@@ -23,6 +23,7 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     "daemon.shutdown": UI_ONLY,
     "workspace.info": "kb_project_info",
     "workspace.tree": "kb_project_info",
+    "workspace.read": "kb_project_info",
     "nodes.list": "kb_node_search",
     "graph.open": "kb_graph_get",
     "graph.validate": "kb_graph_validate",

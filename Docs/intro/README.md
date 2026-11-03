@@ -145,6 +145,7 @@ flowchart LR
 - 자동 테스트 3,000개 이상이 GitHub Actions CI에서 돕니다.
 - 첫 버전은 **Windows만** 지원합니다. Android는 이후 adb 플러그인으로, 에뮬레이터 창은 지금도 창 캡처로 다룰 수 있습니다.
 - 아직 공개 배포판은 없습니다. 소스는 이 레포에서 볼 수 있습니다.
+- 기여: 구현 PR은 허용한 기여자만 받고, 버그는 재현 절차를 담은 이슈로 받습니다 → [CONTRIBUTING.md](../../CONTRIBUTING.md)
 
 ---
 

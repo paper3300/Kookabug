@@ -134,14 +134,38 @@ export async function dragNode(page: Page, id: string, dx: number, dy: number): 
   await page.mouse.up();
 }
 
+/**
+ * 핀이 든 노드를 React Flow가 다 쟀고(보임) 핀 자리가 멈출 때까지. 막 놓은 노드는 핀 크기를 재기 전엔
+ * 핀을 눌러도 연결이 시작되지 않는다 (xyflow `XYHandle.onPointerDown`이 핀을 못 찾으면 그냥 돌아간다)
+ */
+async function pinReady(pin: Locator): Promise<void> {
+  const node = pin.locator("xpath=ancestor::div[contains(concat(' ', @class, ' '), ' react-flow__node ')][1]");
+  await expect(node).toBeVisible();
+  let last = "";
+  await expect
+    .poll(
+      async () => {
+        const box = await pin.boundingBox();
+        const now = box === null ? "" : `${Math.round(box.x)},${Math.round(box.y)},${Math.round(box.width)}`;
+        const same = now !== "" && now === last;
+        last = now;
+        return same;
+      },
+      { intervals: [50, 100, 100, 150, 200] },
+    )
+    .toBe(true);
+}
+
 /** 핀에서 핀으로 끌어 잇는다. during: 놓기 전에 할 일 (호환 표시 확인) */
 export async function connectPins(page: Page, from: Locator, to: Locator, during?: () => Promise<void>): Promise<void> {
+  await pinReady(from);
   const a = await center(from);
   await page.mouse.move(a.x, a.y);
   await page.mouse.down();
   await page.mouse.move(a.x + 30, a.y + 10, { steps: 4 });
   // 데이터 연결이면 숨긴 입력 핀이 생겨 자리가 바뀔 수 있다: 움직인 뒤 도착 핀 자리를 잰다
   if (during !== undefined) await during();
+  await pinReady(to);
   const b = await center(to);
   await page.mouse.move(b.x, b.y, { steps: 10 });
   await page.mouse.up();

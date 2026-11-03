@@ -809,6 +809,12 @@ export interface Methods {
     result: WorkspaceInfoResult;
     tool: "kb_project_info";
   };
+  "workspace.read": {
+    params: WorkspaceReadParams;
+    renderer: true;
+    result: WorkspaceReadResult;
+    tool: "kb_project_info";
+  };
   "workspace.tree": {
     params: EmptyParams;
     renderer: true;
@@ -1308,6 +1314,37 @@ export interface PluginSummary {
   id: string;
   title?: string;
   version: string;
+}
+/**
+ * 탐색기에 보이는 파일 하나의 내용 (보기 탭, 읽기 전용). 범위는 workspace.tree와 같다: tests·subgraphs·targets·screens 아래와 루트의 kookabug.json·kookabug.lock·AGENTS.md
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "WorkspaceReadParams".
+ */
+export interface WorkspaceReadParams {
+  path: WorkspacePath;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "WorkspaceReadResult".
+ */
+export interface WorkspaceReadResult {
+  /**
+   * 글자 파일이 아니다 (앞부분에 NUL 바이트가 있다). text는 빈 문자열
+   */
+  binary: boolean;
+  /**
+   * 파일 전체 크기
+   */
+  bytes: number;
+  /**
+   * UTF-8로 읽은 앞부분 (1 MiB까지, 깨진 바이트는 U+FFFD)
+   */
+  text: string;
+  /**
+   * 1 MiB를 넘어 뒤를 잘랐다
+   */
+  truncated: boolean;
 }
 /**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema

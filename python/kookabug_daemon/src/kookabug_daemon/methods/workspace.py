@@ -4,12 +4,16 @@
   환경(Python·플랫폼·캡처·OCR)
 - `workspace.tree`: 탐색기 항목. 범위는 `watch.walk`와 같다. 그래프는 `graph_kind`를 붙이고, 읽을 수
   없거나 `kind`가 틀리면 `problem`을 단다. `runs/`·`.kookabug/`는 이름만(`name_only`·`git_ignored`)
+- `workspace.read`: 탐색기에 보이는 파일 하나의 앞 1 MiB (에디터 보기 탭, 다듬기 P1-B). 범위는
+  `workspace.tree`와 같다. 이미지는 싣지 않고 렌더러가 `kbimg://ws/`로 읽는다 (M2 계획 2.4)
 """
 
 from __future__ import annotations
 
 import asyncio
+import codecs
 import functools
+import os
 import platform
 import sys
 from pathlib import Path
@@ -21,12 +25,24 @@ from kookabug_core.supervisor import DEFAULT_DEADLINE_MS
 from kookabug_core.workspace import Workspace, WorkspaceError
 from kookabug_daemon.documents import GRAPH_SUFFIX, resolve_path
 from kookabug_daemon.methods import Call, MethodSpec
-from kookabug_daemon.protocol import RequestFailed
-from kookabug_daemon.watch import NAME_ONLY_DIRS, ROOT_FILES, walk
+from kookabug_daemon.protocol import InvalidParams, RequestFailed
+from kookabug_daemon.watch import NAME_ONLY_DIRS, ROOT_FILES, TREE_DIRS, walk
 
-__all__ = ["METHODS", "file_kind", "graph_entry", "runtime_info", "tree_entries"]
+__all__ = [
+    "METHODS",
+    "READ_LIMIT",
+    "file_kind",
+    "graph_entry",
+    "read_file",
+    "runtime_info",
+    "tree_entries",
+]
 
 GRAPH_KINDS: Final = ("subgraph", "test")
+READ_LIMIT: Final = 1 << 20
+"""`workspace.read`가 싣는 최대 바이트 (`run.file`과 같은 1 MiB)."""
+BINARY_PROBE: Final = 8192
+_ROOT_FILES_FOLDED: Final = frozenset(name.casefold() for name in ROOT_FILES)
 
 
 def file_kind(rel: str) -> str:
@@ -77,6 +93,60 @@ def tree_entries(root: Path) -> list[dict[str, Any]]:
             entries.append({"path": name, "type": "dir", "name_only": True, "git_ignored": True})
     entries.sort(key=lambda e: e["path"])
     return entries
+
+
+def in_tree_scope(rel: str) -> bool:
+    """`workspace.tree`가 보이는 범위의 파일 경로인가 (루트 설정 파일 또는 감시 폴더 아래).
+    대소문자는 가리지 않는다 (Windows에서 링크를 해석한 경로는 디스크의 글자 그대로다)."""
+    parts = rel.casefold().split("/")
+    if len(parts) == 1:
+        return parts[0] in _ROOT_FILES_FOLDED
+    return parts[0] in TREE_DIRS
+
+
+def _through_folder_link(root: Path, given: str) -> bool:
+    """요청 경로의 중간 폴더에 링크·정션이 있는가. `watch.walk`는 폴더 링크 안으로 들어가지 않으므로
+    (항목으로만 둔다) 그 아래 파일은 탐색기에 없다. 마지막 조각(파일 링크)은 walk처럼 허용한다."""
+    folder = root
+    for part in given.split("/")[:-1]:
+        folder = folder / part
+        try:
+            if folder.is_symlink() or folder.is_junction():
+                return True
+        except OSError:
+            return True
+    return False
+
+
+def read_file(root: Path, given: str) -> dict[str, Any]:
+    """탐색기 파일 하나의 앞부분. 범위는 `workspace.tree`(`watch.walk`)와 같다.
+
+    루트 밖·`.kookabug/`(그 실제 대상 포함)는 `resolve_path`가 거부한다. 그 위에 요청 경로와 링크를
+    해석한 경로가 **둘 다** 탐색기 범위여야 하고, 중간 폴더가 링크면 안 된다 — `tests/alias → runs`
+    같은 정션으로 `runs/`·비공개 파일을 읽지 못한다 (다듬기 P1-B 검수)."""
+    where = resolve_path(root, given)
+    if (
+        not in_tree_scope(where.given)
+        or not in_tree_scope(where.rel)
+        or _through_folder_link(root, where.given)
+    ):
+        raise InvalidParams(f"'{given}'은(는) 탐색기에 보이는 파일이 아니다", path=given)
+    if where.path.is_dir():
+        raise InvalidParams(f"'{given}'은(는) 폴더다", path=given)
+    try:
+        with where.path.open("rb") as f:
+            size = os.fstat(f.fileno()).st_size
+            data = f.read(READ_LIMIT)
+    except FileNotFoundError:
+        raise RequestFailed("not_found", f"'{given}'이(가) 없다", path=given) from None
+    except OSError as exc:
+        raise RequestFailed("io_error", str(exc), message=str(exc)) from exc
+    truncated = size > len(data)
+    if b"\0" in data[:BINARY_PROBE]:
+        return {"text": "", "bytes": size, "binary": True, "truncated": truncated}
+    # 잘렸으면 끝의 덜 읽은 UTF-8 글자는 버린다 (U+FFFD로 남기지 않는다)
+    text = codecs.getincrementaldecoder("utf-8")("replace").decode(data, final=not truncated)
+    return {"text": text, "bytes": size, "binary": False, "truncated": truncated}
 
 
 @functools.cache
@@ -133,7 +203,16 @@ async def _tree(call: Call) -> dict[str, Any]:
     return {"entries": await asyncio.to_thread(tree_entries, call.daemon.root)}
 
 
+def _read_arg(call: Call) -> str:
+    return resolve_path(call.daemon.root, str(call.params["path"])).rel
+
+
+async def _read(call: Call) -> dict[str, Any]:
+    return await asyncio.to_thread(read_file, call.daemon.root, str(call.params["path"]))
+
+
 METHODS: Final = {
     "workspace.info": MethodSpec(_info),
     "workspace.tree": MethodSpec(_tree),
+    "workspace.read": MethodSpec(_read, _read_arg),
 }

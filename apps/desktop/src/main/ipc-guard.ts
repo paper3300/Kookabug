@@ -10,6 +10,8 @@ export const APP_CHANNEL = "kb:app";
 export const RENDERER_METHODS: ReadonlySet<string> = new Set([
   "workspace.info",
   "workspace.tree",
+  // 다듬기 P1-B: 탐색기 파일 보기 탭
+  "workspace.read",
   "nodes.list",
   "graph.open",
   "graph.validate",

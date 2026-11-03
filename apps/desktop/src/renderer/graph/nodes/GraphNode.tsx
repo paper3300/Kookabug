@@ -81,6 +81,8 @@ function BreakpointSpot({ id, on }: { id: string; on: boolean }) {
         e.stopPropagation();
         toggleNodeBreakpoint(path, id);
       }}
+      // 빠르게 두 번 눌러도 토글 두 번일 뿐, 노드 더블클릭(서브그래프 열기)이 아니다 (다듬기 P1-B)
+      onDoubleClick={(e) => e.stopPropagation()}
     >
       <span className={css.bpDot} data-part={on ? "bp-dot" : undefined} />
     </button>

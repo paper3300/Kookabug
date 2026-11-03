@@ -1,0 +1,3 @@
+# 구현 PR을 열 수 있는 GitHub 계정 (한 줄에 하나, 대소문자 무시, # 뒤는 주석)
+# 목록 밖 작성자의 PR은 pr-gate 워크플로가 안내 댓글을 달고 닫는다. 정책은 CONTRIBUTING.md
+paper3300

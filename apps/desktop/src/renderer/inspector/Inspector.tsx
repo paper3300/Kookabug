@@ -7,6 +7,8 @@
 import { useState } from "react";
 import { clearNodeValue, disconnect, replaceNodeObject, setNodeTitle, setNodeValue, type NodeField } from "../graph/commands";
 import { graphNodes, own, type Diagnostic, type GraphValue } from "../graph/model";
+import { openSubgraph } from "../graph/openSubgraph";
+import { GRAPH_CALL_TYPE } from "../graph/subgraphPlan";
 import { useEditsLocked } from "../store/dialog";
 import { applyEdit, useDocuments } from "../store/documents";
 import { useRegistry } from "../store/registry";
@@ -238,6 +240,7 @@ function NodeFields({ path, view, ctx }: { path: string; view: NodeInspector; ct
           </dd>
         </dl>
         {view.info?.description != null && <p className={css.description}>{view.info.description}</p>}
+        {node.type === GRAPH_CALL_TYPE && <OpenSubgraphButton path={path} node={node.id} config={node.config} />}
         {view.unknown && (
           <p className={css.unknownNote} data-part="unknown-note">
             모르는 노드예요 (설치되지 않은 플러그인이거나 다른 판). 입력·설정은 JSON으로 고치고, 고친 키만 바뀌어요.
@@ -270,6 +273,26 @@ function NodeFields({ path, view, ctx }: { path: string; view: NodeInspector; ct
         </>
       )}
     </>
+  );
+}
+
+/** 서브그래프 호출 노드: 캔버스 더블클릭과 같은 "서브그래프 열기" (다듬기 P1-B). 읽기 전용·실행 중에도 된다 */
+function OpenSubgraphButton({ path, node, config }: { path: string; node: string; config: Record<string, unknown> }) {
+  const graph = own(config, "graph");
+  const target = typeof graph === "string" ? graph : "";
+  return (
+    <div className={css.row}>
+      <button
+        type="button"
+        className={css.button}
+        data-part="open-subgraph"
+        data-node={node}
+        title={target === "" ? "config.graph가 비어 있어요" : target}
+        onClick={() => void openSubgraph(path, target)}
+      >
+        서브그래프 열기
+      </button>
+    </div>
   );
 }
 

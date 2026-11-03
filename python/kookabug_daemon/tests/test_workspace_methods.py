@@ -1,4 +1,6 @@
-"""`workspace.info`·`workspace.tree`·`workspace.changed` (M2 계획 2.4, T4)."""
+"""`workspace.info`·`workspace.tree`·`workspace.changed` (M2 계획 2.4, T4).
+
+`workspace.read`는 다듬기 P1-B (탐색기 파일 보기 탭)."""
 
 from __future__ import annotations
 
@@ -6,6 +8,7 @@ import _winapi
 import json
 import platform
 import queue
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -13,7 +16,7 @@ from typing import Any
 import pytest
 
 from kb_testing.daemon import ThreadDaemon, copy_sample_workspace
-from kookabug_daemon.client import DaemonClient
+from kookabug_daemon.client import UI_CLIENT, DaemonClient, DaemonError
 
 pytestmark = pytest.mark.process
 
@@ -169,3 +172,115 @@ def test_info_profiles_and_status_fields(ws: Path, tmp_path: Path) -> None:
     assert info["diagnostics"] and all(
         d["file"] == ".kookabug/local.json" for d in info["diagnostics"]
     )
+
+
+def read(client: DaemonClient, path: str) -> dict[str, Any]:
+    return client.call("workspace.read", {"path": path})
+
+
+def read_error(client: DaemonClient, path: str) -> DaemonError:
+    with pytest.raises(DaemonError) as exc:
+        read(client, path)
+    return exc.value
+
+
+def test_read_tree_files(ws: Path) -> None:
+    # 다듬기 P1-B: 탐색기 파일 보기 탭. 화면 지도·설정·문서·기타 글자 파일은 앞 1 MiB 원문
+    (ws / "AGENTS.md").write_bytes("# 에이전트\n".encode())
+    (ws / "tests" / "notes.txt").write_bytes(b"a\xffb")
+    with ThreadDaemon(ws) as d, d.client() as client:
+        config = read(client, "kookabug.json")
+        assert config["text"] == (ws / "kookabug.json").read_bytes().decode()
+        assert config["bytes"] == (ws / "kookabug.json").stat().st_size
+        assert (config["binary"], config["truncated"]) == (False, False)
+        screen = read(client, "screens/lobby.screen.json")
+        assert json.loads(screen["text"]) == json.loads(
+            (ws / "screens" / "lobby.screen.json").read_text(encoding="utf-8-sig")
+        )
+        assert read(client, "AGENTS.md")["text"] == "# 에이전트\n"
+        # 깨진 UTF-8은 U+FFFD
+        assert read(client, "tests/notes.txt")["text"] == "a�b"
+        # 그래프·target JSON도 원문으로 읽을 수 있다
+        assert '"kind"' in read(client, "subgraphs/enter_world.graph.json")["text"]
+        png = read(client, "targets/login/login_button.png")
+        assert png["binary"] is True and png["text"] == ""
+        assert png["bytes"] == (ws / "targets" / "login" / "login_button.png").stat().st_size
+
+
+def test_read_truncates_at_1mib_on_char_boundary(ws: Path) -> None:
+    from kookabug_daemon.methods.workspace import READ_LIMIT
+
+    # 3바이트 글자가 경계에 걸리게 한다: 잘린 글자는 버린다 (U+FFFD 없음)
+    body = "ab" + "가" * (READ_LIMIT // 3 + 10)
+    assert (READ_LIMIT - 2) % 3 != 0
+    (ws / "tests" / "big.txt").write_bytes(body.encode())
+    with ThreadDaemon(ws) as d, d.client() as client:
+        big = read(client, "tests/big.txt")
+    assert big["truncated"] is True and big["binary"] is False
+    assert big["bytes"] == len(body.encode("utf-8"))
+    assert "�" not in big["text"]
+    assert len(big["text"].encode("utf-8")) <= READ_LIMIT
+    assert body.startswith(big["text"]) and len(big["text"]) == 2 + (READ_LIMIT - 2) // 3
+
+
+def test_read_rejects_outside_tree(ws: Path, tmp_path: Path) -> None:
+    (ws / "README.md").write_text("루트의 다른 파일", encoding="utf-8")
+    (ws / "runs" / "20261031-a").mkdir(parents=True)
+    (ws / "runs" / "20261031-a" / "run.json").write_text("{}", encoding="utf-8")
+    (ws / ".kookabug").mkdir(exist_ok=True)
+    (ws / ".kookabug" / "local.json").write_text("{}", encoding="utf-8")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.txt").write_text("밖", encoding="utf-8")
+    _winapi.CreateJunction(str(outside), str(ws / "tests" / "link_out"))
+    with ThreadDaemon(ws) as d, d.client() as client:
+        # 탐색기에 보이지 않는 파일 (루트의 다른 파일·runs/)
+        for path in ("README.md", "fake-platform.json", "runs/20261031-a/run.json"):
+            assert read_error(client, path).code == -32602, path
+        assert read_error(client, ".kookabug/local.json").kind == "private_path"
+        assert read_error(client, "tests/link_out/secret.txt").kind == "path_outside_workspace"
+        assert read_error(client, "tests/../kookabug.json").kind == "path_outside_workspace"
+        assert read_error(client, "tests/none.txt").kind == "not_found"
+        assert read_error(client, "targets/login").code == -32602  # 폴더
+
+
+AGENT = {"kind": "agent", "name": "scope-check", "version": "0", "id": "scope-check"}
+
+
+def test_read_scope_follows_tree_through_links(ws: Path) -> None:
+    """P1-B 검수: 정션으로 탐색기 범위를 돌아 `runs/`·비공개 파일을 읽지 못한다 (에이전트 연결도).
+
+    `watch.walk`처럼 폴더 링크 안으로 들어가지 않고, `.kookabug`가 정션이면 그 실제 대상도
+    비공개다."""
+    (ws / "runs" / "r1").mkdir(parents=True)
+    (ws / "runs" / "r1" / "run.json").write_text('{"marker": "RUN_RECORD"}', encoding="utf-8")
+    private = ws / "private-data"
+    private.mkdir()
+    (private / "local.json").write_text('{"marker": "PRIVATE_LOCAL"}', encoding="utf-8")
+    (private / "p.graph.json").write_text('{"kind": "test"}', encoding="utf-8")
+    shutil.rmtree(ws / ".kookabug", ignore_errors=True)
+    _winapi.CreateJunction(str(private), str(ws / ".kookabug"))
+    _winapi.CreateJunction(str(ws / "runs"), str(ws / "tests" / "run_alias"))
+    _winapi.CreateJunction(str(private), str(ws / "tests" / "private_alias"))
+    _winapi.CreateJunction(str(ws / "subgraphs"), str(ws / "tests" / "link_inside"))
+    with ThreadDaemon(ws) as d:
+        for who in (UI_CLIENT, AGENT):
+            with d.client(who) as client:
+                tree = by_path(client.call("workspace.tree")["entries"])
+                # 비공개 폴더의 실제 대상을 가리키는 별칭은 목록에도 없다
+                assert "tests/private_alias" not in tree
+                assert tree["tests/run_alias"] == {"path": "tests/run_alias", "type": "dir"}
+                for path in (
+                    "tests/run_alias/r1/run.json",  # 루트 안 폴더 링크 → runs/
+                    "tests/link_inside/enter_world.graph.json",  # 폴더 링크 아래는 목록에 없다
+                ):
+                    assert path not in tree
+                    assert read_error(client, path).code == -32602, (who, path)
+                for path in ("tests/private_alias/local.json", "private-data/local.json"):
+                    assert read_error(client, path).kind == "private_path", (who, path)
+                # 탐색기 항목은 그대로 읽힌다
+                assert '"kind"' in read(client, "subgraphs/enter_world.graph.json")["text"]
+        # 같은 규칙이 그래프 열기에도 걸린다 (`resolve_path`)
+        with d.client() as client, pytest.raises(DaemonError) as exc:
+            client.call("graph.open", {"path": "tests/private_alias/p.graph.json"})
+        assert exc.value.kind == "private_path"

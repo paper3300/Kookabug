@@ -13,7 +13,7 @@ M1·M2 사람 검증(`m1-manual.md`, `m2-manual.md`)이 아직 끝나지 않았�
 |---|---|---|
 | D1~D6 | 잠금 해제 상태에서만 도는 자동 검사(실제 창 녹화·실제 MP4 포함), 시안 비교 PNG 만들기 | 레포가 있는 PC |
 | V1~V6 | 디버그 툴바·기록 뷰어 시안 비교 PNG 보기 (다크·라이트) | 레포가 있는 PC |
-| R1~R4 | 실제 창 영상: 실패 실행 재생, 기록 끈 구간 비어 있음, 성공 실행 영상 지워짐, SuperTuxKart | 레포가 있는 PC |
+| R1~R4 | 실제 창 영상: 실패 실행 재생, 기록 끈 구간 비어 있음·비밀값 가림 설정, 성공 실행 영상 지워짐, SuperTuxKart | 레포가 있는 PC |
 | B1~B5 | 디버거 조작감: 브레이크포인트·Step·일시정지·계속, 멈춘 동안 창 옮기기·화면 바꾸기 뒤 재개 | 레포가 있는 PC |
 | W1~W4 | 기록 뷰어: 실패 노드로 이동, 비교 상자, 회차 변곡 문구, 라이트 테마 | 레포가 있는 PC |
 | S1~S5 | 설치본(NSIS)에서 영상 녹화·재생(FFmpeg DLL 없는 트리), 영상 사용 불가 주입, Windows N 판 | Windows Sandbox (+ 구할 수 있으면 N 판 PC) |
@@ -95,7 +95,7 @@ $env:KOOKABUG_DESKTOP_TESTS = "require"; $env:KOOKABUG_MEDIA_TESTS = "require"
 uv run pytest python/kookabug_core/tests/acceptance/test_m3.py -v 2>&1 | Tee-Object "$ev\d2_acceptance.log"
 ```
 
-- 기대 결과: 마지막 줄 `22 passed`(실패·건너뜀 0). `media` 표시 검사 셋(`test_failed_only_real_mp4_deleted_on_pass_kept_on_fail` 둘, `test_record_off_and_secret_spans_absent_from_decoded_mp4`)이 실제 H.264 조각을 쓰고 디코드한다
+- 기대 결과: 마지막 줄 `22 passed`(실패·건너뜀 0). `media` 표시 검사 셋(`test_failed_only_real_mp4_deleted_on_pass_kept_on_fail` 둘, `test_record_off_and_secret_spans_absent_from_decoded_mp4`)이 실제 H.264 조각을 쓰고 디코드한다. 비밀값 구간 검사는 임시 워크스페이스에 `record.redact_secrets: true`를 켜고 돈다(기본은 가리지 않는다, 2026-11-03 사용자 결정 D3)
 - 기록: 통과·실패·건너뜀 수, 시간
 
 ### D3 실제 창 녹화·실제 MP4
@@ -173,37 +173,50 @@ Copy-Item build\ui-compare\main-debug*.png, build\ui-compare\runviewer*.png "$ev
 
 ### R1 실패 실행의 영상이 재생됨
 
-1. `tests/broken/swapped_target.graph.json`을 열고 ▶. 마지막 검증(`n_check_inventory`)이 바꿔치기한 target 때문에 실패한다
-2. "실행 기록"에서 그 실행을 한 번 누른다. 실패 스텝이 골라진다
-3. 스크린샷 줄 머리의 "영상"을 누른다. 실패 스텝 시각으로 옮겨 멈춘 영상이 보인다. ▶로 재생하고, 타임라인에서 앞 스텝(`n_press_i` 등)을 누르면 그 시각으로 옮겨지는지 본다
+1. `tests/broken/swapped_target.graph.json`을 열고 ▶. 바꿔치기한 target 때문에 **"월드 접속 > 타이틀 대기"**(호출한 서브그래프 `subgraphs/broken/enter_world_swapped_target.graph.json`의 `n_wait_title`, 기다림 3초)에서 실패한다(그래프 설명과 같다). 로그인 화면까지 가지 않는다
+2. "실행 기록"에서 그 실행을 한 번 누른다. 실패 스텝(호출 안의 "타이틀 대기")이 골라진다
+3. 스크린샷 줄 머리의 "영상"을 누른다. 실패 스텝 시각으로 옮겨 멈춘 영상이 보인다. ▶로 재생하고, 타임라인에서 앞 스텝(호출 안의 "게임 실행" `n_launch`)을 누르면 그 시각으로 옮겨지는지 본다
 4. 실행 폴더 `runs\<…>\video\`를 탐색기로 열어 `seg-0001.mp4`를 Windows 미디어 플레이어로도 재생해 본다. 증거로 `video` 폴더를 `$ev\r1_video`로 복사한다
 
-- 기대 결과: 앱 안에서 재생·탐색이 되고 영상 화면이 실제 게임 창(월드·인벤토리)이다. "이 PC에서 재생할 수 없음"이 뜨지 않는다
+- 기대 결과: 앱 안에서 재생·탐색이 되고 영상 화면이 실제 게임 창(타이틀 화면)이다. 실패 구간이 서브그래프 호출 안이어도 영상이 있다(기본은 비밀값을 가리지 않아 "비밀값 입력" 빈 구간이 없다). "이 PC에서 재생할 수 없음"이 뜨지 않는다
 - 기록: 재생됨(O/X), 탐색이 스텝 시각과 맞는지(대략 0.2초 안), 조각 수·크기
 
-### R2 기록 끈 구간이 영상에 없음
+### R2 기록 끈 구간이 영상에 없음 · 비밀값 가림 설정
 
-1. R1 실행의 영상 줄에서 빈 구간(회색 띠·"영상 없음 · <이유>")을 본다. 로그인 서브그래프 호출(`n_enter_world`)은 비밀번호(비밀값)를 받으므로 **그 호출 전체**(타이틀·로그인·로비·로딩 화면)가 영상에 없고 "영상 없음 · 비밀값 입력"이 보여야 한다
-2. 앱을 닫고 아래 블록으로 사본 그래프의 `n_press_i` 노드에 영상 끄기(`"record": {"video": "off"}`)를 넣는다(속성 편집기에는 기록 정책 칸이 없다). 앱을 다시 띄워 `tests/broken/swapped_target.graph.json`을 ▶
-3. 새 실패 실행의 영상에서 `n_press_i` 구간(I 키를 누르는 순간)이 "영상 없음 · 기록 끔"인지 본다. 끝나면 두 번째 블록으로 되돌린다
+기본은 비밀값을 가리지 않는다(2026-11-03 사용자 결정 D3: 개발 환경 전용 도구라 로그인 입력 구간이 영상에 남아도 된다). 그래서 로그인 서브그래프 호출도 영상에 남고, 빈 구간은 노드에 영상 끄기를 쓴 곳만이다. 워크스페이스 `record.redact_secrets: true`를 켜면 예전처럼 비밀값을 받는 호출 전체가 빈 구간이 된다. R1 실행은 로그인 전에 실패하므로 로그인·I 키까지 간 뒤 실패하는 그래프를 사본에 만든다.
+
+1. 아래 첫 블록으로 사본에 `tests/m3_r2_video.graph.json`을 만든다. `inventory_open`과 같고, `n_press_i`(I 키)에 영상 끄기(`"record": {"video": "off"}`, 속성 편집기에는 기록 정책 칸이 없다)를 넣고 마지막 검증 `n_check_inventory`가 월드 화면에 없는 로그인 단추를 3초 기다려 실패하게 바꾼 것이다. 탐색기에 나타나면 열고 ▶ (마지막 검증에서 실패)
+2. "실행 기록"에서 그 실행 → "영상". 로그인 서브그래프 호출(`n_enter_world`) 구간을 타임라인에서 눌러 본다: 타이틀·로그인·로비·로딩 화면이 영상에 있고, 계정을 치고 비밀번호 칸이 채워지는(게임이 `●`로 그린다) 로그인 화면이 보인다. "영상 없음 · 비밀값 입력" 빈 구간은 **없다**
+3. `n_press_i` 구간(I 키를 누르는 순간)이 "영상 없음 · 기록 끔"인지 본다
+4. 둘째 블록으로 사본 `kookabug.json`에 `record.redact_secrets: true`를 켜고(다음 실행부터 적용) `tests/m3_r2_video.graph.json`을 다시 ▶. 새 실패 실행의 영상에서 로그인 호출 **전체**가 "영상 없음 · 비밀값 입력"이고, `n_press_i`는 그대로 "기록 끔"인지 본다. 끝나면 셋째 블록으로 설정을 되돌린다(만든 그래프는 두어도 된다)
 
 ```powershell
-# M3 영상 끄기 넣기
-$g = "$env:TEMP\kb-m3\sample-rpg\tests\broken\swapped_target.graph.json"
-Copy-Item $g "$g.bak"
-$v = Get-Content -Raw -Encoding UTF8 $g | ConvertFrom-Json
+# M3 R2 그래프 만들기
+$t = "$env:TEMP\kb-m3\sample-rpg\tests"
+$v = Get-Content -Raw -Encoding UTF8 "$t\inventory_open.graph.json" | ConvertFrom-Json
 $v.nodes.n_press_i | Add-Member -NotePropertyName record -NotePropertyValue @{ video = "off" } -Force
-[IO.File]::WriteAllText($g, ($v | ConvertTo-Json -Depth 20))
+$v.nodes.n_check_inventory.in.target.'$target' = "targets/login/login_button.target.json"
+$v.nodes.n_check_inventory.in.timeout_ms = 3000
+[IO.File]::WriteAllText("$t\m3_r2_video.graph.json", ($v | ConvertTo-Json -Depth 20))
 ```
 
 ```powershell
-# M3 영상 끄기 되돌리기
-$g = "$env:TEMP\kb-m3\sample-rpg\tests\broken\swapped_target.graph.json"
-Move-Item -Force "$g.bak" $g
+# M3 R2 가림 켜기
+$c = "$env:TEMP\kb-m3\sample-rpg\kookabug.json"
+Copy-Item $c "$c.bak"
+$ws = Get-Content -Raw -Encoding UTF8 $c | ConvertFrom-Json
+$ws.record | Add-Member -NotePropertyName redact_secrets -NotePropertyValue $true -Force
+[IO.File]::WriteAllText($c, ($ws | ConvertTo-Json -Depth 10))
 ```
 
-- 기대 결과: 두 구간 모두 영상 프레임이 없고 빈 구간 이유가 보인다. 빈 구간 바로 앞뒤 프레임에 로그인 화면·비밀번호 칸이 보이지 않는다
-- 기록: 두 구간의 빈 구간 이유, 앞뒤 프레임 장면. 참고: 비밀값 입력 스텝 **다음** 노드 화면에 입력한 값이 보일 수 있다(스키마 6장 경고) — 로그인은 구간 끄기를 쓴다
+```powershell
+# M3 R2 가림 되돌리기
+$c = "$env:TEMP\kb-m3\sample-rpg\kookabug.json"
+Move-Item -Force "$c.bak" $c
+```
+
+- 기대 결과: 기본 설정 실행은 로그인 화면(비밀번호 칸 포함)이 영상에 남고 빈 구간은 `n_press_i`의 "기록 끔" 하나다. 가림을 켠 실행은 로그인 호출 전체가 "비밀값 입력" 빈 구간이고 그 바로 앞뒤 프레임에 로그인 화면·비밀번호 칸이 보이지 않는다. 두 실행 모두 `n_press_i` 구간에 영상 프레임이 없다
+- 기록: 기본 실행의 로그인 화면 보임(O/X)·빈 구간 이유 목록, 가림 실행의 빈 구간 이유 목록·앞뒤 프레임 장면. 참고: 가림을 켜도 비밀값 입력 스텝 **다음** 노드 화면에 입력한 값이 보일 수 있다(스키마 6장 경고) — 로그인은 구간 끄기를 쓴다
 
 ### R3 성공 실행의 영상은 지워짐
 
@@ -416,7 +429,7 @@ M3는 아래 결정을 **기본값으로 진행**했다. 각 항목을 위 절�
 함께 볼 것(결정은 아니지만 기본값의 결과):
 
 - 워크스페이스가 `record.video`를 정하지 않으면 `failed_only`다. 테스트·노드에 `video: on`을 써도 아래 층은 더 세게만 바꿀 수 있어 효과가 없다. 성공 실행 영상도 남기려면 워크스페이스에서 `on`을 쓴다
-- 예제의 로그인 호출은 비밀번호를 받아 **호출 전체가 영상에 없다**(R2). 로그인 이후만 영상이 남는다
+- 비밀값 기록은 기본이 **가리지 않음**이다(2026-11-03 사용자 결정 D3). 예제의 로그인 호출도 비밀번호 입력 화면까지 영상·스크린샷에 남는다(R1·R2). 워크스페이스 `record.redact_secrets: true`면 비밀값을 받는 호출 전체가 영상에 없고 빈 구간 "비밀값 입력"이 된다(R2 4번)
 
 ## 9. 정리와 판정
 

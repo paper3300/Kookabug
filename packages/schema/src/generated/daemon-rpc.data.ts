@@ -1457,6 +1457,30 @@ export const daemonRpcSchema: unknown = {
           ],
           "type": "object"
         },
+        "workspace.read": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/WorkspaceReadParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/WorkspaceReadResult"
+            },
+            "tool": {
+              "const": "kb_project_info"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
         "workspace.tree": {
           "additionalProperties": false,
           "properties": {
@@ -1515,6 +1539,7 @@ export const daemonRpcSchema: unknown = {
         "target.save",
         "windows.list",
         "workspace.info",
+        "workspace.read",
         "workspace.tree"
       ],
       "title": "Methods",
@@ -3351,6 +3376,51 @@ export const daemonRpcSchema: unknown = {
       "minLength": 1,
       "title": "WorkspacePath",
       "type": "string"
+    },
+    "WorkspaceReadParams": {
+      "additionalProperties": false,
+      "description": "탐색기에 보이는 파일 하나의 내용 (보기 탭, 읽기 전용). 범위는 workspace.tree와 같다: tests·subgraphs·targets·screens 아래와 루트의 kookabug.json·kookabug.lock·AGENTS.md",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/WorkspacePath"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "WorkspaceReadParams",
+      "type": "object"
+    },
+    "WorkspaceReadResult": {
+      "additionalProperties": false,
+      "properties": {
+        "binary": {
+          "description": "글자 파일이 아니다 (앞부분에 NUL 바이트가 있다). text는 빈 문자열",
+          "type": "boolean"
+        },
+        "bytes": {
+          "description": "파일 전체 크기",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "description": "UTF-8로 읽은 앞부분 (1 MiB까지, 깨진 바이트는 U+FFFD)",
+          "type": "string"
+        },
+        "truncated": {
+          "description": "1 MiB를 넘어 뒤를 잘랐다",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "binary",
+        "bytes",
+        "text",
+        "truncated"
+      ],
+      "title": "WorkspaceReadResult",
+      "type": "object"
     },
     "WorkspaceTreeResult": {
       "additionalProperties": false,

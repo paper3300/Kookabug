@@ -3,8 +3,8 @@
 - **보는 범위**: `tests/`·`subgraphs/`·`targets/`·`screens/` 아래 전부와 루트의 `kookabug.json`·
   `kookabug.lock`·`AGENTS.md`. `runs/`·`.kookabug/`는 안을 보지 않는다(이름만). 열린 문서는 그 밖에
   있어도 본다
-- **링크**: 심볼릭 링크·정션이 루트 밖이나 `.kookabug/` 안을 가리키면 건너뛴다. 루트 안을 가리키는
-  폴더 링크는 항목으로만 두고 안으로 들어가지 않는다(순환 방지)
+- **링크**: 심볼릭 링크·정션이 루트 밖이나 `.kookabug/`(그 실제 대상) 안을 가리키면 건너뛴다.
+  루트 안을 가리키는 폴더 링크는 항목으로만 두고 안으로 들어가지 않는다(순환 방지)
 - **감시**: 주기마다 (mtime_ns, 크기)를 비교해 바뀐(생김·없어짐 포함) 경로를 `workspace.changed`로
   알린다. 열린 문서는 디스크 revision을 **그 문서를 연 연결마다** 그 연결이 아는 revision(그 연결이
   열거나 저장한 바이트)과 비교해 다르면 그 연결에 `graph.changed {doc_id, revision}`을 보낸다.
@@ -23,7 +23,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from kookabug_daemon.documents import PRIVATE_NAME, DocumentTable, OpenDoc, recheck_path
+from kookabug_daemon.documents import (
+    PRIVATE_NAME,
+    DocumentTable,
+    OpenDoc,
+    in_private_target,
+    recheck_path,
+)
 from kookabug_daemon.protocol import InvalidParams, RequestFailed
 
 __all__ = [
@@ -58,15 +64,16 @@ class Item:
 
 
 def _inside(root: Path, path: Path) -> bool:
-    """링크를 해석한 경로가 루트 안이고 `.kookabug/` 밖인가."""
+    """링크를 해석한 경로가 루트 안이고 `.kookabug/`(링크면 그 실제 대상 포함) 밖인가."""
     try:
-        relative = os.path.relpath(os.path.realpath(path), root)
+        resolved = os.path.realpath(path)
+        relative = os.path.relpath(resolved, root)
     except OSError, ValueError:
         return False
     parts = Path(relative).parts
     if os.path.isabs(relative) or not parts or parts[0] == "..":
         return False
-    return parts[0].casefold() != PRIVATE_NAME
+    return parts[0].casefold() != PRIVATE_NAME and not in_private_target(root, Path(resolved))
 
 
 def _is_link(entry: os.DirEntry[str]) -> bool:

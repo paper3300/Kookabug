@@ -1,12 +1,35 @@
 // 에디터 탭 (M2 계획 2.11 "에디터 탭"). 탭 내용(캔버스·target 편집기)은 T8·T12가 붙인다.
 // M3 T10: 기록 뷰어 RUN 탭(경로 자리는 `run:<run_id>`)과 실행 폴더의 스냅샷 그래프 탭(읽기 전용, SNAPSHOT 글자)
+// 다듬기 P1-B: 전용 편집기가 없는 탐색기 파일(화면 지도·설정·문서·이미지 등)의 읽기 전용 보기 탭(kind "file")
 import { create } from "zustand";
 import { displayName, type TreeEntry } from "../explorer/tree";
+
+/** 보기 탭이 내용을 그리는 방식 */
+export type FileViewKind = "json" | "text" | "image";
+
+const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"];
+
+export function fileViewKind(path: string): FileViewKind {
+  const lower = path.toLowerCase();
+  if (IMAGE_EXTENSIONS.some((e) => lower.endsWith(e))) return "image";
+  if (lower.endsWith(".json") || lower === "kookabug.lock") return "json";
+  return "text";
+}
+
+/** 보기 탭 글자 (화면 지도 SCREEN, JSON, MD, 이미지 IMAGE, 그 밖 TEXT) */
+export function fileBadgeText(path: string): string {
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".screen.json")) return "SCREEN";
+  const kind = fileViewKind(path);
+  if (kind === "image") return "IMAGE";
+  if (kind === "json") return "JSON";
+  return lower.endsWith(".md") ? "MD" : "TEXT";
+}
 
 export interface EditorTab {
   /** 파일 탭은 워크스페이스 기준 경로, RUN 탭은 `run:<run_id>` */
   path: string;
-  kind: "graph" | "target" | "run";
+  kind: "graph" | "target" | "run" | "file";
   graphKind: TreeEntry["graph_kind"] | null;
   title: string;
   /** RUN 탭의 실행, 스냅샷 그래프 탭이면 그 그래프를 돈 실행 */
@@ -44,6 +67,15 @@ export function openTab(entry: { path: string; kind: "graph" | "target"; graphKi
       title: displayName(entry.path),
     };
     return { tabs: [...s.tabs, tab], active: entry.path };
+  });
+}
+
+/** 탐색기 파일 보기 탭 (읽기 전용, 이미 열려 있으면 그 탭으로 간다). 제목은 파일 이름 그대로 */
+export function openFileTab(path: string): void {
+  useTabs.setState((s) => {
+    if (s.tabs.some((t) => t.path === path)) return { active: path };
+    const tab: EditorTab = { path, kind: "file", graphKind: null, title: path.slice(path.lastIndexOf("/") + 1) };
+    return { tabs: [...s.tabs, tab], active: path };
   });
 }
 
@@ -101,12 +133,13 @@ export function closeAllTabs(): void {
   useTabs.setState({ tabs: [], active: null });
 }
 
-/** 탭 왼쪽 종류 글자 (시안: TEST·SUB·TARGET·RUN, 스냅샷 그래프는 SNAPSHOT) */
+/** 탭 왼쪽 종류 글자 (시안: TEST·SUB·TARGET·RUN, 스냅샷 그래프는 SNAPSHOT, 보기 탭은 fileBadgeText) */
 export function tabBadge(
-  tab: Pick<EditorTab, "kind" | "graphKind"> & { snapshot?: boolean },
-): { text: string; tone: "test" | "target" | "run" } {
+  tab: Pick<EditorTab, "kind" | "graphKind"> & { snapshot?: boolean; path?: string },
+): { text: string; tone: "test" | "target" | "run" | "file" } {
   if (tab.kind === "target") return { text: "TARGET", tone: "target" };
   if (tab.kind === "run") return { text: "RUN", tone: "run" };
+  if (tab.kind === "file") return { text: fileBadgeText(tab.path ?? ""), tone: "file" };
   if (tab.snapshot === true) return { text: "SNAPSHOT", tone: "run" };
   return { text: tab.graphKind === "subgraph" ? "SUB" : "TEST", tone: "test" };
 }

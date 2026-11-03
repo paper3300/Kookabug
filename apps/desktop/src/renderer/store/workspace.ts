@@ -6,6 +6,7 @@ import type { TreeEntry } from "../explorer/tree";
 import { client, toRpcError } from "../rpc/client";
 import { SessionRecovery } from "../rpc/recovery";
 import { breakpointModel } from "../debug/breakpoints";
+import { fileViewModel } from "../file/fileViewStore";
 import { runModel } from "../run/runStore";
 import { connectRunViewer } from "../runs/live";
 import { runIndexModel } from "../runs/runIndexStore";
@@ -104,6 +105,7 @@ function switchProject(root: string | null): void {
   resetTargets();
   resetRegistry();
   closeAllTabs();
+  fileViewModel.reset();
   useUi.setState({ expanded: null, selected: null, quickOpen: false });
   runModel.reset();
   runIndexModel.reset();
@@ -140,6 +142,8 @@ async function onDaemonState(state: DaemonState): Promise<void> {
   });
   if (useWorkspace.getState().root !== state.root) return;
   if (kind === "daemon_replaced") note("info", "daemon이 바뀌어 열린 문서를 다시 열었다");
+  // 보기 탭은 끊긴 동안 바뀌었을 수 있다 (같은 연결이면 놓친 알림이 없다)
+  if (kind !== "same_connection") fileViewModel.reloadAll();
   // 진행 중인 실행 다시 따라가기 (앱을 다시 열었거나 따라가던 실행이 없을 때). 따라가던 실행은 위 복구가
   // 적용한 마지막 seq부터 다시 구독했다
   const runs = kind === "same_connection" ? Promise.resolve() : runModel.syncActive();
@@ -168,6 +172,8 @@ export async function initWorkspace(): Promise<void> {
     revalidateOpenDocs();
     // 편집하지 않은 TARGET 탭은 디스크 버전으로 다시 연다
     onTargetFilesChanged(p.paths);
+    // 보기 탭(읽기 전용)은 늘 디스크 버전이다
+    fileViewModel.changed(p.paths);
   });
   // 열린 문서의 디스크가 바뀜: 편집하지 않았으면 다시 열고, 편집 중이면 충돌 띠 (2.6)
   client().on("graph.changed", (p) => onGraphChanged(p.doc_id, p.revision ?? null));

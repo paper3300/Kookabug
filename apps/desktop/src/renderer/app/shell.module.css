@@ -486,6 +486,11 @@
   color: var(--kb-kind-run);
 }
 
+/* 읽기 전용 보기 탭 (다듬기 P1-B, 탐색기 설정 파일 글자 색) */
+.kindFile {
+  color: var(--kb-file-json);
+}
+
 .tabClose {
   width: 20px;
   height: 20px;

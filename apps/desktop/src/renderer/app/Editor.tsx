@@ -1,8 +1,10 @@
 // 에디터 영역 (시안 Main): 탭(TEST·SUB·TARGET 글자, 저장 안 됨 ●)·경로 표시줄·문서 띠(저장 충돌·저장 실패)·
-// 내용. 그래프 탭은 캔버스(T8), TARGET 탭은 target 편집기(T12). 탭 줄 오른쪽은 실행 툴바(T11).
+// 내용. 그래프 탭은 캔버스(T8), TARGET 탭은 target 편집기(T12), 그 밖 탐색기 파일은 읽기 전용 보기(다듬기 P1-B).
+// 탭 줄 오른쪽은 실행 툴바(T11).
 // 실행이 있으면 내용 위 가운데에 디버그 툴바, 멈췄으면 경로 표시줄 아래에 멈춤 띠 (M3 T9)
 import type { ReactNode } from "react";
 import { DebugToolbar } from "../debug/DebugToolbar";
+import { FileView } from "../file/FileView";
 import { PauseBanner } from "../debug/PauseBanner";
 import { GraphCanvas } from "../graph/Canvas";
 import { RunToolbar } from "../run/Toolbar";
@@ -50,7 +52,15 @@ function Tabs() {
           >
             <button type="button" className={css.tabLabel} onClick={() => activateTab(tab.path)}>
               <span
-                className={`${css.kind} ${badge.tone === "target" ? css.kindTarget : badge.tone === "run" ? css.kindRun : css.kindTest}`}
+                className={`${css.kind} ${
+                  badge.tone === "target"
+                    ? css.kindTarget
+                    : badge.tone === "run"
+                      ? css.kindRun
+                      : badge.tone === "file"
+                        ? css.kindFile
+                        : css.kindTest
+                }`}
               >
                 {badge.text}
               </span>
@@ -188,6 +198,8 @@ export function Editor({ children }: { children?: ReactNode }) {
           <TargetEditor key={active} path={active} />
         ) : activeTab?.kind === "run" && activeTab.runId !== undefined ? (
           <RunTab key={active} runId={activeTab.runId} />
+        ) : activeTab?.kind === "file" ? (
+          <FileView key={active} path={active} />
         ) : (
           <div className={css.canvas} data-part="canvas" data-path={active} />
         )}

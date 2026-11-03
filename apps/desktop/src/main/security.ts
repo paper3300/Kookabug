@@ -98,7 +98,11 @@ function isRunVideo(parts: readonly string[]): boolean {
 export function resolveKbimgPath(url: string, workspaceRoot: string | null): KbimgResult {
   const prefix = `${KBIMG_SCHEME}://`;
   if (!url.toLowerCase().startsWith(prefix)) return { ok: false, reason: "bad_url" };
-  const rest = url.slice(prefix.length);
+  let rest = url.slice(prefix.length);
+  // 다시 읽기 표식 `?v=<숫자>`만 받고 버린다 (ws 이미지만, 다듬기 P1-B 보기 탭). 같은 주소의 그림은 렌더러가
+  // 메모리에 둔 것을 다시 쓰므로, 파일이 바뀌면 표식을 바꿔 새로 읽게 한다. 그 밖의 ?·#는 거부한다
+  const version = /^ws\/[^?#]*\?v=\d{1,15}$/i.test(rest) ? rest.lastIndexOf("?") : -1;
+  if (version >= 0) rest = rest.slice(0, version);
   if (/[?#]/.test(rest)) return { ok: false, reason: "bad_url" };
   const slash = rest.indexOf("/");
   if (slash <= 0) return { ok: false, reason: "bad_url" };
@@ -131,6 +135,7 @@ export function resolveKbimgPath(url: string, workspaceRoot: string | null): Kbi
   if (segments[0].toLowerCase() === PRIVATE_DIR) return { ok: false, reason: "private_path" };
   const ext = path.extname(segments.at(-1)!).toLowerCase();
   const video = ext === VIDEO_EXTENSION;
+  if (video && version >= 0) return { ok: false, reason: "bad_url" };
   // 영상은 실행 폴더의 video/ 바로 안만 (요청 경로와 실제 경로 모두)
   if (video ? !isRunVideo(segments) : !IMAGE_EXTENSIONS.has(ext)) {
     return { ok: false, reason: "not_image" };

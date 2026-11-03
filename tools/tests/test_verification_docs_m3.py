@@ -158,9 +158,13 @@ def test_user_reported_items_present() -> None:
 # ---------------------------------------------------------------- 절차를 따라가면
 
 COPY_MARK: Final = "# M3 사본 만들기"
-VIDEO_OFF_MARK: Final = "# M3 영상 끄기 넣기"
-VIDEO_BACK_MARK: Final = "# M3 영상 끄기 되돌리기"
+R2_GRAPH_MARK: Final = "# M3 R2 그래프 만들기"
+REDACT_ON_MARK: Final = "# M3 R2 가림 켜기"
+REDACT_BACK_MARK: Final = "# M3 R2 가림 되돌리기"
+INVENTORY: Final = "tests/inventory_open.graph.json"
+R2_GRAPH: Final = "tests/m3_r2_video.graph.json"
 SWAPPED: Final = "tests/broken/swapped_target.graph.json"
+SWAPPED_SUB: Final = "subgraphs/broken/enter_world_swapped_target.graph.json"
 
 
 def manual_block_after(marker: str) -> str:
@@ -195,8 +199,11 @@ def run_powershell(tmp_path: Path, marker: str) -> None:
 
 @pytest.mark.process
 def test_manual_blocks_make_valid_workspace_and_graph(tmp_path: Path) -> None:
-    """사본의 영상 정책이 failed_only이고 다른 설정은 그대로이며, 영상 끄기 블록을 지난 그래프가
-    제품 로더로 읽히고 그 노드에 `record.video: off`가 있다. 되돌리기 블록은 바이트를 되돌린다."""
+    """사본의 영상 정책이 failed_only이고 다른 설정은 그대로이며(비밀값 가림은 기본 = 꺼짐),
+    R2 그래프 블록이 만든 그래프가 제품 로더로 읽히고 `inventory_open`과 두 곳만 다르다
+    (`n_press_i` 영상 끔, 마지막 검증이 로그인 단추를 3초 기다림). 가림 켜기 블록은
+    `record.redact_secrets: true`만 더하고 되돌리기 블록은 바이트를 되돌린다
+    (다듬기 P1-B: P1-A의 기본 가림 없음에 맞춤)."""
     run_powershell(tmp_path, COPY_MARK)
     root = tmp_path / "kb-m3" / "sample-rpg"
     sample = REPO_ROOT / "fixtures" / "sample-game" / "workspace"
@@ -213,20 +220,54 @@ def test_manual_blocks_make_valid_workspace_and_graph(tmp_path: Path) -> None:
     local = json.loads((root / ".kookabug" / "local.json").read_bytes())
     assert local["format"] == "kookabug.local/0"
 
-    before = (root / SWAPPED).read_bytes()
-    run_powershell(tmp_path, VIDEO_OFF_MARK)
-    edited = json.loads((root / SWAPPED).read_bytes())
+    assert "redact_secrets" not in copied["record"]
+
+    run_powershell(tmp_path, R2_GRAPH_MARK)
+    edited = json.loads((root / R2_GRAPH).read_bytes())
+    source = json.loads((root / INVENTORY).read_bytes())
     assert edited["nodes"]["n_press_i"]["record"] == {"video": "off"}
-    source = json.loads(before)
+    check = edited["nodes"]["n_check_inventory"]["in"]
+    assert check["target"] == {"$target": "targets/login/login_button.target.json"}
+    assert check["timeout_ms"] == 3000
     del edited["nodes"]["n_press_i"]["record"]
+    edited["nodes"]["n_check_inventory"]["in"] = source["nodes"]["n_check_inventory"]["in"]
     assert edited == source
     program = load_program(
-        ws, SWAPPED, secrets=MemorySecrets({"accounts.qa_tester_01": "sample-pass-01"})
+        ws, R2_GRAPH, secrets=MemorySecrets({"accounts.qa_tester_01": "sample-pass-01"})
     )
     errors = [d for d in program.diagnostics if d.severity == "error"]
     assert errors == [], errors
-    run_powershell(tmp_path, VIDEO_BACK_MARK)
-    assert (root / SWAPPED).read_bytes() == before
+
+    before = (root / "kookabug.json").read_bytes()
+    run_powershell(tmp_path, REDACT_ON_MARK)
+    redacted = json.loads((root / "kookabug.json").read_bytes())
+    assert redacted["record"] == {**copied["record"], "redact_secrets": True}
+    assert {k: v for k, v in redacted.items() if k != "record"} == {
+        k: v for k, v in copied.items() if k != "record"
+    }
+    assert Workspace.open(root).diagnostics == []
+    run_powershell(tmp_path, REDACT_BACK_MARK)
+    assert (root / "kookabug.json").read_bytes() == before
+
+
+def test_r1_names_where_swapped_target_fails() -> None:
+    """R1은 바꿔치기 그래프가 실제로 실패하는 곳(서브그래프 '월드 접속 > 타이틀 대기')을 적는다.
+    그 실행은 로그인·I 키에 닿지 않으므로 R2는 따로 만든 그래프를 쓴다
+    (다듬기 P1-B, 조율자 실측)."""
+    sample = REPO_ROOT / "fixtures" / "sample-game" / "workspace"
+    test = json.loads((sample / SWAPPED).read_text(encoding="utf-8"))
+    sub = json.loads((sample / SWAPPED_SUB).read_text(encoding="utf-8"))
+    assert test["nodes"]["n_enter_world"]["config"]["graph"] == SWAPPED_SUB
+    where = f"{test['nodes']['n_enter_world']['title']} > {sub['nodes']['n_wait_title']['title']}"
+    assert where in test["meta"]["description"]
+    r1 = text_between(manual(), "### R1 ", "### R2 ")
+    assert where in r1 and SWAPPED_SUB in r1 and "`n_wait_title`" in r1
+    assert "n_press_i" not in r1 and "인벤토리" not in r1
+    r2 = text_between(manual(), "### R2 ", "### R3 ")
+    assert SWAPPED not in r2 and R2_GRAPH in r2
+    # 기본은 가리지 않고, 가림은 설정으로 켠다 (2026-11-03 사용자 결정 D3)
+    for words in ("가리지 않는다", "record.redact_secrets: true", "비밀값 입력", "기록 끔"):
+        assert words in r2, words
 
 
 # ---------------------------------------------------------------- S3: daemon 수명 (T12 검수 3)

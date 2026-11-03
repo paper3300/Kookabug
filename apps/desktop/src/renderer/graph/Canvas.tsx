@@ -7,6 +7,7 @@
 // - 연결: 핀을 끌어 놓으면 연결 명령. 끌기 중 호환 핀 강조, 데이터 연결이면 숨긴 선택 입력 핀도 보인다
 // - 지우기: Delete·Backspace로 고른 노드·연결선을 명령 하나로 지운다
 // - 팔레트에서 끌어 놓으면 그 자리에 노드를 더한다
+// - 서브그래프 호출 노드를 더블클릭하면 그 서브그래프 탭으로 간다 (다듬기 P1-B)
 import "@xyflow/react/dist/base.css";
 import {
   applyNodeChanges,
@@ -43,6 +44,8 @@ import { CommentNode } from "./nodes/CommentNode";
 import { CanvasPathContext, ConnectingContext } from "./nodes/context";
 import { GraphNode, pinEnd } from "./nodes/GraphNode";
 import { GroupNode } from "./nodes/GroupNode";
+import { openSubgraph } from "./openSubgraph";
+import { callTargetOf } from "./subgraphPlan";
 
 const NODE_TYPES = { kb: GraphNode, kbGroup: GroupNode, kbComment: CommentNode };
 const EDGE_TYPES = { kb: KbEdge };
@@ -54,6 +57,8 @@ const DELETE_KEYS = ["Delete", "Backspace"];
 const CONNECTION_LINE = { stroke: "var(--kb-accent)", strokeWidth: 2 };
 /** 놓은 자리가 노드 머리 가운데쯤 오게 (노드 너비 184px, 머리 32px) */
 const DROP_OFFSET = { x: 92, y: 16 };
+/** 노드 더블클릭으로 서브그래프를 열지 않는 노드 안 요소 (브레이크포인트 점·포트·입력 칸 등). */
+const NODE_CONTROLS = "button, input, select, textarea, a, [contenteditable='true'], .react-flow__handle";
 
 function ZoomBox() {
   const rf = useReactFlow();
@@ -302,6 +307,21 @@ function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
     setMenu({ x: e.clientX, y: e.clientY, node: node.id });
   }, [doc.readOnly]);
 
+  // 서브그래프 호출 노드 더블클릭 → 그 서브그래프 탭 (다듬기 P1-B). 읽기 전용·실행 중에도 된다 (보기 이동이다)
+  const value = doc.value;
+  const onNodeDoubleClick = useCallback(
+    (e: ReactMouseEvent, node: KbFlowNode) => {
+      if (node.type !== "kb") return;
+      // 노드 안의 단추·포트·입력 칸에서 온 더블클릭은 그 요소의 조작이다 (노드 본문만 연다)
+      if (e.target instanceof Element && e.target.closest(NODE_CONTROLS) !== null) return;
+      const target = callTargetOf(value, node.id);
+      if (target === null) return;
+      e.preventDefault();
+      void openSubgraph(path, target);
+    },
+    [path, value],
+  );
+
   const empty = flow.nodes.every((n) => n.type !== "kb" && n.type !== "kbGroup");
   return (
     <CanvasPathContext.Provider value={path}>
@@ -318,6 +338,7 @@ function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
           onEdgesChange={onEdgesChange}
           onNodeDragStop={onNodeDragStop}
           onNodeContextMenu={onNodeContextMenu}
+          onNodeDoubleClick={onNodeDoubleClick}
           onDelete={onDelete}
           onConnectStart={onConnectStart}
           onConnectEnd={onConnectEnd}

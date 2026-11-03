@@ -842,6 +842,29 @@ class WorkspacePath(RootModel[str]):
     ]
 
 
+class WorkspaceReadParams(BaseModel):
+    """
+    탐색기에 보이는 파일 하나의 내용 (보기 탭, 읽기 전용). 범위는 workspace.tree와 같다: tests·subgraphs·targets·screens 아래와 루트의 kookabug.json·kookabug.lock·AGENTS.md
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    path: WorkspacePath
+
+
+class WorkspaceReadResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    binary: Annotated[
+        bool, Field(description="글자 파일이 아니다 (앞부분에 NUL 바이트가 있다). text는 빈 문자열")
+    ]
+    bytes: Annotated[int, Field(description="파일 전체 크기", ge=0, le=9007199254740991)]
+    text: Annotated[str, Field(description="UTF-8로 읽은 앞부분 (1 MiB까지, 깨진 바이트는 U+FFFD)")]
+    truncated: Annotated[bool, Field(description="1 MiB를 넘어 뒤를 잘랐다")]
+
+
 class ClientInfo(RootModel[UiClientInfo | AgentClientInfo]):
     root: Annotated[UiClientInfo | AgentClientInfo, Field(title="ClientInfo")]
 
@@ -1065,6 +1088,16 @@ class WorkspaceInfo(BaseModel):
     params: EmptyParams
     renderer: Literal[True]
     result: WorkspaceInfoResult
+    tool: Literal["kb_project_info"]
+
+
+class WorkspaceRead(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: WorkspaceReadParams
+    renderer: Literal[True]
+    result: WorkspaceReadResult
     tool: Literal["kb_project_info"]
 
 
@@ -1881,6 +1914,7 @@ class Methods(BaseModel):
     target_save: Annotated[TargetSave, Field(alias="target.save")]
     windows_list: Annotated[WindowsList, Field(alias="windows.list")]
     workspace_info: Annotated[WorkspaceInfo, Field(alias="workspace.info")]
+    workspace_read: Annotated[WorkspaceRead, Field(alias="workspace.read")]
     workspace_tree: Annotated[WorkspaceTree, Field(alias="workspace.tree")]
 
 

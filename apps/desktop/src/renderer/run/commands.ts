@@ -3,7 +3,7 @@
 
 export interface RunTabLike {
   path: string;
-  kind: "graph" | "target" | "run";
+  kind: "graph" | "target" | "run" | "file";
   graphKind?: string | null;
   /** 실행 스냅샷 그래프 (읽기 전용, M3 T10): 실행하지 않는다 */
   snapshot?: boolean;

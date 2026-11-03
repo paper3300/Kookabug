@@ -2,7 +2,8 @@
 
 - **경로**: 요청의 경로는 워크스페이스 루트 기준('/' 구분)이다. 루트 밖(절대 경로·`..`·드라이브)은
   `path_outside_workspace`, `.kookabug/` 안은 `private_path`다. 심볼릭 링크·정션은 해석한 뒤 다시
-  본다(링크가 루트 밖이나 `.kookabug/` 안을 가리키면 같은 거부). 그래프 메서드는 해석 전·후 이름이
+  본다(링크가 루트 밖이나 `.kookabug/` 안을 가리키면 같은 거부. `.kookabug` 자체가 링크면 그 실제
+  대상 폴더도 `.kookabug/`로 본다). 그래프 메서드는 해석 전·후 이름이
   모두 `*.graph.json`이어야 한다 — 그래야 `graph.save`로 `kookabug.json`(팀 권한 정책) 같은 파일을
   고칠 수 없다. 파일 연산(열기·만들기·저장)은 경로 잠금을 잡은 뒤 연산 직전에 경로를 다시
   해석한다. `doc_id`로 하는 검증·저장은 **그 연결이 연 경로**로 다시 해석한다(다른 연결의 별칭
@@ -55,6 +56,7 @@ __all__ = [
     "Opened",
     "WsPath",
     "document_failed",
+    "in_private_target",
     "is_run_record",
     "read_graph",
     "read_only_failed",
@@ -100,6 +102,17 @@ def _is_private(parts: tuple[str, ...] | list[str]) -> bool:
     return bool(parts) and parts[0].casefold() == PRIVATE_NAME
 
 
+def in_private_target(root: Path, resolved: Path) -> bool:
+    """해석한 경로가 `.kookabug/`의 **실제 대상** 안인가. `.kookabug`가 루트 안 다른 폴더를 가리키는
+    링크·정션이면 그 폴더도 비공개다 (`tests/alias → 그 폴더`로 돌아 읽지 못하게, 다듬기 P1-B)."""
+    try:
+        private = os.path.realpath(root / PRIVATE_NAME)
+        relative = os.path.relpath(resolved, private)
+    except OSError, ValueError:  # 다른 드라이브: 그 안일 수 없다
+        return False
+    return not os.path.isabs(relative) and Path(relative).parts[:1] != ("..",)
+
+
 def resolve_path(root: Path, given: str, *, graph: bool = False) -> WsPath:
     """요청 경로 → 검사한 경로. 거부는 `RequestFailed`, 그래프가 아니면 `InvalidParams`."""
     if not given or "\\" in given or given.startswith("/") or ":" in given or "\0" in given:
@@ -118,7 +131,7 @@ def resolve_path(root: Path, given: str, *, graph: bool = False) -> WsPath:
     rel_parts = PurePosixPath(Path(relative).as_posix()).parts
     if os.path.isabs(relative) or not rel_parts or rel_parts[0] == "..":
         raise _outside(given, "링크를 따라가면 워크스페이스 루트 밖이다")
-    if _is_private(rel_parts):
+    if _is_private(rel_parts) or in_private_target(root, resolved):
         raise _private(given)
     if graph and not (
         given.casefold().endswith(GRAPH_SUFFIX) and resolved.name.casefold().endswith(GRAPH_SUFFIX)

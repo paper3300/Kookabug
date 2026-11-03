@@ -103,6 +103,8 @@ describe("kbimg", () => {
     );
     const cache = resolveKbimgPath("kbimg://cache/f1.png", ws);
     expect(cache.ok).toBe(true);
+    // 다시 읽기 표식은 버리고 같은 파일 (다듬기 P1-B 보기 탭)
+    expect(resolveKbimgPath(`kbimg://ws/targets/${encodeURIComponent("버튼")}.png?v=12`, ws)).toEqual(ok);
 
     const rejected: [string, string][] = [
       // ..
@@ -135,6 +137,15 @@ describe("kbimg", () => {
       ["kbimg://other/targets/버튼.png", "bad_url"],
       ["kbimg://ws/targets/버튼.png?x=1", "bad_url"],
       ["kbimg://ws/targets/missing.png", "not_found"],
+      // 다시 읽기 표식은 ws 이미지의 `?v=<숫자>` 하나만 (다듬기 P1-B)
+      ["kbimg://ws/targets/버튼.png?v=", "bad_url"],
+      ["kbimg://ws/targets/버튼.png?v=1&x=2", "bad_url"],
+      ["kbimg://ws/targets/버튼.png?v=1#a", "bad_url"],
+      ["kbimg://ws/targets/버튼.png?v=1?v=2", "bad_url"],
+      ["kbimg://ws/targets/버튼.png?v=-1", "bad_url"],
+      ["kbimg://cache/f1.png?v=1", "bad_url"],
+      ["kbimg://ws/../up.png?v=1", "path_outside_workspace"],
+      ["kbimg://ws/.kookabug/secret.png?v=1", "private_path"],
     ];
     for (const [url, reason] of rejected) {
       expect(resolveKbimgPath(url, ws), url).toEqual({ ok: false, reason });
@@ -293,6 +304,8 @@ describe("kbimg run video", () => {
     // 썸네일(.jpg)은 이미지로 열린다
     expect(resolveKbimgPath(`kbimg://ws/runs/${RUN}/thumbs/s3.jpg`, ws).ok).toBe(true);
     for (const [url, reason] of [
+      // 다시 읽기 표식은 이미지만
+      [`kbimg://ws/runs/${RUN}/video/seg-0001.mp4?v=1`, "bad_url"],
       [`kbimg://ws/runs/${RUN}/a.mp4`, "not_image"],
       ["kbimg://ws/media/clip.mp4", "not_image"],
       [`kbimg://ws/runs/${RUN}/video/sub/seg-0001.mp4`, "not_image"],

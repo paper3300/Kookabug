@@ -1,0 +1,47 @@
+# 외부 PR 게이트 (2026-11-03 사용자 결정: 허용한 사람만 PR, 정책은 CONTRIBUTING.md).
+# 허용 목록(.github/APPROVED_CONTRIBUTORS) 밖 작성자의 PR에 안내 댓글을 달고 닫는다. 레포 주인·봇은 예외.
+# pull_request_target은 기준 브랜치 맥락에서 쓰기 토큰으로 돈다: PR 코드를 체크아웃하거나 실행하지 않는다.
+# 판정 스크립트·목록·안내 글은 기준 브랜치의 것만 읽는다
+name: PR gate
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions: {}
+
+concurrency:
+  group: pr-gate-${{ github.event.pull_request.number }}
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # 기준 브랜치(PR이 아님)의 판정 파일만 받는다
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github
+            tools/pr_gate.py
+          sparse-checkout-cone-mode: false
+      - name: 허용 목록 확인
+        id: check
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          REPO_OWNER: ${{ github.repository_owner }}
+        run: python3 tools/pr_gate.py >> "$GITHUB_OUTPUT"
+      - name: 안내 댓글 후 닫기
+        if: steps.check.outputs.allowed == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr comment "$PR_URL" --body-file .github/pr-gate-comment.md
+          gh pr close "$PR_URL"

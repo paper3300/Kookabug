@@ -1,6 +1,6 @@
 // 사이드바 탐색기 (M2 계획 2.11): workspace.tree, 배지, workspace.changed로 다시 읽기
 import { useMemo } from "react";
-import { openTab, useTabs } from "../store/tabs";
+import { openFileTab, openTab, useTabs } from "../store/tabs";
 import { toggleExpanded, useUi } from "../store/ui";
 import { useWorkspace } from "../store/workspace";
 import { badgeOf, buildTree, defaultExpanded, glyphOf, isOpenable, visibleRows, type Tone, type TreeNode } from "./tree";
@@ -36,6 +36,9 @@ export function Explorer() {
     }
     if (isOpenable({ type: "file", kind: node.kind ?? undefined })) {
       openTab({ path: node.path, kind: node.kind as "graph" | "target", graphKind: node.graphKind });
+    } else {
+      // 전용 편집기가 없는 파일은 읽기 전용 보기 탭 (다듬기 P1-B)
+      openFileTab(node.path);
     }
   };
 
