@@ -26,11 +26,14 @@ __all__ = [
     "VK",
     "WATCHED",
     "assert_no_keys_held",
+    "button_input",
     "cursor_pos",
     "held",
     "is_down",
+    "key_input",
     "release_all_for_test",
     "release_input",
+    "send_inputs",
 ]
 
 VK: Final = {
@@ -147,6 +150,35 @@ def release_input(name: str, *, extra_info: int = KOOKABUG_INPUT_MARK) -> _INPUT
         item.u.ki.dwFlags = _KEYEVENTF_KEYUP | (_KEYEVENTF_EXTENDEDKEY if name in _EXTENDED else 0)
         item.u.ki.dwExtraInfo = extra_info
     return item
+
+
+_MOUSE_DOWN: Final = {"mouse:left": 0x0002, "mouse:right": 0x0008, "mouse:middle": 0x0020}
+
+
+def key_input(vk: int, *, up: bool = False, extra_info: int = KOOKABUG_INPUT_MARK) -> _INPUT:
+    """가상 키 `vk`를 누르거나 떼는 `INPUT` 하나 (보내지 않는다). 녹화 검사의 "사람" 입력은
+    `extra_info`에 검사 표식을 준다."""
+    item = _INPUT()
+    item.type = _INPUT_KEYBOARD
+    item.u.ki.wVk = vk
+    item.u.ki.dwFlags = _KEYEVENTF_KEYUP if up else 0
+    item.u.ki.dwExtraInfo = extra_info
+    return item
+
+
+def button_input(name: str, *, up: bool = False, extra_info: int = KOOKABUG_INPUT_MARK) -> _INPUT:
+    """마우스 버튼(`mouse:left` 등)을 지금 커서 자리에서 누르거나 떼는 `INPUT` 하나."""
+    item = _INPUT()
+    item.type = _INPUT_MOUSE
+    item.u.mi.dwFlags = (_MOUSE_UP if up else _MOUSE_DOWN)[name]
+    item.u.mi.dwExtraInfo = extra_info
+    return item
+
+
+def send_inputs(*items: _INPUT) -> int:
+    """`INPUT`들을 한 번에 보낸다 (SendInput). 들어간 개수."""
+    array = (_INPUT * len(items))(*items)
+    return int(_SendInput(len(items), array, ctypes.sizeof(_INPUT)))
 
 
 def release_all_for_test(

@@ -39,6 +39,7 @@ from typing import Final, NamedTuple
 from kookabug_core.inputs import ClientPoint, GuardedOp, InputDevice, PlatformUnavailable
 from kookabug_platform.dpi import per_monitor_v2_thread
 from kookabug_platform.errors import KEY_UNKNOWN, PlatformError
+from kookabug_platform.inputmark import KOOKABUG_INPUT_MARK
 from kookabug_platform.keys import KeyStroke, stroke
 from kookabug_platform.tracker import WindowBinding, WindowTracker
 from kookabug_platform.win32 import user32
@@ -65,11 +66,6 @@ __all__ = [
     "unicode_inputs",
     "virtual_screen",
 ]
-
-KOOKABUG_INPUT_MARK: Final = 0x4B4F4F4B
-"""우리 SendInput의 `dwExtraInfo` 표식 ("KOOK"). 녹화 훅은 이 값을 가진 입력을 버린다. 정수 값
-규칙(2^53-1) 안이고 펜·터치 서명(`0xFF515700` 대역)과 겹치지 않는다. 바꾸면 검사 도구
-`kb_testing.keys`의 같은 상수도 바꾼다 (검사가 둘이 같은지 본다)."""
 
 _ABSOLUTE: Final = (
     user32.MOUSEEVENTF_MOVE | user32.MOUSEEVENTF_ABSOLUTE | user32.MOUSEEVENTF_VIRTUALDESK

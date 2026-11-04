@@ -204,3 +204,109 @@ GetUserObjectInformationW = bind(
     DWORD,
     ctypes.POINTER(DWORD),
 )
+
+# ── 녹화 훅 프로세스 (M4 T3): 저수준 훅·관측(메시지 없는 API)·IME 조회 ─────────────────────
+WH_KEYBOARD_LL: Final = 13
+WH_MOUSE_LL: Final = 14
+HC_ACTION: Final = 0
+WM_KEYDOWN: Final = 0x0100
+WM_KEYUP: Final = 0x0101
+WM_SYSKEYDOWN: Final = 0x0104
+WM_SYSKEYUP: Final = 0x0105
+WM_MOUSEMOVE: Final = 0x0200
+WM_LBUTTONDOWN: Final = 0x0201
+WM_LBUTTONUP: Final = 0x0202
+WM_RBUTTONDOWN: Final = 0x0204
+WM_RBUTTONUP: Final = 0x0205
+WM_MBUTTONDOWN: Final = 0x0207
+WM_MBUTTONUP: Final = 0x0208
+WM_MOUSEWHEEL: Final = 0x020A
+WM_XBUTTONDOWN: Final = 0x020B
+WM_XBUTTONUP: Final = 0x020C
+WM_MOUSEHWHEEL: Final = 0x020E
+LLMHF_INJECTED: Final = 0x01
+LLMHF_LOWER_IL_INJECTED: Final = 0x02
+LLKHF_EXTENDED: Final = 0x01
+LLKHF_LOWER_IL_INJECTED: Final = 0x02
+LLKHF_INJECTED: Final = 0x10
+EVENT_SYSTEM_FOREGROUND: Final = 0x0003
+EVENT_OBJECT_SHOW: Final = 0x8002
+EVENT_OBJECT_HIDE: Final = 0x8003
+EVENT_OBJECT_REORDER: Final = 0x8004
+EVENT_OBJECT_LOCATIONCHANGE: Final = 0x800B
+WM_IME_CONTROL: Final = 0x0283
+IMC_GETCONVERSIONMODE: Final = 0x0001
+IME_CMODE_NATIVE: Final = 0x0001
+SMTO_BLOCK: Final = 0x0001
+SMTO_ABORTIFHUNG: Final = 0x0002
+ES_PASSWORD: Final = 0x0020
+PM_REMOVE: Final = 0x0001
+
+
+class MSLLHOOKSTRUCT(ctypes.Structure):
+    _fields_ = (
+        ("pt", wintypes.POINT),
+        ("mouseData", DWORD),
+        ("flags", DWORD),
+        ("time", DWORD),
+        ("dwExtraInfo", ctypes.c_size_t),
+    )
+
+
+class KBDLLHOOKSTRUCT(ctypes.Structure):
+    _fields_ = (
+        ("vkCode", DWORD),
+        ("scanCode", DWORD),
+        ("flags", DWORD),
+        ("time", DWORD),
+        ("dwExtraInfo", ctypes.c_size_t),
+    )
+
+
+class LASTINPUTINFO(ctypes.Structure):
+    _fields_ = (("cbSize", UINT), ("dwTime", DWORD))
+
+
+class GUITHREADINFO(ctypes.Structure):
+    _fields_ = (
+        ("cbSize", DWORD),
+        ("flags", DWORD),
+        ("hwndActive", HWND),
+        ("hwndFocus", HWND),
+        ("hwndCapture", HWND),
+        ("hwndMenuOwner", HWND),
+        ("hwndMoveSize", HWND),
+        ("hwndCaret", HWND),
+        ("rcCaret", wintypes.RECT),
+    )
+
+
+HOOKPROC = ctypes.WINFUNCTYPE(wintypes.LPARAM, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
+SetWindowsHookExW = bind(
+    _dll, "SetWindowsHookExW", wintypes.HHOOK, ctypes.c_int, HOOKPROC, wintypes.HINSTANCE, DWORD
+)
+UnhookWindowsHookEx = bind(_dll, "UnhookWindowsHookEx", BOOL, wintypes.HHOOK)
+CallNextHookEx = bind(
+    _dll,
+    "CallNextHookEx",
+    wintypes.LPARAM,
+    wintypes.HHOOK,
+    ctypes.c_int,
+    wintypes.WPARAM,
+    wintypes.LPARAM,
+)
+GetLastInputInfo = bind(_dll, "GetLastInputInfo", BOOL, ctypes.POINTER(LASTINPUTINFO))
+GetGUIThreadInfo = bind(_dll, "GetGUIThreadInfo", BOOL, DWORD, ctypes.POINTER(GUITHREADINFO))
+GetKeyboardLayout = bind(_dll, "GetKeyboardLayout", wintypes.HKL, DWORD)
+SendMessageTimeoutW = bind(
+    _dll,
+    "SendMessageTimeoutW",
+    wintypes.LPARAM,
+    HWND,
+    UINT,
+    wintypes.WPARAM,
+    wintypes.LPARAM,
+    UINT,
+    UINT,
+    ctypes.POINTER(ctypes.c_size_t),
+)

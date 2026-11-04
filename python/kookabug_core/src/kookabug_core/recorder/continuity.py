@@ -10,7 +10,9 @@
 - 누적 개수(`dropped_marker`·`coalesced_moves`·`overflow`)는 줄지 않는다
 
 위반은 처음 하나만 남는다(끈적함). 녹화는 그때 `input_overflow`로 멈추고, `cut_crit_seq` **앞**의
-중요 이벤트까지만 동작으로 쓴다(그 뒤 이벤트는 "없었던 것"으로 이어 붙이지 않는다).
+중요 이벤트까지만 동작으로 쓴다(그 뒤 이벤트는 "없었던 것"으로 이어 붙이지 않는다). 위반을 본
+묶음 안에서도 그 앞 이벤트(`valid_prefix`개)는 유실 앞 동작이라 버리지 않는다 — 훅은 넘침을 첫
+유실 앞 큐를 다 보낸 묶음에 싣기 때문에, 그 묶음의 앞부분이 유실 직전 동작이다.
 """
 
 from __future__ import annotations
@@ -44,6 +46,22 @@ class ContinuityViolation:
     cut_crit_seq: int
     """이 번호와 그 뒤의 중요 이벤트는 쓰지 않는다 (첫 빈 번호, 모르면 받은 마지막 다음)."""
     message: str
+    valid_prefix: int = 0
+    """위반을 본 `hook.events` 묶음의 앞에서부터 이만큼은 유실 앞 동작으로 쓴다 — `cut_crit_seq`
+    앞 마지막 중요 이벤트까지(그 뒤 이동은 유실된 이벤트보다 뒤일 수 있어 뺀다). health면 0."""
+
+
+def _prefix(events: Sequence[Mapping[str, Any]], upto: int, cut: int) -> int:
+    """`events[:upto]` 중 `cut` 앞 마지막 중요 이벤트까지의 길이 (없으면 0)."""
+    last = 0
+    for index, event in enumerate(events[:upto]):
+        seq = event.get("crit_seq")
+        if seq is None:
+            continue
+        if int(seq) >= cut:
+            break
+        last = index + 1
+    return last
 
 
 class ContinuityChecker:
@@ -56,9 +74,16 @@ class ContinuityChecker:
         self.violation: ContinuityViolation | None = None
 
     def _fail(
-        self, reason: ViolationReason, batch_no: int, cut: int, message: str
+        self,
+        reason: ViolationReason,
+        batch_no: int,
+        cut: int,
+        message: str,
+        events: Sequence[Mapping[str, Any]] = (),
+        upto: int = 0,
     ) -> ContinuityViolation:
-        self.violation = ContinuityViolation(reason, batch_no, cut, message)
+        prefix = _prefix(events, upto, cut)
+        self.violation = ContinuityViolation(reason, batch_no, cut, message, prefix)
         return self.violation
 
     def feed_events(self, params: Mapping[str, Any]) -> ContinuityViolation | None:
@@ -82,7 +107,7 @@ class ContinuityChecker:
         crit_seen: list[int] = []
         gap: int | None = None
         expected = self.last_crit + 1
-        for event in events:
+        for index, event in enumerate(events):
             event_id, t_ns = int(event["event_id"]), int(event["t_ns"])
             seq = event.get("crit_seq")
             if event_id <= self.last_event_id or t_ns < self.last_t_ns:
@@ -92,6 +117,8 @@ class ContinuityChecker:
                     batch_no,
                     _earliest(gap, expected, seq),
                     f"이벤트 {event_id}의 차례·시각이 거꾸로다",
+                    events,
+                    index,
                 )
             self.last_event_id, self.last_t_ns = event_id, t_ns
             if seq is None:
@@ -102,6 +129,8 @@ class ContinuityChecker:
                     batch_no,
                     _earliest(gap, expected, seq),
                     f"crit_seq {seq}가 거꾸로·다시 나왔다",
+                    events,
+                    index,
                 )
             if seq > expected and gap is None:
                 gap = expected
@@ -120,10 +149,16 @@ class ContinuityChecker:
             # 버린 이벤트의 번호는 이 묶음 안 빈틈이거나, 이 묶음 뒤(아직 보내지 않은 번호)다
             cut = gap if gap is not None else expected
             return self._fail(
-                "overflow", batch_no, cut, f"중요 큐가 차서 {params['overflow']}개를 버렸다"
+                "overflow",
+                batch_no,
+                cut,
+                f"중요 큐가 차서 {params['overflow']}개를 버렸다",
+                events,
+                len(events),
             )
         if gap is not None:
-            return self._fail("crit_gap", batch_no, gap, f"crit_seq {gap}가 빠졌다")
+            message = f"crit_seq {gap}가 빠졌다"
+            return self._fail("crit_gap", batch_no, gap, message, events, len(events))
         self.last_batch = batch_no
         self.last_crit = expected - 1
         self.counters = {name: int(params[name]) for name in _COUNTERS}

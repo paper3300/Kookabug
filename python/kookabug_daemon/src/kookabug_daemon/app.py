@@ -44,6 +44,7 @@ from kookabug_daemon.methods import MethodSpec, RunsLike, registry
 from kookabug_daemon.methods.tools import Authorizer
 from kookabug_daemon.options import DEFAULT_IDLE_TIMEOUT_S, SESSION_WAIT_S, add_arguments
 from kookabug_daemon.protocol import DAEMON_VERSION, PROTOCOL, json_text
+from kookabug_daemon.recorder_hook import HookTesting, testing_options
 from kookabug_daemon.runs import RunManager
 from kookabug_daemon.session import (
     LOGS_DIR,
@@ -109,6 +110,8 @@ class DaemonConfig:
     log_level: str = "info"
     limits: Limits = field(default_factory=Limits)
     watch_interval_s: float = WATCH_INTERVAL_S
+    recorder_testing: HookTesting | None = None
+    """검사 전용 녹화 옵션 (`KOOKABUG_TESTING=1`일 때만, M4 계획 2.2)."""
 
 
 def plugin_registry(modules: tuple[str, ...]) -> Callable[[], Registry]:
@@ -416,6 +419,14 @@ def config_from_args(args: argparse.Namespace) -> DaemonConfig:
             raise UsageError(f"--platform-fake {fake}을(를) 읽을 수 없다: {exc}") from exc
         if not isinstance(data, dict):
             raise UsageError(f"--platform-fake {fake}은(는) JSON 객체여야 한다")
+    try:
+        testing = testing_options(
+            os.environ,
+            accept_extra_info=args.recorder_accept_extra_info,
+            ime_query_window=args.recorder_ime_query_window,
+        )
+    except ValueError as exc:
+        raise UsageError(str(exc)) from exc
     return DaemonConfig(
         workspace=root,
         idle_timeout_s=args.idle_timeout_s,
@@ -423,6 +434,7 @@ def config_from_args(args: argparse.Namespace) -> DaemonConfig:
         platform_fake=fake,
         plugin_modules=tuple(args.plugin_modules),
         log_level=args.log_level,
+        recorder_testing=testing,
     )
 
 

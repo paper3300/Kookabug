@@ -75,3 +75,10 @@ CreateProcessW = bind(
     ctypes.POINTER(STARTUPINFOW),
     ctypes.POINTER(PROCESS_INFORMATION),
 )
+
+# 녹화 훅 프로세스 (M4 T3): 훅 스레드 우선순위, 세션 마지막 입력 시각과 같은 틱
+THREAD_PRIORITY_HIGHEST: Final = 2
+GetCurrentThread = bind(_dll, "GetCurrentThread", HANDLE)
+SetThreadPriority = bind(_dll, "SetThreadPriority", BOOL, HANDLE, ctypes.c_int)
+GetTickCount = bind(_dll, "GetTickCount", DWORD)
+GetModuleHandleW = bind(_dll, "GetModuleHandleW", wintypes.HMODULE, wintypes.LPCWSTR)

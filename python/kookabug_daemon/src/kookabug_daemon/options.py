@@ -50,6 +50,14 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         metavar="모듈",
         help=argparse.SUPPRESS,
     )
+    # 검사 전용 (M4 계획 2.2, KOOKABUG_TESTING=1일 때만 — 아니면 시작하지 않는다): 녹화가 이
+    # dwExtraInfo를 가진 합성 입력을 사람 입력으로 받는다 / IME 표본 조회 대상을 바꿔 끼운다
+    parser.add_argument(
+        "--recorder-accept-extra-info", type=int, default=None, help=argparse.SUPPRESS
+    )
+    parser.add_argument(
+        "--recorder-ime-query-window", type=int, default=None, help=argparse.SUPPRESS
+    )
     # 테스트용: 경쟁에서 졌을 때 유효한 세션을 기다리는 시간
     parser.add_argument(
         "--session-wait-s", type=_positive_float, default=SESSION_WAIT_S, help=argparse.SUPPRESS
