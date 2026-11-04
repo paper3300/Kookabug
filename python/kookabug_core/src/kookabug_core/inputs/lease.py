@@ -21,6 +21,10 @@
   `clean: true`로 쓰고 놓는다. 아니면 놓지 않는다 — 프로세스가 끝날 때 버려지고, 다음 획득자가
   복구한다
 - 감독자 복구 경로의 키 복구도 임대권 안에서만 한다 (`recover_run`)
+- **녹화 주체** (M4 계획 2.3): 녹화 세션 동안 daemon이 `kind: "recorder"`·장치 `none`으로 쥔다.
+  입력을 보내지 않으니 액터 없이 깨끗하게 놓는다(`release_idle`). 녹화 소유자가 놓지 않고 끝났으면
+  다음 획득자는 뗄 것이 없으므로 떼지 않고, 그 앞 소유자를 옆 파일의 `last_owner`에 남긴다(앞 실행
+  폴더가 없어 `input-recovery.json`을 둘 곳이 없다)
 """
 
 from __future__ import annotations
@@ -79,11 +83,14 @@ LEASE_THREAD_NAME: Final = "kookabug-input-lease"
 RECOVER_TIMEOUT_S: Final = 10.0
 _REPLACE_RETRY_S: Final = 5.0
 
-type OwnerKind = Literal["runner", "supervisor"]
+type OwnerKind = Literal["recorder", "runner", "supervisor"]
 
 
-def lease_name() -> str:
-    return os.environ.get(LEASE_NAME_ENV) or DEFAULT_LEASE_NAME
+def lease_name(environ: Mapping[str, str] | None = None) -> str:
+    """뮤텍스 이름. `environ`을 주면 **그 환경만** 본다(없거나 빈 값이면 기본 이름) — 그 환경으로
+    띄운 프로세스가 `lease_name()`으로 고르는 이름과 같다."""
+    env = os.environ if environ is None else environ
+    return env.get(LEASE_NAME_ENV) or DEFAULT_LEASE_NAME
 
 
 def state_dir() -> Path:
@@ -151,6 +158,8 @@ class Acquired:
     previous: Mapping[str, Any] | None
     """얻을 때 읽은 옆 파일."""
     recovered: tuple[Recovery, ...]
+    idle_previous: Mapping[str, Any] | None = None
+    """깨끗하게 놓지 않은 앞 소유자가 입력 장치 없는 주체(녹화)였다 — 떼지 않고 넘어갔다."""
 
 
 class InputLeaseBusy(Exception):
@@ -240,8 +249,12 @@ class InputLease:
         try:
             _faults.fault_point("lease.before_recovery")
             previous = read_lease_file(self.file.parent)
-            recovered = self._recover_previous(previous)
-            _write_json(self.file, {"owner": self._owner_json(), "clean": False})
+            idle_previous = _dirty_idle_owner(previous)
+            recovered = () if idle_previous is not None else self._recover_previous(previous)
+            data: dict[str, Any] = {"owner": self._owner_json(), "clean": False}
+            if idle_previous is not None:
+                data["last_owner"] = dict(idle_previous)
+            _write_json(self.file, data)
         except BaseException:
             self.abandon()
             raise
@@ -249,6 +262,7 @@ class InputLease:
             abandoned=result is WaitResult.ABANDONED,
             previous=previous,
             recovered=recovered,
+            idle_previous=idle_previous,
         )
 
     def release(self, actor: InputActor | None) -> bool:
@@ -263,6 +277,14 @@ class InputLease:
         _write_json(self.file, {"owner": None, "clean": True, "last_owner": self._owner_json()})
         self._let_go()
         return True
+
+    def release_idle(self) -> None:
+        """입력 장치 없는 소유자(녹화, 장치 `none`)가 깨끗하게 놓는다 — 눌린 키가 없음이 자명하다.
+
+        장치가 있는 소유자는 `release(actor)`로 액터가 멈췄는지 보고 놓아야 한다."""
+        if self.device is None or self.device.kind != "none":
+            raise RuntimeError("release_idle은 입력 장치가 없는 소유자만 쓴다")
+        self.release(None)
 
     def abandon(self) -> None:
         """깨끗하지 않게 놓는다 (옆 파일을 고치지 않음 → 다음 획득자가 복구한다).
@@ -483,6 +505,21 @@ def _released_clean_by(data: Mapping[str, Any] | None, run_id: str | None, folde
         return True
     run_dir = last_map.get("run_dir")
     return isinstance(run_dir, str) and _same_dir(Path(run_dir), folder)
+
+
+def _dirty_idle_owner(data: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
+    """깨끗하게 놓지 않은 앞 소유자가 입력 장치 없는 주체면 그 소유자 (녹화: 장치 `none`, 장치를
+    적지 않은 녹화 소유자도 녹화는 입력하지 않으므로 같다)."""
+    if data is None or data.get("clean") is True:
+        return None
+    owner = data.get("owner")
+    if not isinstance(owner, Mapping):
+        return None
+    owner_map: Mapping[str, Any] = owner
+    device = InputDevice.from_json(owner_map.get("device"))
+    if (device is not None and device.kind == "none") or owner_map.get("kind") == "recorder":
+        return owner_map
+    return None
 
 
 def _same_dir(a: Path, b: Path) -> bool:

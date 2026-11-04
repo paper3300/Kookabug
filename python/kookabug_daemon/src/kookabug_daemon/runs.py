@@ -8,7 +8,10 @@
    `idempotency_conflict`
 2. 권한 판정 (`Authorizer` → `WorkspaceService.require`). 이 메서드만 전송이 미리 판정하지 않는다
 3. **시작 예약**: 진행 중이거나 예약된 실행이 있으면 `run_busy`, 종료가 정해졌으면
-   `shutting_down`. 아니면 실행 ID를 미리 뽑아 예약한다
+   `shutting_down`, 이 daemon의 녹화가 `starting`·`recording`·`paused`면 `recording_active`(M4 —
+   실행 폴더·runner를 만들기 전). 아니면 실행 ID를 미리 뽑아 예약한다. 녹화 시작 예약
+   (`reserve_recording`)도 같은 시작 잠금 안에서 "진행 중 실행 없음"을 보고 잡으므로 둘이 동시에
+   와도 하나만 이긴다
 4. 사전 검증: 경로를 다시 해석한 뒤(잠금 뒤·연산 직전) 디스크 파일로 `check_graph`. 오류면
    `validation_failed`이고 실행 폴더를 만들지 않는다(예약을 푼다)
 5. `WorkspaceService.start_decided`(②의 판정과 예약한 ID를 넘긴다. 다시 판정하지 않는다)
@@ -80,7 +83,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Final, Protocol, cast
+from typing import Any, Final, Literal, Protocol, cast
 
 from kookabug_core.canonical import canonical_dumps, loads_strict
 from kookabug_core.engine.debug import ResumeMode
@@ -120,11 +123,16 @@ __all__ = [
     "IDEMPOTENCY_TTL_S",
     "TAIL_SIZE",
     "LagRecord",
+    "RecordingReservation",
+    "RecordingState",
     "RunManager",
     "RunSink",
     "StartRequest",
     "snapshot_calls",
 ]
+
+type RecordingState = Literal["starting", "recording", "paused"]
+"""실행을 막는 녹화 세션 상태 (M4 계획 2.3). stopped 뒤에는 예약을 푼다."""
 
 log = logging.getLogger(__name__)
 
@@ -300,6 +308,9 @@ class RunManager:
         """재시작 예약: 다시 시작하는 실행의 ID (취소·마무리 기다림부터 새 시작 예약까지)."""
         self._closing = False
         """종료가 정해졌다: 새 시작 예약을 받지 않는다."""
+        self._recording: RecordingReservation | None = None
+        """녹화 예약 (M4 계획 2.3): 있는 동안 `run.start`·`run.restart`는 `recording_active`."""
+        self._recording_state: RecordingState = "starting"
         self._keys: dict[tuple[str, str, str], _Key] = {}
         self._current: dict[tuple[int, str], _Sub] = {}
         """(연결, 실행) → 지금 구독 (이벤트 루프만 바꾼다)."""
@@ -363,6 +374,10 @@ class RunManager:
                     self._restarting = None
                 text = "daemon이 끝나는 중이다"
                 raise RequestFailed("shutting_down", text, message=text)
+            if self._recording is not None:
+                if restarting is not None and self._restarting == restarting:
+                    self._restarting = None
+                raise _recording_active(self._recording_state)
             busy = self._active or self._reserved
             if restarting is None or self._restarting != restarting:
                 busy = busy or self._restarting
@@ -375,6 +390,55 @@ class RunManager:
             if restarting is not None:
                 self._restarting = None
             return run_id
+
+    # ---------------------------------------------------------------- 녹화 예약 (M4 계획 2.3)
+
+    def reserve_recording(self) -> RecordingReservation:
+        """녹화 시작 예약 (막히는 호출: 스레드에서 부른다). 실행 시작과 **같은 시작 잠금** 안에서
+        "진행 중 실행 없음"을 확인하고 `starting`으로 예약한다 — 동시에 온 `run.start`와 둘 중
+        하나만 이긴다. 진행 중·예약된 실행이 있으면 `run_active`, 이미 녹화 예약이 있으면
+        `recording_active`, 종료가 정해졌으면 `shutting_down`. 나머지 시작 단계(임대권·훅·캡처)는
+        예약을 쥔 채 잠금 밖에서 하고, 실패하거나 녹화가 멈추면 `release()`로 푼다."""
+        with self._start_lock, self._lock:
+            if self._closing:
+                text = "daemon이 끝나는 중이다"
+                raise RequestFailed("shutting_down", text, message=text)
+            if self._recording is not None:
+                raise _recording_active(self._recording_state)
+            busy = self._busy()
+            if busy is not None:
+                raise RequestFailed("run_active", f"진행 중인 실행 {busy}이(가) 있다", run_id=busy)
+            reservation = RecordingReservation(self)
+            self._recording = reservation
+            self._recording_state = "starting"
+            return reservation
+
+    def recording_state(self) -> RecordingState | None:
+        """지금 녹화 예약의 상태 (없으면 None)."""
+        with self._lock:
+            return None if self._recording is None else self._recording_state
+
+    def holds_recording(self, reservation: RecordingReservation) -> bool:
+        with self._lock:
+            return self._recording is reservation
+
+    def reservation_state(self, reservation: RecordingReservation) -> RecordingState | None:
+        """그 예약의 상태 (풀렸으면 None)."""
+        with self._lock:
+            return self._recording_state if self._recording is reservation else None
+
+    def set_recording_state(self, reservation: RecordingReservation, state: RecordingState) -> None:
+        """그 예약의 상태를 바꾼다 (`RecordingReservation.set_state`). 풀렸으면 `RuntimeError`."""
+        with self._lock:
+            if self._recording is not reservation:
+                raise RuntimeError("풀린 녹화 예약이다")
+            self._recording_state = state
+
+    def release_recording(self, reservation: RecordingReservation) -> None:
+        """그 예약을 푼다 (`RecordingReservation.release`, 여러 번 불러도 된다)."""
+        with self._lock:
+            if self._recording is reservation:
+                self._recording = None
 
     def _unreserve(self, run_id: str) -> None:
         with self._lock:
@@ -880,6 +944,8 @@ class RunManager:
                 if self._closing:
                     text = "daemon이 끝나는 중이다"
                     raise RequestFailed("shutting_down", text, message=text)
+                if self._recording is not None:
+                    raise _recording_active(self._recording_state)
                 busy = self._reserved or self._restarting
                 if busy is None and self._active not in (None, run_id):
                     busy = self._active
@@ -1044,6 +1110,38 @@ class RunManager:
 
 
 # ---------------------------------------------------------------- 도움 함수
+
+
+class RecordingReservation:
+    """녹화 세션의 실행 거부 예약 (`RunManager.reserve_recording`). 녹화 세션 서비스가 쥐고
+    상태를 `starting → recording ⇄ paused`로 바꾸고, 정지(stopped)·버리기·시작 실패 때 푼다.
+    상태는 실행 관리자의 상태 잠금 안에서만 바뀐다."""
+
+    def __init__(self, manager: RunManager) -> None:
+        self._manager = manager
+
+    @property
+    def state(self) -> RecordingState | None:
+        """지금 상태 (풀렸으면 None)."""
+        return self._manager.reservation_state(self)
+
+    @property
+    def active(self) -> bool:
+        return self._manager.holds_recording(self)
+
+    def set_state(self, state: RecordingState) -> None:
+        """풀린 예약이면 `RuntimeError`."""
+        self._manager.set_recording_state(self, state)
+
+    def release(self) -> None:
+        """예약을 푼다 (여러 번 불러도 된다). 이 뒤로 `run.start`를 받는다."""
+        self._manager.release_recording(self)
+
+
+def _recording_active(state: RecordingState) -> RequestFailed:
+    return RequestFailed(
+        "recording_active", f"녹화 중이라 실행할 수 없다 (녹화 {state})", state=state
+    )
 
 
 def _thread(target: Callable[..., None], *args: Any, name: str) -> None:

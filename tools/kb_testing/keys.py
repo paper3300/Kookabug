@@ -7,6 +7,10 @@
 - `assert_no_keys_held()`: 검사 시작 전에 지켜보는 키·버튼이 눌려 있지 않은지
 - `release_all_for_test()`: 끝에 지켜보는 키·버튼 중 **눌린 것만** 뗀다(가상 키 코드 SendInput).
   눌리지 않은 마우스 버튼을 떼면 그 자리에 클릭이 생기므로 보내지 않는다
+
+이 도구가 보내는 입력은 기본으로 제품과 같은 표식(`KOOKABUG_INPUT_MARK`, `dwExtraInfo`)을 싣는다 —
+녹화 검사에서 정리용 떼기가 사람 입력으로 녹화되지 않게(M4 계획 2.2 C19). 녹화 검사의 "사람" 입력은
+`extra_info`로 검사 표식을 준다.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from ctypes import wintypes
 from typing import Final
 
 __all__ = [
+    "KOOKABUG_INPUT_MARK",
     "VK",
     "WATCHED",
     "assert_no_keys_held",
@@ -25,6 +30,7 @@ __all__ = [
     "held",
     "is_down",
     "release_all_for_test",
+    "release_input",
 ]
 
 VK: Final = {
@@ -50,6 +56,10 @@ VK: Final = {
 """이름 → 가상 키 코드 (마우스는 `mouse:<버튼>`)."""
 
 WATCHED: Final = tuple(VK)
+
+KOOKABUG_INPUT_MARK: Final = 0x4B4F4F4B
+"""제품 `kookabug_platform.sendinput.KOOKABUG_INPUT_MARK`와 같은 값 (제품 코드를 import하지 않고
+따로 둔다 — 검사가 둘이 같은지 본다)."""
 
 _INPUT_MOUSE, _INPUT_KEYBOARD = 0, 1
 _KEYEVENTF_EXTENDEDKEY, _KEYEVENTF_KEYUP = 0x0001, 0x0002
@@ -124,20 +134,28 @@ def cursor_pos() -> tuple[int, int]:
     return pt.x, pt.y
 
 
-def release_all_for_test(names: Iterable[str] = WATCHED) -> list[str]:
-    """눌린 것만 뗀다. 뗀 이름들을 돌려준다."""
+def release_input(name: str, *, extra_info: int = KOOKABUG_INPUT_MARK) -> _INPUT:
+    """`name`을 떼는 `INPUT` 하나 (보내지 않는다). `extra_info`는 `dwExtraInfo` 값."""
+    item = _INPUT()
+    if name in _MOUSE_UP:
+        item.type = _INPUT_MOUSE
+        item.u.mi.dwFlags = _MOUSE_UP[name]
+        item.u.mi.dwExtraInfo = extra_info
+    else:
+        item.type = _INPUT_KEYBOARD
+        item.u.ki.wVk = VK[name]
+        item.u.ki.dwFlags = _KEYEVENTF_KEYUP | (_KEYEVENTF_EXTENDEDKEY if name in _EXTENDED else 0)
+        item.u.ki.dwExtraInfo = extra_info
+    return item
+
+
+def release_all_for_test(
+    names: Iterable[str] = WATCHED, *, extra_info: int = KOOKABUG_INPUT_MARK
+) -> list[str]:
+    """눌린 것만 뗀다. 뗀 이름들을 돌려준다. 기본은 제품 표식을 싣는다."""
     released: list[str] = []
     for name in held(names):
-        item = _INPUT()
-        if name in _MOUSE_UP:
-            item.type = _INPUT_MOUSE
-            item.u.mi.dwFlags = _MOUSE_UP[name]
-        else:
-            item.type = _INPUT_KEYBOARD
-            item.u.ki.wVk = VK[name]
-            item.u.ki.dwFlags = _KEYEVENTF_KEYUP | (
-                _KEYEVENTF_EXTENDEDKEY if name in _EXTENDED else 0
-            )
+        item = release_input(name, extra_info=extra_info)
         _SendInput(1, ctypes.byref(item), ctypes.sizeof(_INPUT))
         released.append(name)
     return released

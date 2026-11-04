@@ -9,6 +9,10 @@
   점으로 옮기며 누른다. 휠은 한 칸 = `WHEEL_DELTA`(120), 양수 = 앞으로(위)
 - `SendInput`이 넣은 개수가 모자라면(0 포함) `OSError`. UIPI가 막은 입력은 개수가 줄지 않는다 —
   그래서 무결성 확인(`target_elevated`)을 입력 직전 확인에서 한다
+- 표식 (M4 계획 2.2): 우리가 만드는 모든 `INPUT`(키·글자·마우스 — 입력 액터의 떼기·전부 떼기, P1 Alt
+  앞으로 가져오기, 얻기·감독자 복구의 떼기가 모두 이 백엔드를 거친다)은 `dwExtraInfo =
+  KOOKABUG_INPUT_MARK`를 싣는다. 녹화 훅이 우리 입력을 사람 입력과 구별해 버리는 1차 장치다
+  (2차는 입력 임대권 — 녹화 중에는 우리 runner가 입력하지 않는다)
 
 좌표·가상 데스크톱 크기를 다루는 호출은 그 스레드만 Per-Monitor V2로 두고 한다(물리 픽셀).
 
@@ -50,6 +54,7 @@ from kookabug_platform.windows import (
 from kookabug_sdk.types import Point
 
 __all__ = [
+    "KOOKABUG_INPUT_MARK",
     "SendInputBackend",
     "VirtualScreen",
     "WindowInputGuard",
@@ -60,6 +65,11 @@ __all__ = [
     "unicode_inputs",
     "virtual_screen",
 ]
+
+KOOKABUG_INPUT_MARK: Final = 0x4B4F4F4B
+"""우리 SendInput의 `dwExtraInfo` 표식 ("KOOK"). 녹화 훅은 이 값을 가진 입력을 버린다. 정수 값
+규칙(2^53-1) 안이고 펜·터치 서명(`0xFF515700` 대역)과 겹치지 않는다. 바꾸면 검사 도구
+`kb_testing.keys`의 같은 상수도 바꾼다 (검사가 둘이 같은지 본다)."""
 
 _ABSOLUTE: Final = (
     user32.MOUSEEVENTF_MOVE | user32.MOUSEEVENTF_ABSOLUTE | user32.MOUSEEVENTF_VIRTUALDESK
@@ -111,6 +121,7 @@ def key_input(key: KeyStroke, *, up: bool) -> user32.INPUT:
     item.ki.wVk = key.vk
     item.ki.wScan = key.scan
     item.ki.dwFlags = key.flags | (user32.KEYEVENTF_KEYUP if up else 0)
+    item.ki.dwExtraInfo = KOOKABUG_INPUT_MARK
     return item
 
 
@@ -125,6 +136,7 @@ def unicode_inputs(text: str) -> list[list[user32.INPUT]]:
             item = user32.INPUT(type=user32.INPUT_KEYBOARD)
             item.ki.wScan = unit
             item.ki.dwFlags = flags
+            item.ki.dwExtraInfo = KOOKABUG_INPUT_MARK
             pair.append(item)
         pairs.append(pair)
     return pairs
@@ -141,6 +153,7 @@ def mouse_input(
         flags |= _ABSOLUTE
     item.mi.mouseData = data & 0xFFFFFFFF
     item.mi.dwFlags = flags
+    item.mi.dwExtraInfo = KOOKABUG_INPUT_MARK
     return item
 
 
