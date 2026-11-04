@@ -28,6 +28,25 @@ M3_DENIED = {
     "run.restart",
     "run.export",
 }
+# M4 녹화·비밀값 (계획 2.9 C20)
+M4_DENIED = {
+    "recorder.start",
+    "recorder.pause",
+    "recorder.resume",
+    "recorder.stop",
+    "recorder.discard",
+    "recorder.state",
+    "recorder.steps",
+    "recorder.step.update",
+    "recorder.frame",
+    "recorder.insert_check",
+    "recorder.commit_prepare",
+    "recorder.commit_finish",
+    "recorder.commit_abort",
+    "secrets.list",
+    "secrets.create",
+    "target.read_text",
+}
 
 
 def test_ui_only_methods_agent_denied_or_allowlisted() -> None:
@@ -35,7 +54,7 @@ def test_ui_only_methods_agent_denied_or_allowlisted() -> None:
     assert ui_only == {name for name, tool in METHOD_TOOLS.items() if tool == UI_ONLY}
     assert ui_only >= AGENT_DENIED
     assert ui_only - AGENT_DENIED == UI_ONLY_AGENT_ALLOWED == ALLOWED_BEFORE_M3
-    assert {"daemon.shutdown"} | M3_DENIED == AGENT_DENIED
+    assert {"daemon.shutdown"} | M3_DENIED | M4_DENIED == AGENT_DENIED
 
 
 class _NoService:
@@ -43,7 +62,7 @@ class _NoService:
         raise AssertionError("ui_only 메서드는 판정하지 않는다")
 
 
-@pytest.mark.parametrize("method", sorted(M3_DENIED))
+@pytest.mark.parametrize("method", sorted(M3_DENIED | M4_DENIED))
 def test_agent_denied_before_decision(method: str) -> None:
     authorizer = Authorizer(_NoService())
     agent = Principal("agent", "codex-1", attended=True)

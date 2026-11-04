@@ -250,7 +250,7 @@ describe("시작", () => {
   });
 
   test("임대권 소유자", () => {
-    model.lease({ owner: { kind: "runner", run_id: RUN, pid: 3 } });
+    model.lease({ owner: { kind: "runner", run_id: RUN, pid: 3, created: "133000000000000000" } });
     expect(model.store.getState().lease).toMatchObject({ run_id: RUN });
     model.lease({ owner: null });
     expect(model.store.getState().lease).toBeNull();

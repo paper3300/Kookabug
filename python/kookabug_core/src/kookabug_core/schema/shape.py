@@ -25,7 +25,9 @@ from kookabug_core.diagnostics import Diagnostic
 from kookabug_core.schema.pintype import PinTypeError, parse_pin_type
 
 # events는 events.jsonl 한 줄, rpc·daemon-rpc는 프레임 본문 하나, run-index는 daemon 응답이라
-# (format 없음) kind를 직접 준다. video-index의 segments.jsonl·frames.jsonl 줄은 ref로 검사한다
+# (format 없음) kind를 직접 준다. video-index의 segments.jsonl·frames.jsonl 줄은 ref로 검사한다.
+# M4: recorder-hook은 훅 파이프 메시지 하나, recorder-script는 각본 JSONL 한 줄, recorder-fragment는
+# 커밋 조각 (모두 kind를 직접 준다)
 SchemaKind = Literal[
     "graph",
     "target",
@@ -42,6 +44,9 @@ SchemaKind = Literal[
     "breakpoints",
     "video-index",
     "run-index",
+    "recorder-hook",
+    "recorder-script",
+    "recorder-fragment",
 ]
 KINDS: tuple[SchemaKind, ...] = get_args(SchemaKind)
 FORMAT_TO_KIND: dict[str, SchemaKind] = {

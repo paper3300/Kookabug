@@ -39,6 +39,10 @@ export type StepId = string;
  */
 export type CallPath = [string, ...string[]];
 /**
+ * 입력 임대권 소유자 종류: 실행(runner), 감독자 복구(supervisor), 녹화 세션을 연 daemon(recorder, M4)
+ */
+export type LeaseOwnerKind = "recorder" | "runner" | "supervisor";
+/**
  * 취소 사유: 외부 취소, 테스트 전체 기한 초과, 감독자 사망
  */
 export type CancelReason = "cancelled" | "deadline_exceeded" | "supervisor_lost";
@@ -278,7 +282,7 @@ export interface InputUpEvent {
  */
 export interface InputRecoveredEvent {
   by: {
-    kind: "runner" | "supervisor";
+    kind: LeaseOwnerKind;
     run?: RunId;
   };
   event: "input.recovered";

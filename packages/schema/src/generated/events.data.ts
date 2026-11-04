@@ -358,10 +358,7 @@ export const eventsSchema: unknown = {
           "additionalProperties": false,
           "properties": {
             "kind": {
-              "enum": [
-                "runner",
-                "supervisor"
-              ]
+              "$ref": "#/$defs/LeaseOwnerKind"
             },
             "run": {
               "$ref": "#/$defs/RunId"
@@ -540,6 +537,16 @@ export const eventsSchema: unknown = {
       },
       "title": "InputUpEvent",
       "type": "object"
+    },
+    "LeaseOwnerKind": {
+      "description": "입력 임대권 소유자 종류: 실행(runner), 감독자 복구(supervisor), 녹화 세션을 연 daemon(recorder, M4)",
+      "enum": [
+        "recorder",
+        "runner",
+        "supervisor"
+      ],
+      "title": "LeaseOwnerKind",
+      "type": "string"
     },
     "LogEvent": {
       "additionalProperties": false,

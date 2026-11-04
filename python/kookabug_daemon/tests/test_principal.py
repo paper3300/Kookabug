@@ -15,7 +15,7 @@ from kookabug_core.service import ApprovalRequired, PermissionDenied
 from kookabug_daemon.client import DaemonClient, DaemonError
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.methods import registry as default_registry
-from kookabug_daemon.methods.tools import METHOD_TOOLS
+from kookabug_daemon.methods.tools import METHOD_TOOLS, RECORDER_METHODS
 from kookabug_daemon.protocol import UI_ONLY, methods
 
 pytestmark = pytest.mark.process
@@ -120,7 +120,7 @@ def test_every_method_has_tool_or_ui_only() -> None:
         "run.resume",
         "run.restart",
         "run.export",
-    }
+    } | RECORDER_METHODS
 
 
 @pytest.mark.parametrize(

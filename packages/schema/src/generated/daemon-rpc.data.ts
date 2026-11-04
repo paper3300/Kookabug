@@ -623,13 +623,12 @@ export const daemonRpcSchema: unknown = {
     },
     "LeaseChangedParams": {
       "additionalProperties": false,
-      "description": "입력 임대권 소유자 (없으면 null)",
+      "description": "입력 임대권 소유자 (없으면 null). 녹화 세션이면 kind recorder (상태 바 '입력: 녹화')",
       "properties": {
         "owner": {
           "anyOf": [
             {
-              "description": "입력 임대권 옆 파일 내용",
-              "type": "object"
+              "$ref": "#/$defs/LeaseOwner"
             },
             {
               "type": "null"
@@ -641,6 +640,154 @@ export const daemonRpcSchema: unknown = {
         "owner"
       ],
       "title": "LeaseChangedParams",
+      "type": "object"
+    },
+    "LeaseDevice": {
+      "additionalProperties": false,
+      "description": "소유자가 입력을 보내는 장치. 다음 획득자가 앞 소유자의 키를 이 장치로 뗀다. none은 입력 장치가 없는 소유자(녹화) — 뗄 것이 없다",
+      "properties": {
+        "input_log": {
+          "description": "fake 장치의 입력 기록 파일 (절대 경로)",
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "fake",
+            "none",
+            "windows"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "LeaseDevice",
+      "type": "object"
+    },
+    "LeaseFile": {
+      "additionalProperties": false,
+      "description": "입력 임대권 옆 파일 (%LOCALAPPDATA%\\Kookabug\\input-lease.json, kookabug_core.inputs.lease). 쥔 동안 {owner, clean: false}, 깨끗하게 놓으면 {owner: null, clean: true, last_owner}",
+      "properties": {
+        "clean": {
+          "type": "boolean"
+        },
+        "last_owner": {
+          "$ref": "#/$defs/LeaseOwner"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LeaseOwner"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "clean",
+        "owner"
+      ],
+      "title": "LeaseFile",
+      "type": "object"
+    },
+    "LeaseOwner": {
+      "additionalProperties": false,
+      "description": "입력 임대권 소유자 (옆 파일 input-lease.json의 owner, lease.changed 알림, input_lease_busy 오류). 예전 옆 파일(M0b: kind 둘·device 없음)도 맞는다. created는 FILETIME이라 옆 파일은 정수, 알림·오류는 10진 문자열. 녹화 소유자(recorder)는 실행이 없어 run_id·run_dir이 null(또는 없음)이고 장치는 none",
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "recorder"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "properties": {
+        "created": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            }
+          ],
+          "description": "프로세스 생성 시각 (Windows FILETIME, 100ns 단위)"
+        },
+        "device": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LeaseDevice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "$ref": "urn:kookabug:events:0#/$defs/LeaseOwnerKind"
+        },
+        "pid": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "run_dir": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "run_id": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "workspace": {
+          "type": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "created",
+        "kind",
+        "pid"
+      ],
+      "then": {
+        "properties": {
+          "device": {
+            "anyOf": [
+              {
+                "properties": {
+                  "kind": {
+                    "const": "none"
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run_dir": {
+            "type": "null"
+          },
+          "run_id": {
+            "type": "null"
+          }
+        }
+      },
+      "title": "LeaseOwner",
       "type": "object"
     },
     "MatchInfo": {
@@ -895,6 +1042,318 @@ export const daemonRpcSchema: unknown = {
             },
             "tool": {
               "const": "kb_node_search"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "recorder.commit_abort": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/RecorderCommitTokenParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/EmptyResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "recorder.commit_finish": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/RecorderCommitFinishParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/EmptyResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "recorder.commit_prepare": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/RecorderCommitPrepareParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/RecorderCommitPrepareResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "recorder.discard": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/RecorderStateResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "recorder.frame": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/RecorderFrameParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/RecorderFrameResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "recorder.insert_check": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/RecorderInsertCheckParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/RecorderStepResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "recorder.pause": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/RecorderStateResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "recorder.resume": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/RecorderStateResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "recorder.start": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/RecorderStartParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/RecorderStateResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "recorder.state": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/RecorderStateResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "recorder.step.update": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/RecorderStepUpdateParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/RecorderStepResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "recorder.steps": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/RecorderStepsParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/RecorderStepsResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "recorder.stop": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/RecorderStateResult"
+            },
+            "tool": {
+              "const": "ui_only"
             }
           },
           "required": [
@@ -1265,6 +1724,54 @@ export const daemonRpcSchema: unknown = {
           ],
           "type": "object"
         },
+        "secrets.create": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/SecretsCreateParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/SecretKeyInfo"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "secrets.list": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/SecretsListResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
         "session.hello": {
           "additionalProperties": false,
           "properties": {
@@ -1375,6 +1882,30 @@ export const daemonRpcSchema: unknown = {
             },
             "tool": {
               "const": "kb_image_find"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "target.read_text": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/TargetReadTextParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/TargetReadTextResult"
+            },
+            "tool": {
+              "const": "ui_only"
             }
           },
           "required": [
@@ -1516,6 +2047,19 @@ export const daemonRpcSchema: unknown = {
         "graph.save",
         "graph.validate",
         "nodes.list",
+        "recorder.commit_abort",
+        "recorder.commit_finish",
+        "recorder.commit_prepare",
+        "recorder.discard",
+        "recorder.frame",
+        "recorder.insert_check",
+        "recorder.pause",
+        "recorder.resume",
+        "recorder.start",
+        "recorder.state",
+        "recorder.step.update",
+        "recorder.steps",
+        "recorder.stop",
         "run.cancel",
         "run.children",
         "run.compare",
@@ -1531,11 +2075,14 @@ export const daemonRpcSchema: unknown = {
         "run.step",
         "run.subscribe",
         "run.unsubscribe",
+        "secrets.create",
+        "secrets.list",
         "session.hello",
         "target.capture",
         "target.load_image",
         "target.open",
         "target.preview",
+        "target.read_text",
         "target.save",
         "windows.list",
         "workspace.info",
@@ -1667,6 +2214,18 @@ export const daemonRpcSchema: unknown = {
           ],
           "type": "object"
         },
+        "recorder.changed": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/RecorderChangedParams"
+            }
+          },
+          "required": [
+            "params"
+          ],
+          "type": "object"
+        },
         "run.ended": {
           "additionalProperties": false,
           "properties": {
@@ -1720,6 +2279,7 @@ export const daemonRpcSchema: unknown = {
         "debug.breakpoints.changed",
         "graph.changed",
         "lease.changed",
+        "recorder.changed",
         "run.ended",
         "run.event",
         "run.lagged",
@@ -1829,6 +2389,31 @@ export const daemonRpcSchema: unknown = {
       "title": "PluginSummary",
       "type": "object"
     },
+    "PreviewPeak": {
+      "additionalProperties": false,
+      "description": "같은 사양으로 찾은 자리 하나 (target.preview peaks)",
+      "properties": {
+        "rect": {
+          "$ref": "#/$defs/Rect"
+        },
+        "scale": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "score": {
+          "maximum": 1,
+          "minimum": -1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "rect",
+        "scale",
+        "score"
+      ],
+      "title": "PreviewPeak",
+      "type": "object"
+    },
     "PreviewResult": {
       "additionalProperties": false,
       "description": "kookabug target test --json의 결과 필드(target_cmd.result_json) + 검색 범위 픽셀 + seq. 화면에는 찾음/못 찾음과 (최고) 점수만 쓴다 (candidates는 화면 안 대상 개수가 아니다)",
@@ -1868,6 +2453,14 @@ export const daemonRpcSchema: unknown = {
               "type": "null"
             }
           ]
+        },
+        "peaks": {
+          "description": "임계값 이상이고 서로 겹치지 않는 자리 (점수 높은 차례, 최대 8 — '같은 모양 N곳', M4). 없으면 아직 세지 않음",
+          "items": {
+            "$ref": "#/$defs/PreviewPeak"
+          },
+          "maxItems": 8,
+          "type": "array"
         },
         "search": {
           "items": {
@@ -1957,6 +2550,1208 @@ export const daemonRpcSchema: unknown = {
       "title": "Principal",
       "type": "object"
     },
+    "RecorderBadge": {
+      "additionalProperties": false,
+      "description": "스텝 메모 (시안 '녹화된 스텝'의 메모 줄). severity review는 확인 필요(노랑·주황). 글자 원문을 담지 않는다",
+      "properties": {
+        "code": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "review",
+            "warning"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "severity"
+      ],
+      "title": "RecorderBadge",
+      "type": "object"
+    },
+    "RecorderChangedParams": {
+      "additionalProperties": false,
+      "description": "recorder.changed: 녹화 상태·스텝이 바뀜. 소유 연결에는 rev·counts·warnings도 (스텝 목록은 rev로 recorder.steps를 다시 부른다), 다른 연결에는 state만. 글자는 싣지 않는다",
+      "properties": {
+        "counts": {
+          "$ref": "#/$defs/RecorderCounts"
+        },
+        "rev": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/RecorderState"
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/RecorderWarning"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "RecorderChangedParams",
+      "type": "object"
+    },
+    "RecorderCommitFinishParams": {
+      "additionalProperties": false,
+      "description": "recorder.commit_finish: 렌더러가 조각을 넣은 그래프를 저장했다 → 세션 committed, 정리",
+      "properties": {
+        "graph_path": {
+          "$ref": "#/$defs/WorkspacePath"
+        },
+        "token": {
+          "$ref": "#/$defs/RecorderCommitToken"
+        }
+      },
+      "required": [
+        "graph_path",
+        "token"
+      ],
+      "title": "RecorderCommitFinishParams",
+      "type": "object"
+    },
+    "RecorderCommitPrepareParams": {
+      "additionalProperties": false,
+      "description": "recorder.commit_prepare: 녹화를 멈추고(아직이면) 검사(classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap) → target 파일 쓰기(멱등: 이미 쓴 초안은 다시 쓰지 않음) → 조각. graph_path는 새 테스트면 만들 파일, 삽입이면 열린 그래프 파일 (target 폴더 이름 targets/rec/<줄기>/). options는 이 커밋에 적용할 변환 옵션(녹화 뒤 사이드바에서 바꾼 값). 빼면 세션 옵션(recorder.start의 options, recorder.state가 보임). 옵션이 다르면 다른 조각이다(같은 옵션으로 다시 부를 때만 같은 조각)",
+      "properties": {
+        "base_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "graph_path": {
+          "$ref": "#/$defs/WorkspacePath"
+        },
+        "mode": {
+          "enum": [
+            "insert",
+            "new_test"
+          ]
+        },
+        "options": {
+          "$ref": "#/$defs/RecorderOptions"
+        }
+      },
+      "required": [
+        "graph_path",
+        "mode"
+      ],
+      "title": "RecorderCommitPrepareParams",
+      "type": "object"
+    },
+    "RecorderCommitPrepareResult": {
+      "additionalProperties": false,
+      "description": "조각과 토큰 (세션 committing). 같은 요청을 다시 부르면 같은 조각(같은 로컬 ID·경로)",
+      "properties": {
+        "fragment": {
+          "$ref": "urn:kookabug:recorder-fragment:0"
+        },
+        "targets": {
+          "items": {
+            "$ref": "#/$defs/RecorderWrittenTarget"
+          },
+          "type": "array"
+        },
+        "token": {
+          "$ref": "#/$defs/RecorderCommitToken"
+        }
+      },
+      "required": [
+        "fragment",
+        "targets",
+        "token"
+      ],
+      "title": "RecorderCommitPrepareResult",
+      "type": "object"
+    },
+    "RecorderCommitToken": {
+      "description": "커밋 토큰 (commit_prepare가 주고 commit_finish·commit_abort가 받는다)",
+      "pattern": "^[A-Za-z0-9_-]{16,64}$",
+      "title": "RecorderCommitToken",
+      "type": "string"
+    },
+    "RecorderCommitTokenParams": {
+      "additionalProperties": false,
+      "description": "recorder.commit_abort: 그래프 단계가 실패 → stopped로 돌아가 다른 이름·위치로 다시 commit_prepare (써진 target 재사용)",
+      "properties": {
+        "token": {
+          "$ref": "#/$defs/RecorderCommitToken"
+        }
+      },
+      "required": [
+        "token"
+      ],
+      "title": "RecorderCommitTokenParams",
+      "type": "object"
+    },
+    "RecorderCounts": {
+      "additionalProperties": false,
+      "description": "스텝·만든 target 수와 녹화하지 않은 입력 수 (다른 프로그램이 보낸 입력, 게임 창 밖, 게임의 팝업 창)",
+      "properties": {
+        "ignored_injected": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ignored_outside": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "ignored_popup": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "steps": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "targets": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ignored_injected",
+        "ignored_outside",
+        "ignored_popup",
+        "steps",
+        "targets"
+      ],
+      "title": "RecorderCounts",
+      "type": "object"
+    },
+    "RecorderFrameParams": {
+      "additionalProperties": false,
+      "description": "recorder.frame: 그 스텝이 붙잡은 프레임(pre_click 클릭 직전·pre_hover 커서 들어오기 전·pre_next 다음 동작 직전) 또는 live(링의 지금 프레임, step 없음, stopped에서는 no_frame)를 편집기 프레임 캐시에 올린다",
+      "else": {
+        "required": [
+          "step"
+        ]
+      },
+      "if": {
+        "properties": {
+          "which": {
+            "const": "live"
+          }
+        },
+        "required": [
+          "which"
+        ]
+      },
+      "properties": {
+        "step": {
+          "$ref": "#/$defs/RecorderStepId"
+        },
+        "which": {
+          "$ref": "#/$defs/RecorderFrameWhich"
+        }
+      },
+      "required": [
+        "which"
+      ],
+      "then": {
+        "not": {
+          "required": [
+            "step"
+          ]
+        }
+      },
+      "title": "RecorderFrameParams",
+      "type": "object"
+    },
+    "RecorderFrameResult": {
+      "additionalProperties": false,
+      "description": "정지 화면과 그 프레임에서 유효한 보호 영역(비밀값·판정 대기·확인 필요 입력 칸 상자, 클라이언트 물리 픽셀 — 편집기가 빗금으로 보이고 그 영역과 겹치는 저장은 secret_region_overlap)",
+      "properties": {
+        "frame": {
+          "$ref": "#/$defs/Frame"
+        },
+        "protected": {
+          "items": {
+            "$ref": "#/$defs/Rect"
+          },
+          "type": "array"
+        },
+        "which": {
+          "$ref": "#/$defs/RecorderFrameWhich"
+        }
+      },
+      "required": [
+        "frame",
+        "protected",
+        "which"
+      ],
+      "title": "RecorderFrameResult",
+      "type": "object"
+    },
+    "RecorderFrameWhich": {
+      "enum": [
+        "live",
+        "pre_click",
+        "pre_hover",
+        "pre_next"
+      ],
+      "title": "RecorderFrameWhich",
+      "type": "string"
+    },
+    "RecorderHotkey": {
+      "additionalProperties": false,
+      "description": "Electron 주 프로세스가 녹화 중에만 등록한 단축키. 변환기가 이 조합의 키 이벤트와 그 조합 때문에만 눌린 수정 키를 지운다",
+      "properties": {
+        "keys": {
+          "description": "키 이름 조합 (입력 노드 keys와 같은 이름, 예: ctrl+shift+r)",
+          "pattern": "^[a-z0-9_]+(\\+[a-z0-9_]+)*$",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "mark_secret",
+            "stop"
+          ]
+        }
+      },
+      "required": [
+        "keys",
+        "role"
+      ],
+      "title": "RecorderHotkey",
+      "type": "object"
+    },
+    "RecorderInsertCheckParams": {
+      "additionalProperties": false,
+      "description": "recorder.insert_check: 녹화 중 '화면 확인 삽입'(visible → core.assert.visible) · '값 확인 삽입'(text → core.assert.text, 영역 OCR 글자를 기댓값으로 제안). rect는 그 frame_id 정지 화면의 클라이언트 물리 픽셀 영역 (보호 영역과 겹치면 secret_region_overlap)",
+      "properties": {
+        "frame_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "text",
+            "visible"
+          ]
+        },
+        "rect": {
+          "$ref": "#/$defs/Rect"
+        }
+      },
+      "required": [
+        "frame_id",
+        "kind",
+        "rect"
+      ],
+      "title": "RecorderInsertCheckParams",
+      "type": "object"
+    },
+    "RecorderNeedsReviewReason": {
+      "description": "스텝을 사람이 확인해야 하는 이유 (커밋 전 남기거나 지움). geometry_unresolved 클릭과 프레임의 기하 세대가 확정적으로 같지 않음, no_frame 클릭 직전 프레임이 없음, window_undetermined 어느 창에 들어간 입력인지 판정 불가, ime_unknown 입력기 상태 판정 불가, cursor_moved_in_field 칸 안에서 커서를 옮김, field_box_unknown 칸 상자를 못 정함, no_evidence 비밀 근거도 일반 근거도 없음, cut_by_stop 정지·끊김 순간의 입력, secret_overlap 비밀번호 칸과 겹쳐 대상을 못 만듦, wait_target_unknown 기다릴 화면을 못 정함",
+      "enum": [
+        "cursor_moved_in_field",
+        "cut_by_stop",
+        "field_box_unknown",
+        "geometry_unresolved",
+        "ime_unknown",
+        "no_evidence",
+        "no_frame",
+        "secret_overlap",
+        "wait_target_unknown",
+        "window_undetermined"
+      ],
+      "title": "RecorderNeedsReviewReason",
+      "type": "string"
+    },
+    "RecorderOptions": {
+      "additionalProperties": false,
+      "description": "변환 옵션 (시안 체크). 커밋 때 적용하므로 녹화 뒤에 바꿔도 된다. 없는 값은 켬. 'Kookabug가 보낸 입력은 녹화하지 않기'는 항상 켬이라 옵션이 아니다",
+      "properties": {
+        "crop_targets": {
+          "description": "클릭 직전 화면에서 클릭 지점 주변을 잘라 찾기 대상 만들기 (끄면 core.input.click 픽셀 좌표)",
+          "type": "boolean"
+        },
+        "wait_as_appear": {
+          "description": "기다린 시간을 '나타날 때까지 대기'로 바꾸기 (끄면 core.flow.delay)",
+          "type": "boolean"
+        }
+      },
+      "title": "RecorderOptions",
+      "type": "object"
+    },
+    "RecorderSessionId": {
+      "description": "녹화 세션 ID: 소문자·숫자 8자",
+      "pattern": "^[a-z0-9]{8}$",
+      "title": "RecorderSessionId",
+      "type": "string"
+    },
+    "RecorderStartParams": {
+      "additionalProperties": false,
+      "description": "recorder.start: 떠 있는 창(window 핸들)에 붙어 녹화하거나, 워크스페이스 game.* 설정으로 게임을 띄워 녹화(launch, profile은 설정 계층). hotkeys는 주 프로세스가 등록에 성공한 단축키. 오류: input_lease_busy·recording_active·window_gone·capture_unsupported·hook_failed",
+      "oneOf": [
+        {
+          "required": [
+            "window"
+          ]
+        },
+        {
+          "required": [
+            "launch"
+          ]
+        }
+      ],
+      "properties": {
+        "hotkeys": {
+          "items": {
+            "$ref": "#/$defs/RecorderHotkey"
+          },
+          "type": "array"
+        },
+        "launch": {
+          "additionalProperties": false,
+          "properties": {
+            "profile": {
+              "type": [
+                "null",
+                "string"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "options": {
+          "$ref": "#/$defs/RecorderOptions"
+        },
+        "window": {
+          "description": "창 handle",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "hotkeys"
+      ],
+      "title": "RecorderStartParams",
+      "type": "object"
+    },
+    "RecorderState": {
+      "description": "녹화 세션 상태: idle → starting → recording ⇄ paused → stopped → committing → committed | stopped, 또는 discarded. 오류로 멈춤(hook_lost·input_overflow·window_gone·storage_full)도 stopped (stop_reason)",
+      "enum": [
+        "committed",
+        "committing",
+        "discarded",
+        "idle",
+        "paused",
+        "recording",
+        "starting",
+        "stopped"
+      ],
+      "title": "RecorderState",
+      "type": "string"
+    },
+    "RecorderStateResult": {
+      "additionalProperties": false,
+      "description": "녹화 상태. owned = 부른 연결이 세션을 연 연결인가. 다른 연결(owned false)에는 상태·시작 시각·경과만 준다 (스텝·창 제목 없음 — '다른 창에서 녹화 중'). options = 세션 변환 옵션(recorder.start에서 받은 값, 없는 값은 켬) — 커밋 때 바꾸려면 commit_prepare의 options",
+      "if": {
+        "properties": {
+          "owned": {
+            "const": false
+          }
+        },
+        "required": [
+          "owned"
+        ]
+      },
+      "properties": {
+        "counts": {
+          "$ref": "#/$defs/RecorderCounts"
+        },
+        "elapsed_ms": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "foreground": {
+          "description": "대상 창이 앞에 있는가 (false면 '게임 창이 앞에 없어요 — 입력을 녹화하지 않는 중')",
+          "type": "boolean"
+        },
+        "launched": {
+          "description": "게임을 띄워서 녹화 (그래프가 core.app.launch로 시작)",
+          "type": "boolean"
+        },
+        "options": {
+          "$ref": "#/$defs/RecorderOptions"
+        },
+        "owned": {
+          "type": "boolean"
+        },
+        "session": {
+          "$ref": "#/$defs/RecorderSessionId"
+        },
+        "started_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "state": {
+          "$ref": "#/$defs/RecorderState"
+        },
+        "stop_reason": {
+          "$ref": "#/$defs/RecorderStopReason"
+        },
+        "warnings": {
+          "items": {
+            "$ref": "#/$defs/RecorderWarning"
+          },
+          "type": "array"
+        },
+        "window": {
+          "$ref": "#/$defs/RecorderWindow"
+        }
+      },
+      "required": [
+        "owned",
+        "state"
+      ],
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "counts"
+              ]
+            },
+            {
+              "required": [
+                "foreground"
+              ]
+            },
+            {
+              "required": [
+                "launched"
+              ]
+            },
+            {
+              "required": [
+                "options"
+              ]
+            },
+            {
+              "required": [
+                "session"
+              ]
+            },
+            {
+              "required": [
+                "stop_reason"
+              ]
+            },
+            {
+              "required": [
+                "warnings"
+              ]
+            },
+            {
+              "required": [
+                "window"
+              ]
+            }
+          ]
+        }
+      },
+      "title": "RecorderStateResult",
+      "type": "object"
+    },
+    "RecorderStep": {
+      "additionalProperties": false,
+      "description": "녹화된 스텝 하나 = 재생 동작 하나 (노드는 하나 이상). 글자 규칙(M4 계획 2.8): text는 text_state가 ordinary일 때만(근거로 일반 글자로 판정됐거나 사람이 확인 — 그때 reveal_confirmed) 있다. pending·secret·needs_review는 text_len만. secret_key는 secret에만. node.title·badges에는 비밀값·판정 대기·확인 필요 원문을 넣지 않는다",
+      "not": {
+        "anyOf": [
+          {
+            "not": {
+              "properties": {
+                "text_state": {
+                  "const": "ordinary"
+                }
+              },
+              "required": [
+                "text_state"
+              ]
+            },
+            "required": [
+              "text"
+            ]
+          },
+          {
+            "not": {
+              "properties": {
+                "text_state": {
+                  "const": "ordinary"
+                }
+              },
+              "required": [
+                "text_state"
+              ]
+            },
+            "required": [
+              "reveal_confirmed"
+            ]
+          },
+          {
+            "not": {
+              "properties": {
+                "text_state": {
+                  "const": "secret"
+                }
+              },
+              "required": [
+                "text_state"
+              ]
+            },
+            "required": [
+              "secret_key"
+            ]
+          },
+          {
+            "not": {
+              "properties": {
+                "kind": {
+                  "const": "text"
+                }
+              }
+            },
+            "required": [
+              "text_state"
+            ]
+          },
+          {
+            "not": {
+              "required": [
+                "text_state"
+              ]
+            },
+            "properties": {
+              "kind": {
+                "const": "text"
+              }
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "text_state"
+              ]
+            },
+            "required": [
+              "text_len"
+            ]
+          }
+        ]
+      },
+      "properties": {
+        "badges": {
+          "items": {
+            "$ref": "#/$defs/RecorderBadge"
+          },
+          "type": "array"
+        },
+        "frames": {
+          "description": "recorder.frame으로 열 수 있는 이 스텝의 프레임",
+          "items": {
+            "$ref": "#/$defs/RecorderFrameWhich"
+          },
+          "type": "array"
+        },
+        "input": {
+          "$ref": "#/$defs/RecorderStepInput"
+        },
+        "kind": {
+          "enum": [
+            "check_text",
+            "check_visible",
+            "click",
+            "delay",
+            "drag",
+            "key",
+            "scroll",
+            "text",
+            "wait"
+          ]
+        },
+        "needs_review": {
+          "items": {
+            "$ref": "#/$defs/RecorderNeedsReviewReason"
+          },
+          "type": "array"
+        },
+        "node": {
+          "additionalProperties": false,
+          "description": "노드 초안 요약 (시안 '이미지 클릭 \"강화\"')",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "type": {
+              "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "title",
+            "type"
+          ],
+          "type": "object"
+        },
+        "reveal_confirmed": {
+          "const": true,
+          "description": "사람이 '글자를 보이고 일반 글자로'를 확인했다"
+        },
+        "secret_key": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SecretKey"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "고른 비밀값 키 (아직 안 골랐으면 null → 커밋 secret_unresolved)"
+        },
+        "step": {
+          "$ref": "#/$defs/RecorderStepId"
+        },
+        "t_ms": {
+          "description": "녹화 시작부터 그 입력까지 (일시정지 시간 포함)",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "target": {
+          "$ref": "#/$defs/RecorderTargetDraft"
+        },
+        "text": {
+          "type": "string"
+        },
+        "text_len": {
+          "description": "글자 수 (UI는 비밀값이면 이 길이만큼 ●)",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text_state": {
+          "$ref": "#/$defs/RecorderTextState"
+        }
+      },
+      "required": [
+        "badges",
+        "kind",
+        "needs_review",
+        "node",
+        "step",
+        "t_ms"
+      ],
+      "title": "RecorderStep",
+      "type": "object"
+    },
+    "RecorderStepId": {
+      "description": "녹화 스텝 ID (세션 안에서 바뀌지 않음)",
+      "pattern": "^rs[1-9][0-9]{0,8}$",
+      "title": "RecorderStepId",
+      "type": "string"
+    },
+    "RecorderStepInput": {
+      "additionalProperties": false,
+      "description": "원래 입력 요약 (시안 'click (858, 562) · 00:09.4'). 좌표는 클라이언트 물리 픽셀. 글자는 싣지 않는다",
+      "properties": {
+        "amount": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "button": {
+          "enum": [
+            "left",
+            "middle",
+            "right",
+            "x1",
+            "x2"
+          ]
+        },
+        "count": {
+          "maximum": 2,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "duration_ms": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "end": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "gap_ms": {
+          "description": "앞 동작부터 이 입력까지 (대기·지연 스텝)",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "hold_ms": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "keys": {
+          "pattern": "^[a-z0-9_]+(\\+[a-z0-9_]+)*$",
+          "type": "string"
+        },
+        "point": {
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "title": "RecorderStepInput",
+      "type": "object"
+    },
+    "RecorderStepPatch": {
+      "additionalProperties": false,
+      "description": "스텝 고치기 (비어 있으면 아무것도 바꾸지 않음). text_state를 ordinary로 바꾸려면 confirm_reveal이 있어야 한다 (원문을 처음 보이는 순간). text(일반 글자 고치기)는 ordinary 스텝만, target은 REC 탭의 초안 사양 고치기(RecorderTargetDraft.spec과 같은 모양 — 준 필드만 바꾼다, 보호 영역과 겹치면 secret_region_overlap), keep은 확인 필요 입력을 그대로 남기기. 자를 프레임은 둘 중 하나로 고른다: frame(이 스텝이 붙잡은 프레임 종류) 또는 frame_id(이 세션이 recorder.frame으로 편집기 캐시에 올린 프레임 — live도 조회한 그 순간의 프레임이 고정된다. 다른 세션·다른 연결이 올린 프레임이면 not_owner, 캐시에서 사라졌으면 frame_expired, 그 프레임의 보호 영역 검사를 거친다)",
+      "if": {
+        "properties": {
+          "text_state": {
+            "const": "ordinary"
+          }
+        },
+        "required": [
+          "text_state"
+        ]
+      },
+      "not": {
+        "required": [
+          "frame",
+          "frame_id"
+        ]
+      },
+      "properties": {
+        "confirm_reveal": {
+          "const": true
+        },
+        "delete": {
+          "const": true
+        },
+        "frame": {
+          "enum": [
+            "pre_click",
+            "pre_hover",
+            "pre_next"
+          ]
+        },
+        "frame_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "keep": {
+          "const": true
+        },
+        "node_type": {
+          "description": "노드 종류 바꾸기 (이미지 클릭 ↔ 좌표 클릭, 대기 종류)",
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$",
+          "type": "string"
+        },
+        "secret_key": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SecretKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/RecorderTargetSpec"
+        },
+        "text": {
+          "type": "string"
+        },
+        "text_state": {
+          "enum": [
+            "ordinary",
+            "secret"
+          ]
+        },
+        "timeout_ms": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "then": {
+        "required": [
+          "confirm_reveal"
+        ]
+      },
+      "title": "RecorderStepPatch",
+      "type": "object"
+    },
+    "RecorderStepResult": {
+      "additionalProperties": false,
+      "description": "바뀐(또는 새) 스텝과 스텝 목록 판. 지운 스텝이면 step은 null",
+      "properties": {
+        "rev": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "step": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RecorderStep"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "rev",
+        "step"
+      ],
+      "title": "RecorderStepResult",
+      "type": "object"
+    },
+    "RecorderStepUpdateParams": {
+      "additionalProperties": false,
+      "properties": {
+        "patch": {
+          "$ref": "#/$defs/RecorderStepPatch"
+        },
+        "step": {
+          "$ref": "#/$defs/RecorderStepId"
+        }
+      },
+      "required": [
+        "patch",
+        "step"
+      ],
+      "title": "RecorderStepUpdateParams",
+      "type": "object"
+    },
+    "RecorderStepsParams": {
+      "additionalProperties": false,
+      "description": "recorder.steps: 스텝 목록. after_rev는 마지막으로 받은 판 (같으면 steps가 그대로)",
+      "properties": {
+        "after_rev": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "title": "RecorderStepsParams",
+      "type": "object"
+    },
+    "RecorderStepsResult": {
+      "additionalProperties": false,
+      "description": "스텝 목록 (녹화 차례). 원문 글자를 주는 유일한 곳 — ordinary 스텝의 text만",
+      "properties": {
+        "rev": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/RecorderStep"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "rev",
+        "steps"
+      ],
+      "title": "RecorderStepsResult",
+      "type": "object"
+    },
+    "RecorderStopReason": {
+      "description": "녹화가 멈춘 까닭: user(정지 단추·단축키·커밋), hook_lost(훅 끊김), input_overflow(중요 입력 유실), window_gone(대상 창 닫힘), storage_full(세션 저장소 상한)",
+      "enum": [
+        "hook_lost",
+        "input_overflow",
+        "storage_full",
+        "user",
+        "window_gone"
+      ],
+      "title": "RecorderStopReason",
+      "type": "string"
+    },
+    "RecorderTargetDraft": {
+      "additionalProperties": false,
+      "description": "스텝의 찾기 대상: draft(이 세션 초안, 커밋 때 파일로) · file(기존 또는 이미 쓴 target 파일 재사용) · none(아직 없음 — 커밋 target_missing). draft는 spec(daemon이 든 초안 사양 전체 — REC 편집기가 이것으로 상태를 만들고, 고친 값은 recorder.step.update patch.target으로 같은 모양을 보낸다)이 있다. frame은 자른 프레임: 스텝이 붙잡은 프레임 종류, 또는 live(편집기에서 고른 지금 프레임 — 그때 고정된 frame_id가 함께 온다)",
+      "not": {
+        "anyOf": [
+          {
+            "not": {
+              "required": [
+                "spec"
+              ]
+            },
+            "properties": {
+              "source": {
+                "const": "draft"
+              }
+            }
+          },
+          {
+            "not": {
+              "required": [
+                "frame_id"
+              ]
+            },
+            "properties": {
+              "frame": {
+                "const": "live"
+              }
+            },
+            "required": [
+              "frame"
+            ]
+          }
+        ]
+      },
+      "properties": {
+        "frame": {
+          "enum": [
+            "live",
+            "pre_click",
+            "pre_hover",
+            "pre_next"
+          ]
+        },
+        "frame_id": {
+          "description": "자른 프레임의 편집기 캐시 ID (recorder.frame·patch.frame_id로 고른 프레임)",
+          "minLength": 1,
+          "type": "string"
+        },
+        "path": {
+          "$ref": "#/$defs/WorkspacePath"
+        },
+        "peaks": {
+          "description": "같은 프레임에서 임계값 이상인 자리 수 (자기 자리 포함, '같은 모양 N곳')",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reused": {
+          "type": "boolean"
+        },
+        "source": {
+          "enum": [
+            "draft",
+            "file",
+            "none"
+          ]
+        },
+        "spec": {
+          "$ref": "#/$defs/RecorderTargetSpec"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "title": "RecorderTargetDraft",
+      "type": "object"
+    },
+    "RecorderTargetSpec": {
+      "additionalProperties": false,
+      "description": "target 초안 사양 (읽기 RecorderTargetDraft.spec = 전체, 쓰기 RecorderStepPatch.target = 바꿀 필드만 — 같은 모양). rect·search는 자른 프레임의 클라이언트 물리 픽셀(search null = 검색 범위 없음). 나머지는 target 파일 필드와 같다: click.anchor·click.offset, match.threshold·rgb(색까지 확인)·methods·color_tolerance, sensitive",
+      "properties": {
+        "anchor": {
+          "enum": [
+            "bottom",
+            "bottom_left",
+            "bottom_right",
+            "center",
+            "left",
+            "right",
+            "top",
+            "top_left",
+            "top_right"
+          ]
+        },
+        "color_tolerance": {
+          "maximum": 255,
+          "minimum": 0,
+          "type": "number"
+        },
+        "methods": {
+          "items": {
+            "enum": [
+              "template",
+              "template_multiscale"
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "type": "array"
+        },
+        "offset": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "rect": {
+          "$ref": "#/$defs/Rect"
+        },
+        "rgb": {
+          "type": "boolean"
+        },
+        "search": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rect"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sensitive": {
+          "type": "boolean"
+        },
+        "threshold": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "title": "RecorderTargetSpec",
+      "type": "object"
+    },
+    "RecorderTextState": {
+      "description": "입력 칸 구간의 글자 판정: pending(판정 중) → ordinary(일반 글자 — 긍정 근거 또는 사람 확인) | secret(비밀값, 끈적) | needs_review(근거 없음 — 사람이 고를 때까지 커밋 거부)",
+      "enum": [
+        "needs_review",
+        "ordinary",
+        "pending",
+        "secret"
+      ],
+      "title": "RecorderTextState",
+      "type": "string"
+    },
+    "RecorderWarning": {
+      "additionalProperties": false,
+      "description": "녹화 알림 (예: injected_ignored '다른 프로그램이 보낸 입력 N개는 녹화하지 않았어요', popup_ignored, not_foreground, no_assertion)",
+      "properties": {
+        "code": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "type": "string"
+        },
+        "count": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "title": "RecorderWarning",
+      "type": "object"
+    },
+    "RecorderWindow": {
+      "additionalProperties": false,
+      "description": "녹화 대상 창 (시작 때의 값)",
+      "properties": {
+        "client_size": {
+          "$ref": "#/$defs/Size"
+        },
+        "dpi": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "handle": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "process": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "client_size",
+        "dpi",
+        "handle",
+        "process",
+        "title"
+      ],
+      "title": "RecorderWindow",
+      "type": "object"
+    },
+    "RecorderWrittenTarget": {
+      "additionalProperties": false,
+      "description": "커밋이 쓴(또는 재사용한) target 파일",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/WorkspacePath"
+        },
+        "reused": {
+          "type": "boolean"
+        },
+        "revision": {
+          "$ref": "#/$defs/TargetRevision"
+        }
+      },
+      "required": [
+        "path",
+        "revision",
+        "reused"
+      ],
+      "title": "RecorderWrittenTarget",
+      "type": "object"
+    },
     "Rect": {
       "description": "[x, y, w, h] 물리 픽셀",
       "items": {
@@ -1995,9 +3790,22 @@ export const daemonRpcSchema: unknown = {
       "type": "object"
     },
     "RequestFailedCode": {
-      "description": "-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님)",
+      "description": "-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역)",
       "enum": [
         "approval_required",
+        "classification_pending",
+        "hook_failed",
+        "hook_lost",
+        "input_lease_busy",
+        "input_overflow",
+        "no_frame",
+        "not_owner",
+        "recorder_state_invalid",
+        "recording_active",
+        "secret_region_overlap",
+        "secret_unresolved",
+        "target_missing",
+        "text_review_required",
         "capture_failed",
         "capture_timeout",
         "capture_unsupported",
@@ -2044,7 +3852,7 @@ export const daemonRpcSchema: unknown = {
     },
     "RequestFailedData": {
       "additionalProperties": false,
-      "description": "error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message",
+      "description": "error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝)",
       "properties": {
         "code": {
           "$ref": "#/$defs/RequestFailedCode"
@@ -2078,6 +3886,16 @@ export const daemonRpcSchema: unknown = {
         "message": {
           "type": "string"
         },
+        "owner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LeaseOwner"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "path": {
           "type": "string"
         },
@@ -2094,6 +3912,15 @@ export const daemonRpcSchema: unknown = {
         },
         "run_id": {
           "$ref": "#/$defs/RunId"
+        },
+        "state": {
+          "$ref": "#/$defs/RecorderState"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/RecorderStepId"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -2502,7 +4329,7 @@ export const daemonRpcSchema: unknown = {
     },
     "RunStartParams": {
       "additionalProperties": false,
-      "description": "디스크 파일로 실행 (M2 계획 2.8 시작 순서). 진행 중인 실행이 있으면 run_busy",
+      "description": "디스크 파일로 실행 (M2 계획 2.8 시작 순서). 진행 중인 실행이 있으면 run_busy. 이 daemon의 녹화 세션이 starting·recording·paused면 runner를 띄우기 전에 recording_active (M4, 같은 시작 잠금 안에서 판정)",
       "properties": {
         "deadline_ms": {
           "maximum": 9007199254740991,
@@ -2810,6 +4637,69 @@ export const daemonRpcSchema: unknown = {
       "title": "RunSummary",
       "type": "object"
     },
+    "SecretKey": {
+      "description": "비밀값 키 (그래프 $secret 키와 같은 규칙)",
+      "pattern": "^[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)*$",
+      "title": "SecretKey",
+      "type": "string"
+    },
+    "SecretKeyInfo": {
+      "additionalProperties": false,
+      "description": "비밀값 키 하나 (값 없음). source credential = 자격 증명 관리자 kookabug:<워크스페이스 ID>:<키>",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/SecretKey"
+        },
+        "source": {
+          "const": "credential"
+        }
+      },
+      "required": [
+        "key",
+        "source"
+      ],
+      "title": "SecretKeyInfo",
+      "type": "object"
+    },
+    "SecretsCreateParams": {
+      "additionalProperties": false,
+      "description": "secrets.create: 녹화 스텝(from_step, 비밀값·확인 필요 글자 구간)의 메모리 원문을 자격 증명 관리자에 그 키로 쓴다. 값을 RPC로 받지 않는다. 키가 이미 있으면 exists",
+      "properties": {
+        "from_step": {
+          "$ref": "#/$defs/RecorderStepId"
+        },
+        "key": {
+          "$ref": "#/$defs/SecretKey"
+        }
+      },
+      "required": [
+        "from_step",
+        "key"
+      ],
+      "title": "SecretsCreateParams",
+      "type": "object"
+    },
+    "SecretsListResult": {
+      "additionalProperties": false,
+      "description": "secrets.list: 자격 증명 관리자의 이 워크스페이스 키 (값 없음). 환경 변수(KOOKABUG_SECRET_<키>)는 원래 키 이름을 되살릴 수 없어 목록에 없고 env_note로 안내한다",
+      "properties": {
+        "env_note": {
+          "type": "string"
+        },
+        "keys": {
+          "items": {
+            "$ref": "#/$defs/SecretKeyInfo"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "env_note",
+        "keys"
+      ],
+      "title": "SecretsListResult",
+      "type": "object"
+    },
     "Seq": {
       "description": "저널 안 순번",
       "minimum": 1,
@@ -3021,6 +4911,64 @@ export const daemonRpcSchema: unknown = {
       "title": "TargetPreviewParams",
       "type": "object"
     },
+    "TargetReadTextParams": {
+      "additionalProperties": false,
+      "description": "target.read_text: 편집기 정지 화면 영역의 글자 (OCR). 녹화 프레임의 보호 영역과 겹치면 secret_region_overlap",
+      "properties": {
+        "frame_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "rect": {
+          "$ref": "#/$defs/Rect"
+        }
+      },
+      "required": [
+        "frame_id",
+        "rect"
+      ],
+      "title": "TargetReadTextParams",
+      "type": "object"
+    },
+    "TargetReadTextResult": {
+      "additionalProperties": false,
+      "properties": {
+        "lines": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "rect": {
+                "$ref": "#/$defs/Rect"
+              },
+              "score": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "rect",
+              "score",
+              "text"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "lines",
+        "text"
+      ],
+      "title": "TargetReadTextResult",
+      "type": "object"
+    },
     "TargetRevision": {
       "description": "target revision: sha256(JSON 바이트) + ':' + sha256(image가 가리키는 파일 바이트). 이미지가 없으면 'missing' (M2 계획 2.9)",
       "pattern": "^[0-9a-f]{64}:([0-9a-f]{64}|missing)$",
@@ -3102,7 +5050,7 @@ export const daemonRpcSchema: unknown = {
       "type": "string"
     },
     "ToolName": {
-      "description": "권한 판정에 쓰는 도구 이름 (구현 계획 7장). ui_only는 판정하지 않는 메서드 (agent 연결이면 daemon의 AGENT_DENIED 목록 — daemon.shutdown, M3 디버그 메서드 debug.breakpoints.get·set·run.pause·run.resume·run.restart, run.export — 를 판정 전에 거부)",
+      "description": "권한 판정에 쓰는 도구 이름 (구현 계획 7장). ui_only는 판정하지 않는 메서드 (agent 연결이면 daemon의 AGENT_DENIED 목록 — daemon.shutdown, M3 디버그 메서드 debug.breakpoints.get·set·run.pause·run.resume·run.restart, run.export, M4 녹화·비밀값 메서드 recorder.*·secrets.*·target.read_text — 를 판정 전에 거부)",
       "enum": [
         "kb_graph_create",
         "kb_graph_get",

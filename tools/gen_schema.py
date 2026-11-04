@@ -43,6 +43,9 @@ KINDS = (
     "breakpoints",
     "video-index",
     "run-index",
+    "recorder-hook",
+    "recorder-script",
+    "recorder-fragment",
 )
 
 MODELS_INIT = '''\
@@ -57,7 +60,10 @@ HEADER = "# 생성물 (packages/schema/{name} → tools/gen_schema.py). 직접 �
 
 # in 핀 값(Value)은 재귀·조건부 모양이라 생성기가 표현하지 못한다. 모양은 jsonschema가 검사하고,
 # 모델에서는 JSON 값 그대로 둔다
-TYPE_OVERRIDES = {"graph": {"Value": "pydantic.JsonValue"}}
+TYPE_OVERRIDES = {
+    "graph": {"Value": "pydantic.JsonValue"},
+    "recorder-fragment": {"FragmentValue": "pydantic.JsonValue"},
+}
 
 
 def module_name(kind: str) -> str:

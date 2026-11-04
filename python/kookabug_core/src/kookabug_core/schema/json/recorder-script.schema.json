@@ -1,0 +1,432 @@
+{
+  "$defs": {
+    "FaultLine": {
+      "additionalProperties": false,
+      "description": "가짜 훅 고장: hook_exit(훅 프로세스 종료·파이프 EOF), health_stop(hook.health가 끊김), hook_detached(OS가 훅을 뗌 — 입력은 계속 오지만 훅 이벤트가 없음), overflow(중요 큐가 차서 다음 중요 이벤트 count개를 버림), batch_gap(다음 묶음 하나를 보내지 않음)",
+      "properties": {
+        "count": {
+          "maximum": 4096,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "fault": {
+          "enum": ["batch_gap", "health_stop", "hook_detached", "hook_exit", "overflow"]
+        },
+        "kind": {
+          "const": "fault"
+        },
+        "t_ns": {
+          "$ref": "#/$defs/MonoNs"
+        }
+      },
+      "required": ["fault", "kind", "t_ns"],
+      "title": "FaultLine",
+      "type": "object"
+    },
+    "FrameLine": {
+      "additionalProperties": false,
+      "description": "프레임 도착을 정해 둔다 (없으면 가짜 원천이 장면이 바뀔 때마다 낸다). buffer_size를 주면 그 크기 버퍼(기하와 다르면 검증 안 된 프레임)",
+      "properties": {
+        "arrival_ns": {
+          "$ref": "#/$defs/MonoNs"
+        },
+        "buffer_size": {
+          "$ref": "#/$defs/Size"
+        },
+        "kind": {
+          "const": "frame"
+        }
+      },
+      "required": ["arrival_ns", "kind"],
+      "title": "FrameLine",
+      "type": "object"
+    },
+    "Geometry": {
+      "additionalProperties": false,
+      "description": "대상 창 기하 (물리 화면 좌표). frame_bounds = DWM 프레임 경계(WGC 버퍼 크기), client_origin = 클라이언트 (0,0)의 화면 점",
+      "properties": {
+        "client_origin": {
+          "$ref": "#/$defs/Point"
+        },
+        "client_size": {
+          "$ref": "#/$defs/Size"
+        },
+        "dpi": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "frame_bounds": {
+          "$ref": "#/$defs/Rect"
+        }
+      },
+      "required": ["client_origin", "client_size", "dpi", "frame_bounds"],
+      "title": "Geometry",
+      "type": "object"
+    },
+    "GeometryGeneration": {
+      "additionalProperties": false,
+      "description": "기하 세대 시간표의 한 세대 (프레임 원천 공용 모양). 확정 구간 = [from_ns, confirmed_at_ns] (처음 확인 ~ 마지막 확인). 앞 세대의 confirmed_at_ns ~ 이 세대의 from_ns는 불확실 구간 — 그 구간의 입력·프레임은 어느 세대인지 정하지 않는다. 프레임은 도착 시각이 확정 구간 안이고 버퍼 크기 = frame_bounds 크기일 때만 그 세대로 검증된다. 클라이언트 자르기 = buffer[client_origin - frame_bounds 원점 : + client_size]",
+      "properties": {
+        "client_origin": {
+          "$ref": "#/$defs/Point"
+        },
+        "client_size": {
+          "$ref": "#/$defs/Size"
+        },
+        "confirmed_at_ns": {
+          "$ref": "#/$defs/MonoNs"
+        },
+        "dpi": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "frame_bounds": {
+          "$ref": "#/$defs/Rect"
+        },
+        "from_ns": {
+          "$ref": "#/$defs/MonoNs"
+        },
+        "gen": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "client_origin",
+        "client_size",
+        "confirmed_at_ns",
+        "dpi",
+        "frame_bounds",
+        "from_ns",
+        "gen"
+      ],
+      "title": "GeometryGeneration",
+      "type": "object"
+    },
+    "GeometryLine": {
+      "additionalProperties": false,
+      "description": "대상 창 기하가 t_ns에 실제로 바뀌고, 가짜 원천은 notify_ns에 알게 된다 (늦은 알림 경합). notify_ns를 빼면 t_ns",
+      "properties": {
+        "geometry": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "kind": {
+          "const": "geometry"
+        },
+        "notify_ns": {
+          "$ref": "#/$defs/MonoNs"
+        },
+        "t_ns": {
+          "$ref": "#/$defs/MonoNs"
+        }
+      },
+      "required": ["geometry", "kind", "t_ns"],
+      "title": "GeometryLine",
+      "type": "object"
+    },
+    "HeaderLine": {
+      "additionalProperties": false,
+      "description": "각본 첫 줄: 대상 창(제목·처음 기하)과 처음 장면",
+      "properties": {
+        "format": {
+          "const": "kookabug.recorder-script/0"
+        },
+        "geometry": {
+          "$ref": "#/$defs/Geometry"
+        },
+        "kind": {
+          "const": "header"
+        },
+        "scene": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": ["format", "geometry", "kind", "scene", "title"],
+      "title": "HeaderLine",
+      "type": "object"
+    },
+    "ImeLine": {
+      "additionalProperties": false,
+      "description": "t_ns부터 대상의 IME 상태와 조회 응답. status가 ok가 아니면 그동안의 표본 조회가 그 상태로 끝난다 (respond_ms 뒤)",
+      "properties": {
+        "kind": {
+          "const": "ime"
+        },
+        "mode": {
+          "enum": ["alphanumeric", "native"]
+        },
+        "respond_ms": {
+          "description": "표본 조회가 끝나는 데 걸리는 시간 (기본 0, timeout이면 50)",
+          "maximum": 1000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "enum": ["failed", "no_ime", "ok", "timeout"]
+        },
+        "t_ns": {
+          "$ref": "#/$defs/MonoNs"
+        }
+      },
+      "required": ["kind", "mode", "t_ns"],
+      "title": "ImeLine",
+      "type": "object"
+    },
+    "InputLine": {
+      "additionalProperties": false,
+      "description": "t_ns에 들어온 원시 입력 하나. 가짜 훅 원천이 훅 프로세스 규칙(event_id·우리 표식 제외·crit_seq·이동 합치기·묶음)을 그대로 적용하고, 가짜 사람(FakeHuman)이 같은 시각에 가짜 게임 장면에 적용한다",
+      "properties": {
+        "input": {
+          "$ref": "#/$defs/RawInput"
+        },
+        "kind": {
+          "const": "input"
+        },
+        "t_ns": {
+          "$ref": "#/$defs/MonoNs"
+        }
+      },
+      "required": ["input", "kind", "t_ns"],
+      "title": "InputLine",
+      "type": "object"
+    },
+    "MarkLine": {
+      "additionalProperties": false,
+      "description": "검사가 가리키는 표지 (동작 없음)",
+      "properties": {
+        "kind": {
+          "const": "mark"
+        },
+        "label": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "t_ns": {
+          "$ref": "#/$defs/MonoNs"
+        }
+      },
+      "required": ["kind", "label", "t_ns"],
+      "title": "MarkLine",
+      "type": "object"
+    },
+    "MonoNs": {
+      "description": "녹화 기준 시각부터 잰 단조 시계 ns (recorder-hook MonoNs와 같다)",
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "title": "MonoNs",
+      "type": "integer"
+    },
+    "ObserveLine": {
+      "additionalProperties": false,
+      "description": "t_ns부터 관측 스레드가 보는 창 상태. fg·point: 대상 창(target)·우리 앱(app)·대상의 소유 팝업(popup)·다른 창(other), null이면 읽지 못함. delay_ms = 이벤트 뒤 즉시 관측까지 걸리는 시간 (50 ms를 넘으면 그 이벤트는 판정 불가)",
+      "properties": {
+        "delay_ms": {
+          "maximum": 10000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fg": {
+          "enum": ["app", "other", "popup", "target", null]
+        },
+        "focus_password": {
+          "type": ["boolean", "null"]
+        },
+        "hkl": {
+          "anyOf": [
+            {
+              "$ref": "urn:kookabug:recorder-hook:0#/$defs/Hkl"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "const": "observe"
+        },
+        "point": {
+          "enum": ["app", "other", "popup", "target", null]
+        },
+        "t_ns": {
+          "$ref": "#/$defs/MonoNs"
+        }
+      },
+      "required": ["kind", "t_ns"],
+      "title": "ObserveLine",
+      "type": "object"
+    },
+    "Point": {
+      "description": "[x, y] 물리 픽셀",
+      "items": {
+        "maximum": 9007199254740991,
+        "minimum": -9007199254740991,
+        "type": "integer"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "title": "Point",
+      "type": "array"
+    },
+    "RawInput": {
+      "additionalProperties": false,
+      "description": "번호(event_id·crit_seq)·시각을 매기기 전 원시 입력 = recorder-hook HookEvent에서 event_id·crit_seq·t_ns를 뺀 모양. 종류별 필드 규칙은 HookEvent와 같은 BadInputShape를 쓴다 (두 정의의 수용 여부가 같은지는 계약 검사가 본다). x·y는 물리 화면 좌표",
+      "not": {
+        "$ref": "urn:kookabug:recorder-hook:0#/$defs/BadInputShape"
+      },
+      "properties": {
+        "button": {
+          "enum": ["left", "middle", "right", "x1", "x2"]
+        },
+        "delta": {
+          "maximum": 32767,
+          "minimum": -32768,
+          "type": "integer"
+        },
+        "extended": {
+          "type": "boolean"
+        },
+        "extra_info": {
+          "$ref": "urn:kookabug:recorder-hook:0#/$defs/ExtraInfo"
+        },
+        "horizontal": {
+          "type": "boolean"
+        },
+        "injected": {
+          "type": "boolean"
+        },
+        "injected_lower_il": {
+          "type": "boolean"
+        },
+        "kind": {
+          "enum": ["key_down", "key_up", "mouse_down", "mouse_move", "mouse_up", "wheel"]
+        },
+        "scan": {
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "vk": {
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "x": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        },
+        "y": {
+          "maximum": 9007199254740991,
+          "minimum": -9007199254740991,
+          "type": "integer"
+        }
+      },
+      "required": ["extra_info", "injected", "injected_lower_il", "kind"],
+      "title": "RawInput",
+      "type": "object"
+    },
+    "Rect": {
+      "description": "[x, y, w, h] 물리 픽셀",
+      "items": {
+        "maximum": 9007199254740991,
+        "minimum": -9007199254740991,
+        "type": "integer"
+      },
+      "maxItems": 4,
+      "minItems": 4,
+      "title": "Rect",
+      "type": "array"
+    },
+    "RingFrame": {
+      "additionalProperties": false,
+      "description": "캡처 링 항목의 메타데이터 (프레임 원천 공용 모양). 버퍼는 WGC 원본(창 프레임 경계 전체, 제목 표시줄·테두리 포함)의 BGR 복사본이고 링은 자르지 않는다 — 그래서 기하는 들지 않고 버퍼 크기와 도착 시각만 든다. 기하는 GeometryGeneration 시간표로 따로 정한다",
+      "properties": {
+        "arrival_ns": {
+          "$ref": "#/$defs/MonoNs"
+        },
+        "buffer_size": {
+          "$ref": "#/$defs/Size"
+        },
+        "seq": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": ["arrival_ns", "buffer_size", "seq"],
+      "title": "RingFrame",
+      "type": "object"
+    },
+    "SceneLine": {
+      "additionalProperties": false,
+      "description": "게임이 스스로 장면을 바꾼다 (입력 없이, 예: 로딩 뒤 로비). 입력으로 바뀌는 장면은 가짜 사람이 장면 규칙으로 바꾼다",
+      "properties": {
+        "kind": {
+          "const": "scene"
+        },
+        "scene": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "t_ns": {
+          "$ref": "#/$defs/MonoNs"
+        }
+      },
+      "required": ["kind", "scene", "t_ns"],
+      "title": "SceneLine",
+      "type": "object"
+    },
+    "Size": {
+      "description": "[w, h] 물리 픽셀",
+      "items": {
+        "maximum": 9007199254740991,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "title": "Size",
+      "type": "array"
+    }
+  },
+  "$id": "urn:kookabug:recorder-script:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "가짜 녹화 각본 JSONL의 한 줄 (검사·E2E 공용, M4 계획 2.15). 첫 줄은 header, 나머지는 시각 차례. 가짜 훅 원천(FakeHookSource)·가짜 프레임 원천(FakeFrameSource)·가짜 사람(FakeHuman)이 같은 각본을 읽는다: 입력·관측 상태·IME·기하 시간표·장면 신호·프레임 도착·훅 고장",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/HeaderLine"
+    },
+    {
+      "$ref": "#/$defs/InputLine"
+    },
+    {
+      "$ref": "#/$defs/ObserveLine"
+    },
+    {
+      "$ref": "#/$defs/ImeLine"
+    },
+    {
+      "$ref": "#/$defs/GeometryLine"
+    },
+    {
+      "$ref": "#/$defs/SceneLine"
+    },
+    {
+      "$ref": "#/$defs/FrameLine"
+    },
+    {
+      "$ref": "#/$defs/FaultLine"
+    },
+    {
+      "$ref": "#/$defs/MarkLine"
+    }
+  ],
+  "title": "RecorderScriptLine"
+}

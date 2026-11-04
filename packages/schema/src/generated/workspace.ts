@@ -16,6 +16,10 @@ export type SettingKey = string;
  */
 export interface Workspace {
   format: "kookabug.workspace/0";
+  /**
+   * 워크스페이스 ID (UUID 소문자). 자격 증명 관리자 비밀값 이름 kookabug:<ID>:<키>의 접두라 팀이 같은 값을 쓴다. 없으면 처음 비밀값을 만들 때(secrets.create) 만들어 넣는다 (M4)
+   */
+  id?: string;
   ocr?: OcrSettings;
   permissions?: Permissions;
   profiles?: {

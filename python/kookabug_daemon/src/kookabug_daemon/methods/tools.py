@@ -16,7 +16,37 @@ from kookabug_core.permissions import Decision, Principal
 from kookabug_core.service import ApprovalRequired, PermissionDenied
 from kookabug_daemon.protocol import UI_ONLY, RequestFailed
 
-__all__ = ["AGENT_DENIED", "METHOD_TOOLS", "UI_ONLY_AGENT_ALLOWED", "Authorizer", "ServiceLike"]
+__all__ = [
+    "AGENT_DENIED",
+    "METHOD_TOOLS",
+    "RECORDER_METHODS",
+    "UI_ONLY_AGENT_ALLOWED",
+    "Authorizer",
+    "ServiceLike",
+]
+
+# M4 녹화·비밀값 (계획 2.3·2.8·2.9): 키 입력 전체를 읽는 기능이라 사람만 쓴다. 처리기는 T7·T8·T11이
+# 붙인다 (그 전에는 method_not_found "아직 없다")
+RECORDER_METHODS: Final = frozenset(
+    {
+        "recorder.start",
+        "recorder.pause",
+        "recorder.resume",
+        "recorder.stop",
+        "recorder.discard",
+        "recorder.state",
+        "recorder.steps",
+        "recorder.step.update",
+        "recorder.frame",
+        "recorder.insert_check",
+        "recorder.commit_prepare",
+        "recorder.commit_finish",
+        "recorder.commit_abort",
+        "secrets.list",
+        "secrets.create",
+        "target.read_text",
+    }
+)
 
 METHOD_TOOLS: Final[dict[str, str]] = {
     "session.hello": UI_ONLY,
@@ -55,6 +85,7 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     "run.resume": UI_ONLY,
     "run.restart": UI_ONLY,
     "run.export": UI_ONLY,
+    **dict.fromkeys(sorted(RECORDER_METHODS), UI_ONLY),
 }
 
 AGENT_DENIED: Final = frozenset(
@@ -66,11 +97,14 @@ AGENT_DENIED: Final = frozenset(
         "run.resume",
         "run.restart",
         "run.export",
+        *RECORDER_METHODS,
     }
 )
 """`ui_only`이지만 agent 연결에는 판정 전에 거부하는 메서드. `ui_only`는 판정을 건너뛰므로
 표시만으로는 에이전트를 막지 못한다 (M3 계획 2.1). 사람 없는 실행이 멈추거나 에이전트가 실행
-기록을 임의 경로에 쓰지 않게 디버그·내보내기 메서드를 여기에 넣는다."""
+기록을 임의 경로에 쓰지 않게 디버그·내보내기 메서드를, 에이전트가 녹화를 켜거나 읽지 못하게
+녹화·비밀값 메서드(M4 C20)를 여기에 넣는다. `target.read_text`는 녹화 프레임(비밀번호가 찍힐 수
+있는 임시 화면)도 읽으므로 M4에서는 사람만 쓴다."""
 
 UI_ONLY_AGENT_ALLOWED: Final = frozenset({"session.hello", "graph.close", "run.unsubscribe"})
 """`ui_only`인데 agent 연결에도 허용하는 기존 메서드 (자기 연결의 문서·구독만 닫는다). 새 `ui_only`

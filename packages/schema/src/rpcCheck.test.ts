@@ -29,6 +29,7 @@ test("test_method_table_tools_and_internal_methods", () => {
     "debug.breakpoints.changed",
     "graph.changed",
     "lease.changed",
+    "recorder.changed",
     "run.ended",
     "run.event",
     "run.lagged",

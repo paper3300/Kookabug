@@ -42,6 +42,23 @@ export const RENDERER_METHODS: ReadonlySet<string> = new Set([
   "run.step",
   "run.file",
   "run.compare",
+  // M4 녹화·비밀값 (계획 2.9): daemon이 소유 연결을 검사한다
+  "recorder.start",
+  "recorder.pause",
+  "recorder.resume",
+  "recorder.stop",
+  "recorder.discard",
+  "recorder.state",
+  "recorder.steps",
+  "recorder.step.update",
+  "recorder.frame",
+  "recorder.insert_check",
+  "recorder.commit_prepare",
+  "recorder.commit_finish",
+  "recorder.commit_abort",
+  "secrets.list",
+  "secrets.create",
+  "target.read_text",
 ]);
 
 // 주 프로세스 안에서만 쓰는 메서드. 렌더러 표면에서 뺀다. run.export는 dest(쓸 경로)를 주 프로세스의
@@ -61,6 +78,7 @@ export const RENDERER_EVENTS: ReadonlySet<string> = new Set([
   "run.ended",
   "lease.changed",
   "debug.breakpoints.changed",
+  "recorder.changed",
 ]);
 
 // 주 프로세스가 보내는 앱 알림 (daemon 알림이 아님): 연결 상태, 출력 패널 줄, 창 최대화 상태, 테마,

@@ -50,6 +50,23 @@ TOOLS = {
     "run.resume": "ui_only",
     "run.restart": "ui_only",
     "run.export": "ui_only",
+    # M4 계획 2.9 녹화·비밀값 (사람만)
+    "recorder.start": "ui_only",
+    "recorder.pause": "ui_only",
+    "recorder.resume": "ui_only",
+    "recorder.stop": "ui_only",
+    "recorder.discard": "ui_only",
+    "recorder.state": "ui_only",
+    "recorder.steps": "ui_only",
+    "recorder.step.update": "ui_only",
+    "recorder.frame": "ui_only",
+    "recorder.insert_check": "ui_only",
+    "recorder.commit_prepare": "ui_only",
+    "recorder.commit_finish": "ui_only",
+    "recorder.commit_abort": "ui_only",
+    "secrets.list": "ui_only",
+    "secrets.create": "ui_only",
+    "target.read_text": "ui_only",
 }
 
 
@@ -80,6 +97,7 @@ def test_notification_table() -> None:
         "debug.breakpoints.changed",
         "graph.changed",
         "lease.changed",
+        "recorder.changed",
         "run.ended",
         "run.event",
         "run.lagged",
@@ -97,6 +115,10 @@ def test_request_failed_codes_cover_plan_and_platform() -> None:
         "frame_expired", "target_invalid", "io_error", "shutting_down",
         # M3 계획 2.11
         "read_only", "not_paused", "run_not_debuggable",
+        # M4 계획 2.12
+        "recording_active", "input_lease_busy", "not_owner", "classification_pending",
+        "text_review_required", "secret_unresolved", "target_missing", "secret_region_overlap",
+        "hook_failed", "hook_lost", "input_overflow", "no_frame",
     }  # fmt: skip
     assert plan <= codes
     assert set(PLATFORM_CODES) <= codes

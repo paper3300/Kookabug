@@ -58,9 +58,16 @@ def test_copied_json_matches_packages_schema() -> None:
 
 def test_ts_generated_for_every_schema() -> None:
     generated = PACKAGE_JSON / "src" / "generated"
-    # daemon-rpc와 그것이 참조하는 events·breakpoints·run-index(→ video-index)는 런타임
-    # 검사기(src/rpcCheck.ts)가 읽는 스키마 값(.data.ts)도 있다
-    checked = ["daemon-rpc", "events", "breakpoints", "run-index", "video-index"]
+    # daemon-rpc와 그것이 참조하는 events·breakpoints·run-index(→ video-index)·recorder-fragment는
+    # 런타임 검사기(src/rpcCheck.ts)가 읽는 스키마 값(.data.ts)도 있다
+    checked = [
+        "daemon-rpc",
+        "events",
+        "breakpoints",
+        "run-index",
+        "video-index",
+        "recorder-fragment",
+    ]
     expected = [f"{k}.ts" for k in KINDS] + [f"{k}.data.ts" for k in checked]
     assert sorted(p.name for p in generated.glob("*.ts")) == sorted(expected)
 

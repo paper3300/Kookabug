@@ -22,19 +22,23 @@ const kinds = [
   "breakpoints",
   "video-index",
   "run-index",
+  "recorder-hook",
+  "recorder-script",
+  "recorder-fragment",
 ];
 
 const banner =
   "/* 생성물 (packages/schema/*.schema.json → scripts/gen.mjs). 직접 고치지 않는다. */";
 
 // 런타임 검사(src/rpcCheck.ts)가 읽는 스키마 값도 내는 종류. daemon-rpc가 events·breakpoints·
-// run-index를, run-index가 events·video-index를 참조한다. 검사기가 아는 키워드만 쓴다
+// run-index·recorder-fragment를, run-index가 events·video-index를 참조한다. 검사기가 아는 키워드만 쓴다
 const CHECKED = {
   "daemon-rpc": "daemonRpcSchema",
   events: "eventsSchema",
   breakpoints: "breakpointsSchema",
   "run-index": "runIndexSchema",
   "video-index": "videoIndexSchema",
+  "recorder-fragment": "recorderFragmentSchema",
 };
 // 최상위가 oneOf(메시지 종류)라 $defs를 빈 객체 틀로 내보내는 종류. 그러지 않으면 메시지 봉투가
 // 참조하지 않는 정의(rpc의 RunSpec·메서드별 params 등)가 TS에서 빠진다

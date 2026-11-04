@@ -76,6 +76,16 @@ class InputRef(BaseModel):
     key: Annotated[str | None, Field(min_length=1)] = None
 
 
+class LeaseOwnerKind(RootModel[Literal["recorder", "runner", "supervisor"]]):
+    root: Annotated[
+        Literal["recorder", "runner", "supervisor"],
+        Field(
+            description="입력 임대권 소유자 종류: 실행(runner), 감독자 복구(supervisor), 녹화 세션을 연 daemon(recorder, M4)",
+            title="LeaseOwnerKind",
+        ),
+    ]
+
+
 class Omitted(BaseModel):
     """
     정책으로 남기지 않은 증거와 그 이유
@@ -389,7 +399,7 @@ class By(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    kind: Literal["runner", "supervisor"]
+    kind: LeaseOwnerKind
     run: RunId | None = None
 
 
