@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from kb_testing.display import pair_layout, shift_within
 from kb_testing.keys import assert_no_keys_held, cursor_pos, held, release_all_for_test
 from kb_testing.proc import wait_until
 from kb_testing.sample_game import SampleGame, launch_sample_game
@@ -66,12 +67,32 @@ def bring_front(hwnd: int) -> None:
 
 
 def move_window(hwnd: int, dx: int, dy: int) -> None:
-    info = window_info(hwnd)
-    left, top, _, _ = info.window_rect
+    """창을 옮긴다. 검사 창 모니터(`KOOKABUG_TEST_DISPLAY`)가 있으면 그 작업 영역 안에 남게 이동
+    방향을 뒤집을 수 있다 (`kb_testing.display.shift_within`)."""
+    rect = window_info(hwnd).window_rect
+    with per_monitor_v2_thread():
+        dx, dy = shift_within(rect, dx, dy)
+    move_to(hwnd, rect[0] + dx, rect[1] + dy)
+
+
+def move_to(hwnd: int, x: int, y: int) -> None:
     flags = user32.SWP_NOSIZE | user32.SWP_NOZORDER | user32.SWP_NOACTIVATE
     with per_monitor_v2_thread():
-        assert user32.SetWindowPos(hwnd, None, left + dx, top + dy, 0, 0, flags)
-    wait_until(lambda: window_info(hwnd).window_rect[:2] == (left + dx, top + dy), timeout=5)
+        assert user32.SetWindowPos(hwnd, None, x, y, 0, 0, flags)
+    wait_until(lambda: window_info(hwnd).window_rect[:2] == (x, y), timeout=5)
+
+
+def side_by_side(first: int, other: int) -> None:
+    """두 창이 겹치지 않게: 기본은 `other`를 `first` 오른쪽 20px 옆으로. 검사 창 모니터가 있으면 그
+    작업 영역 안에 가로(안 들어가면 세로)로 나란히 (`kb_testing.display.pair_layout`)."""
+    a, b = window_info(first).window_rect, window_info(other).window_rect
+    with per_monitor_v2_thread():
+        layout = pair_layout(a, b)
+    if layout is None:
+        move_window(other, (a[2] - a[0]) + 20, 0)
+        return
+    move_to(first, *layout[0])
+    move_to(other, *layout[1])
 
 
 def inputs_after(game: SampleGame, seq: int) -> list[dict[str, Any]]:
@@ -178,8 +199,7 @@ def test_not_foreground_refused_before_any_input(live: Live) -> None:
     with live.launch() as game, live.launch() as other:
         target = live.bind(game.hwnd)
         # 두 창이 겹치지 않게 다른 창을 옆으로 옮기고 앞으로
-        width = window_info(game.hwnd).window_rect[2] - window_info(game.hwnd).window_rect[0]
-        move_window(other.hwnd, width + 20, 0)
+        side_by_side(game.hwnd, other.hwnd)
         bring_front(other.hwnd)
         marks = game.last_seq(), other.last_seq()
         refused(WINDOW_NOT_FOREGROUND, lambda: live.actor.key("a", target=target))

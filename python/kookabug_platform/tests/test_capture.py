@@ -21,6 +21,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from kb_testing.display import offscreen_position, shift_within
 from kb_testing.proc import wait_until
 from kb_testing.sample_game import (
     SampleGame,
@@ -146,11 +147,15 @@ def rig(game: SampleGame) -> Iterator[Rig]:
     r.close()
 
 
-def move_window(hwnd: int, dx: int, dy: int) -> None:
+def move_window(hwnd: int, dx: int, dy: int) -> tuple[int, int]:
+    """창을 옮기고 실제 이동량을 준다. 검사 창 모니터(`KOOKABUG_TEST_DISPLAY`)가 있으면 그 작업
+    영역을 벗어나는 축은 방향을 뒤집는다 (`kb_testing.display.shift_within`)."""
     with per_monitor_v2_thread():
         rect = window_info(hwnd).window_rect
+        dx, dy = shift_within(rect, dx, dy)
         flags = user32.SWP_NOSIZE | user32.SWP_NOZORDER | user32.SWP_NOACTIVATE
         assert user32.SetWindowPos(hwnd, None, rect[0] + dx, rect[1] + dy, 0, 0, flags)
+    return dx, dy
 
 
 def test_frame_is_client_area_only(rig: Rig) -> None:
@@ -289,10 +294,11 @@ def test_resize_without_new_frame_is_capture_timeout(game: SampleGame) -> None:
 
 def test_move_does_not_change_frame(rig: Rig) -> None:
     before = rig.capture()
-    move_window(rig.game.hwnd, 40, 30)
+    dx, dy = move_window(rig.game.hwnd, 40, 30)
+    assert (dx, dy) != (0, 0)  # 검사 창 모니터 안에 남게 줄거나 뒤집힐 수 있다
     after = rig.capture()
     ox, oy = before.info.client_origin_screen
-    assert after.info.client_origin_screen == (ox + 40, oy + 30)
+    assert after.info.client_origin_screen == (ox + dx, oy + dy)
     assert after.size == before.size
     assert np.array_equal(after.pixels, before.pixels)
 
@@ -406,17 +412,16 @@ OFFSCREEN_COLUMNS = 8
 
 
 def place_offscreen(hwnd: int, columns: int = OFFSCREEN_COLUMNS) -> None:
-    """클라이언트 오른쪽 `columns`열이 어느 모니터에도 없게 (이미 화면 밖에 걸쳐 있으면 그대로 —
-    CI 러너의 기본 배치)."""
+    """클라이언트 한쪽 `columns`열이 어느 모니터에도 없게 (이미 화면 밖에 걸쳐 있으면 그대로 —
+    CI 러너의 기본 배치). 기본은 가장 오른쪽 모니터 오른쪽 경계, 검사 창 모니터가 가장 왼쪽이면
+    그 왼쪽 경계 (`kb_testing.display.offscreen_position`)."""
     if not on_screen_mask(hwnd).all():
         return
-    _left, top, right, _bottom = max(monitor_rects(), key=lambda r: r[2])
-    x, _y, w, _h = client_rect(hwnd)
-    rect = window_info(hwnd).window_rect
+    client, window, bounds = client_rect(hwnd), window_info(hwnd).window_rect, monitor_rects()
     with per_monitor_v2_thread():
+        x, y = offscreen_position(client, window, bounds, columns)
         flags = user32.SWP_NOSIZE | user32.SWP_NOZORDER | user32.SWP_NOACTIVATE
-        dx = right + columns - (x + w)
-        assert user32.SetWindowPos(hwnd, None, rect[0] + dx, top + 50, 0, 0, flags)
+        assert user32.SetWindowPos(hwnd, None, x, y, 0, 0, flags)
 
 
 def test_restore_offscreen_columns(rig: Rig) -> None:

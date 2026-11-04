@@ -20,17 +20,32 @@ export interface LaunchOptions {
   env?: Record<string, string>;
 }
 
+/**
+ * 검사 창 모니터 (`KOOKABUG_TEST_DISPLAY`, tools/kb_testing/display.py와 같은 값: left·right·primary·"x,y").
+ * 없으면 지금처럼 Electron이 정한 자리에 둔다
+ */
+export const TEST_DISPLAY = process.env.KOOKABUG_TEST_DISPLAY?.trim() ?? "";
+/** 앱 → daemon → runner가 띄운 tkinter 창(예제 게임)도 그 모니터에 뜨게 하는 `HOME` (display.py `tk_env`) */
+const TK_HOME = path.join(REPO_ROOT, "tools", "kb_testing", "tk_home");
+/** 검사가 직접 띄우는 파이썬 tkinter 창(예제 게임)에 더할 환경 — 값이 없으면 빈 객체 */
+export function testDisplayEnv(): Record<string, string> {
+  return TEST_DISPLAY === "" ? {} : { HOME: TK_HOME };
+}
+/** 주 프로세스에 앱보다 먼저 싣는 창 놓기 스크립트 (창을 만드는 순간 그 모니터로 옮긴다) */
+const PLACE_WINDOW = path.join(import.meta.dirname, "place-window.cjs");
+
 export async function launchApp(options: LaunchOptions = {}): Promise<{ app: ElectronApplication; userData: string }> {
   if (!fs.existsSync(MAIN)) throw new Error(`앱 빌드가 없다: ${MAIN} (pnpm build 먼저)`);
   const userData = options.userData ?? fs.mkdtempSync(path.join(os.tmpdir(), "kb-e2e-"));
   const executablePath = createRequire(import.meta.url)("electron") as string;
   const args = [MAIN, `--user-data-dir=${userData}`];
   if (options.scaleFactor !== undefined) args.push(`--force-device-scale-factor=${options.scaleFactor}`);
+  if (TEST_DISPLAY !== "") args.unshift("-r", PLACE_WINDOW);
   const app = await electron.launch({
     executablePath,
     args,
     cwd: APP_DIR,
-    env: { ...process.env, KOOKABUG_CLI: REPO_CLI, ...options.env } as Record<string, string>,
+    env: { ...process.env, KOOKABUG_CLI: REPO_CLI, ...testDisplayEnv(), ...options.env } as Record<string, string>,
   });
   return { app, userData };
 }
@@ -63,6 +78,8 @@ export async function setContentSize(app: ElectronApplication, page: Page, width
       const win = BrowserWindow.getAllWindows()[0];
       if (win.isMaximized()) win.unmaximize();
       win.setContentSize(w, h);
+      // 크기가 바뀌면 고른 모니터 안으로 다시 놓는다 (KOOKABUG_TEST_DISPLAY가 있을 때만 있음)
+      (globalThis as { __kbPlaceWindow?: (win: unknown) => void }).__kbPlaceWindow?.(win);
     },
     [width, height] as const,
   );

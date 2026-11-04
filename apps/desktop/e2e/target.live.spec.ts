@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
-import { REPO_ROOT } from "./helpers/app";
+import { REPO_ROOT, testDisplayEnv } from "./helpers/app";
 import { closeEditor, filePath, openEditor, type EditorSession } from "./helpers/editor";
 import { frameOf, openTarget, saveTargetTab, selectRect, START_BUTTON, waitPreview } from "./helpers/target";
 
@@ -31,7 +31,7 @@ test("test_capture_window_make_target_live_match", async () => {
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), "kb-game-"));
   game = spawn(PYTHON, ["-X", "utf8", "-m", "sample_game", "--title", title, "--event-log", path.join(logDir, "events.jsonl")], {
     cwd: GAME_DIR,
-    env: { ...process.env, PYTHONPATH: GAME_DIR, PYTHONIOENCODING: "utf-8" },
+    env: { ...process.env, PYTHONPATH: GAME_DIR, PYTHONIOENCODING: "utf-8", ...testDisplayEnv() },
     stdio: "ignore",
     windowsHide: false,
   });

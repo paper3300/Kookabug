@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from kb_testing.display import DISPLAY_ENV, tk_env
 from kookabug_core.win import Process, ProcessId, is_alive
 
 __all__ = [
@@ -73,19 +74,22 @@ def wait_until[T](
 def isolated_env(
     tmp_path: Path, base: Mapping[str, str] | None = None, **extra: str
 ) -> dict[str, str]:
-    """개발자 PC·다른 테스트와 부딪히지 않는 환경 변수. 바깥의 `KOOKABUG_*`는 모두 지운다.
+    """개발자 PC·다른 테스트와 부딪히지 않는 환경 변수. 바깥의 `KOOKABUG_*`는 모두 지운다 — 검사
+    창 모니터(`KOOKABUG_TEST_DISPLAY`)만 남기고, 그 값이 있으면 이 환경으로 띄운 예제 게임 등
+    tkinter 창도 그 모니터에 뜨게 한다(`kb_testing.display.tk_env`).
 
     두 실행이 임대권을 다투는 테스트는 같은 `KOOKABUG_INPUT_LEASE_NAME`을 일부러 넘긴다.
     """
     env = {
         name: value
         for name, value in (os.environ if base is None else base).items()
-        if not name.upper().startswith("KOOKABUG_")
+        if not name.upper().startswith("KOOKABUG_") or name.upper() == DISPLAY_ENV
     }
     env["KOOKABUG_INPUT_LEASE_NAME"] = f"Local\\Kookabug.InputLease.test-{uuid.uuid4().hex}"
     env["KOOKABUG_STATE_DIR"] = str(tmp_path / "state")
     env["KOOKABUG_USER_CONFIG_DIR"] = str(tmp_path / "user-config")
     env.update(extra)
+    tk_env(env)
     return env
 
 

@@ -36,6 +36,7 @@ from helpers.supervisor import SupervisorHost, events, runner_stderr, start_run
 
 from installer import build, smoke
 from kb_testing import keys
+from kb_testing.display import pair_layout, reserve_env, shift_within
 from kb_testing.fake_capture import FakeCaptureBackend, FakeScreen
 from kb_testing.fake_win32 import FakeWindowApi
 from kb_testing.proc import PROCS_DIR, Spawned, barrier, python_cmd, wait_until
@@ -93,10 +94,22 @@ SW_MINIMIZE: Final = 6
 
 
 def run_example(
-    ws: Path, tmp_path: Path, ocr_models: Path, graph: str, *args: str, timeout: float = 180
+    ws: Path,
+    tmp_path: Path,
+    ocr_models: Path,
+    graph: str,
+    *args: str,
+    timeout: float = 180,
+    extra_env: Mapping[str, str] | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """복사한 예제 워크스페이스에서 `kookabug run <graph> --json`."""
-    env = cli_env(tmp_path, None, **EXAMPLE_SECRET_ENV, KOOKABUG_OCR_MODELS=str(ocr_models))
+    env = cli_env(
+        tmp_path,
+        None,
+        **EXAMPLE_SECRET_ENV,
+        KOOKABUG_OCR_MODELS=str(ocr_models),
+        **(extra_env or {}),
+    )
     done = run_cli(["run", graph, "--json", *args], cwd=ws, env=env, timeout=timeout)
     assert done.stdout.strip(), done.stderr
     return done.returncode, json.loads(done.stdout)
@@ -361,11 +374,32 @@ def bring_front(hwnd: int) -> None:
 
 
 def move_window(hwnd: int, dx: int, dy: int) -> None:
-    left, top, _, _ = window_info(hwnd).window_rect
+    """창을 옮긴다. 검사 창 모니터(`KOOKABUG_TEST_DISPLAY`)가 있으면 그 작업 영역 안에 남게 이동
+    방향을 뒤집을 수 있다 (`kb_testing.display.shift_within`)."""
+    rect = window_info(hwnd).window_rect
+    with per_monitor_v2_thread():
+        dx, dy = shift_within(rect, dx, dy)
+    move_to(hwnd, rect[0] + dx, rect[1] + dy)
+
+
+def move_to(hwnd: int, x: int, y: int) -> None:
     flags = user32.SWP_NOSIZE | user32.SWP_NOZORDER | user32.SWP_NOACTIVATE
     with per_monitor_v2_thread():
-        assert user32.SetWindowPos(hwnd, None, left + dx, top + dy, 0, 0, flags)
-    wait_until(lambda: window_info(hwnd).window_rect[:2] == (left + dx, top + dy), timeout=5)
+        assert user32.SetWindowPos(hwnd, None, x, y, 0, 0, flags)
+    wait_until(lambda: window_info(hwnd).window_rect[:2] == (x, y), timeout=5)
+
+
+def side_by_side(first: int, other: int) -> None:
+    """두 창이 겹치지 않게: 기본은 `other`를 `first` 오른쪽 20px 옆으로. 검사 창 모니터가 있으면 그
+    작업 영역 안에 가로(안 들어가면 세로)로 나란히 (`kb_testing.display.pair_layout`)."""
+    a, b = window_info(first).window_rect, window_info(other).window_rect
+    with per_monitor_v2_thread():
+        layout = pair_layout(a, b)
+    if layout is None:
+        move_window(other, (a[2] - a[0]) + 20, 0)
+        return
+    move_to(first, *layout[0])
+    move_to(other, *layout[1])
 
 
 def inputs_after(game: SampleGame, seq: int) -> list[dict[str, Any]]:
@@ -506,6 +540,8 @@ def check_resize_revalidation(tmp_path: Path, ocr_models: Path) -> None:
         graph,
         *real_game_args(title, event_log, "--dpi-awareness", "pmv2", "--size", "1024x640"),
         timeout=RUN_TIMEOUT_S,
+        # 검사 창 모니터가 있으면 1280x800으로 키울 자리에 처음부터 둔다 (주 모니터를 안 가림)
+        extra_env=reserve_env(1280, 800),
     )
     seen = game_events(event_log)
     assert (code, out["verdict"]) == (0, "pass"), (out, seen[-5:])
@@ -549,10 +585,7 @@ def refuse_on_game(live: Live, case: str) -> None:
             return
         elif case == "not_foreground":
             with live.launch() as other:
-                width = (
-                    window_info(game.hwnd).window_rect[2] - window_info(game.hwnd).window_rect[0]
-                )
-                move_window(other.hwnd, width + 20, 0)
+                side_by_side(game.hwnd, other.hwnd)
                 bring_front(other.hwnd)
                 other_mark = other.last_seq()
                 refused(WINDOW_NOT_FOREGROUND, lambda: live.actor.key("a", target=target))

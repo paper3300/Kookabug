@@ -32,6 +32,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, Final, Self
 
+from kb_testing.display import tk_env
 from kb_testing.proc import direct_env, python_cmd, wait_until
 from kookabug_core.win import Job
 
@@ -314,6 +315,7 @@ def game_env(base: Mapping[str, str] | None = None) -> dict[str, str]:
     env = direct_env(base)
     env["PYTHONPATH"] = str(GAME_DIR)
     env["PYTHONIOENCODING"] = "utf-8"
+    tk_env(env)  # KOOKABUG_TEST_DISPLAY가 있으면 그 모니터에 (게임 코드는 그대로)
     return env
 
 

@@ -8,6 +8,7 @@ desktop 포함), `soak`(장시간, desktop 포함).
 - `auto`(기본): 세션당 한 번 탐지하고, 실패하면 이유를 적어 건너뜀
 - `require`: 탐지 실패 = 검사 실패
 `desktop_input`은 `KOOKABUG_DESKTOP_INPUT=1`, `soak`은 `KOOKABUG_SOAK=1`일 때만 돈다 (모드와 무관).
+검사 창을 띄울 모니터: `KOOKABUG_TEST_DISPLAY`(left·right·primary·"x,y", `kb_testing.display`).
 
 탐지는 별도 프로세스(`python -m kb_testing.desktop --json -`)에서 한다. 임시 창·WGC 세션이 pytest
 프로세스에 남지 않게 하고, CI `desktop-probe` 잡과 같은 코드를 쓰기 위해서다. 입력은 보내지 않는다.
@@ -31,6 +32,8 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Final, Literal
+
+from kb_testing.display import place
 
 MODE_ENV: Final = "KOOKABUG_DESKTOP_TESTS"
 INPUT_ENV: Final = "KOOKABUG_DESKTOP_INPUT"
@@ -415,6 +418,9 @@ def _check_input_desktop() -> tuple[bool, str]:
     return name.casefold() == "default", f"입력 데스크톱 {name}, {state}"
 
 
+_PROBE_SIZE: Final = (360, 220)
+
+
 class _TempWindow:
     """탐지용 임시 창. 자기 스레드에서 만들고 메시지를 돌린다."""
 
@@ -443,15 +449,17 @@ class _TempWindow:
             if not _RegisterClassExW(ctypes.byref(wc)):
                 self.error = f"창 클래스 등록 실패 ({_last_error()})"
                 return
+            # KOOKABUG_TEST_DISPLAY가 있으면 그 모니터 작업 영역 안 (같은 스레드 좌표)
+            x, y = place(_PROBE_SIZE[0], _PROBE_SIZE[1]) or (120, 120)
             hwnd = _CreateWindowExW(
                 0,
                 cls_name,
                 self.title,
                 WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                120,
-                120,
-                360,
-                220,
+                x,
+                y,
+                _PROBE_SIZE[0],
+                _PROBE_SIZE[1],
                 None,
                 None,
                 hinst,

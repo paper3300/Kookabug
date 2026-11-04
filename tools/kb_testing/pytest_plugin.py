@@ -23,7 +23,7 @@ from typing import Final
 
 import pytest
 
-from kb_testing import desktop, media
+from kb_testing import desktop, display, media
 from kb_testing.proc import Spawned
 from kookabug_core.win import Job
 from kookabug_sdk.console import utf8_stdio
@@ -65,6 +65,9 @@ def pytest_configure(config: pytest.Config) -> None:
         job = Job.create(kill_on_close=True).keep_until_exit()
         job.assign_current()
         _session_job = job
+    # 검사 창 모니터 (KOOKABUG_TEST_DISPLAY): 검사 프로세스 안에서 직접 만드는 tkinter 창(doctor
+    # 점검 창 등)도 그 모니터에 둔다. 자식 프로세스는 isolated_env·game_env의 tkinter 프로필 몫
+    display.install_tk_hook()
     # 데스크톱 표시 (구현 계획 M1 2.13, 실행 조건은 kb_testing.desktop)
     for line in (
         "desktop: 대화형 데스크톱이 필요한 검사 (창·WGC·예제 게임). "
