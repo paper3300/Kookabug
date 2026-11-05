@@ -134,6 +134,7 @@ def registry() -> dict[str, MethodSpec]:
         graph,
         nodes,
         run,
+        secrets,
         session,
         target,
         windows,
@@ -142,6 +143,7 @@ def registry() -> dict[str, MethodSpec]:
 
     return {
         **debug.METHODS,
+        **secrets.METHODS,
         **session.METHODS,
         **workspace.METHODS,
         **nodes.METHODS,

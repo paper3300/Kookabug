@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import os
+import re
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -33,7 +35,9 @@ __all__ = [
     "Workspace",
     "WorkspaceError",
     "default_secrets",
+    "ensure_workspace_id",
     "secret_env_name",
+    "workspace_id",
 ]
 
 WORKSPACE_FILE: Final = "kookabug.json"
@@ -338,6 +342,49 @@ class SecretChain:
         return None
 
 
-def default_secrets() -> SecretProvider:
-    """기본 제공자: 환경 변수. Windows 자격 증명 관리자는 M1에서 뒤에 붙인다."""
-    return EnvSecrets()
+_WORKSPACE_ID: Final = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def workspace_id(workspace: Workspace) -> str | None:
+    """`kookabug.json` `id` (자격 증명 관리자 이름의 접두). 없거나 형식이 틀리면 None."""
+    value = workspace.config.get("id")
+    return value if isinstance(value, str) and _WORKSPACE_ID.fullmatch(value) else None
+
+
+def ensure_workspace_id(root: Path) -> str:
+    """`kookabug.json`에 `id`가 없으면 만들어 넣고 돌려준다 (M4 계획 Q10: 처음 비밀값을 만들 때).
+
+    원문을 다시 읽어 `id` 하나만 더한 텍스트(`save_text` — 나머지 원문 바이트·순서는 그대로)를 같은
+    폴더 임시 파일 → `os.replace`로 쓴다. JSON이 틀린 파일이면 건드리지 않고 `WorkspaceError`."""
+    from kookabug_core.canonical import save_text
+    from kookabug_core.documents import write_atomic
+
+    path = root / WORKSPACE_FILE
+    try:
+        text = path.read_bytes().decode("utf-8")
+        value = loads_strict(text)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise WorkspaceError(
+            f"{path}을(를) 읽을 수 없어 워크스페이스 ID를 넣지 않는다: {exc}"
+        ) from exc
+    if not isinstance(value, dict):
+        raise WorkspaceError(f"{path}이(가) JSON 객체가 아니다")
+    data = cast(dict[str, Any], value)
+    current = data.get("id")
+    if isinstance(current, str) and _WORKSPACE_ID.fullmatch(current):
+        return current
+    new_id = str(uuid.uuid4())
+    data["id"] = new_id
+    write_atomic(path, save_text(text, data).encode("utf-8"))
+    return new_id
+
+
+def default_secrets(workspace: Workspace | None = None) -> SecretProvider:
+    """기본 제공자: 환경 변수 → (Windows이고 워크스페이스 ID가 있으면) 자격 증명 관리자."""
+    from kookabug_core.win.credentials import CredentialSecrets, available
+
+    env = EnvSecrets()
+    wid = None if workspace is None else workspace_id(workspace)
+    if wid is None or not available():
+        return env
+    return SecretChain(env, CredentialSecrets(wid))

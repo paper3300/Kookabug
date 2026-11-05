@@ -85,6 +85,7 @@ __all__ = [
     "expected_scale",
     "load_target_file",
     "load_target_image",
+    "score_peaks",
 ]
 
 type Pixels = NDArray[np.uint8]
@@ -441,6 +442,27 @@ def _scores(area: Pixels, template: Pixels, mask: Pixels | None) -> NDArray[np.f
     return np.where(np.isfinite(result), result, np.float32(-1.0)).astype(np.float32)
 
 
+def score_peaks(
+    area: Pixels, template: Pixels, count: int, mask: Pixels | None = None
+) -> list[tuple[float, tuple[int, int]]]:
+    """점수 지도에서 **서로 겹치지 않는** 봉우리 상위 `count`개 `(점수, 왼쪽 위)` (점수 차례).
+    봉우리를 하나 고를 때마다 그 상자와 겹치는 자리를 지운다 (`Vision.peaks`·녹화 유일성 검사)."""
+    th, tw = template.shape[:2]
+    if th > area.shape[0] or tw > area.shape[1]:
+        return []
+    scores = _scores(area, template, mask)
+    found: list[tuple[float, tuple[int, int]]] = []
+    while len(found) < count:
+        _, score, _, loc = cv2.minMaxLoc(scores)
+        if score <= -1.0:
+            break
+        x, y = int(loc[0]), int(loc[1])
+        found.append((float(min(max(score, -1.0), 1.0)), (x, y)))
+        # 이 상자와 겹치는 모든 자리(왼쪽 위가 ±상자 크기 안)를 지운다
+        scores[max(0, y - th + 1) : y + th, max(0, x - tw + 1) : x + tw] = -1.0
+    return found
+
+
 def _best(area: Pixels, template: Pixels, mask: Pixels | None) -> tuple[float, tuple[int, int]]:
     _, score, _, loc = cv2.minMaxLoc(_scores(area, template, mask))
     return float(min(max(score, -1.0), 1.0)), (int(loc[0]), int(loc[1]))
@@ -574,6 +596,11 @@ class Vision:
         loaded = load_target_image(key)
         with self._lock:
             return self._images.setdefault(key, loaded)
+
+    def put_image(self, image: TargetImage) -> None:
+        """아직 파일이 아닌 target 이미지(녹화 초안)를 그 경로 이름으로 캐시에 넣는다."""
+        with self._lock:
+            self._images[image.path] = image
 
     def _need_store(self) -> FrameStore:
         if self.store is None:
@@ -758,14 +785,8 @@ class Vision:
         if tw < MIN_TEMPLATE_PX or th < MIN_TEMPLATE_PX or tw > area.shape[1] or th > area.shape[0]:
             return ()
         mask = None if image.mask is None else _resize(image.mask, scale, cv2.INTER_NEAREST)
-        scores = _scores(area, template, mask)
         found: list[Candidate] = []
-        while len(found) < count:
-            _, score, _, loc = cv2.minMaxLoc(scores)
-            if score <= -1.0:
-                break
-            x, y = int(loc[0]), int(loc[1])
-            value = float(min(max(score, -1.0), 1.0))
+        for value, (x, y) in score_peaks(area, template, count, mask):
             accepted = value >= spec.threshold
             found.append(
                 Candidate(
@@ -778,8 +799,6 @@ class Vision:
                     "" if accepted else "threshold",
                 )
             )
-            # 이 상자와 겹치는 모든 자리(왼쪽 위가 ±상자 크기 안)를 지운다
-            scores[max(0, y - th + 1) : y + th, max(0, x - tw + 1) : x + tw] = -1.0
         return tuple(found)
 
     @staticmethod

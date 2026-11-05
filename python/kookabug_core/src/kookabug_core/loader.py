@@ -155,7 +155,7 @@ def load_program(
             raise WorkspaceError(f"{graph}은(는) 워크스페이스 {workspace.root} 밖이다")
     else:
         rel = graph
-    loader = _Loader(workspace, options or RunOptions(), secrets or default_secrets())
+    loader = _Loader(workspace, options or RunOptions(), secrets or default_secrets(workspace))
     if root_value is not _NO_VALUE:
         loader.buffers[rel] = copy.deepcopy(root_value)
     program = loader.program
@@ -198,7 +198,7 @@ def graph_from_data(
     secrets: SecretProvider | None = None,
 ) -> tuple[Graph, list[Diagnostic]]:
     """형식 검사를 통과한 그래프 dict 하나를 IR로 (서브그래프는 읽지 않는다)."""
-    loader = _Loader(workspace, options or RunOptions(), secrets or default_secrets())
+    loader = _Loader(workspace, options or RunOptions(), secrets or default_secrets(workspace))
     graph = loader.build(path, data)
     return graph, loader.program.diagnostics
 

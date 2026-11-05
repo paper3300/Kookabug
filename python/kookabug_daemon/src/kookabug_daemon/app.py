@@ -41,6 +41,7 @@ from kookabug_daemon.frames import FrameCache
 from kookabug_daemon.image_cache import EditorCache
 from kookabug_daemon.lease_watch import LeaseWatcher, lease_dir
 from kookabug_daemon.methods import MethodSpec, RunsLike, registry
+from kookabug_daemon.methods.secrets import RecorderSecretSource
 from kookabug_daemon.methods.tools import Authorizer
 from kookabug_daemon.options import DEFAULT_IDLE_TIMEOUT_S, SESSION_WAIT_S, add_arguments
 from kookabug_daemon.protocol import DAEMON_VERSION, PROTOCOL, json_text
@@ -183,6 +184,8 @@ class Daemon:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stop: asyncio.Event | None = None
         self._idle_since: float | None = time.monotonic()
+        self.recorder_secrets: RecorderSecretSource | None = None
+        """녹화 세션 메모리의 원문 (`secrets.create`). 녹화 세션(M4 T8)이 둔다."""
 
     # ---------------------------------------------------------------- Host (transport)
 

@@ -201,7 +201,8 @@
 | 사람 동작 | 만들어지는 노드 |
 |---|---|
 | 클릭 | `core.image.click` (클릭 지점 주변을 잘라 target 생성) |
-| 클릭 전 화면이 바뀌기를 기다림 | `core.image.wait` 또는 `core.screen.wait_stable` |
+| 클릭 전 화면이 바뀌기를 기다림 | 앞 동작 직전 ↔ 이 동작 직전 화면이 바뀌었으면: 클릭 target이 앞 화면에 없으면 대기 노드 없음(`image.click`이 기다림), 아니면 바뀐 영역에서 앞 화면에 없는 조각으로 `core.image.wait`, 못 고르면 `core.flow.delay` + 확인 필요. `wait_stable`은 자동으로 넣지 않는다 (M4) |
+| (녹화 앞·끝) | 새 테스트는 `core.app.launch`(게임 띄워 녹화) 또는 `core.window.attach`로 시작하고 검증이 없으면 `core.test.pass`로 끝남. 커서 위치 삽입은 창 노드·종료 노드 없이 열린 끝 (M4) |
 | 끌기 | `core.image.wait` + `core.input.drag` |
 | 휠 | `core.input.scroll` |
 | 키·조합키 | `core.input.key` |
