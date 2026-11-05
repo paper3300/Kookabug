@@ -32,6 +32,7 @@ __all__ = [
     "PATTERN",
     "PATTERN_AT",
     "PATTERN_AT2",
+    "PATTERN_AT3",
     "START_BUTTON",
     "Editor",
     "locked_file",
@@ -47,6 +48,8 @@ START_BUTTON: Final = (412, 380, 200, 64)
 PATTERN: Final = (40, 30)
 PATTERN_AT: Final = (60, 50)
 PATTERN_AT2: Final = (280, 190)
+PATTERN_AT3: Final = (170, 230)
+"""`pattern_three.png`의 세 번째 자리 (M4 T11 같은 모양 N곳)."""
 _SIZE: Final = (400, 300)
 
 
@@ -72,6 +75,7 @@ def _pattern_frames(folder: Path) -> None:
     write_png(folder / "pattern_one.png", place(background.copy(), PATTERN_AT, pattern))
     two = place(place(background.copy(), PATTERN_AT, pattern), PATTERN_AT2, pattern)
     write_png(folder / "pattern_two.png", two)
+    write_png(folder / "pattern_three.png", place(two.copy(), PATTERN_AT3, pattern))
     # 무늬를 잡음과 반씩 섞은 화면: 점수가 1보다 낮다 (임계값 바꾸기 검사)
     x, y = PATTERN_AT
     region = background[y : y + PATTERN[1], x : x + PATTERN[0]].astype(np.int32)
@@ -124,6 +128,7 @@ class Editor:
         image: str | None = None,
         base: str | None = None,
         seq: int | None = None,
+        scales: list[float] | None = None,
     ) -> dict[str, Any]:
         if seq is None:
             self.seq += 1
@@ -142,6 +147,8 @@ class Editor:
         }
         if base is not None:
             params["base_path"] = base
+        if scales is not None:
+            params["scales"] = scales
         return self.client.call("target.preview", params)
 
     def save(

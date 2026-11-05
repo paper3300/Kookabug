@@ -483,6 +483,20 @@ export function previewSummary(result: PreviewResult): string {
   return `못 찾음 · 최고 점수 ${score}`;
 }
 
+/** 같은 모양의 다른 자리 (찾은 상자 말고 임계값 이상인 봉우리, daemon peaks) — 정지 화면에 점선 상자 */
+export function otherPeaks(preview: PreviewResult | null): Rect[] {
+  const match = preview?.found === true ? preview.match : null;
+  if (preview === null || match === null || match === undefined) return [];
+  const key = (match.rect as number[]).join(",");
+  return (preview.peaks ?? []).map((p) => p.rect as Rect).filter((r) => r.join(",") !== key);
+}
+
+/** "같은 모양 N곳" (찾은 자리 포함, daemon peaks). 찾지 못했거나 세지 않았으면 null (M4 T11) */
+export function sameShapeCount(result: PreviewResult): number | null {
+  if (!result.found || result.peaks === undefined) return null;
+  return Math.max(1, result.peaks.length);
+}
+
 // ── 저장 ────────────────────────────────────────────────────────
 
 export type TargetSaveOutcome = "saved" | "conflict" | "failed" | "busy";

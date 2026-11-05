@@ -70,7 +70,8 @@ from kookabug_sdk.types import Target
 
 if TYPE_CHECKING:
     from kookabug_platform.errors import PlatformError
-    from kookabug_platform.vision import FindResult, TargetImage
+    from kookabug_platform.ocr.engine import OcrEngine
+    from kookabug_platform.vision import FindResult, TargetImage, Vision
 
 __all__ = [
     "OWNERSHIP_FILE",
@@ -421,19 +422,100 @@ def preview_json(result: FindResult, seq: int) -> dict[str, Any]:
     return body
 
 
-def _find(frame: EditorFrame, target: Target, image: TargetImage | None) -> FindResult:
-    """정지 화면에서 찾는다. `image`가 있으면 파일 대신 그 픽셀을 템플릿으로 쓴다."""
+def _vision(image: TargetImage | None) -> Vision:
+    """`image`가 있으면 파일 대신 그 픽셀을 템플릿으로 쓰는 엔진."""
     from kookabug_platform.vision import TargetSpec, Vision
 
-    spec = TargetSpec.of(target)
     if image is None:
-        return Vision().find(frame.pixels, frame.meta(), spec)
+        return Vision()
 
     class _Given(Vision):
         def target_image(self, spec: TargetSpec) -> TargetImage:
             return image
 
-    return _Given().find(frame.pixels, frame.meta(), spec)
+    return _Given()
+
+
+def _find(frame: EditorFrame, target: Target, image: TargetImage | None) -> FindResult:
+    """정지 화면에서 찾는다. `image`가 있으면 파일 대신 그 픽셀을 템플릿으로 쓴다."""
+    from kookabug_platform.vision import TargetSpec
+
+    return _vision(image).find(frame.pixels, frame.meta(), TargetSpec.of(target))
+
+
+MAX_PEAKS: Final = 8
+"""'같은 모양 N곳'으로 세는 자리 상한 (계약 `PreviewResult.peaks` maxItems)."""
+
+
+def _peaks(
+    frame: EditorFrame, target: Target, image: TargetImage | None, result: FindResult
+) -> list[dict[str, Any]]:
+    """찾은 배율·방법의 점수 지도에서 임계값 이상이고 서로 겹치지 않는 자리 (M4 T11). 찾지 못했으면
+    빈 목록. 색 확인은 하지 않는다 (점수만, `Vision.peaks`)."""
+    from kookabug_platform.vision import TargetSpec
+
+    hit = result.match
+    if hit is None:
+        return []
+    found = _vision(image).peaks(
+        frame.pixels,
+        frame.meta(),
+        TargetSpec.of(target),
+        scale=hit.scale,
+        method=hit.method,
+        count=MAX_PEAKS,
+    )
+    return [{"rect": list(c.rect), "score": c.score, "scale": c.scale} for c in found if c.accepted]
+
+
+def _scale_score(
+    frame: EditorFrame,
+    target: Target,
+    image: TargetImage | None,
+    factor: float,
+    base: FindResult,
+) -> dict[str, Any]:
+    """정지 화면을 `factor`배로 바꿔(DPI·클라이언트 크기도 같이) 같은 사양으로 찾은 점수 (M4 T11
+    "다른 배율에서"). 1.0이면 기본 결과 그대로다."""
+    import cv2
+    import numpy as np
+
+    from kookabug_platform.dpi import round_half_up
+    from kookabug_platform.vision import FrameMeta, TargetSpec
+
+    if factor == 1.0:
+        result = base
+    else:
+        w, h = frame.width, frame.height
+        size = (max(1, round_half_up(w * factor)), max(1, round_half_up(h * factor)))
+        interpolation = cv2.INTER_AREA if factor < 1.0 else cv2.INTER_LINEAR
+        pixels = np.asarray(
+            cv2.resize(frame.pixels, size, interpolation=interpolation), dtype=np.uint8
+        )
+        cw, ch = frame.client_size
+        meta = FrameMeta(
+            (max(1, round_half_up(cw * factor)), max(1, round_half_up(ch * factor))),
+            max(1, round_half_up(frame.dpi * factor)),
+            backend="editor",
+        )
+        result = _vision(image).find(pixels, meta, TargetSpec.of(target))
+    shown = result.match if result.match is not None else result.best
+    return {
+        "factor": factor,
+        "found": result.found,
+        "score": None if shown is None else shown.score,
+        "scale": None if shown is None else shown.scale,
+    }
+
+
+def _default_ocr() -> OcrEngine:
+    """기본 OCR 엔진 (레포·설치 모델 폴더). 모델이 없으면 `ocr_model_missing`(PlatformError)."""
+    from kookabug_platform.ocr import models
+    from kookabug_platform.ocr.engine import RapidOcrEngine
+
+    engine = RapidOcrEngine(models.find_models())
+    engine.load()
+    return engine
 
 
 def platform_failed(exc: PlatformError) -> RequestFailed:
@@ -481,6 +563,9 @@ class TargetStore:
         self.ownership = Ownership(root)
         self.save_lock = threading.Lock()
         self.hooks: dict[str, Hook] = {}
+        self.ocr_factory: Callable[[], OcrEngine] = _default_ocr
+        self._ocr: OcrEngine | None = None
+        self._ocr_lock = threading.Lock()
 
     def _point(self, name: str, **info: Any) -> None:
         hook = self.hooks.get(name)
@@ -563,10 +648,12 @@ class TargetStore:
         template: Mapping[str, Any],
         base: WsPath | None,
         seq: int,
+        scales: Sequence[float] = (),
     ) -> dict[str, Any]:
         """`target.preview`: 저장 전 사양으로 그 정지 화면에서 찾는다. 템플릿은 저장 전 자른 영역
         (`crop`: 저장할 때처럼 `recorded`·검색 범위를 그 정지 화면으로 채운다) 또는 기존 이미지
-        (`image`: `base_path` target 기준 경로, 없으면 루트 기준)다."""
+        (`image`: `base_path` target 기준 경로, 없으면 루트 기준)다. 찾았으면 `peaks`(같은 모양
+        N곳), `scales`를 주면 `scale_scores`(다른 배율 점수)를 더한다 (M4 T11)."""
         from kookabug_platform.errors import PlatformError
         from kookabug_platform.vision import load_target_image
 
@@ -591,10 +678,46 @@ class TargetStore:
                 image = load_target_image(resolve_path(self.root, rel).path)
             # 템플릿 픽셀은 위에서 정했다: target 경로·image 이름은 이름표로만 쓴다
             name = self.root / TARGETS_DIR / f"preview{TARGET_SUFFIX}"
-            result = _find(frame, Target(name=name.name, path=name, spec=value), image)
+            target = Target(name=name.name, path=name, spec=value)
+            result = _find(frame, target, image)
+            body = preview_json(result, seq)
+            body["peaks"] = _peaks(frame, target, image, result)
+            if scales:
+                body["scale_scores"] = [
+                    _scale_score(frame, target, image, float(f), result) for f in scales
+                ]
         except PlatformError as exc:
             raise platform_failed(exc) from exc
-        return preview_json(result, seq)
+        return body
+
+    def read_text(self, frame_id: str, rect: Sequence[int]) -> dict[str, Any]:
+        """`target.read_text`: 정지 화면 영역의 글자 (M4 T11 "글자 읽기"). 녹화 프레임 보호 영역
+        검사는 메서드가 먼저 한다. OCR 모델이 없으면 `ocr_model_missing`."""
+        from kookabug_platform.errors import PlatformError
+        from kookabug_platform.ocr.engine import join_lines
+
+        frame = self.frames.get(frame_id)
+        box = check_rect(frame, rect, what="글자 영역")
+        try:
+            lines = self.ocr().read(frame.pixels, region=box)
+        except PlatformError as exc:
+            raise platform_failed(exc) from exc
+        joined = join_lines(lines)
+        return {
+            "text": joined.text,
+            "lines": [
+                {"text": ln.text, "rect": list(ln.box), "score": min(1.0, max(0.0, ln.score))}
+                for ln in joined.lines
+            ],
+        }
+
+    def ocr(self) -> OcrEngine:
+        """편집기 글자 읽기용 OCR 엔진 (처음 부를 때 모델을 읽는다). 검사는 `ocr_factory`를
+        바꾼다."""
+        with self._ocr_lock:
+            if self._ocr is None:
+                self._ocr = self.ocr_factory()
+            return self._ocr
 
     # ------------------------------------------------------------ 저장
 

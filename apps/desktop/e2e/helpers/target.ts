@@ -95,6 +95,13 @@ export async function selectRect(page: Page, rect: readonly number[], shift = fa
   return ((await el.getAttribute("data-rect")) ?? "").split(",").map(Number);
 }
 
+/** 접힌 보조 패널(검색 범위 숫자·영역 글자·다른 배율, M4 T11)을 펼친다 */
+export async function openExtPanels(page: Page): Promise<void> {
+  const ext = page.locator('[data-part="ext-panels"]');
+  if ((await ext.getAttribute("open")) === null) await page.locator('[data-part="ext-summary"]').click();
+  await expect(page.locator('[data-part="search-panel"]')).toBeVisible();
+}
+
 export async function clickPixel(page: Page, x: number, y: number): Promise<void> {
   const p = await pagePoint(page, x, y);
   await page.mouse.click(p.x, p.y);

@@ -2024,6 +2024,14 @@
           "maxItems": 8,
           "type": "array"
         },
+        "scale_scores": {
+          "description": "params.scales 차례대로 그 배율로 바꾼 정지 화면에서 찾은 결과 (scales를 보냈을 때만)",
+          "items": {
+            "$ref": "#/$defs/PreviewScaleScore"
+          },
+          "maxItems": 6,
+          "type": "array"
+        },
         "search": {
           "items": {
             "maximum": 9007199254740991,
@@ -2055,6 +2063,44 @@
         "threshold"
       ],
       "title": "PreviewResult",
+      "type": "object"
+    },
+    "PreviewScaleScore": {
+      "additionalProperties": false,
+      "description": "다른 배율 점수 한 줄: factor = 정지 화면을 바꾼 배율, found = 그 화면에서 찾음, score = 받아들인(없으면 최고) 점수 (시도한 것이 없으면 null), scale = 그 후보의 배율",
+      "properties": {
+        "factor": {
+          "type": "number"
+        },
+        "found": {
+          "type": "boolean"
+        },
+        "scale": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "score": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": -1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["factor", "found", "scale", "score"],
+      "title": "PreviewScaleScore",
       "type": "object"
     },
     "PreviewTemplate": {
@@ -4088,6 +4134,16 @@
         "frame_id": {
           "minLength": 1,
           "type": "string"
+        },
+        "scales": {
+          "description": "다른 배율 점수 (M4 T11): 정지 화면을 이 배율로 바꿔 같은 사양으로 찾는다. 결과 scale_scores (편집기 접힌 줄 '다른 배율에서'를 펼쳤을 때만 보낸다)",
+          "items": {
+            "maximum": 4,
+            "minimum": 0.25,
+            "type": "number"
+          },
+          "maxItems": 6,
+          "type": "array"
         },
         "seq": {
           "$ref": "#/$defs/RequestSeq"

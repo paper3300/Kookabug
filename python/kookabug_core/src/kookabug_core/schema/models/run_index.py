@@ -5,6 +5,18 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 
+class VideoPolicy(BaseModel):
+    """
+    실행 단위 실효 영상 정책 (M4 T12): 스냅샷의 kookabug.json·테스트 그래프 record. source = 그 값을 정한 층(kookabug.json#/record·<그래프>#/record), null이면 워크스페이스 기본값. 스냅샷을 읽지 못하면 이 키가 없다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    mode: Literal["failed_only", "off", "on"]
+    source: str | None
+
+
 class CallPath(RootModel[list[str]]):
     """
     호출 경로: 테스트부터의 호출 노드들 + 노드
@@ -357,6 +369,12 @@ class RunIndex(BaseModel):
         list[StepNode], Field(description="최상위 스텝과 실패 사슬의 스텝 (step 번호 순)")
     ]
     video: Annotated[VideoView | None, Field(description="video/ 폴더가 없으면 null")]
+    video_policy: Annotated[
+        VideoPolicy | None,
+        Field(
+            description="실행 단위 실효 영상 정책 (M4 T12): 스냅샷의 kookabug.json·테스트 그래프 record. source = 그 값을 정한 층(kookabug.json#/record·<그래프>#/record), null이면 워크스페이스 기본값. 스냅샷을 읽지 못하면 이 키가 없다"
+        ),
+    ] = None
 
 
 class CompareResult(BaseModel):

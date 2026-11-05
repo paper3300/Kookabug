@@ -152,7 +152,8 @@ test("test_threshold_slider_updates_preview_result", async () => {
   await page.keyboard.press("Home");
   await expect(page.locator('[data-part="threshold-value"]')).toHaveText("0.50");
   await waitPreview(page, true);
-  await expect(previewOf(page)).toHaveText(/^찾음 · 점수 0\.6\d · 배율 \d\.\d\d$/);
+  // 임계값 0.50이면 비슷한 다른 자리도 넘을 수 있다: "같은 모양 N곳"이 붙는다 (M4 T11)
+  await expect(previewOf(page)).toHaveText(/^찾음 · 점수 0\.6\d · 배율 \d\.\d\d( · 같은 모양 \d곳)?$/);
   await expect(frameOf(page).locator('[data-part="score-badge"]')).toHaveText(/^0\.6\d$/);
   await page.keyboard.press("End");
   await expect(page.locator('[data-part="threshold-value"]')).toHaveText("0.99");

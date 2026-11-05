@@ -20,12 +20,13 @@ import tempfile
 import threading
 import zipfile
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
+from kookabug_core.canonical import loads_strict
 from kookabug_core.record import read_run_json
 from kookabug_core.record.compare import (
     Picked,
@@ -49,7 +50,8 @@ from kookabug_core.record.index import (
     video_view,
     write_cache,
 )
-from kookabug_core.record.runfolder import EVENTS_FILE, RUN_JSON_FILE
+from kookabug_core.record.runfolder import EVENTS_FILE, RUN_JSON_FILE, SNAPSHOT_DIR
+from kookabug_core.workspace import WORKSPACE_FILE
 from kookabug_daemon.documents import RUNS_NAME
 from kookabug_daemon.protocol import InvalidParams, RequestFailed
 
@@ -179,14 +181,18 @@ class RunRecords:
         run_json = read_run_json(where.folder / RUN_JSON_FILE)
         video = video_view(where.folder)
         thumbs = thumbnails(where.folder)
+        policy = video_policy(where.folder, run_json)
         with entry.lock:
-            return entry.index.result(
+            result = entry.index.result(
                 run_dir=self.run_dir(where.folder),
                 state=entry.state,
                 run_json=run_json,
                 video=video,
                 thumbs=thumbs,
             )
+        if policy is not None:
+            result["video_policy"] = policy
+        return result
 
     def children(
         self, run_id: str, parent: str, iteration: int | None, offset: int, limit: int
@@ -389,6 +395,48 @@ def _same_file(index: RunIndex) -> bool:
     except OSError:
         return False
     return stat.st_size == index.size and stat.st_mtime_ns == index.mtime_ns
+
+
+def _snapshot_json(snapshot: Path, rel: str) -> Mapping[str, Any] | None:
+    """스냅샷 안 JSON 객체 (없거나 읽을 수 없거나 스냅샷 밖 경로면 None)."""
+    parts = PurePosixPath(rel.replace("\\", "/")).parts
+    if not parts or any(p in ("", ".", "..") or ":" in p for p in parts):
+        return None
+    try:
+        value = loads_strict(snapshot.joinpath(*parts).read_text(encoding="utf-8"))
+    except OSError, UnicodeDecodeError, ValueError:
+        return None
+    return value if isinstance(value, Mapping) else None
+
+
+def video_policy(folder: Path, run_json: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """실행 단위 실효 영상 정책과 정한 층 (M4 T12, 뷰어 상태 바): 스냅샷의 `kookabug.json` →
+    테스트 그래프 `record` (`executor.run_record_policy`와 같은 규칙). 스냅샷의 `kookabug.json`을
+    읽지 못하면 None (옛 실행·깨진 폴더)."""
+    from kookabug_core.record.policy import graph_source, workspace_policy
+
+    snapshot = folder / SNAPSHOT_DIR
+    workspace = _snapshot_json(snapshot, WORKSPACE_FILE)
+    if workspace is None:
+        return None
+    record = workspace.get("record")
+    ws_record = record if isinstance(record, Mapping) else None
+    policy = workspace_policy(ws_record, graph_source(WORKSPACE_FILE))
+    # 워크스페이스가 `on`을 적었으면 정책 계산은 초기값과 같아 출처를 남기지 않는다. 표시할 출처는
+    # 워크스페이스 기본값(failed_only)이 아니라 kookabug.json이다 (B4 검수 Mid 2)
+    source = policy.sources.get("video")
+    if source is None and ws_record is not None and ws_record.get("video") == "on":
+        source = graph_source(WORKSPACE_FILE)
+    graph = None if run_json is None else run_json.get("graph")
+    if isinstance(graph, str):
+        value = _snapshot_json(snapshot, graph)
+        layer = None if value is None else value.get("record")
+        if isinstance(layer, Mapping):
+            stronger = policy.layer(layer, graph_source(graph))
+            if stronger.video != policy.video:
+                source = stronger.sources.get("video")
+            policy = stronger
+    return {"mode": policy.video, "source": source}
 
 
 def _read_text(path: Path) -> str | None:

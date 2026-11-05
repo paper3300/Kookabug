@@ -34,6 +34,7 @@
       "additionalProperties": false,
       "properties": {
         "color_tolerance": {
+          "default": 40,
           "description": "rgb가 true일 때 찾은 영역과 이미지의 채널별 평균 차이 상한 (0~255, 기본 40)",
           "maximum": 255,
           "minimum": 0,
@@ -52,6 +53,8 @@
           "type": "boolean"
         },
         "threshold": {
+          "default": 0.85,
+          "description": "매칭 점수 하한. 기본값은 이 default 하나에서 나온다 (Python kookabug_platform.vision.DEFAULT_THRESHOLD, TS 생성 상수 DEFAULT_MATCH_THRESHOLD)",
           "maximum": 1,
           "minimum": 0,
           "type": "number"

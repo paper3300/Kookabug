@@ -1,7 +1,8 @@
 // 정지 화면 판 (M2 계획 2.9 "조작"): 드래그 = 템플릿 영역, Shift+드래그 = 검색 범위, 클릭 = 클릭 지점,
 // 휠 = 확대·축소, 가운데 버튼 = 이동, 핸들 = 크기 고치기, 방향키 1px·Shift+방향키 10px.
 // 좌표는 정지 화면의 물리 픽셀이다 (geometry.ts). 겹쳐 그리기는 화면 좌표 SVG라 확대해도 선 굵기가 그대로다.
-// 매칭 결과(찾은 상자·점수·최고 후보·클릭 지점)는 daemon 응답 그대로 그린다
+// 매칭 결과(찾은 상자·점수·최고 후보·클릭 지점·같은 모양의 다른 자리 점선 상자)는 daemon 응답 그대로 그린다.
+// 편집은 문서 어댑터(adapter.ts)로 보낸다 — 파일 target과 녹화 초안이 같은 판을 쓴다 (M4 T11)
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   clickPoint,
@@ -30,7 +31,8 @@ import {
 } from "./geometry";
 import { setOffset, setRegion, specFields } from "./spec";
 import css from "./target.module.css";
-import { editSpec, setTemplate, useTargets, type TargetDoc } from "./targetStore";
+import type { TargetDocAdapter, TargetEditorView } from "./adapter";
+import { otherPeaks, useTargets, type TargetDoc } from "./targetStore";
 
 type Focus = "template" | "search";
 
@@ -39,7 +41,7 @@ type Drag =
   | { kind: "resize"; which: Focus; handle: Handle; rect: Rect }
   | { kind: "pan"; last: Pt };
 
-function imageUrl(doc: TargetDoc): { url: string; size: Size } | null {
+function imageUrl(doc: TargetEditorView): { url: string; size: Size } | null {
   if (doc.frame !== null) {
     const ref = doc.frame.image;
     if ("cache" in ref) return { url: `kbimg://cache/${ref.cache}`, size: [doc.frame.width, doc.frame.height] };
@@ -53,7 +55,7 @@ function imageUrl(doc: TargetDoc): { url: string; size: Size } | null {
 }
 
 /** 검색 범위 (정지 화면 픽셀). 사양에 없으면 null (화면 전체) */
-export function searchRectOf(doc: TargetDoc): Rect | null {
+export function searchRectOf(doc: TargetEditorView): Rect | null {
   const region = specFields(doc.spec).region;
   if (region === null || doc.frame === null) return null;
   const client = doc.frame.client_size as Size;
@@ -61,7 +63,7 @@ export function searchRectOf(doc: TargetDoc): Rect | null {
 }
 
 /** 클릭 지점을 정할 기준 상자와 배율: 새로 고른 영역, 아니면 찾은 상자 */
-function clickBase(doc: TargetDoc): { rect: Rect; scale: number } | null {
+function clickBase(doc: TargetEditorView): { rect: Rect; scale: number } | null {
   if (doc.template !== null) return { rect: doc.template, scale: 1 };
   const m = doc.preview?.match;
   if (doc.preview?.found === true && m !== null && m !== undefined) return { rect: m.rect as Rect, scale: m.scale };
@@ -69,7 +71,7 @@ function clickBase(doc: TargetDoc): { rect: Rect; scale: number } | null {
 }
 
 /** 보일 클릭 지점: 새 영역이면 바로 계산, 아니면 찾은 결과의 클릭 지점 */
-function shownClick(doc: TargetDoc): Pt | null {
+function shownClick(doc: TargetEditorView): Pt | null {
   const f = specFields(doc.spec);
   if (doc.template !== null) return clickPoint(doc.template, f.anchor, f.offset);
   const m = doc.preview?.match;
@@ -82,7 +84,7 @@ function rectPath(rect: Rect, view: View): { x: number; y: number; width: number
   return { x: a.x, y: a.y, width: rect[2] * view.zoom, height: rect[3] * view.zoom };
 }
 
-export function FrameView({ doc }: { doc: TargetDoc }) {
+export function FrameView({ doc, adapter }: { doc: TargetEditorView; adapter: TargetDocAdapter }) {
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<Size>([0, 0]);
   const [view, setView] = useState<View | null>(null);
@@ -140,7 +142,7 @@ export function FrameView({ doc }: { doc: TargetDoc }) {
     if (doc.frame === null) return;
     const client = doc.frame.client_size as Size;
     const region = rect === null ? null : pixelsToRegion(imageToClientRect(rect, [doc.frame.width, doc.frame.height], client), client);
-    editSpec(doc.path, (s) => setRegion(s, region));
+    adapter.editSpec((s) => setRegion(s, region));
   };
 
   const commitClick = (p: Pt) => {
@@ -149,7 +151,7 @@ export function FrameView({ doc }: { doc: TargetDoc }) {
     const f = specFields(doc.spec);
     const raw = offsetFromClick(p, base.rect, f.anchor);
     const offset: [number, number] = [raw[0] / base.scale, raw[1] / base.scale];
-    editSpec(doc.path, (s) => setOffset(s, offset));
+    adapter.editSpec((s) => setOffset(s, offset));
   };
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -196,7 +198,7 @@ export function FrameView({ doc }: { doc: TargetDoc }) {
     setDrag(null);
     if (d === null || view === null || frameSize === null) return;
     if (d.kind === "resize") {
-      if (d.which === "template") setTemplate(doc.path, d.rect);
+      if (d.which === "template") adapter.setTemplate(d.rect);
       else commitSearch(d.rect);
       return;
     }
@@ -210,7 +212,7 @@ export function FrameView({ doc }: { doc: TargetDoc }) {
     const rect = rectFromDrag(d.startImg, screenToImage(end, view), frameSize);
     if (rect === null) return;
     setFocus(kind);
-    if (kind === "template") setTemplate(doc.path, rect);
+    if (kind === "template") adapter.setTemplate(rect);
     else commitSearch(rect);
   };
 
@@ -222,7 +224,7 @@ export function FrameView({ doc }: { doc: TargetDoc }) {
     const moved = nudge(rect, e.key, e.shiftKey, frameSize);
     if (moved === null) return;
     e.preventDefault();
-    if (which === "template") setTemplate(doc.path, moved);
+    if (which === "template") adapter.setTemplate(moved);
     else commitSearch(moved);
   };
 
@@ -283,6 +285,9 @@ export function FrameView({ doc }: { doc: TargetDoc }) {
               </text>
             </g>
           )}
+          {otherPeaks(doc.preview).map((r) => (
+            <rect key={r.join(",")} className={css.peakRect} data-part="peak-rect" data-rect={r.join(",")} {...rectPath(r, view)} />
+          ))}
           {bestRect !== null && (
             <g data-part="best-rect" data-rect={bestRect.join(",")}>
               <rect className={css.bestRect} {...rectPath(bestRect, view)} />

@@ -69,6 +69,33 @@
   font-size: 11px;
 }
 
+/* targets/ 머리의 "새 찾기 대상" 단추 (M4 T11, U14) */
+.rowAction {
+  margin-left: auto;
+  margin-right: 8px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--kb-fg-muted);
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.rowAction:hover {
+  color: var(--kb-fg);
+  border-color: var(--kb-input-border);
+}
+
+.rowAction + .badge {
+  margin-left: 0;
+}
+
 .toneTest {
   color: var(--kb-kind-test);
 }

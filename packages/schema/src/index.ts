@@ -17,6 +17,7 @@ export * as target from "./generated/target.js";
 export * as userSettings from "./generated/user-settings.js";
 export * as videoIndex from "./generated/video-index.js";
 export * as workspace from "./generated/workspace.js";
+export { DEFAULT_COLOR_TOLERANCE, DEFAULT_MATCH_THRESHOLD } from "./generated/constants.js";
 
 // daemon 전송 코덱과 런타임 검사 (M2 계획 2.6·2.10)
 export { WireValueError, wireStringify } from "./wire.js";

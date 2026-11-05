@@ -70,6 +70,19 @@ export function retentionText(retention: { passed_days: number; failed_days: num
   return `보관: 통과 ${retention.passed_days}일 · 실패 ${retention.failed_days}일${size}`;
 }
 
+const VIDEO_MODE: Record<string, string> = { on: "켬", failed_only: "실패만", off: "끔" };
+
+/**
+ * 상태 바 영상 정책 문구 (M4 T12, STATE ⑦): "영상: 실패만 (워크스페이스 기본값)", "영상: 끔 (kookabug.json)".
+ * 출처는 그 값을 정한 층의 파일(# 앞)이다. 정책을 모르면(옛 실행) null
+ */
+export function videoPolicyText(policy: { mode: string; source: string | null } | undefined): string | null {
+  if (policy === undefined) return null;
+  const mode = VIDEO_MODE[policy.mode] ?? policy.mode;
+  const source = policy.source === null ? "워크스페이스 기본값" : policy.source.split("#", 1)[0];
+  return `영상: ${mode} (${source})`;
+}
+
 /** 메타 줄: 결과 · 실패 위치(또는 사유) · 경과 · build */
 export function metaOf(run: RunSummary): string {
   const parts: string[] = [VERDICT_LABEL[toneOf(run)]];

@@ -33,7 +33,7 @@ import secrets as _random
 import string
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1228,6 +1228,26 @@ class RecorderService:
         if session is None:
             return {"owned": False, "state": "idle"}
         return session.state_json(owned=session.owner == connection)
+
+    def check_read_region(self, frame_id: str, rect: Sequence[int]) -> None:
+        """`target.read_text` 앞 검사 (M4 T11): 녹화 세션이 올린 정지 화면이면 그 프레임 시각의
+        보호 영역(비밀번호 칸)과 겹치는 영역은 `secret_region_overlap`으로 거부한다. 다른 프레임은
+        그대로 둔다."""
+        session = self.session
+        if session is None:
+            return
+        with session.lock:
+            shot = session.s.shots.get(frame_id)
+        pipeline = session.pipeline
+        if shot is None or pipeline is None:
+            return
+        x, y, w, h = (int(v) for v in rect)
+        with pipeline.lock:
+            spans = pipeline.protect.overlapping((x, y, w, h), shot.t_ns, shot.pixels)
+        if spans:
+            raise RequestFailed(
+                "secret_region_overlap", "비밀값 칸과 겹치는 영역은 읽지 않는다", steps=[]
+            )
 
     def session_ended(self, session: RecorderSession) -> None:
         if self.daemon.recorder_secrets is self.secret_source:

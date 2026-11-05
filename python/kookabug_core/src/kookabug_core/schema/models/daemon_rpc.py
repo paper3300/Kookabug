@@ -343,6 +343,28 @@ class SearchItem(RootModel[int]):
     root: Annotated[int, Field(ge=-9007199254740991, le=9007199254740991)]
 
 
+class Scale(RootModel[float]):
+    root: Annotated[float, Field(ge=0.0)]
+
+
+class Score(RootModel[float]):
+    root: Annotated[float, Field(ge=-1.0, le=1.0)]
+
+
+class PreviewScaleScore(BaseModel):
+    """
+    다른 배율 점수 한 줄: factor = 정지 화면을 바꾼 배율, found = 그 화면에서 찾음, score = 받아들인(없으면 최고) 점수 (시도한 것이 없으면 null), scale = 그 후보의 배율
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    factor: float
+    found: bool
+    scale: Scale | None
+    score: Score | None
+
+
 class Principal(BaseModel):
     """
     연결의 주체 (kookabug_core.permissions.Principal)
@@ -1092,6 +1114,10 @@ class TargetCaptureParams(BaseModel):
     window: Annotated[int, Field(description="창 handle", ge=0, le=9007199254740991)]
 
 
+class Scale1(RootModel[float]):
+    root: Annotated[float, Field(ge=0.25, le=4.0)]
+
+
 class TargetReadTextParams(BaseModel):
     """
     target.read_text: 편집기 정지 화면 영역의 글자 (OCR). 녹화 프레임의 보호 영역과 겹치면 secret_region_overlap
@@ -1703,6 +1729,13 @@ class PreviewResult(BaseModel):
             max_length=8,
         ),
     ] = None
+    scale_scores: Annotated[
+        list[PreviewScaleScore] | None,
+        Field(
+            description="params.scales 차례대로 그 배율로 바꾼 정지 화면에서 찾은 결과 (scales를 보냈을 때만)",
+            max_length=6,
+        ),
+    ] = None
     search: list[SearchItem]
     search_rect_px: Rect
     seq: RequestSeq
@@ -2146,6 +2179,13 @@ class TargetPreviewParams(BaseModel):
     )
     base_path: WorkspacePath | None = None
     frame_id: Annotated[str, Field(min_length=1)]
+    scales: Annotated[
+        list[Scale1] | None,
+        Field(
+            description="다른 배율 점수 (M4 T11): 정지 화면을 이 배율로 바꿔 같은 사양으로 찾는다. 결과 scale_scores (편집기 접힌 줄 '다른 배율에서'를 펼쳤을 때만 보낸다)",
+            max_length=6,
+        ),
+    ] = None
     seq: RequestSeq
     spec: Annotated[dict[str, Any], Field(description="저장 전 target 사양")]
     template: PreviewTemplate

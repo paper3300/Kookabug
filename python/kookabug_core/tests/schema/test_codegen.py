@@ -68,7 +68,8 @@ def test_ts_generated_for_every_schema() -> None:
         "video-index",
         "recorder-fragment",
     ]
-    expected = [f"{k}.ts" for k in KINDS] + [f"{k}.data.ts" for k in checked]
+    # constants.ts: target.schema.json default에서 만든 매칭 기본값 상수 (M4 T12)
+    expected = [f"{k}.ts" for k in KINDS] + [f"{k}.data.ts" for k in checked] + ["constants.ts"]
     assert sorted(p.name for p in generated.glob("*.ts")) == sorted(expected)
 
 

@@ -41,13 +41,20 @@ class Match(BaseModel):
             ge=0.0,
             le=255.0,
         ),
-    ] = None
+    ] = 40
     methods: Annotated[
         list[Literal["template", "template_multiscale"]] | None,
         Field(description="앞에서부터 시도한다. 각 방법은 threshold를 넘어야 성공", min_length=1),
     ] = None
     rgb: bool | None = None
-    threshold: Annotated[float | None, Field(ge=0.0, le=1.0)] = None
+    threshold: Annotated[
+        float | None,
+        Field(
+            description="매칭 점수 하한. 기본값은 이 default 하나에서 나온다 (Python kookabug_platform.vision.DEFAULT_THRESHOLD, TS 생성 상수 DEFAULT_MATCH_THRESHOLD)",
+            ge=0.0,
+            le=1.0,
+        ),
+    ] = 0.85
 
 
 class ClientSizeItem(RootModel[int]):

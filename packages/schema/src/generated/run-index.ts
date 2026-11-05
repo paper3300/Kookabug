@@ -85,6 +85,13 @@ export interface RunIndex {
    * video/ 폴더가 없으면 null
    */
   video: VideoView | null;
+  /**
+   * 실행 단위 실효 영상 정책 (M4 T12): 스냅샷의 kookabug.json·테스트 그래프 record. source = 그 값을 정한 층(kookabug.json#/record·<그래프>#/record), null이면 워크스페이스 기본값. 스냅샷을 읽지 못하면 이 키가 없다
+   */
+  video_policy?: {
+    mode: "failed_only" | "off" | "on";
+    source: null | string;
+  };
 }
 /**
  * 멈춘 구간 (debug.pause ~ debug.resume, 재개 없이 끝났으면 t_end null)

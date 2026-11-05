@@ -1,10 +1,14 @@
-// 사이드바 탐색기 (M2 계획 2.11): workspace.tree, 배지, workspace.changed로 다시 읽기
+// 사이드바 탐색기 (M2 계획 2.11): workspace.tree, 배지, workspace.changed로 다시 읽기.
+// targets/ 머리에 "새 찾기 대상" 단추 (M4 T11): 이름을 묻고 새 TARGET 탭
 import { useMemo } from "react";
+import { newTargetInteractive } from "../target/newTarget";
 import { openFileTab, openTab, useTabs } from "../store/tabs";
 import { toggleExpanded, useUi } from "../store/ui";
 import { useWorkspace } from "../store/workspace";
 import { badgeOf, buildTree, defaultExpanded, glyphOf, isOpenable, visibleRows, type Tone, type TreeNode } from "./tree";
 import css from "./explorer.module.css";
+
+const TARGETS_DIR = "targets";
 
 const TONE: Record<Tone, string> = {
   test: css.toneTest,
@@ -75,6 +79,22 @@ export function Explorer() {
             <span className={css.chevron}>{node.type === "dir" && !node.nameOnly ? (open ? "⌄" : "›") : ""}</span>
             <span className={`${css.glyph} ${glyph ? TONE[glyph.tone] : ""}`}>{glyph?.glyph ?? ""}</span>
             <span className={css.name}>{node.name}</span>
+            {depth === 0 && node.type === "dir" && node.path === TARGETS_DIR && (
+              <button
+                type="button"
+                className={css.rowAction}
+                data-part="new-target-button"
+                aria-label="새 찾기 대상"
+                title="새 찾기 대상"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void newTargetInteractive();
+                }}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                +
+              </button>
+            )}
             {badge && (
               <span className={`${css.badge} ${TONE[badge.tone]}`} title={badge.title}>
                 {badge.text}

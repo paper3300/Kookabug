@@ -173,6 +173,24 @@ def test_progress_lines_and_failure_path_titles(tmp_path: Path) -> None:
     assert "실패 위치: 로그인 > 서버 이름 확인" in done.stdout
 
 
+def test_validation_warning_in_summary_and_run_json(tmp_path: Path) -> None:
+    """실행 전 검증 경고(M4 T12 `video_on_ineffective`)는 실행을 막지 않고 요약·run.json에
+    남는다."""
+    graph = GraphBuilder(record={"video": "on"}).entry("n").node("n", "core.test.pass")
+    root = ws_root(tmp_path, graph)  # 워크스페이스 record 없음 → 기본 failed_only
+    done = run_cli(["run", TEST, "--quiet"], cwd=root, env=cli_env(tmp_path))
+    assert done.returncode == 0, done.stdout + done.stderr
+    (line,) = [ln for ln in done.stdout.splitlines() if ln.startswith("경고: ")]
+    assert "video_on_ineffective" in line and f"{TEST}/record/video" in line
+    assert "워크스페이스 기본값" in line
+    (folder,) = [ln for ln in done.stdout.splitlines() if ln.startswith("실행 폴더: ")]
+    run_json = json.loads(
+        (Path(folder.removeprefix("실행 폴더: ")) / "run.json").read_text(encoding="utf-8")
+    )
+    assert [d["code"] for d in run_json["diagnostics"]] == ["video_on_ineffective"]
+    assert run_json["verdict"] == "pass"
+
+
 def test_json_output_single_object(tmp_path: Path) -> None:
     root = ws_root(tmp_path, graph_for("fail"))
     done = run_cli(

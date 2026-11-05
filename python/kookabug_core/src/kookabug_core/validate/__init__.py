@@ -18,6 +18,7 @@ from kookabug_core.registry import Registry, default_registry
 from kookabug_core.validate import (
     dominance,
     pure_cycles,
+    record,
     retry,
     scopes,
     screens,
@@ -43,6 +44,7 @@ CHECKS = (
     scopes,
     pure_cycles,
     dominance,
+    record,
 )
 
 

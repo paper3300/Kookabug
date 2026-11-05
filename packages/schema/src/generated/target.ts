@@ -60,6 +60,9 @@ export interface Match {
    */
   methods?: ["template" | "template_multiscale", ...("template" | "template_multiscale")[]];
   rgb?: boolean;
+  /**
+   * 매칭 점수 하한. 기본값은 이 default 하나에서 나온다 (Python kookabug_platform.vision.DEFAULT_THRESHOLD, TS 생성 상수 DEFAULT_MATCH_THRESHOLD)
+   */
   threshold?: number;
 }
 /**

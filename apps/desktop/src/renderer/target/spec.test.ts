@@ -2,18 +2,33 @@
 import { describe, expect, test } from "vitest";
 import { jsonEqual } from "../graph/valueOps";
 import { sameStamp, stampOf } from "../store/generations";
+import { normalizedToPixels, pixelsToRegion } from "./geometry";
 import {
+  clampColorTolerance,
   clampThreshold,
+  editRegion,
   rebaseSpec,
   setAnchor,
+  setColorTolerance,
   setMultiscale,
   setOffset,
   setRegion,
   setRgb,
+  setSensitive,
   setThreshold,
   specFields,
 } from "./spec";
-import { previewRequest, previewSummary, saveBlocker, targetDirty, type Frame, type PreviewResult, type TargetDoc } from "./targetStore";
+import {
+  otherPeaks,
+  previewRequest,
+  previewSummary,
+  sameShapeCount,
+  saveBlocker,
+  targetDirty,
+  type Frame,
+  type PreviewResult,
+  type TargetDoc,
+} from "./targetStore";
 
 const ORIGINAL = {
   format: "kookabug.target/0",
@@ -24,8 +39,83 @@ const ORIGINAL = {
 };
 
 describe("사양 편집", () => {
-  test("기본값: 임계값 0.85, 색 확인·배율 켬, 중앙", () => {
-    expect(specFields({})).toEqual({ threshold: 0.85, rgb: true, multiscale: true, anchor: "center", offset: [0, 0], region: null });
+  test("기본값: 임계값 0.85, 색 확인·배율 켬, 중앙, 민감 아님, 색 허용치 40", () => {
+    expect(specFields({})).toEqual({
+      threshold: 0.85,
+      rgb: true,
+      multiscale: true,
+      anchor: "center",
+      offset: [0, 0],
+      region: null,
+      sensitive: false,
+      colorTolerance: 40,
+    });
+  });
+
+  test("민감 대상: 켜면 sensitive true, 끄면 키를 지워 처음 바이트 그대로 (모르는 키·다른 키 보존)", () => {
+    const on = setSensitive(ORIGINAL, true, ORIGINAL);
+    expect(on.sensitive).toBe(true);
+    expect(on.x_note).toBe("keep");
+    expect(on.click).toBe(ORIGINAL.click);
+    expect(on.recorded).toBe(ORIGINAL.recorded);
+    expect(specFields(on).sensitive).toBe(true);
+    const off = setSensitive(on, false, ORIGINAL);
+    expect(jsonEqual(off, ORIGINAL)).toBe(true);
+    expect(Object.keys(off)).toEqual(Object.keys(ORIGINAL));
+    // 처음에 false가 적혀 있었으면 false로 돌아간다 (키를 지우지 않는다)
+    const explicit = { ...ORIGINAL, sensitive: false };
+    expect(setSensitive(setSensitive(explicit, true, explicit), false, explicit)).toEqual(explicit);
+    // 꺼진 문서를 다시 끄면 같은 객체 (편집 없음)
+    expect(setSensitive(ORIGINAL, false, ORIGINAL)).toBe(ORIGINAL);
+  });
+
+  test("색 허용치: match.color_tolerance만 0~255 정수로, match의 다른 키·모르는 키 보존", () => {
+    const withMatch = { ...ORIGINAL, match: { threshold: 0.9, x_extra: [1, 2], rgb: true } };
+    const next = setColorTolerance(withMatch, 25.4);
+    expect(next.match).toEqual({ threshold: 0.9, x_extra: [1, 2], rgb: true, color_tolerance: 25 });
+    expect(next.x_note).toBe("keep");
+    expect(next.click).toBe(ORIGINAL.click);
+    expect(specFields(next).colorTolerance).toBe(25);
+    expect(setColorTolerance(ORIGINAL, 999).match).toEqual({ color_tolerance: 255 });
+    expect(setColorTolerance(ORIGINAL, -3).match).toEqual({ color_tolerance: 0 });
+    expect(clampColorTolerance(40.5)).toBe(41);
+  });
+
+  test("검색 범위 숫자 칸: 한 칸씩 고치고, 오른쪽·아래가 1을 넘으면 줄이고, 0 너비는 받지 않는다", () => {
+    expect(editRegion(null, 0, 0.25)).toEqual([0.25, 0, 0.75, 1]);
+    expect(editRegion([0.1, 0.2, 0.3, 0.4], 2, 0.5)).toEqual([0.1, 0.2, 0.5, 0.4]);
+    expect(editRegion([0.6, 0.2, 0.3, 0.4], 0, 0.9)).toEqual([0.9, 0.2, 0.1, 0.4]);
+    expect(editRegion([0.1, 0.2, 0.3, 0.4], 3, 2)).toEqual([0.1, 0.2, 0.3, 0.8]);
+    expect(editRegion([0.1, 0.2, 0.3, 0.4], 0, 1)).toBeNull();
+    expect(editRegion([0.1, 0.2, 0.3, 0.4], 2, 0)).toBeNull();
+    expect(editRegion([0.1, 0.2, 0.3, 0.4], 1, Number.NaN)).toBeNull();
+    // 숫자로 고친 검색 범위도 search의 다른 키·모르는 키를 남긴다
+    const withSearch = { ...ORIGINAL, search: { region: [0, 0, 1, 1], x_future: "keep" } };
+    const next = setRegion(withSearch, editRegion([0, 0, 1, 1], 0, 0.5));
+    expect(next.search).toEqual({ region: [0.5, 0, 0.5, 1], x_future: "keep" });
+    // 지우기는 region만 지우고 남은 키가 있으면 search를 남긴다
+    expect(setRegion(next, null).search).toEqual({ x_future: "keep" });
+  });
+
+  test("검색 범위 숫자 ↔ 픽셀 왕복: 픽셀 → 정규화 → 픽셀이 같다 (Python normalized_to_pixels와 같은 식)", () => {
+    const client: [number, number] = [1024, 640];
+    for (const px of [
+      [300, 330, 460, 200],
+      [0, 0, 1024, 640],
+      [1, 1, 1, 1],
+      [511, 319, 3, 7],
+      [1023, 639, 1, 1],
+    ] as const) {
+      const region = pixelsToRegion([...px], client);
+      expect(normalizedToPixels(region, client)).toEqual([...px]);
+      // 숫자 칸에 보이는 값(4자리 반올림이 아닌 저장 값)으로 다시 넣어도 같은 픽셀
+      const edited = editRegion(region, 0, region[0]);
+      expect(edited).not.toBeNull();
+      expect(normalizedToPixels(edited as number[], client)).toEqual([...px]);
+    }
+    // 1280x720 같은 다른 크기에서도
+    const wide: [number, number] = [1280, 720];
+    expect(normalizedToPixels(pixelsToRegion([640, 360, 320, 180], wide), wide)).toEqual([640, 360, 320, 180]);
   });
 
   test("고친 경로만 바뀌고 모르는 키·다른 칸은 그대로 (같은 객체 공유)", () => {
@@ -185,6 +275,27 @@ describe("결과 문구 (검수 M6)", () => {
     const miss = { ...base, found: false, match: null, best: { score: 0.6149, rect: [0, 0, 3, 4] } };
     expect(previewSummary(miss)).toBe("못 찾음 · 최고 점수 0.61");
     expect(previewSummary(miss)).not.toContain("4");
+  });
+
+  test("같은 모양 N곳 (M4 T11): 찾은 자리 포함 개수, 다른 자리만 점선 상자", () => {
+    const match = { ...(base.match as object), rect: [10, 10, 20, 20] } as PreviewResult["match"];
+    type Peaks = NonNullable<PreviewResult["peaks"]>;
+    const list = [
+      { rect: [10, 10, 20, 20], score: 0.99, scale: 1 },
+      { rect: [100, 10, 20, 20], score: 0.97, scale: 1 },
+      { rect: [10, 100, 20, 20], score: 0.9, scale: 1 },
+    ];
+    const three: PreviewResult = { ...base, match, peaks: list as unknown as Peaks };
+    expect(sameShapeCount(three)).toBe(3);
+    expect(otherPeaks(three)).toEqual([
+      [100, 10, 20, 20],
+      [10, 100, 20, 20],
+    ]);
+    expect(sameShapeCount({ ...base, match, peaks: list.slice(0, 1) as unknown as Peaks })).toBe(1);
+    // 세지 않았거나(옛 daemon) 못 찾았으면 표시하지 않는다
+    expect(sameShapeCount(base)).toBeNull();
+    expect(sameShapeCount({ ...base, found: false, match: null, peaks: [] })).toBeNull();
+    expect(otherPeaks(null)).toEqual([]);
   });
 });
 

@@ -1,4 +1,4 @@
-"""`target.capture/load_image/open/preview/save` (M2 계획 2.4·2.9, T6).
+"""`target.capture/load_image/open/preview/save/read_text` (M2 계획 2.4·2.9 T6, M4 T11).
 
 - 정지 화면은 daemon 프레임 캐시(`frames`)에 두고, 보일 PNG는 편집기 캐시(`image_cache`)에 쓴다
 - 권한 대표 인자는 링크를 해석한 경로다: `target.open`·`target.save`는 target 파일,
@@ -103,7 +103,23 @@ async def _preview(call: Call) -> dict[str, Any]:
         params["template"],
         _preview_base(call),
         request_int(params["seq"]),
+        [float(f) for f in params.get("scales") or ()],
     )
+
+
+def _read_text(call: Call) -> dict[str, Any]:
+    params: Mapping[str, Any] = call.params
+    frame_id = str(params["frame_id"])
+    rect = [request_int(v) for v in params["rect"]]
+    # 녹화 세션이 올린 정지 화면이면 그 프레임의 보호 영역(비밀번호 칸)과 겹치는 영역은 읽지 않는다
+    recorder = getattr(call.daemon, "recorder", None)
+    if recorder is not None:
+        recorder.check_read_region(frame_id, rect)
+    return call.daemon.targets.read_text(frame_id, rect)
+
+
+async def _read_text_handler(call: Call) -> dict[str, Any]:
+    return await asyncio.to_thread(_read_text, call)
 
 
 async def _save(call: Call) -> dict[str, Any]:
@@ -157,5 +173,6 @@ METHODS: Final = {
     "target.load_image": MethodSpec(_needs_platform(_load_image_handler), _image_arg),
     "target.open": MethodSpec(_needs_platform(_open), _target_arg),
     "target.preview": MethodSpec(_needs_platform(_preview), _preview_arg),
+    "target.read_text": MethodSpec(_needs_platform(_read_text_handler)),
     "target.save": MethodSpec(_needs_platform(_save), _save_arg),
 }

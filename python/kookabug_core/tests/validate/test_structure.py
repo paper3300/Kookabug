@@ -86,6 +86,7 @@ def test_code_table_covers_plan_codes() -> None:
         *("kind_folder_mismatch", "interface_exit_unused", "var_never_set"),
         "unconnected_ok_exit",  # T6
         *("screen_unknown", "screen_invalid"),  # M1 T6 (화면 지도용 정보라 실행을 막지 않는다)
+        "video_on_ineffective",  # M4 T12 (효과 없는 하위 층 record.video on)
     }
 
 

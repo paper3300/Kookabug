@@ -135,6 +135,24 @@ for (const kind of kinds) {
     await writeFile(path.join(outDir, data), body, "utf8");
   }
 }
+// 매칭 기본값 상수 (M4 T12): target.schema.json의 default 하나가 출처다. Python은 같은 스키마 값을 읽는다
+// (kookabug_platform.vision.DEFAULT_THRESHOLD)
+{
+  const target = JSON.parse(await readFile(path.join(root, "target.schema.json"), "utf8"));
+  const match = target.$defs.Match.properties;
+  const threshold = match.threshold.default;
+  const tolerance = match.color_tolerance.default;
+  if (typeof threshold !== "number" || typeof tolerance !== "number") throw new Error("target.schema.json Match 기본값이 없다");
+  const file = "constants.ts";
+  expected.add(file);
+  const body =
+    `${banner}\n\n` +
+    `/** 매칭 기본 임계값 (target.schema.json $defs.Match.threshold.default) */\n` +
+    `export const DEFAULT_MATCH_THRESHOLD = ${JSON.stringify(threshold)};\n` +
+    `/** 색 허용치 기본값 (target.schema.json $defs.Match.color_tolerance.default) */\n` +
+    `export const DEFAULT_COLOR_TOLERANCE = ${JSON.stringify(tolerance)};\n`;
+  await writeFile(path.join(outDir, file), body, "utf8");
+}
 for (const file of await readdir(outDir)) {
   if (!expected.has(file)) await rm(path.join(outDir, file));
 }

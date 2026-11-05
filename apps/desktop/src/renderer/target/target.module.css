@@ -143,18 +143,19 @@
   padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 /* 정지 화면 판: 시안은 16:9(최대 920px)다. 하단 패널이 열려 높이가 모자라면 판이 남은 높이에 맞춰 줄어든다
-   (패널은 늘 보이고 판이 스크롤로 밀려나지 않게) */
+   (패널은 늘 보이고 판이 스크롤로 밀려나지 않게). M4 T11 보조 패널은 한 줄로 접어 두어(.ext) 판 높이를 거의
+   그대로 둔다. 펼치면 본문이 스크롤된다 */
 .frame {
   position: relative;
   flex: 0 1 auto;
   width: 100%;
   max-width: 920px;
   aspect-ratio: 16 / 9;
-  min-height: 200px;
+  min-height: 220px;
   background: var(--kb-target-frame-bg);
   border: 1px solid var(--kb-input-border);
   overflow: hidden;
@@ -416,4 +417,122 @@
 .status {
   font-size: 12px;
   color: var(--kb-fg-muted);
+}
+
+/* M4 T11 편집기 확장 (시안에 없는 요소 U14): 같은 모양 점선, 민감 대상·색 허용치, 검색 범위 숫자, 글자 읽기, 다른 배율 */
+.peakRect {
+  fill: none;
+  stroke: var(--kb-status-warn);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+}
+
+.peaks {
+  color: var(--kb-status-fail);
+}
+
+.toleranceInput,
+.regionInput {
+  width: 56px;
+  height: 22px;
+  padding: 0 4px;
+  background: var(--kb-input-bg);
+  color: var(--kb-fg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  font-family: var(--kb-font-mono);
+  font-size: 12px;
+}
+
+.toleranceInput:disabled,
+.regionInput:disabled {
+  opacity: 0.5;
+}
+
+.searchPanel {
+  flex: 1 1 280px;
+  gap: 8px;
+}
+
+.textPanel {
+  flex: 1 1 180px;
+  gap: 8px;
+}
+
+.regionRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--kb-fg-muted);
+}
+
+.small {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.textResult {
+  font-family: var(--kb-font-mono);
+  font-size: 12px;
+  color: var(--kb-fg-strong);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.scales {
+  flex: 1 1 220px;
+  gap: 8px;
+}
+
+/* 보조 패널 묶음: 접으면 한 줄 (B4 검수 Mid 3) */
+.ext {
+  flex: 0 0 auto;
+  max-width: 920px;
+}
+
+/* 접혀 있을 때 높이를 늘리지 않게 간격은 펼친 줄에만 */
+.ext > .panels {
+  margin-top: 12px;
+}
+
+.extSummary {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 4px 14px;
+  line-height: 16px;
+  border: 1px solid var(--kb-border);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.extSummary .note {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.scaleTable {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.scaleTable th,
+.scaleTable td {
+  padding: 2px 12px 2px 0;
+  text-align: left;
+  font-weight: 400;
+}
+
+.scaleTable th {
+  color: var(--kb-fg-muted);
+}
+
+.scaleLow {
+  color: var(--kb-status-fail);
 }

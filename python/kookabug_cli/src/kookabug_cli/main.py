@@ -40,7 +40,8 @@ from typing import Any, Final, NoReturn, Protocol, TextIO
 from kookabug_cli import __version__, daemon_cmd
 from kookabug_core.canonical import loads_strict
 from kookabug_core.permissions import Decision, Principal
-from kookabug_core.record import follow
+from kookabug_core.record import follow, read_run_json
+from kookabug_core.record.runfolder import RUN_JSON_FILE
 from kookabug_core.runner.spec import DEFAULT_CAPTURE_TIMEOUT_MS, PlatformSpec
 from kookabug_core.service import (
     RUN_START_TOOL,
@@ -500,6 +501,21 @@ def recover_failure(outcome: RunOutcome) -> str | None:
     )
 
 
+def warning_lines(run_dir: Path | None) -> list[str]:
+    """run.json의 실행 전 검증 경고 (예: `video_on_ineffective`) — "경고: 코드 위치: 메시지"."""
+    if run_dir is None:
+        return []
+    run_json = read_run_json(Path(run_dir) / RUN_JSON_FILE)
+    found = [] if run_json is None else run_json.get("diagnostics")
+    lines: list[str] = []
+    for d in found if isinstance(found, list) else []:
+        if not isinstance(d, dict) or d.get("severity") != "warning":
+            continue
+        where = f"{d.get('file') or ''}{d.get('pointer') or ''}"
+        lines.append(f"경고: {d.get('code')} {where}: {d.get('message')}")
+    return lines
+
+
 def _summary(outcome: RunOutcome, titles: Titles, out: TextIO) -> None:
     end = outcome.run_end
     if end is None:
@@ -514,6 +530,8 @@ def _summary(outcome: RunOutcome, titles: Titles, out: TextIO) -> None:
             print(f"실패 위치: {' > '.join(titles.path(failure_path))}", file=out)
     if outcome.start_error:
         print(f"시작 실패: {outcome.start_error}", file=out)
+    for line in warning_lines(outcome.run_dir):
+        print(line, file=out)
     failure = recover_failure(outcome)
     if failure is not None:
         print(failure, file=out)

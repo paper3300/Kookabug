@@ -5,7 +5,8 @@ import { pausedTitle } from "../debug/PauseBanner";
 import { formatCount, formatElapsed, loopProgress } from "../run/highlight";
 import { useRun, type LeaseOwner } from "../run/runStore";
 import { openRun } from "../runs/open";
-import { retentionText, useRunList } from "../runs/runListStore";
+import { useRunIndex } from "../runs/runIndexStore";
+import { retentionText, useRunList, videoPolicyText } from "../runs/runListStore";
 import { useTabs } from "../store/tabs";
 import { docLookup, loopLimitOf, useNow } from "../run/view";
 import { useDocuments } from "../store/documents";
@@ -108,6 +109,24 @@ function Retention() {
   );
 }
 
+/** 기록 뷰어(RUN 탭)를 보고 있으면 그 실행의 실효 영상 정책과 출처 (M4 T12) */
+function VideoPolicy() {
+  const runId = useTabs((s) => s.tabs.find((t) => t.path === s.active && t.kind === "run")?.runId ?? null);
+  const policy = useRunIndex((s) => (runId === null ? undefined : s.runs.get(runId)?.index?.video_policy));
+  const text = videoPolicyText(policy);
+  if (text === null) return null;
+  return (
+    <span
+      className={css.statusItem}
+      data-part="video-policy"
+      data-mode={policy?.mode ?? ""}
+      title="이 실행의 영상 정책 (위 층이 아래 층을 이긴다: kookabug.json → 테스트 → 서브그래프 → 노드)"
+    >
+      {text}
+    </span>
+  );
+}
+
 export function StatusBar() {
   const daemon = useWorkspace((s) => s.daemon);
   const info = useWorkspace((s) => s.info);
@@ -137,6 +156,7 @@ export function StatusBar() {
         </span>
       )}
       <div className={css.spacer} />
+      <VideoPolicy />
       <Retention />
       {runtime && (
         <>

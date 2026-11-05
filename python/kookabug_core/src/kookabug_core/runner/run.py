@@ -592,6 +592,12 @@ class Runner:
                 f"실행 전 검증 오류 {len(errors)}건: {summary}",
                 diagnostics=diagnostics,
             )
+        warnings = [d for d in diagnostics if d.severity == "warning"]
+        if warnings:
+            # 경고는 실행을 막지 않는다. run.json에 남겨 CLI 요약·기록이 보인다
+            # (M4 T12 video_on_ineffective)
+            self._run_json["diagnostics"] = [d.to_dict() for d in warnings]
+            self._save_running()
 
         # 7. 플랫폼 (windows: DPI 인식 확인 → 추적기·캡처·저장소·엔진)
         # 엔진 설정(`ocr`)은 실행 정의의 복사본에서 읽는다 (원본은 스냅샷 뒤에 바뀌었을 수 있다)

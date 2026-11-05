@@ -93,6 +93,10 @@ CODES: Final[dict[str, CodeInfo]] = {
     "screen_unknown": _w("screens", "출구의 screen이 screens/에 없는 화면 ID다"),
     "screen_ambiguous": _e("screens", "같은 화면 ID의 *.screen.json이 둘 이상이다"),
     "screen_invalid": _w("screens", "화면 파일 형식이 틀렸거나 그 target을 쓸 수 없다"),
+    # 기록 정책 (M4 T12)
+    "video_on_ineffective": _w(
+        "record", "record.video 'on'인데 위 층의 영상 정책이 더 세서 효과가 없다"
+    ),
 }
 
 

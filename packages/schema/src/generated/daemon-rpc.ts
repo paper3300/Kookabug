@@ -1865,6 +1865,19 @@ export interface TargetOpenResult {
 export interface TargetPreviewParams {
   base_path?: WorkspacePath;
   frame_id: string;
+  /**
+   * 다른 배율 점수 (M4 T11): 정지 화면을 이 배율로 바꿔 같은 사양으로 찾는다. 결과 scale_scores (편집기 접힌 줄 '다른 배율에서'를 펼쳤을 때만 보낸다)
+   *
+   * @maxItems 6
+   */
+  scales?:
+    | []
+    | [number]
+    | [number, number]
+    | [number, number, number]
+    | [number, number, number, number]
+    | [number, number, number, number, number]
+    | [number, number, number, number, number, number];
   seq: RequestSeq;
   /**
    * 저장 전 target 사양
@@ -1915,6 +1928,32 @@ export interface PreviewResult {
         PreviewPeak,
         PreviewPeak
       ];
+  /**
+   * params.scales 차례대로 그 배율로 바꾼 정지 화면에서 찾은 결과 (scales를 보냈을 때만)
+   *
+   * @maxItems 6
+   */
+  scale_scores?:
+    | []
+    | [PreviewScaleScore]
+    | [PreviewScaleScore, PreviewScaleScore]
+    | [PreviewScaleScore, PreviewScaleScore, PreviewScaleScore]
+    | [PreviewScaleScore, PreviewScaleScore, PreviewScaleScore, PreviewScaleScore]
+    | [
+        PreviewScaleScore,
+        PreviewScaleScore,
+        PreviewScaleScore,
+        PreviewScaleScore,
+        PreviewScaleScore
+      ]
+    | [
+        PreviewScaleScore,
+        PreviewScaleScore,
+        PreviewScaleScore,
+        PreviewScaleScore,
+        PreviewScaleScore,
+        PreviewScaleScore
+      ];
   search: number[];
   search_rect_px: Rect;
   seq: RequestSeq;
@@ -1930,6 +1969,18 @@ export interface PreviewPeak {
   rect: Rect;
   scale: number;
   score: number;
+}
+/**
+ * 다른 배율 점수 한 줄: factor = 정지 화면을 바꾼 배율, found = 그 화면에서 찾음, score = 받아들인(없으면 최고) 점수 (시도한 것이 없으면 null), scale = 그 후보의 배율
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PreviewScaleScore".
+ */
+export interface PreviewScaleScore {
+  factor: number;
+  found: boolean;
+  scale: number | null;
+  score: number | null;
 }
 /**
  * target.read_text: 편집기 정지 화면 영역의 글자 (OCR). 녹화 프레임의 보호 영역과 겹치면 secret_region_overlap

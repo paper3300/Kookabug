@@ -128,6 +128,15 @@ test("test_open_failed_run_jumps_to_failure_step_with_evidence", async () => {
   expect(fs.existsSync(path.join(runFolderOf(ws, runs.fail), ...file.split("/")))).toBe(true);
 });
 
+test("test_status_bar_shows_effective_video_policy", async () => {
+  // M4 T12: 뷰어 상태 바에 그 실행의 실효 영상 정책과 정한 층 (예제 워크스페이스 kookabug.json record.video off)
+  const { page } = session();
+  await openFromList(page, runs.fail);
+  const item = page.locator('[data-part="statusbar"] [data-part="video-policy"]');
+  await expect(item).toHaveText("영상: 끔 (kookabug.json)");
+  await expect(item).toHaveAttribute("data-mode", "off");
+});
+
 test("test_open_again_from_list_rejumps_to_failure", async () => {
   // T10 검수 3: 열린 RUN 탭에서 다른 스텝을 고르고 실패 사슬을 접은 뒤 목록을 다시 누르면 실패 스텝으로 다시 간다
   const { page, ws } = session();

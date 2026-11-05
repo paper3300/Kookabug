@@ -50,7 +50,7 @@ import cv2
 import numpy as np
 
 from kookabug_core.canonical import loads_strict
-from kookabug_core.schema import check_shape
+from kookabug_core.schema import check_shape, metaschema
 from kookabug_platform.dpi import normalized_to_pixels, round_half_up
 from kookabug_platform.errors import CAPTURE_TIMEOUT, TARGET_IMAGE_INVALID, PlatformError
 from kookabug_sdk.types import Rect, Target
@@ -93,8 +93,11 @@ type Box = tuple[int, int, int, int]
 """`(x, y, w, h)` 물리 픽셀."""
 
 DEFAULT_METHODS: Final = ("template_multiscale", "template")
-DEFAULT_THRESHOLD: Final = 0.85
-DEFAULT_COLOR_TOLERANCE: Final = 40.0
+_MATCH_DEFAULTS: Final[Mapping[str, Any]] = metaschema("target")["$defs"]["Match"]["properties"]
+DEFAULT_THRESHOLD: Final = float(_MATCH_DEFAULTS["threshold"]["default"])
+"""매칭 기본 임계값. 출처는 `target.schema.json`의 default 하나다 (TS는 생성 상수
+`DEFAULT_MATCH_THRESHOLD`, M4 T12). 값은 조율자가 D2 결과로 정한다."""
+DEFAULT_COLOR_TOLERANCE: Final = float(_MATCH_DEFAULTS["color_tolerance"]["default"])
 SCALE_STEPS: Final = (1.0, 0.95, 1.05, 0.9, 1.1, 0.85, 1.15, 0.8, 1.2)
 """멀티스케일 배율 (기대 배율에 곱한다, 이 순서로 시도). 조율자 결정 Q11."""
 MIN_TEMPLATE_PX: Final = 4

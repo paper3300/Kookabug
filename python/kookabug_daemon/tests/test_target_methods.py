@@ -68,6 +68,7 @@ PREVIEW_KEYS: Final = {
     "elapsed_ms",
     "search_rect_px",
     "seq",
+    "peaks",  # M4 T11 같은 모양 N곳 (target test --json에는 없다)
 }
 OWNERSHIP: Final = ".kookabug/editor-images.json"
 
@@ -210,7 +211,7 @@ def test_preview_matches_target_cmd_json_fields(root: Path, tmp_path: Path) -> N
     assert target_cmd.run(args, out, err) == target_cmd.EXIT_FOUND, err.getvalue()
     report = json.loads(out.getvalue())
     assert set(result) == PREVIEW_KEYS
-    for key in PREVIEW_KEYS - {"elapsed_ms", "search_rect_px", "seq"}:
+    for key in PREVIEW_KEYS - {"elapsed_ms", "search_rect_px", "seq", "peaks"}:
         assert result[key] == report[key], key
     assert result["search_rect_px"] == report["search"] and result["seq"] == 5
     assert result["match"]["rect"] == list(START_BUTTON)
