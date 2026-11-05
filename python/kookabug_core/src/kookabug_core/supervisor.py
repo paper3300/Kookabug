@@ -18,6 +18,11 @@
   runner도 같은 규칙이다. runner의 자기 종료 감시자(`self_kill_margin_ms` 뒤)는 그 뒤의 안전망이다.
   `run.cancel`에는 타이머의 기한(절대 단조 시각 `hard_stop_at_mono` + 남은 시간 `hard_stop_in_ms`)을
   실어 runner가 마무리 예산을 그 기한에 맞추게 한다 (타이머는 미루지 않는다)
+- **영상 마무리 단계**(R1 F1): runner가 `run.end`를 쓴 뒤 `runner.video_finishing{wait_ms}`을 청하면
+  (인코더 준비가 아직이라 실행 중 모은 프레임을 쓰려고) 한 번만 타이머를 지금 + `wait_ms`(최대
+  `VIDEO_FINISH_MAX_MS`) + 유예로 다시 걸고 그 기한을 답한다. 외부 취소를 받았거나 이미 하드
+  종료했으면 거절한다. 단계 중 외부 취소가 오면 타이머를 지금 + 유예로 당긴다 (판정·`run.end`는
+  이미 정해졌다)
 - 제어 채널을 잃었을 때(EOF·송신 실패·쓰기 기한 초과) — runner를 더 제어할 수 없으므로 곧바로.
   단 `runner.stopping`을 받은 뒤의 EOF는 runner가 마무리 끝에 채널을 닫은 것일 수 있으므로 하드
   종료 타이머에 맡긴다
@@ -72,11 +77,13 @@ from kookabug_core.runner.spec import (
     DEFAULT_WORKER_CANCEL_GRACE_MS,
     DEFAULT_WORKER_START_TIMEOUT_MS,
     PROTOCOL,
+    VIDEO_FINISH_MAX_MS,
     ControlSpec,
     PlatformSpec,
     RunSpec,
     ident_from_json,
 )
+from kookabug_core.schema import check_shape
 from kookabug_core.win import Job, Process, ProcessId, current, run_job_name, spawn
 from kookabug_sdk.pipe import PipeConnection, PipeListener, new_key, new_pipe_name
 from kookabug_sdk.rpc import INVALID_PARAMS, METHOD_NOT_FOUND, PeerLost, RpcError, RpcPeer
@@ -305,8 +312,11 @@ class RunHandle:
         self._trace = owner.trace
         self._lock = threading.Lock()
         self._timer: threading.Timer | None = None
-        self._armed_at: float | None = None
-        """하드 종료 타이머를 건 실제 단조 시각 (`run.cancel`에 남은 시간을 실어 보낸다)."""
+        self._stop_at: float | None = None
+        """하드 종료 타이머가 끝내는 실제 단조 시각 (`run.cancel`에 실어 보낸다)."""
+        self._cancel_requested = False
+        self._video_granted = False
+        """영상 마무리 단계를 허락했다 (한 번만, 타이머를 다시 걸었다)."""
         self._closing = False
         self._spec_writer: threading.Thread | None = None
         self._finish_lock = threading.Lock()
@@ -479,6 +489,8 @@ class RunHandle:
                 with self._lock:
                     self.stopping.append(str(item.params.get("reason")))
                 self._arm()
+            elif item.method == "runner.video_finishing" and not item.is_notification:
+                self._grant_video_finishing(peer, item)
             elif not item.is_notification:
                 with contextlib.suppress(PeerLost):
                     peer.respond_error(item, METHOD_NOT_FOUND, f"모르는 메서드 {item.method}")
@@ -506,8 +518,10 @@ class RunHandle:
         `time.monotonic`은 시스템 전역 QPC라 runner와 원점이 같다는 계약)과 보내기 직전에 잰 남은
         시간(`hard_stop_in_ms`). runner는 취소를 늦게 받거나 늦게 처리해도 이 기한 전에 `run.end`·
         `run.json`을 쓰도록 녹화 기다림을 줄인다. 타이머는 미루지 않는다 (먼저 건 타이머가
-        그대로)."""
-        self._arm()
+        그대로). 영상 마무리 단계로 다시 건 타이머가 지금 + 유예보다 늦으면 그리로 당긴다."""
+        with self._lock:
+            self._cancel_requested = True
+        self._arm(shorten=True)
         at = self.hard_stop_at_mono()
         params = None
         if at is not None:
@@ -521,8 +535,7 @@ class RunHandle:
     def hard_stop_at_mono(self) -> float | None:
         """걸린 하드 종료 타이머가 끝내는 단조 시각 (`time.monotonic` 초, 타이머가 없으면 None)."""
         with self._lock:
-            armed_at = self._armed_at
-        return None if armed_at is None else armed_at + self.spec.shutdown_grace_ms / 1000
+            return self._stop_at
 
     def hard_stop_in_ms(self) -> int | None:
         """걸린 하드 종료 타이머까지 남은 실제 시간 (ms, 타이머가 없으면 None)."""
@@ -544,22 +557,55 @@ class RunHandle:
         items = [bp.to_json() for bp in sorted(set(breakpoints))]
         return self._call("run.breakpoints", {"breakpoints": items})
 
-    def _arm(self) -> None:
+    def _arm(self, *, shorten: bool = False) -> None:
+        """하드 종료 타이머를 지금 + 유예로 건다. 이미 걸렸으면 미루지 않는다. `shorten`(외부
+        취소)이면 영상 마무리 단계로 늦춰 둔 타이머를 지금 + 유예로 당긴다."""
         if not self._hard_stop:
             return
         with self._lock:
-            if self._timer is not None:
+            at = time.monotonic() + self.spec.shutdown_grace_ms / 1000
+            if self._timer is not None and not (
+                shorten and self._stop_at is not None and self._stop_at > at
+            ):
                 return
-            self._armed_at = time.monotonic()
-            self._timer = threading.Timer(self.spec.shutdown_grace_ms / 1000, self.hard_stop)
-            self._timer.daemon = True
-            self._timer.start()
+            self._set_timer(at)
+
+    def _set_timer(self, at: float) -> None:
+        """(잠금 안) 타이머를 `at`(단조)에 끝내도록 새로 건다."""
+        if self._timer is not None:
+            self._timer.cancel()
+        self._stop_at = at
+        self._timer = threading.Timer(max(0.0, at - time.monotonic()), self.hard_stop)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _grant_video_finishing(self, peer: RpcPeer, item: Any) -> None:
+        """`runner.video_finishing`: run.end 뒤 영상 마무리 단계를 한 번만 허락한다 (모듈 설명)."""
+        params = item.params
+        if check_shape(params, "rpc", ref="#/$defs/RunnerVideoFinishingParams"):
+            with contextlib.suppress(PeerLost):
+                peer.respond_error(item, INVALID_PARAMS, "runner.video_finishing params 형식")
+            return
+        wait_s = min(int(params["wait_ms"]), VIDEO_FINISH_MAX_MS) / 1000
+        result: dict[str, Any] = {"granted": False}
+        with self._lock:
+            if not (self._cancel_requested or self._video_granted or self.hard_stopped):
+                self._video_granted = True
+                result["granted"] = True
+                if self._hard_stop:
+                    self._set_timer(time.monotonic() + wait_s + self.spec.shutdown_grace_ms / 1000)
+            at = self._stop_at if self._hard_stop else None
+        if at is not None:
+            result["hard_stop_at_mono"] = at
+            result["hard_stop_in_ms"] = max(0, int((at - time.monotonic()) * 1000))
+        with contextlib.suppress(PeerLost):
+            peer.respond(item, result)
 
     def _disarm(self) -> None:
         with self._lock:
             if self._timer is not None:
                 self._timer.cancel()
-            self._armed_at = None
+            self._stop_at = None
 
     def hard_stop(self) -> None:
         """`TerminateProcess(runner, 4)` (살아 있을 때만). 기다리지 않고 바로 돌아온다 — 신호

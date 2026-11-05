@@ -456,11 +456,21 @@ class _Clock:
         return self.now + 1_700_000_000.0
 
 
+def _recording(gate: VideoGate, window: Any) -> None:
+    """조각을 직접 다루는 검사: 게이트를 기록 상태로 두고 지난 off 구간(처음 창 없음)을 비운다 —
+    반복 칸 채우기는 게이트의 차단 이력(`fill_limit`)을 넘지 않는다."""
+    gate.set_base("on")
+    gate.hold("s0")
+    gate.classify("s0", "on", secret=False, window=window)
+    gate.drain()
+
+
 def test_grid_fills_late_captures_with_repeat(tmp_path: Path) -> None:
     from kookabug_core.record.video import _Segment  # pyright: ignore[reportPrivateUsage]
 
     clock = _Clock()
     gate = VideoGate(mono=clock.mono, wall=clock.wall)
+    _recording(gate, scenario_window(tmp_path))
     recorder = VideoRecorder(tmp_path, gate, _NoSource(), FakeEncoderFactory())
     recorder.dir.mkdir()
     t0 = clock.now
@@ -701,6 +711,8 @@ def test_segment_rotates_on_60s_and_resize(tmp_path: Path) -> None:
 
     clock = _Clock()
     gate = VideoGate(mono=clock.mono, wall=clock.wall)
+    window = scenario_window(tmp_path)
+    _recording(gate, window)
     recorder = VideoRecorder(tmp_path, gate, _NoSource(), FakeEncoderFactory())
     recorder.dir.mkdir()
     first = VideoFrame(None, (8, 8), clock.wall(), "A")
@@ -718,8 +730,6 @@ def test_segment_rotates_on_60s_and_resize(tmp_path: Path) -> None:
     assert nxt is not None and nxt.index == 2
     assert stamp(recorder.wall_of(nxt.t0)) == lines[0]["t_end"]  # 같은 격자로 이어짐
     # 크기가 바뀌면 닫고 새 조각
-    window = scenario_window(tmp_path)
-    gate.set_base("on")
     gate.hold("s1")
     gate.classify("s1", "on", secret=False, window=window)
     view = gate.view()

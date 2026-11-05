@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { gapText, locate, nextAfter, seekSeconds, segmentChain, videoHeader, type Segment, type VideoView } from "./videoTimeline";
+import { gapText, locate, nextAfter, seekSeconds, segmentChain, stepVideoTime, videoHeader, type Segment, type VideoView } from "./videoTimeline";
 
 const T0 = Date.parse("2026-11-02T01:00:00.000Z");
 const iso = (ms: number) => new Date(T0 + ms).toISOString();
@@ -96,7 +96,64 @@ describe("영상 시각 대응 (M3 T11, 검수 M3)", () => {
     const empty = { ...VIEW, segments: [] };
     expect(videoHeader({ ...empty, status: "omitted", reason: "encoder_stuck" }).note).toBe("영상 없음 · 인코더가 멈춰 버림");
     expect(videoHeader(null, { status: "omitted" }).note).toBe("영상 없음 · 인코더가 멈춰 버림");
+    expect(videoHeader({ ...empty, status: "omitted", reason: "encoder_not_ready" }).note).toBe("영상 없음 · 인코더 준비가 늦어 버림");
+    expect(videoHeader(null, { status: "omitted", reason: "encoder_not_ready" }).note).toBe("영상 없음 · 인코더 준비가 늦어 버림");
+    // vreview_3: 마무리 단계에서 준비 뒤 쓰기가 멈춘 실패 실행 — 쓰다 만 조각을 지웠어도 성공 영상 삭제로 설명하지 않는다
+    const stuck = { ...empty, finalized: true, status: "omitted" as const, reason: "encoder_stuck" as const };
+    const stuckRun = { status: "omitted", reason: "encoder_stuck", kept: 0, deleted: 1, bytes: 0 };
+    expect(videoHeader(stuck, stuckRun)).toEqual({ toggle: false, note: "영상 없음 · 인코더가 멈춰 버림" });
+    expect(videoHeader(null, stuckRun).note).toBe("영상 없음 · 인코더가 멈춰 버림");
+    expect(videoHeader(stuck, stuckRun).note).not.toContain("실패하지 않은 실행");
     expect(videoHeader({ ...empty, status: "unavailable", reason: "mf_missing" }).toggle).toBe(false);
     expect(videoHeader(empty, { status: "recorded", deleted: 2 }).note).toContain("지움");
+  });
+});
+
+describe("스텝을 고르면 옮겨 갈 영상 시각 (M3 사람 확인 R1 F2)", () => {
+  // 녹화 준비 중 0~2초, 조각 A 2~5초, 비밀값 5~6초, 조각 B 6~7초
+  const STARTING: VideoView = {
+    finalized: true,
+    status: "recorded",
+    segments: [seg("seg-0001.mp4", 2000, 15), seg("seg-0002.mp4", 6000, 5)],
+    gaps: [
+      { gap: "starting", t_start: iso(0), t_end: iso(2000) },
+      { gap: "secret_input", step: "s9", t_start: iso(5000), t_end: iso(6000) },
+    ],
+  };
+  const step = (start: number, end: number | null, status: string) => ({
+    t_start: iso(start),
+    t_end: end === null ? null : iso(end),
+    status,
+  });
+
+  test("test_failed_step_goes_to_failure_moment_not_start_gap", () => {
+    // 실패 스텝 1~4초: 시작은 녹화 준비 중이지만 실패 순간(끝 직전 칸)은 조각 A 안
+    const at = stepVideoTime(STARTING, step(1000, 4000, "fail"));
+    expect(at).toBe(T0 + 3999);
+    expect(locate(STARTING, at!)).toEqual({ kind: "segment", index: 0, slot: 9, offsetMs: 1800 });
+    expect(stepVideoTime(STARTING, step(1000, 4000, "error"))).toBe(T0 + 3999);
+    // 실패 순간이 빈 구간이면 스텝 구간 안 가장 늦은 영상 칸 (조각 A 마지막 칸)
+    const late = stepVideoTime(STARTING, step(4000, 5500, "fail"));
+    expect(late).toBe(T0 + 4999);
+    expect(locate(STARTING, late!)).toMatchObject({ kind: "segment", index: 0, slot: 14 });
+  });
+
+  test("test_step_starting_in_gap_goes_to_first_video_inside_step", () => {
+    // 통과 스텝 1~3초: 시작은 녹화 준비 중 → 그 스텝 안 첫 영상(조각 A 처음)
+    expect(stepVideoTime(STARTING, step(1000, 3000, "success"))).toBe(T0 + 2000);
+    // 시작이 영상 안이면 그대로
+    expect(stepVideoTime(STARTING, step(2500, 3000, "success"))).toBe(T0 + 2500);
+    // 비밀값 구간에서 시작해 조각 B로 이어지는 스텝 → 조각 B 처음
+    expect(stepVideoTime(STARTING, step(5200, 6500, "success"))).toBe(T0 + 6000);
+  });
+
+  test("test_step_without_video_inside_keeps_start_and_gap_reason", () => {
+    // 스텝 구간 안에 영상이 없으면 시작 시각 (빈 구간 이유를 보인다)
+    expect(stepVideoTime(STARTING, step(500, 1500, "success"))).toBe(T0 + 500);
+    expect(stepVideoTime(STARTING, step(5100, 5900, "fail"))).toBe(T0 + 5100);
+    expect(locate(STARTING, T0 + 5100)).toMatchObject({ kind: "gap", reason: "secret_input" });
+    // 끝을 모르는 스텝(진행 중): 시작이 빈 구간이면 뒤 첫 영상
+    expect(stepVideoTime(STARTING, step(1000, null, "running"))).toBe(T0 + 2000);
+    expect(stepVideoTime(STARTING, { t_start: null })).toBeNull();
   });
 });

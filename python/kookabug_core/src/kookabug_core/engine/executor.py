@@ -104,6 +104,7 @@ __all__ = [
     "Executor",
     "GraphInvalid",
     "RunResult",
+    "run_record_policy",
 ]
 
 DEFAULT_DEADLINE_MS: Final = 30 * 60 * 1000
@@ -117,6 +118,19 @@ _TERMINALS: Final[dict[str, Terminal]] = {
 _LOOPS: Final = frozenset({"repeat", "while"})
 STALE_OBSERVATION: Final = "stale_observation"
 """입력 직전 재검증 실패의 원인 코드 (처리되지 않은 fail, 출구 없음 — M1 2.4)."""
+
+
+def run_record_policy(program: Program, root: Any | None = None) -> RecordPolicy:
+    """실행의 기본 기록 정책: 워크스페이스 `record` 위에 테스트 그래프의 `record` (스텝 층 전).
+    워크스페이스에 `record.video`가 없으면 영상은 `failed_only` (M3). runner가 첫 스텝 전 인코더
+    준비를 기다릴지(영상이 꺼진 실행은 기다리지 않음)도 이것으로 정한다."""
+    root = program.graphs.get(program.root) if root is None else root
+    workspace_record = program.workspace.config.get("record")
+    policy = workspace_policy(
+        workspace_record if isinstance(workspace_record, Mapping) else None,
+        graph_source(WORKSPACE_FILE),
+    )
+    return policy if root is None else policy.layer(root.record, graph_source(root.path))
 
 
 @dataclass(frozen=True, slots=True)
@@ -265,12 +279,7 @@ class Executor:
             epochs=self.epochs if self.epochs is not None else Epochs(),
             on_observed=self.on_observed,
         )
-        workspace_record = program.workspace.config.get("record")
-        # 워크스페이스에 record.video가 없으면 영상은 failed_only (M3)
-        policy = workspace_policy(
-            workspace_record if isinstance(workspace_record, Mapping) else None,
-            graph_source(WORKSPACE_FILE),
-        ).layer(root.record, graph_source(root.path))
+        policy = run_record_policy(program, root)
         recorder.redact_secrets = policy.redact_secrets
         top = Frame(root, (), None, 0, {}, record_policy=policy)
         if self.video is not None:

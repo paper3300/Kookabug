@@ -57,6 +57,45 @@ export function locate(view: VideoView, tMs: number): VideoSpot {
   return { kind: "gap", reason: gap?.gap ?? null, gap, next: next < 0 ? null : next };
 }
 
+/** 스텝을 고르면 영상에서 보일 실행 시각에 쓰는 스텝 정보 (StepNode의 일부) */
+export interface StepTimes {
+  t_start: string | null | undefined;
+  t_end?: string | null;
+  status?: string | null;
+}
+
+const FAILED_STATUS = new Set(["fail", "error"]);
+
+/**
+ * 스텝을 고르면 옮겨 갈 실행 시각 ms (M3 사람 확인 R1 F2). 스텝 시작이 녹화 준비 중 같은 빈 구간이어도 그 스텝에 영상이
+ * 있으면 영상부터 보인다:
+ * - 실패 스텝: 실패 순간(스텝 끝 직전 칸). 그 순간이 빈 구간이면 스텝 구간 안 가장 늦은 영상 칸
+ * - 그 밖: 시작 시각. 시작이 빈 구간이면 스텝 구간 안 첫 영상 시각
+ * - 스텝 구간 안에 영상이 없으면 시작 시각 (빈 구간 이유를 보인다). 시작을 모르면 null
+ */
+export function stepVideoTime(view: VideoView, step: StepTimes): number | null {
+  const start = step.t_start ? ms(step.t_start) : Number.NaN;
+  if (!Number.isFinite(start)) return null;
+  const endRaw = step.t_end ? ms(step.t_end) : Number.NaN;
+  const end = Number.isFinite(endRaw) && endRaw >= start ? endRaw : null;
+  const chain = segmentChain(view);
+  const covered = (t: number) => chain.some((c) => t >= c.start && t < c.end);
+  if (end !== null && FAILED_STATUS.has(step.status ?? "")) {
+    // 끝 시각 자체는 칸 경계일 수 있어 1 ms 앞 (그 칸 = 실패를 판정한 순간의 화면)
+    const moment = Math.max(start, end - 1);
+    if (covered(moment)) return moment;
+    const inside = chain.filter((c) => c.start <= moment && c.end > start);
+    if (inside.length > 0) {
+      const last = inside[inside.length - 1];
+      return Math.max(last.start, Math.min(moment, last.end - 1));
+    }
+    return start;
+  }
+  if (covered(start)) return start;
+  const first = chain.find((c) => c.start > start && (end === null || c.start < end));
+  return first !== undefined ? first.start : start;
+}
+
 /** [from, to) 틈과 가장 많이 겹치는 기록된 빈 구간 (없으면 null) */
 function holeGap(view: VideoView, from: number, to: number): Gap | null {
   let best: Gap | null = null;
@@ -112,6 +151,11 @@ export function gapText(reason: GapReason | null): string {
   return reason === null ? "영상 없음" : `영상 없음 · ${GAP_TEXT[reason] ?? reason}`;
 }
 
+/** 영상을 포기한 실행의 이유: 녹화 스레드가 멈춤(encoder_stuck), 인코더 준비가 늦어 모은 화면을 버림(encoder_not_ready). */
+function omittedNote(reason: unknown): string {
+  return reason === "encoder_not_ready" ? "영상 없음 · 인코더 준비가 늦어 버림" : "영상 없음 · 인코더가 멈춰 버림";
+}
+
 /**
  * 스크린샷 줄 머리의 영상 표시 (U8): 조각이 있으면 "스크린샷 | 영상" 전환, 없으면 전환 없이 이유만(영상 폴더가
  * 없는 실행은 아무것도). runVideo = run.json.video (지운 조각 수)
@@ -121,11 +165,11 @@ export function videoHeader(
   runVideo?: { status?: unknown; deleted?: unknown; reason?: unknown } | null,
 ): { toggle: boolean; note: string | null } {
   if (view === null || view === undefined) {
-    if (runVideo?.status === "omitted") return { toggle: false, note: "영상 없음 · 인코더가 멈춰 버림" };
+    if (runVideo?.status === "omitted") return { toggle: false, note: omittedNote(runVideo.reason) };
     return { toggle: false, note: null };
   }
   if (view.segments.length > 0) return { toggle: true, note: null };
-  if (view.status === "omitted") return { toggle: false, note: "영상 없음 · 인코더가 멈춰 버림" };
+  if (view.status === "omitted") return { toggle: false, note: omittedNote(view.reason) };
   if (view.status === "unavailable") return { toggle: false, note: "영상 없음 · 이 PC에서 영상 인코더를 쓸 수 없음" };
   if (view.status === "failed") return { toggle: false, note: "영상 없음 · 녹화 실패" };
   if (typeof runVideo?.deleted === "number" && runVideo.deleted > 0) return { toggle: false, note: "영상 없음 · 실패하지 않은 실행이라 지움" };

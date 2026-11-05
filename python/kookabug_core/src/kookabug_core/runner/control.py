@@ -353,6 +353,10 @@ class Controller:
         self._finishing = False
         self._hard_stop_at: float | None = None
         """감독자가 `run.cancel`로 알린 하드 종료 기한 (실제 단조 시각)."""
+        self._finish_extended: float | None = None
+        """감독자가 영상 마무리 단계를 허락하며 다시 건 하드 종료 기한 (실제 단조 시각)."""
+        self._lost_seen = False
+        self._external_stop = False
         self._deadline_listeners: list[threading.Event] = []
         """종료 기한(`finish_by`)이 바뀔 수 있을 때 세우는 Event (마무리의 기다림이 깨어 다시
         잰다)."""
@@ -363,6 +367,12 @@ class Controller:
     @property
     def cancel_reason(self) -> CancelReason | None:
         return self._reason
+
+    @property
+    def external_stop(self) -> bool:
+        """감독자가 `run.cancel`을 보냈거나 감독자가 죽었다 (먼저 정해진 취소 사유와 상관없이 —
+        판정 확정 뒤에 와도). 영상 마무리 단계는 이때 기다리지 않고 바로 끝낸다."""
+        return self._external_stop
 
     # ------------------------------------------------------------ 수명
 
@@ -408,16 +418,28 @@ class Controller:
         for event in listeners:
             event.set()
 
+    def extend_finish(self, at: float) -> None:
+        """감독자가 run.end 뒤 영상 마무리 단계를 허락해 하드 종료 타이머를 `at`(실제 단조 시각)으로
+        다시 걸었다: `runner.stopping` + 유예 대신 이 기한을 쓴다. 외부 취소(`run.cancel` 기한)·
+        감독자 사망 + 유예는 그대로 더 이르면 이긴다."""
+        with self._lock:
+            self._finish_extended = at
+        self._deadline_changed()
+
     def finish_by(self, shutdown_grace_ms: int) -> float | None:
         """runner가 끝나야 하는 가장 이른 실제 단조 시각 (모르면 None). 알려진 종료 기한 중 가장
         이른 것이다: 감독자가 `run.cancel`로 알린 하드 종료 기한, 감시자가 알아챈 감독자 사망 +
         유예(자기 종료), 처음 보낸 `runner.stopping` + 유예(감독자가 받은 뒤 거는 타이머라 실제
-        기한은 이보다 늦다). 마무리는 이 시각에서 기록 여유를 뺀 때까지만 녹화를 기다린다."""
+        기한은 이보다 늦다 — 영상 마무리 단계를 허락받았으면 감독자가 다시 건 기한). 마무리는 이
+        시각에서 기록 여유를 뺀 때까지만 녹화를 기다린다."""
         grace_s = shutdown_grace_ms / 1000
         with self._lock:
             times = [t for t in (self._hard_stop_at,) if t is not None]
             if self.stopping_at is not None:
-                times.append(self.stopping_at + grace_s)
+                stopping_by = self.stopping_at + grace_s
+                if self._finish_extended is not None:
+                    stopping_by = max(stopping_by, self._finish_extended)
+                times.append(stopping_by)
         lost_at = self.watchdog.supervisor_lost_at
         if lost_at is not None:
             times.append(lost_at + self.watchdog.shutdown_grace_s)
@@ -514,11 +536,19 @@ class Controller:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
-            if self._reason is None:
-                if self.watchdog.supervisor_lost:
-                    self.cancel("supervisor_lost")
-                elif not self._finishing and self.clock.now_ms() >= self.deadline_at_ms:
-                    self.cancel("deadline_exceeded")
+            if self.watchdog.supervisor_lost and not self._lost_seen:
+                self._lost_seen = True
+                self._external_stop = True
+                # 이미 다른 사유로 취소했어도 사망 + 유예가 새 종료 기한이다 (영상 마무리 단계의
+                # 긴 기다림도 깨운다)
+                if not self.cancel("supervisor_lost"):
+                    self._deadline_changed()
+            if (
+                self._reason is None
+                and not self._finishing
+                and self.clock.now_ms() >= self.deadline_at_ms
+            ):
+                self.cancel("deadline_exceeded")
             peer = self.peer
             if peer is None or self._channel_lost:
                 self._stop.wait(_POLL_S)
@@ -548,7 +578,9 @@ class Controller:
                 if at is not None:
                     self._note_hard_stop(at)
             self._respond(peer, request, "cancelling")
-            self.cancel("cancelled")
+            self._external_stop = True
+            if not self.cancel("cancelled"):
+                self._deadline_changed()  # 이미 다른 사유로 취소했어도 마무리 기다림을 깨운다
         elif method == "run.pause":
             self._respond(peer, request, self.pause.request())
         elif method == "run.resume":

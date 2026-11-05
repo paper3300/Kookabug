@@ -39,6 +39,8 @@ test.describe.configure({ mode: "serial" });
 const SAMPLE = path.join(import.meta.dirname, "fixtures", "video-sample.mp4");
 /** 표본 영상을 넣은 사본 실행 */
 const VIDEO_RUN = "v1de0a01";
+/** 녹화 준비가 늦은 표본 실행 (실패 스텝 시작이 starting 빈 구간) */
+const STARTING_RUN = "v1de0a02";
 
 let s: RunSession | null = null;
 const runs: Record<"base" | "other" | "fail" | "prof", string> = { base: "", other: "", fail: "", prof: "" };
@@ -61,6 +63,7 @@ test.beforeAll(async () => {
   runs.prof = await startRun(page, VIEWER_FAIL, "login_fail");
   expect(await waitRunEnded(page, runs.prof)).toBe("fail");
   plantSampleVideo(runs.fail, VIDEO_RUN);
+  plantStartingGapVideo(runs.fail, STARTING_RUN);
 });
 
 test.afterAll(async () => {
@@ -98,42 +101,86 @@ function stepStart(runId: string, node: string): { step: string; t: number } {
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
-/**
- * 실패 실행을 복사해 영상 폴더를 표본으로 바꾼다: 조각 1 = 실패 스텝 시작 3초 전부터 3초(15칸, 빨강·초록·파랑),
- * 빈 구간 = 실패 스텝 시작 50 ms 뒤부터 (비밀값, 실제 녹화기처럼 격자에 맞지 않는 차단 시각 — 조각 끝과 사이에 칸보다
- * 짧은 틈), 조각 2 = 실패 스텝 시작 1초 뒤부터 3초
- */
-function plantSampleVideo(from: string, id: string): void {
-  const ws = session().ws;
-  const folder = cloneRun(ws, from, id, {});
-  const failure = stepStart(id, "n_wait_popup").t;
+/** 그 스텝의 끝 시각 (step.end) */
+function stepEnd(runId: string, step: string): number {
+  const e = events(runId).find((x) => x.event === "step.end" && x.step === step);
+  if (e === undefined) throw new Error(`${step} 스텝 끝이 없다`);
+  return Date.parse(e.t as string);
+}
+
+/** 표본 영상 폴더: 조각 [파일, t0, 칸 수] 와 빈 구간 */
+function writeSampleVideo(folder: string, segments: [string, number, number][], gaps: object[]): void {
   const video = path.join(folder, "video");
   fs.rmSync(video, { recursive: true, force: true });
   fs.mkdirSync(video);
   const bytes = fs.statSync(SAMPLE).size;
-  const seg = (file: string, t0: number) => ({
-    bytes,
-    file,
-    frame_ms: 200,
-    frames: 15,
-    mode: "failed_only",
-    size: [160, 96],
-    t0: iso(t0),
-    t_end: iso(t0 + 3000),
-    window: "SampleRPG",
-  });
-  for (const f of ["seg-0001.mp4", "seg-0002.mp4"]) fs.copyFileSync(SAMPLE, path.join(video, f));
+  for (const [file] of segments) fs.copyFileSync(SAMPLE, path.join(video, file));
   // 쓰는 중 조각(재생할 수 없음)은 kbimg가 주지 않는다
-  fs.copyFileSync(SAMPLE, path.join(video, "seg-0003.part.mp4"));
+  fs.copyFileSync(SAMPLE, path.join(video, "seg-0009.part.mp4"));
   const index = {
-    bytes: bytes * 2,
+    bytes: bytes * segments.length,
     deleted: [],
     format: "kookabug.video-index/0",
-    gaps: [{ gap: "secret_input", t_start: iso(failure + 50), t_end: iso(failure + 1000) }],
-    segments: [seg("seg-0001.mp4", failure - 3000), seg("seg-0002.mp4", failure + 1000)],
+    gaps,
+    segments: segments.map(([file, t0, frames]) => ({
+      bytes,
+      file,
+      frame_ms: 200,
+      frames,
+      mode: "failed_only",
+      size: [160, 96],
+      t0: iso(t0),
+      t_end: iso(t0 + frames * 200),
+      window: "SampleRPG",
+    })),
     status: "recorded",
   };
   fs.writeFileSync(path.join(video, "index.json"), JSON.stringify(index));
+}
+
+/**
+ * 실패 실행을 복사해 영상 폴더를 표본으로 바꾼다: 조각 1 = 실패 스텝 시작 3초 전부터 3초(15칸, 빨강·초록·파랑),
+ * 빈 구간 = 실패 스텝 시작 50 ms 뒤부터 실패 스텝이 끝난 뒤까지 (비밀값, 실제 녹화기처럼 격자에 맞지 않는 차단 시각 —
+ * 조각 끝과 사이에 칸보다 짧은 틈), 조각 2 = 실패 스텝 끝 0.5초 뒤부터 3초. 실패 스텝 구간 안에는 영상이 없다
+ */
+function plantSampleVideo(from: string, id: string): void {
+  const folder = cloneRun(session().ws, from, id, {});
+  const failure = stepStart(id, "n_wait_popup");
+  const after = stepEnd(id, failure.step) + 500;
+  writeSampleVideo(
+    folder,
+    [
+      ["seg-0001.mp4", failure.t - 3000, 15],
+      ["seg-0002.mp4", after, 15],
+    ],
+    [{ gap: "secret_input", t_start: iso(failure.t + 50), t_end: iso(after) }],
+  );
+}
+
+/**
+ * 녹화 준비가 늦은 실행 (R1 F2): 실패 스텝 시작은 starting 빈 구간이고 실패 순간은 조각 2 안. 조각 1은 반복 스텝
+ * ("세 번 확인") 구간 가운데부터 — 그 스텝도 시작이 starting 빈 구간이다
+ */
+function plantStartingGapVideo(from: string, id: string): void {
+  const folder = cloneRun(session().ws, from, id, {});
+  const repeat = stepStart(id, "n_repeat");
+  const failure = stepStart(id, "n_wait_popup");
+  const failEnd = stepEnd(id, failure.step);
+  const second = failure.t + Math.floor((failEnd - failure.t) / 2);
+  // 반복 스텝 구간 가운데 (가짜 플랫폼에서는 그 스텝이 짧을 수 있다)
+  const firstT0 = repeat.t + Math.max(1, Math.floor((stepEnd(id, repeat.step) - repeat.t) / 2));
+  const firstFrames = Math.max(1, Math.min(15, Math.floor((failure.t - firstT0) / 200)));
+  writeSampleVideo(
+    folder,
+    [
+      ["seg-0001.mp4", firstT0, firstFrames],
+      ["seg-0002.mp4", second, 15],
+    ],
+    [
+      { gap: "starting", t_start: iso(repeat.t - 2000), t_end: iso(firstT0) },
+      { gap: "starting", t_start: iso(firstT0 + firstFrames * 200), t_end: iso(second) },
+    ],
+  );
 }
 
 const COLORS = ["red", "green", "blue"] as const;
@@ -323,7 +370,7 @@ test("test_video_tab_seeks_to_step_and_shows_gap_reason", async () => {
     return { status: r.status, range: r.headers.get("content-range"), length: (await r.arrayBuffer()).byteLength };
   }, url("seg-0001.mp4"));
   expect(part).toEqual({ status: 206, range: `bytes 10-109/${fs.statSync(SAMPLE).size}`, length: 100 });
-  const writing = await app.evaluate(async ({ net }, u) => (await net.fetch(u)).status, url("seg-0003.part.mp4"));
+  const writing = await app.evaluate(async ({ net }, u) => (await net.fetch(u)).status, url("seg-0009.part.mp4"));
   expect(writing).toBe(404);
 
   // ② 실제 녹화 (이 PC에 Media Foundation이 있으면): 실패 실행의 조각이 남고 앱에서 재생·탐색된다
@@ -347,8 +394,14 @@ test("test_video_tab_seeks_to_step_and_shows_gap_reason", async () => {
   // 조각 안에서 시작한 (지금 타임라인에 보이는) 스텝으로 탐색한다
   const visible = new Set(await page.locator('[data-part="timeline-row"]').evaluateAll((rows) => rows.map((r) => r.getAttribute("data-step"))));
   let hit: { step: string; seg: (typeof index.segments)[number]; t: number } | null = null;
+  // 실패 스텝은 시작이 아니라 실패 순간으로 간다 (R1 F2, 아래 검사) — 여기서는 시작으로 가는 스텝만
+  const failed = new Set(
+    events(runs.fail)
+      .filter((e) => e.event === "step.end" && (e.status === "fail" || e.status === "error"))
+      .map((e) => e.step as string),
+  );
   for (const e of events(runs.fail)) {
-    if (e.event !== "step.start" || !visible.has(e.step as string)) continue;
+    if (e.event !== "step.start" || !visible.has(e.step as string) || failed.has(e.step as string)) continue;
     const t = Date.parse(e.t as string);
     const seg = index.segments.find((x) => t >= Date.parse(x.t0) && t < Date.parse(x.t0) + x.frames * x.frame_ms);
     if (seg !== undefined) hit = { step: e.step as string, seg, t };
@@ -365,6 +418,41 @@ test("test_video_tab_seeks_to_step_and_shows_gap_reason", async () => {
   expect(await page.locator('[data-part="video"]').evaluate((v: HTMLVideoElement) => v.videoWidth)).toBeGreaterThan(0);
   test.info().annotations.push({ type: "media", description: `실제 조각 안 탐색: ${hit!.seg.file} 칸 ${slot}/${hit!.seg.frames}` });
   await expect(page.locator('[data-part="video-error"]')).toHaveCount(0);
+});
+
+test("test_video_failed_step_seeks_to_failure_moment_past_starting_gap", async () => {
+  // R1 F2: 실패 스텝 시작이 "녹화 준비 중" 빈 구간이어도 실패 순간(스텝 끝 직전 칸)의 영상을 보인다
+  const { page } = session();
+  await openFromList(page, STARTING_RUN);
+  const failure = stepStart(STARTING_RUN, "n_wait_popup");
+  await expect(runTab(page, STARTING_RUN)).toHaveAttribute("data-selected", failure.step);
+  await page.locator('[data-part="media-video"]').click();
+  const player = page.locator('[data-part="video-player"]');
+  const failEnd = stepEnd(STARTING_RUN, failure.step);
+  const second = failure.t + Math.floor((failEnd - failure.t) / 2);
+  const slot = Math.min(14, Math.floor((failEnd - 1 - second) / 200));
+  await expect(player).toHaveAttribute("data-state", "segment");
+  await expect(player).toHaveAttribute("data-segment", "seg-0002.mp4");
+  const seconds = (slot * 200 + 100) / 1000;
+  await expect(player).toHaveAttribute("data-seek-target", String(seconds));
+  await expect(page.locator('[data-part="video-gap"]')).toHaveCount(0);
+  await waitFrame(page, seconds, slot === 14);
+  expect(await frameColor(page)).toBe(COLORS[Math.floor(slot / 5)]);
+
+  // 통과한 반복 스텝: 시작은 starting 빈 구간 → 그 스텝 안 첫 영상(조각 1 처음, 빨강)
+  const repeat = stepStart(STARTING_RUN, "n_repeat");
+  await timelineRow(page, repeat.step).click();
+  await expect(player).toHaveAttribute("data-state", "segment");
+  await expect(player).toHaveAttribute("data-segment", "seg-0001.mp4");
+  await expect(player).toHaveAttribute("data-seek-target", "0.1");
+  await waitFrame(page, 0.1, false);
+  expect(await frameColor(page)).toBe("red");
+
+  // 스텝 구간 안에 영상이 없는 스텝(게임 띄우기, 조각 1보다 앞)은 시작의 빈 구간 이유를 그대로 보인다
+  const launch = stepStart(STARTING_RUN, "n_launch");
+  await timelineRow(page, launch.step).click();
+  await expect(player).toHaveAttribute("data-state", "gap");
+  await expect(page.locator('[data-part="video-gap"]')).toContainText(/영상 없음/);
 });
 
 test("test_export_bundle_zip_contains_run_folder", async () => {

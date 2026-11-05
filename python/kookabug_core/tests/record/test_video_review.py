@@ -92,7 +92,11 @@ def test_slow_probe_leaves_starting_gap_and_no_overlap(tmp_path: Path) -> None:
     assert recorder.stop()
     lines = segment_lines(run_dir)
     gaps = [line for line in lines if "gap" in line]
-    assert gaps[0]["gap"] == "starting"
+    # 시험을 기다리는 동안에도 창이 생긴 뒤 프레임은 모아 쓴다 (R1 F1): starting 빈 구간은 창이
+    # 생기기 전 짧은 구간뿐이라 한 칸보다 짧으면 남지 않는다
+    for g in gaps:
+        if g["gap"] == "starting":
+            assert g["t_start"] < g["t_end"]
     spans = sorted(
         [(g["t_start"], g["t_end"]) for g in gaps]
         + [(s["t0"], s["t_end"]) for s in lines if "file" in s]

@@ -20,6 +20,7 @@ __all__ = [
     "DEFAULT_SELF_KILL_MARGIN_MS",
     "DEFAULT_SHUTDOWN_GRACE_MS",
     "PROTOCOL",
+    "VIDEO_FINISH_MAX_MS",
     "ControlSpec",
     "PlatformSpec",
     "RunSpec",
@@ -35,6 +36,9 @@ DEFAULT_WORKER_CANCEL_GRACE_MS: Final = 2_000
 DEFAULT_WORKER_START_TIMEOUT_MS: Final = 30_000
 DEFAULT_SHUTDOWN_GRACE_MS: Final = 5_000
 DEFAULT_SELF_KILL_MARGIN_MS: Final = 10_000
+VIDEO_FINISH_MAX_MS: Final = 30_000
+"""영상 마무리 단계 상한 (`runner.video_finishing`): run.end 뒤 인코더 준비를 더 기다리는 최대 실제
+시간. runner가 청하는 기본값이고 감독자는 이보다 길게 허락하지 않는다 (R1 F1 3라운드)."""
 DEFAULT_CAPTURE_TIMEOUT_MS: Final = 2_000
 """`run.capture_timeout_ms` 기본값: 관측 호출 하나의 설정 기한 (M1 2.6, 조율자 결정 Q2)."""
 DEFAULT_FRAME_BUDGET_MIB: Final = 512

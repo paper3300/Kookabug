@@ -1,5 +1,6 @@
 // 영상 보기 (M3 계획 2.10 "영상", 사용자 결정 U8 — 시안에 없음): 스크린샷 줄 머리 "스크린샷 | 영상"에서 영상을 고르면
-// 고른 스텝 시작 시각으로 옮겨 보인다. 조각은 kbimg://ws/<실행 폴더>/video/seg-NNNN.mp4 (Range 206, 2.7).
+// 고른 스텝 시각으로 옮겨 보인다 — 실패 스텝은 실패 순간, 그 밖은 시작(시작이 빈 구간이면 그 스텝 안 첫 영상,
+// `stepVideoTime`). 조각은 kbimg://ws/<실행 폴더>/video/seg-NNNN.mp4 (Range 206, 2.7).
 // - 시각 대응은 5 fps 격자 (videoTimeline.ts): 재생 위치 = 칸 × 200 ms
 // - 조각이 끝나면 다음 조각을 이어 재생한다. 사이에 빈 구간이 있으면 그 이유를 잠깐 띄운 뒤 넘어간다
 // - 스텝 시각이 빈 구간이면 영상 대신 이유(기록 끔·비밀값·멈춤·창 없음·중단·지원 안 됨)와 "다음 영상부터"를 보인다
@@ -11,7 +12,7 @@ import { fileUrl } from "./evidenceCells";
 import { isoMs } from "./labels";
 import type { StepNode } from "./runIndexStore";
 import css from "./runs.module.css";
-import { gapText, locate, nextAfter, runTimeAt, seekSeconds, segmentChain, type VideoSpot, type VideoView } from "./videoTimeline";
+import { gapText, locate, nextAfter, runTimeAt, seekSeconds, segmentChain, stepVideoTime, type VideoSpot, type VideoView } from "./videoTimeline";
 
 /** 조각 사이 빈 구간 이유를 보이는 시간 */
 export const GAP_NOTICE_MS = 1200;
@@ -20,7 +21,8 @@ type GapSpot = Extract<VideoSpot, { kind: "gap" }>;
 
 export function VideoPlayer({ runDir, runStart, step, video }: { runDir: string; runStart: number | null; step: StepNode; video: VideoView }) {
   const chain = useMemo(() => segmentChain(video), [video]);
-  const target = isoMs(step.t_start);
+  // 실패 스텝은 실패 순간, 시작이 빈 구간인 스텝은 그 스텝 안 첫 영상으로 (R1 F2)
+  const target = isoMs(step.t_start) === null ? null : stepVideoTime(video, step);
   const [cur, setCur] = useState<number | null>(null);
   const [gap, setGap] = useState<GapSpot | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +62,7 @@ export function VideoPlayer({ runDir, runStart, step, video }: { runDir: string;
     else el.pause();
   };
 
-  // 고른 스텝이 바뀌면 그 시작 시각으로
+  // 고른 스텝이 바뀌면 그 스텝의 영상 시각으로
   useEffect(() => {
     clearTimer();
     if (target === null || chain.length === 0) return;

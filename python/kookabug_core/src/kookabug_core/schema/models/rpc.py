@@ -236,7 +236,7 @@ class RunBreakpointsParams(BaseModel):
 
 class RunCancelParams(BaseModel):
     """
-    run.cancel (감독자 → runner) params: 감독자가 이미 건 하드 종료 타이머의 기한. 타이머는 미루지 않는다. runner는 이 기한에서 기록 여유를 뺀 때까지만 녹화를 기다리고 그 전에 run.end·run.json을 쓴다. hard_stop_at_mono: 하드 종료 시각의 단조 시계 초(Python time.monotonic). 감독자·runner는 같은 Windows PC의 프로세스이고 time.monotonic은 시스템 전역 QueryPerformanceCounter라 원점이 같다는 것이 계약이다 — 전달 지연과 상관없이 정확한 기한이다. hard_stop_in_ms: 보내기 직전에 잰 남은 실제 시간(ms). runner는 min(hard_stop_at_mono, 꺼낸 시각 + hard_stop_in_ms)를 기한으로 쓰고(어느 쪽도 늦게 잡지 않게), hard_stop_at_mono가 이미 지났거나 꺼낸 시각 + 마무리 유예보다 멀면(시계 원점이 다르다고 본다) 녹화를 기다리지 않고 바로 기록한다. hard_stop_at_mono 없이 hard_stop_in_ms만 오면 꺼낸 시각 + 남은 시간을 쓰지만 전달 지연만큼 늦게 잡힐 수 있다(상한 없음). params가 없으면 runner.stopping 시각 + shutdown_grace_ms로 본다 (M0b 호출과 같다)
+    run.cancel (감독자 → runner) params: 감독자가 이미 건 하드 종료 타이머의 기한. 타이머는 미루지 않는다(영상 마무리 단계로 다시 건 타이머는 지금 + 유예로 당긴다 — RunnerVideoFinishingResult). runner는 이 기한에서 기록 여유를 뺀 때까지만 녹화를 기다리고 그 전에 run.end·run.json을 쓴다. hard_stop_at_mono: 하드 종료 시각의 단조 시계 초(Python time.monotonic). 감독자·runner는 같은 Windows PC의 프로세스이고 time.monotonic은 시스템 전역 QueryPerformanceCounter라 원점이 같다는 것이 계약이다 — 전달 지연과 상관없이 정확한 기한이다. hard_stop_in_ms: 보내기 직전에 잰 남은 실제 시간(ms). runner는 min(hard_stop_at_mono, 꺼낸 시각 + hard_stop_in_ms)를 기한으로 쓰고(어느 쪽도 늦게 잡지 않게), hard_stop_at_mono가 이미 지났거나 꺼낸 시각 + 마무리 유예보다 멀면(시계 원점이 다르다고 본다) 녹화를 기다리지 않고 바로 기록한다. hard_stop_at_mono 없이 hard_stop_in_ms만 오면 꺼낸 시각 + 남은 시간을 쓰지만 전달 지연만큼 늦게 잡힐 수 있다(상한 없음). params가 없으면 runner.stopping 시각 + shutdown_grace_ms로 본다 (M0b 호출과 같다)
     """
 
     model_config = ConfigDict(
@@ -320,6 +320,30 @@ class RunnerStoppingParams(BaseModel):
         extra="forbid",
     )
     reason: Literal["cancelled", "deadline_exceeded", "finish", "supervisor_lost"]
+
+
+class RunnerVideoFinishingParams(BaseModel):
+    """
+    runner.video_finishing 요청 (runner → 감독자): run.end를 쓴 뒤 영상 인코더 준비가 아직이라 실행 중 모은 프레임을 쓰려고 영상 마무리 단계를 청한다 (M3 사람 확인 R1 F1). 판정·run.end는 이미 정해졌고 바뀌지 않는다. wait_ms: 인코더를 더 기다리려는 실제 시간 (감독자는 30000 ms보다 길게 허락하지 않는다)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    wait_ms: Annotated[int, Field(ge=1)]
+
+
+class RunnerVideoFinishingResult(BaseModel):
+    """
+    runner.video_finishing 결과. granted: 허락. 감독자는 실행마다 한 번만 하드 종료 타이머를 지금 + wait_ms + shutdown_grace_ms로 다시 걸고, 외부 취소를 받았거나 이미 허락했거나 하드 종료했으면 거절한다. 단계 중 외부 취소가 오면 타이머를 지금 + 유예로 당긴다(run.cancel 기한). hard_stop_at_mono·hard_stop_in_ms: 지금 걸린 하드 종료 타이머의 기한 (RunCancelParams와 같은 뜻, 타이머를 쓰지 않는 감독자는 보내지 않는다). runner는 거절되면 모은 프레임을 버리고(starting 빈 구간 reason encoder_not_ready) 바로 마무리한다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    granted: bool
+    hard_stop_at_mono: float | None = None
+    hard_stop_in_ms: Annotated[int | None, Field(ge=0)] = None
 
 
 class SecretMessageWire(BaseModel):

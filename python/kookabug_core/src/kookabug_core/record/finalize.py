@@ -19,8 +19,13 @@ runner가 어떻게 끝났든 runner 종료를 확인한 쪽(감독자 복구 �
 선행 조건: 부르는 쪽이 작성자(녹화 스레드)가 없음을 확인했다 — runner는 녹화 스레드 종료를 확인한
 경우만, 감독자는 runner 프로세스 종료를 확인한 뒤.
 
-0. `run.end.omitted`에 `video`/`encoder_stuck`이 있으면 `video/` 안 파일을 모두 지우고
-   `status: omitted`를 공개한다 (지우지 못한 파일은 `cleanup_failed`, 다음 마무리가 다시 시도)
+0. 포기 이유를 `abandoned_reason` 한 곳에서 정한다. `encoder_stuck`(`run.end.omitted`의
+   `video`/`encoder_stuck`, 또는 늦은 인코더 대기 표식이 `writing`으로 남음 — 저널에 완료 줄
+   `encoder_wait: settled`가 있으면 표식은 무시)이면 `video/` 안 파일을
+   모두 지우고 `status: omitted`를 공개한다 (지우지 못한 파일은 `cleanup_failed`, 다음 마무리가 다시
+   시도). `encoder_not_ready`(표식 `waiting`·녹화 스레드가 적은 이유)면 아래 순서대로 하되 상태는
+   `omitted`다 (부분 조각을 지운 기록이 있어도). 작성자가 살아 있어 마무리할 수 없는 runner는
+   같은 계산을 파일을 건드리지 않고 한다 (`preview_video`)
 1. `segments.jsonl`을 읽는다 (끝의 잘린 줄은 버림). 줄이 있는 `.mp4`는 완성 조각, `.part.mp4`와 줄
    없는 `.mp4`는 지우고 `{gap: interrupted}`
 2. 보관 판정 (사용자 결정 U5): 판정 `fail`·`error`면 `failed_only` 조각을 남기고, `pass`·`skipped`·
@@ -59,6 +64,8 @@ from kookabug_core.record.runfolder import (
     write_run_json,
 )
 from kookabug_core.record.video import (
+    ENCODER_WAIT_FILE,
+    ENCODER_WAIT_SETTLED,
     INDEX_FILE,
     INDEX_FORMAT,
     SEGMENTS_FILE,
@@ -71,8 +78,11 @@ __all__ = [
     "InputRecoveryOutcome",
     "RecoverInputs",
     "VideoWriterAlive",
+    "abandoned_reason",
     "finalize_run",
     "finalize_video",
+    "keep_failed_only",
+    "preview_video",
     "read_video",
     "read_video_index",
     "video_summary",
@@ -363,7 +373,10 @@ def read_video(run_dir: str | os.PathLike[str]) -> tuple[dict[str, Any] | None, 
     segments = [
         dict(line) for line in lines if "file" in line and (video / str(line["file"])).exists()
     ]
-    status, reason = _video_status(lines, None, [])
+    waited = _encoder_wait_gap(video, lines)
+    if waited is not None:
+        lines = [*lines, waited]
+    status, reason = _video_status(lines, None, [], abandoned_reason(video, {}))
     view: dict[str, Any] = {
         "bytes": sum(int(s.get("bytes", 0)) for s in segments),
         "deleted": [],
@@ -404,8 +417,9 @@ def video_omitted(run_end: Mapping[str, Any]) -> bool:
     )
 
 
-def _keep_failed_only(run_end: Mapping[str, Any]) -> tuple[bool, str | None]:
-    """`failed_only` 조각을 남기는가와, 지우면 그 이유 (사용자 결정 U5)."""
+def keep_failed_only(run_end: Mapping[str, Any]) -> tuple[bool, str | None]:
+    """`failed_only` 조각을 남기는가와, 지우면 그 이유 (사용자 결정 U5). runner의 영상 마무리
+    단계도 이것으로 모은 프레임을 쓸 까닭이 있는지 본다."""
     if run_end.get("cancel_reason") == "cancelled":
         return False, "run_cancelled"
     verdict = run_end.get("verdict")
@@ -425,24 +439,71 @@ def finalize_video(
         return None
     _check_writer_gone(video)
     previous = read_video_index(video)
+    index = _build_index(video, run_end, previous, dry=False)
+    # 임시 파일 정리는 판정 뒤에 한다 (판정은 저널·표식만 보고, 정리 성패가 판정을 바꾸지 않는다)
     _remove_stale_temps(video)
-    if video_omitted(run_end):
-        index = _omitted_index(video, previous)
-    else:
-        index = _recorded_index(video, run_end, previous)
     _publish(video, index)
     return index
 
 
-def _omitted_index(video: Path, previous: Mapping[str, Any] | None) -> dict[str, Any]:
+def preview_video(
+    run_dir: str | os.PathLike[str], run_end: Mapping[str, Any]
+) -> dict[str, Any] | None:
+    """작성자가 아직 살아 있어 마무리할 수 없을 때(runner가 녹화 스레드를 기다리다 포기함), 그
+    작성자가 끝난 뒤 감독자 복구의 `finalize_video`가 낼 색인을 파일을 건드리지 않고 같은 함수로
+    미리 계산한다 — runner `run.json`의 영상 요약과 복구 뒤 요약이 같다. 영상 폴더가 없으면
+    None."""
+    video = Path(run_dir) / VIDEO_DIR
+    if not video.is_dir():
+        return None
+    return _build_index(video, run_end, read_video_index(video), dry=True)
+
+
+def abandoned_reason(
+    video: Path, run_end: Mapping[str, Any], previous: Mapping[str, Any] | None = None
+) -> Literal["encoder_stuck", "encoder_not_ready"] | None:
+    """그 실행의 영상을 포기한 이유를 한 곳에서 정한다 (마무리·미리 계산·읽기가 같이 쓴다).
+
+    - `encoder_stuck`: runner가 녹화 기다림 안에 끝나지 않은 녹화 스레드를 두고 `run.end.omitted`에
+      적었거나, 늦은 인코더 대기 표식이 `writing`(준비는 끝났는데 모은 프레임을 쓰고 닫기 전에
+      작성자가 멈추거나 끝남)으로 남았다. 앞 마무리가 이미 그렇게 정했으면 그대로 (파일은 지웠다)
+    - `encoder_not_ready`: 표식이 `waiting`(준비 전에 작성자가 끝남)으로 남았거나 녹화 스레드가
+      `starting` 빈 구간에 그 이유를 적었다 (앞 색인의 그 빈 구간도)
+    저널에 늦은 대기 완료 줄(`encoder_wait: settled`)이 있으면 표식은 무시한다 (`_read_marker`).
+    `run.end`는 고치지 않는다 — 포기 이유는 영상 폴더가 들고 있다."""
+    if video_omitted(run_end):
+        return "encoder_stuck"
+    marker = _read_marker(video)
+    if marker is not None:
+        return "encoder_stuck" if marker.get("phase") == "writing" else "encoder_not_ready"
+    if previous is not None and previous.get("status") == "omitted":
+        reason = previous.get("reason")
+        if reason in ("encoder_stuck", "encoder_not_ready"):
+            return reason
+    if any(_is_not_ready(line) for line in _segment_lines(video)):
+        return "encoder_not_ready"
+    return None
+
+
+def _build_index(
+    video: Path, run_end: Mapping[str, Any], previous: Mapping[str, Any] | None, *, dry: bool
+) -> dict[str, Any]:
+    if abandoned_reason(video, run_end, previous) == "encoder_stuck":
+        return _omitted_index(video, previous, dry=dry)
+    return _recorded_index(video, run_end, previous, dry=dry)
+
+
+def _omitted_index(
+    video: Path, previous: Mapping[str, Any] | None, *, dry: bool = False
+) -> dict[str, Any]:
     deleted = _carried(previous, "encoder_stuck")
     failed: list[str] = []
     for path in sorted(_names(video)):
-        if path.name == INDEX_FILE:
+        if path.name == INDEX_FILE or (dry and path.name.startswith(".")):
             continue
         if _SEGMENT_FILE.fullmatch(path.name):
             _add_deleted(deleted, {"file": path.name, "reason": "encoder_stuck"})
-        if not _delete(path):
+        if not dry and not _delete(path):
             failed.append(path.name)
     index: dict[str, Any] = {
         "bytes": 0,
@@ -459,19 +520,36 @@ def _omitted_index(video: Path, previous: Mapping[str, Any] | None) -> dict[str,
 
 
 def _recorded_index(
-    video: Path, run_end: Mapping[str, Any], previous: Mapping[str, Any] | None
+    video: Path,
+    run_end: Mapping[str, Any],
+    previous: Mapping[str, Any] | None,
+    *,
+    dry: bool = False,
 ) -> dict[str, Any]:
+    """조각을 보관 판정으로 남기거나 지운 색인. `dry`면 지우지 않고 결과만 계산한다."""
+
+    def delete(path: Path) -> bool:
+        return True if dry else _delete(path)
+
+    abandoned = abandoned_reason(video, run_end, previous)
     lines = _segment_lines(video)
     listed = {str(line["file"]): line for line in lines if "file" in line}
-    gaps: list[dict[str, Any]] = [dict(line) for line in lines if "gap" in line]
+    failed: list[str] = []
+    # 늦은 인코더 대기(준비 전) 중 작성자가 끝났다(하드 종료 등): 포기를 기록한 것과 같은 빈
+    # 구간으로. 표식은 지우고, 다시 마무리할 때는 앞 색인의 그 빈 구간을 이어받는다
+    waited = _encoder_wait_gap(video, lines)
+    if waited is not None:
+        lines = [*lines, waited]
+    if not delete(video / ENCODER_WAIT_FILE):
+        failed.append(ENCODER_WAIT_FILE)
     deleted = _carried(previous, "interrupted")
-    # 앞 마무리가 남긴 중단 구간 (그 파일은 이미 지웠다)
+    # 앞 마무리가 남긴 중단 구간 (그 파일은 이미 지웠다)·표식에서 만든 빈 구간
     for gap in (previous or {}).get("gaps", ()):
         if isinstance(gap, dict):
             item = cast(dict[str, Any], gap)
-            if item.get("gap") == "interrupted" and item not in gaps:
-                gaps.append(item)
-    failed: list[str] = []
+            if (_is_interrupted(item) or _is_not_ready(item)) and item not in lines:
+                lines = [*lines, item]
+    gaps: list[dict[str, Any]] = [dict(line) for line in lines if "gap" in line]
 
     # 1. 쓰다 만 조각: .part.mp4와 segments.jsonl 줄 없는 .mp4
     for path in sorted(_names(video)):
@@ -489,11 +567,11 @@ def _recorded_index(
                 gaps.append(gap)
         _add_deleted(deleted, {"file": path.name, "reason": "interrupted"})
         for target in (path, frames):
-            if not _delete(target):
+            if not delete(target):
                 failed.append(target.name)
 
     # 2. 보관 판정
-    keep, why = _keep_failed_only(run_end)
+    keep, why = keep_failed_only(run_end)
     segments: list[dict[str, Any]] = []
     total = 0
     for name, line in listed.items():
@@ -506,10 +584,10 @@ def _recorded_index(
         _add_deleted(deleted, {"file": name, "mode": line.get("mode"), "reason": why})
         frames = video / name.replace(".mp4", ".frames.jsonl")
         for target in (path, frames):
-            if not _delete(target):
+            if not delete(target):
                 failed.append(target.name)
 
-    status, reason = _video_status(lines, previous, deleted)
+    status, reason = _video_status(lines, previous, deleted, abandoned)
     index: dict[str, Any] = {
         "bytes": total,
         "deleted": deleted,
@@ -529,13 +607,18 @@ def _video_status(
     lines: Sequence[Mapping[str, Any]],
     previous: Mapping[str, Any] | None,
     deleted: Sequence[Mapping[str, Any]],
+    abandoned: str | None = None,
 ) -> tuple[str, str | None]:
+    """`unavailable` > `failed` > 포기(`abandoned_reason`, 부분 조각을 지운 기록이 있어도) >
+    `recorded` > `none`."""
     for gap in lines:
         if gap.get("gap") == "unavailable":
             return "unavailable", str(gap.get("reason", "encoder_open_failed"))
     for gap in lines:
         if gap.get("gap") == "failed":
             return "failed", str(gap.get("reason", "write_failed"))
+    if abandoned is not None:
+        return "omitted", abandoned
     if any("file" in line for line in lines) or deleted:
         return "recorded", None
     if previous is not None and previous.get("status") == "recorded":
@@ -543,8 +626,51 @@ def _video_status(
     return "none", None
 
 
-def _segment_lines(video: Path) -> list[dict[str, Any]]:
-    """`segments.jsonl`의 온전한 줄 (끝의 잘린 줄·깨진 줄은 버린다)."""
+def _is_interrupted(gap: Mapping[str, Any]) -> bool:
+    return gap.get("gap") == "interrupted"
+
+
+def _is_not_ready(gap: Mapping[str, Any]) -> bool:
+    return gap.get("gap") == "starting" and gap.get("reason") == "encoder_not_ready"
+
+
+def _read_marker(video: Path) -> dict[str, Any] | None:
+    """판정에 쓸 늦은 인코더 대기 표식 (없거나 읽을 수 없으면 None, `phase`가 없으면 `waiting`).
+    저널에 완료 줄(`encoder_wait: settled`)이 있으면 결과가 모두 기록된 것이므로 표식이 남아
+    있어도(녹화 스레드의 최선 시도 삭제가 공유 위반 등으로 실패) 없는 것으로 본다 — 결과의 근거는
+    덧붙이기만 하는 저널 하나다 (vreview_5)."""
+    if _encoder_wait_settled(video):
+        return None
+    try:
+        value = json.loads((video / ENCODER_WAIT_FILE).read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return None
+    return cast(dict[str, Any], value) if isinstance(value, dict) else None
+
+
+def _encoder_wait_settled(video: Path) -> bool:
+    return any(
+        line.get("encoder_wait") == ENCODER_WAIT_SETTLED and "gap" not in line
+        for line in _journal(video)
+    )
+
+
+def _encoder_wait_gap(video: Path, lines: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
+    """준비 대기(`waiting`) 표식 → `starting`/`encoder_not_ready` 빈 구간 (녹화 스레드가 이미
+    포기를 기록했거나 표식이 없거나 `writing`이거나 읽을 수 없으면 None)."""
+    if any(_is_not_ready(line) for line in lines):
+        return None
+    marker = _read_marker(video)
+    if marker is None or marker.get("phase") == "writing":
+        return None
+    start, end = marker.get("t_start"), marker.get("t_end")
+    if not isinstance(start, str) or not isinstance(end, str):
+        return None
+    return {"gap": "starting", "reason": "encoder_not_ready", "t_end": end, "t_start": start}
+
+
+def _journal(video: Path) -> list[dict[str, Any]]:
+    """`segments.jsonl`의 온전한 JSON 객체 줄 전부 (끝의 잘린 줄·깨진 줄은 버린다)."""
     try:
         text = (video / SEGMENTS_FILE).read_text(encoding="utf-8")
     except OSError:
@@ -557,9 +683,15 @@ def _segment_lines(video: Path) -> list[dict[str, Any]]:
             value = json.loads(raw)
         except ValueError:
             continue
-        if not isinstance(value, dict):
-            continue
-        line = cast(dict[str, Any], value)
+        if isinstance(value, dict):
+            lines.append(cast(dict[str, Any], value))
+    return lines
+
+
+def _segment_lines(video: Path) -> list[dict[str, Any]]:
+    """`segments.jsonl`의 조각·빈 구간 줄 (완료 줄 등 다른 줄과 잘린·깨진 줄은 버린다)."""
+    lines: list[dict[str, Any]] = []
+    for line in _journal(video):
         name = line.get("file")
         if name is not None and (
             not _SEGMENT_FILE.fullmatch(str(name)) or str(name).endswith(".part.mp4")

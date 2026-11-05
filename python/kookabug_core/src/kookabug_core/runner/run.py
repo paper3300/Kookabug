@@ -24,15 +24,27 @@
 감독자 사망 + 유예, `runner.stopping` + 유예 중 가장 이른 것(`Controller.finish_by`) — 에서
 기록 여유 1초(유예가 2초 미만이면 유예의 절반)를 뺀 때를 넘지 않음 — 하드 종료 전에 영상 포기·기록이
 끝나게) → (quiesced면) 플랫폼 닫기(캡처 세션·추적기 스레드) → `run.end`(녹화 스레드가 안
-끝났으면 `omitted` `video`/`encoder_stuck`) → 녹화 스레드가 끝났을 때만 영상 마무리
-(`finalize_video` — 안 끝났으면 `video/`를 건드리지 않고 감독자가 runner 종료 뒤 지운다) →
-`run.json` 완료(영상 요약) → quiesced였으면 임대권 깨끗하게 놓기(아니면 놓지 않고 끝남 — 감독자
+끝났으면 `omitted` `video`/`encoder_stuck` — 늦은 인코더 대기 중이면 붙이지 않는다) → **영상 마무리
+단계**(녹화 스레드가 늦은 인코더 대기 중일 때만, R1 F1 3라운드) → 녹화 스레드가 끝났을 때만 영상
+마무리 (`finalize_video` — 안 끝났으면 `video/`를 건드리지 않고 감독자가 runner 종료 뒤 마무리한다)
+→ `run.json` 완료(영상 요약) → quiesced였으면 임대권 깨끗하게 놓기(아니면 놓지 않고 끝남 — 감독자
 복구 경로·다음 획득자가 처리) → 저널 닫기 → 종료 코드 0. 워커·액터·녹화 기다림의 끝은 모두
 그때 아는 종료 기한에서 기록 여유를 뺀 때(`_cutoff`)이고, 기다리는 도중 더 이른 기한이 알려지면
 (제어기의 기한 갱신 신호) 바로 다시 잰다.
 
-**영상** (M3 2.5): 녹화 프레임을 줄 수 있는 플랫폼(`windows`, 장면 `fake`)이면 시작 순서와 겹쳐
-인코더 열기 시험을 띄우고(`EncoderProbe`), 실행기를 시작할 때 녹화 게이트와 녹화 스레드를 붙인다.
+**영상 마무리 단계**: 실행이 인코더 열기 시험보다 먼저 끝나 녹화 스레드가 모은 프레임을 들고 시험을
+기다리면(`VideoRecorder.awaiting_encoder`), `run.end`(판정 확정) 뒤 감독자에게
+`runner.video_finishing{wait_ms}`을 청해 하드 종료 타이머를 다시 걸게 하고(자기 종료 감시자도 같이
+미룸) 그 상한(`VIDEO_FINISH_MAX_MS`, 30초) 안에서 시험·쓰기를 기다린다. 판정·종료 코드·실행 기한은
+그대로다. 상한을 넘기거나, 모은 프레임을 남길 까닭이 없거나(`failed_only`만인데 `pass`·`skipped`·
+사용자 취소), 외부 취소·감독자 사망이거나, 감독자가 거절하면 녹화 스레드에 포기를 알린다 — 그
+실행의 영상은 `status: omitted`/`encoder_not_ready`로 남는다. 단계 중 하드 종료되면 녹화 스레드의
+대기 표식으로 감독자 마무리가 같은 상태를 남긴다.
+
+**영상** (M3 2.5): 녹화 프레임을 줄 수 있는 플랫폼(`windows`, 장면 `fake`)이면 runner를 시작하자마자
+인코더 열기 시험을 띄우고(`EncoderProbe`, 연결·기록 시작·스냅샷과 겹침), 영상이 꺼지지 않은
+실행은 시험이 끝난 뒤(최대 `VIDEO_PROBE_WAIT_S`) 첫 스텝을 시작한다(R1 F1). 실행기를 시작할 때 녹화
+게이트와 녹화 스레드를 붙인다.
 멈춤 게이트가 멈춘 동안 녹화 게이트를 off로 둔다.
 runner의 저널 쓰기는 `run.end`가 마지막이다.
 
@@ -44,7 +56,9 @@ from __future__ import annotations
 
 import contextlib
 import importlib.metadata
+import math
 import platform as host
+import sys
 import threading
 import time
 import traceback
@@ -68,6 +82,7 @@ from kookabug_core.engine import (
 )
 from kookabug_core.engine.context import InputObserver, ObservationLimits
 from kookabug_core.engine.errors import EngineError
+from kookabug_core.engine.executor import run_record_policy
 from kookabug_core.engine.scenario import FakeScenario, ScenarioError, ScenarioPlatform
 from kookabug_core.inputs import (
     InputActor,
@@ -82,7 +97,12 @@ from kookabug_core.inputs.service import InputService, InputSink
 from kookabug_core.loader import Program
 from kookabug_core.record import FileArtifacts, Journal, write_run_json
 from kookabug_core.record.artifacts import FindEvidence, FrameRegistry, find_with_report
-from kookabug_core.record.finalize import finalize_video, video_summary
+from kookabug_core.record.finalize import (
+    finalize_video,
+    keep_failed_only,
+    preview_video,
+    video_summary,
+)
 from kookabug_core.record.runfolder import RUN_FORMAT, RunFolder, finished_run_json
 from kookabug_core.record.snapshot import GRAPH_PREFIX, SnapshotError, take_snapshot
 from kookabug_core.record.video import (
@@ -94,11 +114,18 @@ from kookabug_core.record.video import (
     VideoRecorder,
     VideoSource,
     encoder_factory_from_env,
+    finish_wait_from_env,
 )
 from kookabug_core.registry import Registry, default_registry
 from kookabug_core.runner.clock import ActiveClock
 from kookabug_core.runner.control import Controller, PauseGate, PollPoint
-from kookabug_core.runner.spec import MIB, PROTOCOL, RunSpec, ident_to_json
+from kookabug_core.runner.spec import (
+    MIB,
+    PROTOCOL,
+    VIDEO_FINISH_MAX_MS,
+    RunSpec,
+    ident_to_json,
+)
 from kookabug_core.runner.watchdog import Watchdog
 from kookabug_core.validate import validate
 from kookabug_core.win import Job, ProcessId, current, dpi
@@ -118,6 +145,7 @@ __all__ = [
     "EXIT_RECORD_FAILED",
     "EXIT_START_FAILED",
     "FINISH_RESERVE_S",
+    "VIDEO_PROBE_WAIT_S",
     "Runner",
     "RunnerPlatform",
     "finish_reserve_s",
@@ -129,6 +157,12 @@ EXIT_OK: Final = 0
 EXIT_START_FAILED: Final = 2
 EXIT_RECORD_FAILED: Final = 3
 HELLO_TIMEOUT_S: Final = 30.0
+VIDEO_PROBE_WAIT_S: Final = 20.0
+"""첫 스텝 전에 인코더 열기 시험을 기다리는 상한 (R1 F1 2라운드, 남은 기한의 절반도 넘지 않음)."""
+_PROBE_POLL_S: Final = 0.05
+_VIDEO_FINISH_CALL_S: Final = 2.0
+"""`runner.video_finishing` 답을 기다리는 상한 (그때의 `_cutoff`도 넘지 않는다)."""
+_CLOCK_SLACK_S: Final = 0.005
 _FINISH_SLICE_S: Final = 0.05
 """마무리에서 끝을 신호로 받지 못하는 대상(액터 스레드)을 다시 보는 간격."""
 FINISH_RESERVE_S: Final = 1.0
@@ -379,6 +413,9 @@ class Runner:
     # ------------------------------------------------------------ 진입
 
     def run(self) -> int:
+        # 인코더 열기 시험은 가장 먼저 띄운다: 연결·기록 시작·스냅샷과 겹쳐 첫 스텝 전 기다림을
+        # 줄인다 (R1 F1 2라운드 — 첫 스텝은 시험이 끝난 뒤 시작한다, `_wait_video_probe`)
+        self._begin_video_probe()
         try:
             self._connect()
         except Exception:
@@ -497,7 +534,6 @@ class Runner:
         spec = self.spec
         assert self.controller is not None and self.journal is not None
         self._check()
-        self._begin_video_probe()
 
         # 4. 스냅샷
         try:
@@ -570,8 +606,36 @@ class Runner:
                 return refused
         self._check()
 
-        # 9. 실행
+        # 9. 실행 (영상을 남길 수 있으면 인코더 준비가 끝난 뒤 첫 스텝)
+        self._wait_video_probe(program)
         return self._run_program(program, registry)
+
+    def _wait_video_probe(self, program: Program) -> None:
+        """영상을 남길 수 있는 실행은 인코더 열기 시험이 끝난 뒤 첫 스텝을 시작한다 (M3 사람 확인 R1
+        F1 2라운드). 시험이 느리면(차가운 Media Foundation·PC 부하) 그동안 실행이 실패로 끝나 마무리
+        기한 안에 인코더가 준비되지 않아 실패 영상 전체를 잃을 수 있다 — 마무리 기한을 늘리는 대신
+        앞에서 기다린다. 보통은 스냅샷·워커 시작과 겹쳐 이미 끝나 있다. 상한은
+        `VIDEO_PROBE_WAIT_S` 또는 남은 기한의 절반, 취소·기한은 그대로 확인한다. 상한을 넘기면 녹화
+        스레드의 준비 중 모으기가 잇고, 실행이 먼저 끝나면 run.end 뒤 영상 마무리 단계가 모은
+        프레임을 쓴다(그 메모리 상한은 전체 HD로 몇 초뿐이라 앞부분 영상은 이 기다림이 지킨다)."""
+        probe = self._video_probe
+        if probe is None or probe.done.is_set():
+            return
+        if not callable(getattr(self.platform, "video_frame", None)):
+            return  # 녹화 프레임을 줄 수 없는 플랫폼: 녹화 스레드가 없다
+        if run_record_policy(program).video == "off":
+            return  # 기본 정책이 끔이면 게이트가 늘 off다
+        remaining_s = max(0.0, (self.deadline_at_ms - self.clock.now_ms()) / 1000)
+        until = time.monotonic() + min(VIDEO_PROBE_WAIT_S, remaining_s / 2)
+        started = time.monotonic()
+        while not probe.done.wait(_PROBE_POLL_S):
+            self._check()
+            if time.monotonic() >= until:
+                break
+        waited = time.monotonic() - started
+        if waited >= 1.0:
+            ready = "준비됨" if probe.done.is_set() else "아직 준비 안 됨 (준비 중 모으기로 잇는다)"
+            print(f"영상 인코더 준비를 {waited:.1f}초 기다렸다: {ready}", file=sys.stderr)
 
     def _open_platform(self, workspace: Workspace) -> _End | None:
         spec = self.spec
@@ -677,6 +741,7 @@ class Runner:
             self._video_factory,
             probe=probe,
             capture_timeout_ms=self.spec.capture_timeout_ms,
+            late_wait_s=None,  # 늦은 인코더 대기의 포기는 마무리가 정한다 (영상 마무리 단계)
         ).start()
         self.pause.on_pause = gate.set_paused
         return gate
@@ -826,13 +891,20 @@ class Runner:
             # 녹화 스레드가 끝났는지 실제 시간 3초(`stopping_at`부터)까지, 단 `cutoff()`까지만
             # 본다. 안 끝났으면 그 실행의 영상을 포기하고 video/ 파일을 건드리지 않는다 (runner
             # 종료를 확인한 감독자가 지운다, 2차 검수 N2). 하드 종료보다 먼저 `run.end`·`run.json`을
-            # 쓰게 한다. 녹화 스레드가 끝나도 `wake`가 선다
+            # 쓰게 한다. 녹화 스레드가 끝나거나 늦은 인코더 대기에 들어가도 `wake`가 선다 — 늦은
+            # 대기는 멈춘 것이 아니므로 run.end 뒤 영상 마무리 단계로 넘긴다
             writer_done = True
+            late = False
             if recorder is not None:
                 recorder.notify_on_exit(wake)
-                writer_done = self._wait_until(
-                    lambda: recorder.exited, stop_at + STOP_GRACE_S, stop_at, wake
-                ) and recorder.join(_FINISH_SLICE_S)
+                self._wait_until(
+                    lambda: recorder.exited or recorder.awaiting_encoder,
+                    stop_at + STOP_GRACE_S,
+                    stop_at,
+                    wake,
+                )
+                writer_done = recorder.exited and recorder.join(_FINISH_SLICE_S)
+                late = not writer_done and recorder.awaiting_encoder
         finally:
             self.controller.remove_deadline_listener(wake)
         close = getattr(self.platform, "close", None)
@@ -848,7 +920,7 @@ class Runner:
             # 거부된다). 쓰기가 멈추면 run.end도 쓸 수 없으므로 기다림의 끝은 감시자의 자기 종료다
             self.controller.record_cancel()
             event = self._run_end_event(end)
-            if not writer_done:
+            if not writer_done and not late:
                 event["omitted"] = [{"kind": "video", "reason": "encoder_stuck"}]
             try:
                 run_end = self.journal.emit(event)
@@ -861,6 +933,8 @@ class Runner:
             self._close()
             return EXIT_RECORD_FAILED
 
+        if late:
+            writer_done = self._finish_video_late(run_end, stop_at)
         video = self._finalize_video(run_end, writer_done)
         _faults.fault_point("runner.before_run_json_final")
         assert end is not None
@@ -886,20 +960,98 @@ class Runner:
         if self.video is None:
             return None
         if not writer_done:
-            # 파일은 건드리지 않는다: 감독자가 runner 종료를 확인한 뒤 지우고 요약을 고친다
-            return {
-                "bytes": 0,
-                "deleted": 0,
-                "kept": 0,
-                "reason": "encoder_stuck",
-                "status": "omitted",
-            }
+            # 파일은 건드리지 않는다: 감독자가 runner 종료를 확인한 뒤 같은 함수로 마무리한다.
+            # 요약은 그 마무리가 낼 색인을 미리 계산한 것이라 복구 뒤에도 같다 (vreview_3)
+            try:
+                index = preview_video(self.folder.path, run_end)
+            except Exception:
+                traceback.print_exc()
+                index = None
+            return None if index is None else video_summary(index)
         try:
             index = finalize_video(self.folder.path, run_end)
         except Exception:
             traceback.print_exc()
             return None  # 감독자 복구 경로가 다시 마무리한다
         return None if index is None else video_summary(index)
+
+    def _finish_video_late(self, run_end: Mapping[str, Any], stop_at: float) -> bool:
+        """영상 마무리 단계 (모듈 설명). `run.end` 뒤라 판정·종료 코드는 바뀌지 않는다. 녹화
+        스레드가 끝났으면(조각을 썼든 포기를 기록했든) True — 그때만 `finalize_video`를 부른다."""
+        recorder = self.video
+        assert recorder is not None and self.controller is not None
+        keep, _ = keep_failed_only(run_end)
+        wanted = keep or "on" in recorder.late_modes
+        wait_s = finish_wait_from_env() or VIDEO_FINISH_MAX_MS / 1000
+        wake = threading.Event()
+        self.controller.add_deadline_listener(wake)
+        recorder.notify_on_exit(wake)
+        controller = self.controller
+        try:
+            granted = False
+            if wanted and not controller.external_stop:
+                granted = self._request_video_finishing(wait_s, stop_at)
+            if granted:
+                print(
+                    f"영상 인코더가 아직 준비되지 않아 run.end 뒤 최대 {wait_s:.0f}초 더 기다려 "
+                    "모은 프레임을 쓴다",
+                    file=sys.stderr,
+                )
+                began = time.monotonic()
+                # 외부 취소·감독자 사망이 오면 남은 기한까지 기다리지 않고 바로 포기한다
+                self._wait_until(
+                    lambda: recorder.exited or controller.external_stop,
+                    began + wait_s,
+                    stop_at,
+                    wake,
+                )
+            if not recorder.exited:
+                recorder.abandon_encoder_wait()
+                if granted:
+                    print(
+                        "영상 마무리 단계가 끝나도 인코더가 준비되지 않아 모은 프레임을 버렸다 "
+                        "(video: omitted/encoder_not_ready)",
+                        file=sys.stderr,
+                    )
+                # 포기는 대기에서 바로 풀린다. 그새 시험이 끝나 쓰는 중이면 남은 기한까지 본다
+                self._wait_until(lambda: recorder.exited, math.inf, stop_at, wake)
+        finally:
+            self.controller.remove_deadline_listener(wake)
+        return recorder.exited and recorder.join(_FINISH_SLICE_S)
+
+    def _request_video_finishing(self, wait_s: float, stop_at: float) -> bool:
+        """감독자에게 영상 마무리 단계를 청한다. 허락되면 감독자가 다시 건 하드 종료 기한을 제어기·
+        자기 종료 감시자에 알리고 True. 답이 없거나(채널 끊김·기한) 거절이면 False."""
+        assert self.controller is not None and self.watchdog is not None
+        peer = self.peer
+        timeout = min(_VIDEO_FINISH_CALL_S, self._cutoff(stop_at) - time.monotonic())
+        if peer is None or timeout <= 0:
+            return False
+        try:
+            reply = peer.call(
+                "runner.video_finishing", {"wait_ms": max(1, int(wait_s * 1000))}, timeout=timeout
+            )
+        except Exception:
+            return False
+        received = time.monotonic()
+        if not isinstance(reply, dict) or reply.get("granted") is not True:
+            return False
+        grace_s = self.spec.shutdown_grace_ms / 1000
+        # 기한은 run.cancel과 같은 규칙: 절대 시각과 받은 시각 + 남은 시간 중 이른 쪽, 말이 안
+        # 되는 절대 시각(이미 지남·청한 것보다 멂)은 믿지 않는다 (감독자가 타이머를 쓰지 않으면
+        # 청한 만큼)
+        at = received + wait_s + grace_s
+        left = cast(dict[str, Any], reply).get("hard_stop_in_ms")
+        absolute = cast(dict[str, Any], reply).get("hard_stop_at_mono")
+        if isinstance(left, int) and not isinstance(left, bool):
+            at = min(at, received + left / 1000)
+        if isinstance(absolute, (int, float)) and not isinstance(absolute, bool):
+            if absolute <= received or absolute > received + wait_s + grace_s + _CLOCK_SLACK_S:
+                return False
+            at = min(at, float(absolute))
+        self.controller.extend_finish(at)
+        self.watchdog.extend(at)
+        return True
 
     def _cutoff(self, stop_at: float) -> float:
         """마무리 기다림의 끝 (단조 시각): 지금 아는 가장 이른 종료 기한에서 기록 여유를 뺀 때."""

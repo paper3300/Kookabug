@@ -11,7 +11,9 @@
   감독자가 없으므로 runner가 스스로 끝내는 유일한 경로다
 - **마무리 기한 초과**(감독자 생존): 종료 단계 진입 시각(`arm()`: 취소 시각 또는 정상 마무리 시작)
   + `shutdown_grace_ms` + `self_kill_margin_ms`에 아직 살아 있으면 자기 종료. 감독자가 살아 있으면
-  하드 종료는 감독자가 먼저 하고(종료 단계 진입 + `shutdown_grace_ms`), 이것은 뒤 안전망이다
+  하드 종료는 감독자가 먼저 하고(종료 단계 진입 + `shutdown_grace_ms`), 이것은 뒤 안전망이다.
+  감독자가 run.end 뒤 영상 마무리 단계를 허락해 하드 종료 타이머를 다시 걸었으면(`extend()`) 그
+  기한 + `self_kill_margin_ms`까지 미룬다
 
 감시 조건은 "마무리를 시작했는가"가 아니라 "프로세스가 아직 살아 있는가"다. 제어 채널 EOF는
 감독자 사망의 증거가 아니다 — 사망은 프로세스 핸들로만 판정한다.
@@ -47,6 +49,8 @@ class Watchdog:
         self._event = WinEvent.create()
         # 단조 시각(초). 한 번 정하면 바꾸지 않는다 (쓰는 쪽은 None일 때만 쓴다: 값 하나의 대입)
         self.armed_at: float | None = None
+        self.extended_until: float | None = None
+        """감독자가 다시 건 하드 종료 기한 (영상 마무리 단계, 늘리기만 한다)."""
         self.supervisor_lost_at: float | None = None
         try:
             self._supervisor: Process | None = Process.open(supervisor)
@@ -70,13 +74,25 @@ class Watchdog:
             self.armed_at = time.monotonic() if at is None else at
         self._event.set()
 
+    def extend(self, until: float) -> None:
+        """감독자가 영상 마무리 단계를 허락해 하드 종료 타이머를 `until`(단조)로 다시 걸었다. 감독자
+        생존 중 자기 종료를 그 뒤 + 여유로 미룬다 (감독자 사망 + 유예 규칙은 그대로). 감시자는 깨는
+        때마다 시각을 다시 계산하므로 미룬 기한도 다음 깸에서 반영된다."""
+        current = self.extended_until
+        if current is None or until > current:
+            self.extended_until = until
+
     def kill_at(self) -> float | None:
         """자기 종료할 시각 (아직 정해지지 않았으면 None)."""
         times: list[float] = []
         if self.supervisor_lost_at is not None:
             times.append(self.supervisor_lost_at + self.shutdown_grace_s)
         if self.armed_at is not None:
-            times.append(self.armed_at + self.shutdown_grace_s + self.self_kill_margin_s)
+            finish_by = self.armed_at + self.shutdown_grace_s
+            extended = self.extended_until
+            if extended is not None:
+                finish_by = max(finish_by, extended)
+            times.append(finish_by + self.self_kill_margin_s)
         return min(times) if times else None
 
     def _run(self) -> None:
