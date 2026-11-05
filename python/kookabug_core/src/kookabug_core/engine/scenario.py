@@ -789,6 +789,12 @@ class ScenarioPlatform:
     ) -> OcrResult:
         return self._engines().read_text(image, region=region, sensitive=sensitive, limits=limits)
 
+    def before_node(self, node_type: str, check: Callable[[], None]) -> None:
+        """노드 함수를 부르기 전: 엔진 준비(OCR)를 기다린다 (`PreparingPlatform`)."""
+        prepare = getattr(self.engines, "before_node", None)
+        if callable(prepare):
+            prepare(node_type, check)
+
     # ------------------------------------------------------------ 창·프로세스
 
     def find_window(

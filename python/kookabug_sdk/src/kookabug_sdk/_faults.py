@@ -65,6 +65,8 @@ POINTS: Final[dict[str, frozenset[Role]]] = {
     # 받은 제어 요청을 처리하기 직전 (`Controller._handle`, 이벤트 = 메서드: 늦은 수신 처리 흉내)
     "runner.before_control": _RUNNER,
     "actor.before_backend": _RUNNER,
+    # OCR 모델 확인·세션 만들기 직전 (`RapidOcrEngine.load`, 느린 첫 OCR 준비 흉내)
+    "ocr.before_load": _RUNNER,
     "worker.before_hello_reply": _WORKER,
     "worker.in_import": _WORKER,
     # `worker.shutdown`에 답하기 직전 (끝나지 않는 워커 흉내)

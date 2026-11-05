@@ -69,6 +69,7 @@ from kookabug_sdk.types import (
 __all__ = [
     "DEFAULT_CAPTURE_TIMEOUT_MS",
     "FOREGROUND_NOT_ACQUIRED",
+    "OCR_NODE_TYPES",
     "ArtifactStore",
     "FindReportingPlatform",
     "ForegroundPlatform",
@@ -76,6 +77,7 @@ __all__ = [
     "ObservingPlatform",
     "PixelPlatform",
     "Platform",
+    "PreparingPlatform",
     "Runtime",
     "StepContext",
     "StepInputPlatform",
@@ -176,6 +178,23 @@ class ObservingPlatform(Protocol):
     def read_text(
         self, image: Image, *, region: Rect | None, sensitive: bool, limits: ObservationLimits
     ) -> OcrResult: ...
+
+
+OCR_NODE_TYPES: Final = frozenset(
+    {"core.assert.text", "core.ocr.read", "core.ocr.wait_text", "core.ocr.click_text"}
+)
+"""글자를 읽는 코어 노드. runner는 이 노드를 쓰는 실행의 시작 때 OCR 엔진을 미리 준비하고, 실행기는
+이 노드 함수를 부르기 전에 준비가 끝나기를 기다린다 (`PreparingPlatform`)."""
+
+
+@runtime_checkable
+class PreparingPlatform(Protocol):
+    """노드 함수를 부르기 전에 그 노드가 쓸 엔진 준비(OCR 모델·세션)를 기다리는 플랫폼 (M2 사람
+    확인 S 결함 ②). 실행기가 시도마다 노드 함수 직전(노드가 자기 기한을 만들기 전)에 부르므로
+    준비 시간은 노드 기한도 설정 기한도 먹지 않는다. 기다리는 동안 `check`(취소·전체 기한)를
+    본다."""
+
+    def before_node(self, node_type: str, check: Callable[[], None]) -> None: ...
 
 
 @runtime_checkable

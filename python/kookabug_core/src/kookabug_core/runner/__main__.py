@@ -13,7 +13,7 @@ import traceback
 
 from kookabug_core.runner.run import EXIT_START_FAILED, Runner
 from kookabug_core.runner.spec import RunSpec
-from kookabug_core.win import dpi
+from kookabug_core.win import dpi, power
 from kookabug_sdk import _faults
 from kookabug_sdk.console import utf8_stdio
 
@@ -24,6 +24,9 @@ def main() -> int:
     utf8_stdio()
     if dpi_error is not None:
         print(f"runner: {dpi.CODE}: {dpi_error}", file=sys.stderr)
+    # 앱·데몬이 띄운 창 없는 runner도 콘솔에서 띄운 것과 같은 속도로 관측한다 (EcoQoS, win.power)
+    if not power.keep_full_speed():
+        print("runner: 실행 속도 제한(EcoQoS)을 끄지 못했다 (그대로 진행)", file=sys.stderr)
     try:
         _faults.set_role("runner")
         spec = RunSpec.loads(sys.stdin.buffer.read())

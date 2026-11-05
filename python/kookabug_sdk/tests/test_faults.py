@@ -231,6 +231,8 @@ def test_points_table_matches_plan() -> None:
         # M2 T6: target 저장 (새 이미지를 쓴 뒤 소유 기록 전·JSON 커밋 전)
         "target.before_record",
         "target.before_commit",
+        # M2 Sandbox 확인: OCR 모델 확인·세션 만들기 직전 (느린 첫 OCR 준비)
+        "ocr.before_load",
     }
     assert _faults.POINTS["journal.partial_line"] == frozenset(_faults.ROLES)
     assert _faults.POINTS["daemon.after_lock"] == frozenset({"supervisor"})

@@ -261,6 +261,10 @@ class WindowsPlatform:
     ) -> OcrResult:
         return self.engines.read_text(image, region=region, sensitive=sensitive, limits=limits)
 
+    def before_node(self, node_type: str, check: Callable[[], None]) -> None:
+        """노드 함수를 부르기 전: 엔진 준비(OCR)를 기다린다 (`PreparingPlatform`)."""
+        self.engines.before_node(node_type, check)
+
     # ------------------------------------------------------------ 창
 
     def find_window(

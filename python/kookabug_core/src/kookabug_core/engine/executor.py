@@ -56,6 +56,7 @@ from kookabug_core.engine.context import (
     ArtifactStore,
     Mark,
     Platform,
+    PreparingPlatform,
     Runtime,
     StepContext,
 )
@@ -219,6 +220,8 @@ class Executor:
         분류 뒤 그 스텝의 영상 정책으로 정하고, 스텝이 닫히면(정상·예외·취소) 스택에서 뺀다.
         `on_observed(관측)`은 실행에서 처음 창을 관측했을 때 한 번 불린다(캡처 방식·클라이언트
         크기·DPI — runner가 `run.json.observed`로 남긴다, M3 2.6).
+        플랫폼이 `PreparingPlatform`이면 노드 함수를 부르기 직전(시도마다, 노드가 자기 기한을 만들기
+        전)에 `before_node`로 그 노드가 쓸 엔진 준비를 기다린다 (OCR, M2 사람 확인 S 결함 ②).
         """
         self.registry = registry or default_registry()
         self.invoker: NodeInvoker = invoker or InProcessInvoker()
@@ -761,6 +764,9 @@ class _Run:
             if attempt > 1:
                 # 시도 사이(이벤트 싱크 처리 포함)에 생긴 취소·기한 초과면 다시 부르지 않는다
                 rt.check()
+            if isinstance(rt.platform, PreparingPlatform):
+                # 노드 기한(ctx.deadline)은 노드 함수 안에서 만든다 — 그 전에 엔진 준비를 기다린다
+                rt.platform.before_node(node.type, rt.check)
             began = rt.wall_clock.now_ms()
             trace.begin_attempt()
             ctx = StepContext(rt, frame, node, step, config, step_window, trace=trace)

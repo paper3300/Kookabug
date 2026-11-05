@@ -1222,11 +1222,21 @@ def check_electron_version(root: Path) -> str:
     return found
 
 
-def nsis_header(root: Path, include: Path = NSIS_INCLUDE) -> str:
+PAGE_MARKERS: Final = ("installer: no install mode page", "uninstaller: no install mode page")
+"""설치·제거 프로그램 컴파일이 설치 범위 화면 대신 빈 매크로를 거쳤다는 표식
+(no-install-mode-page.nsh)."""
+
+
+def nsis_header(root: Path, include: Path = NSIS_INCLUDE, marker: Path | None = None) -> str:
     """판마다 만드는 NSIS 머리 파일: installer.nsh가 쓰는 값.
-    가장 긴 상대 경로(KB_MAX_REL_PATH)와 제거할 맨 위 항목(kbRemoveTree)."""
-    lines = [
-        "; tools/installer/build.py가 만든다. 직접 고치지 않는다",
+    가장 긴 상대 경로(KB_MAX_REL_PATH)와 제거할 맨 위 항목(kbRemoveTree), 페이지 표식 파일
+    (KB_PAGE_MARKER, `check_page_markers`)."""
+    lines = ["; tools/installer/build.py가 만든다. 직접 고치지 않는다"]
+    if marker is not None:
+        if any(c in str(marker) for c in '"$`'):
+            raise BuildError(f"NSIS 스크립트에 넣을 수 없는 경로: {marker}")
+        lines.append(f'!define KB_PAGE_MARKER "{marker}"')
+    lines += [
         f"!define KB_MAX_REL_PATH {max_rel_path(root)}",
         "!macro kbRemoveTree",
     ]
@@ -1241,12 +1251,30 @@ def nsis_header(root: Path, include: Path = NSIS_INCLUDE) -> str:
     return "\n".join(lines)
 
 
+def check_page_markers(marker: Path) -> list[str]:
+    """설치·제거 프로그램 컴파일이 모두 설치 범위 화면 매크로를 빈 것으로 바꿔 거쳤나 (M2 사람
+    확인 S3 결함). 기본 스크립트가 바뀌어 그 훅을 안 거치면 화면이 다시 들어갈 수 있다 — 빌드를
+    멈춘다."""
+    try:
+        lines = marker.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+    return [
+        f"[설치 범위 화면] NSIS 컴파일에 '{want}' 표식이 없다 ({marker}) — "
+        "installer.nsh의 customWelcomePage·customUnWelcomePage 훅을 확인한다"
+        for want in PAGE_MARKERS
+        if lines.count(want) != 1
+    ]
+
+
 def build_setup(
     pnpm: str, root: Path, app: Path, out: Path, work: Path, version: str, variant: Variant
 ) -> Path:
     """감사한 트리(`root`) 그대로 NSIS 설치 파일을 만든다 (`--prepackaged`)."""
     header = work / f"nsis-{variant.key}.nsh"
-    header.write_text(nsis_header(root), encoding="utf-8")
+    marker = work / f"nsis-{variant.key}-pages.txt"
+    marker.unlink(missing_ok=True)
+    header.write_text(nsis_header(root, marker=marker), encoding="utf-8")
     target = out / f"nsis-{variant.key}"
     if target.exists():
         shutil.rmtree(target)
@@ -1260,6 +1288,9 @@ def build_setup(
         },
     }
     run_eb(pnpm, config, work, f"eb-nsis-{variant.key}", "nsis", "--prepackaged", str(root))
+    problems = check_page_markers(marker)
+    if problems:
+        raise BuildError("\n".join(problems))
     built = target / f"{variant.setup_name(version)}.exe"
     if not built.is_file():
         raise BuildError(f"electron-builder가 {built}를 만들지 않았다")

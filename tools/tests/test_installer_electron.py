@@ -413,6 +413,48 @@ def test_nsis_header_and_installer_script(tmp_path: Path) -> None:
         assert used - {"StdUtils.HashFile", "StdUtils.GetParameter"} <= redefined
 
 
+def test_install_mode_page_left_out(tmp_path: Path) -> None:
+    """설치 범위(모든 사용자/나만) 화면은 넣지 않는다 (M2 사람 확인 S3 결함). 실제 설치 파일의 첫
+    화면은 `test_installer_pages.py`."""
+    root = write_tree(tmp_path / "root", {"Kookabug.exe": b"MZ"})
+    marker = tmp_path / "nsis-test-pages.txt"
+    header = build.nsis_header(root, marker=marker)
+    assert header.index(f'!define KB_PAGE_MARKER "{marker}"') < header.index("!include")
+    assert "KB_PAGE_MARKER" not in build.nsis_header(root)
+
+    # 빌드는 설치·제거 프로그램 컴파일이 모두 빈 매크로를 거쳤다는 표식을 본다
+    assert len(build.check_page_markers(marker)) == 2  # 표식 파일 없음
+    marker.write_text("installer: no install mode page\n", encoding="utf-8")
+    (problem,) = build.check_page_markers(marker)
+    assert "uninstaller: no install mode page" in problem
+    marker.write_text("".join(f"{m}\r\n" for m in build.PAGE_MARKERS), encoding="utf-8")
+    assert build.check_page_markers(marker) == []
+
+    # 기본 스크립트가 PAGE_INSTALL_MODE를 넣기 직전 훅에서 그 매크로를 빈 것으로 바꾼다
+    nsh = build.NSIS_INCLUDE.read_text(encoding="utf-8")
+    drop = re.search(r"^!macro kbDropInstallModePage\n(.*?)^!macroend", nsh, re.M | re.S)
+    assert drop is not None
+    assert "!macroundef PAGE_INSTALL_MODE" in drop.group(1)
+    assert "no-install-mode-page.nsh" in drop.group(1)
+    for hook in ("customWelcomePage", "customUnWelcomePage"):
+        body = re.search(rf"^!macro {hook}\n(.*?)^!macroend", nsh, re.M | re.S)
+        assert body is not None and "!insertmacro kbDropInstallModePage" in body.group(1), hook
+    assert "customInstallMode" not in re.sub(r"^;.*$", "", nsh, flags=re.M)
+    empty = (build.NSIS_INCLUDE.parent / "no-install-mode-page.nsh").read_text(encoding="utf-8")
+    page = re.search(r"^!macro PAGE_INSTALL_MODE\n(.*?)^!macroend", empty, re.M | re.S)
+    assert page is not None
+    assert not re.search(r"^\s*(Page|PageEx|UninstPage)\b", page.group(1), re.M)
+
+    lib = REPO_ROOT / "node_modules" / ".pnpm"
+    templates = sorted(lib.glob("app-builder-lib@*/node_modules/app-builder-lib/templates/nsis"))
+    if templates:
+        # 훅이 PAGE_INSTALL_MODE보다 먼저 펼쳐지는 기본 스크립트 순서 (설치·제거 갈래 각각)
+        text = (templates[-1] / "assistedInstaller.nsh").read_text(encoding="utf-8")
+        installer, uninstaller = text.split("\n!else\n", 1)
+        for part, hook in ((installer, "customWelcomePage"), (uninstaller, "customUnWelcomePage")):
+            assert part.index(f"!insertmacro {hook}") < part.index("!insertmacro PAGE_INSTALL_MODE")
+
+
 def write_asar(path: Path, files: dict[str, bytes]) -> None:
     """검사용 asar 묶음 (read_asar가 읽는 형식)."""
     tree: dict[str, object] = {"files": {}}

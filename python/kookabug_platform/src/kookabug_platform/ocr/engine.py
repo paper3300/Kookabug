@@ -54,6 +54,7 @@ from kookabug_platform.ocr.det import (
 )
 from kookabug_platform.ocr.models import OcrModels, find_models
 from kookabug_platform.ocr.rec import CtcDecoder, batches, rec_input
+from kookabug_sdk import _faults
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -125,7 +126,13 @@ class InferenceSession(Protocol):
 
 
 class OnnxSession:
-    """onnxruntime CPU 세션 (입력·출력 하나)."""
+    """onnxruntime CPU 세션 (입력·출력 하나).
+
+    스레드 풀의 바쁜 대기(spin)는 끈다: 추론 사이에 일 없는 스레드가 코어를 붙잡으면 CPU가 적거나
+    (가상 머신·코어 4개 이하) 실행 속도 제한(EcoQoS)이 걸린 프로세스에서 추론이 크게 느려진다
+    (로컬 실측: 같은 그림의 읽기 160 ms가 스핀을 켜면 몇 초 뒤부터 2.2초, 스핀을 끄면 그대로 —
+    M2 사람 확인 S 결함 ②의 주효 원인 후보). 이 PC(24 논리 코어)에서는 끈 쪽이 처음 읽기부터 더
+    빨랐다."""
 
     def __init__(self, path: Path) -> None:
         import onnxruntime as ort
@@ -134,6 +141,8 @@ class OnnxSession:
         options.log_severity_level = 4
         options.enable_cpu_mem_arena = False
         options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+        options.add_session_config_entry("session.inter_op.allow_spinning", "0")
         self._session = ort.InferenceSession(
             str(path), sess_options=options, providers=["CPUExecutionProvider"]
         )
@@ -203,6 +212,7 @@ class RapidOcrEngine:
         with self._lock:
             if self._det is not None and self._rec is not None and self._decoder is not None:
                 return
+            _faults.fault_point("ocr.before_load")  # 느린 첫 준비 흉내 (검사 전용)
             models = self._models or find_models()
             det = OnnxSession(models.det)
             rec = OnnxSession(models.rec)

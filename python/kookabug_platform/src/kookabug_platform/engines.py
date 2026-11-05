@@ -14,18 +14,25 @@ runner(`WindowsPlatform`·가짜 플랫폼)와 가짜 ctx(`fake_engines`)가 같
   워크스페이스 기준 경로 — 재검증의 다시 찾기가 읽는다), `click`(target 클릭 지점), `window`(캡처한
   창)
 - **`sensitive`**: OCR 글자(전체·줄)를 `Secret`으로
-- OCR 엔진은 처음 읽을 때 만든다(모델 찾기·해시 확인). 없으면 그때 `ocr_model_missing`
+- OCR 엔진은 처음 읽을 때 만든다(모델 찾기·해시 확인·세션). runner는 OCR 노드를 쓰는 실행의
+  시작 때 백그라운드로 미리 준비한다(`prepare_ocr`). 실행기는 코어 OCR 노드 함수를 부르기 전에
+  그 준비가 끝나기를 기다리고(`before_node` — 노드 기한을 만들기 전), 읽기도 덜 끝난 준비를 **관측
+  기한 밖에서**(취소·전체 기한만 보며) 기다린다 — 모델을 불러오는 시간이 설정 기한(2초)도 대기
+  노드의 재관측 기한도 먹지 않는다(M2 사람 확인 S 결함 ②). 모델이 없으면 그 읽기가
+  `ocr_model_missing`
 """
 
 from __future__ import annotations
 
 import contextlib
 import threading
+import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
+from kookabug_core.engine.context import OCR_NODE_TYPES
 from kookabug_core.record.artifacts import (
     CANDIDATES_KEPT,
     CaptureMeta,
@@ -33,7 +40,7 @@ from kookabug_core.record.artifacts import (
     FindEvidence,
     is_reference_image,
 )
-from kookabug_platform.deadline import ObservationDeadline
+from kookabug_platform.deadline import SLICE_S, ObservationDeadline
 from kookabug_platform.frames import decode_image
 from kookabug_platform.ocr.engine import DEFAULT_ENGINE, Ocr, OcrEngine, create_engine
 from kookabug_platform.vision import (
@@ -179,6 +186,52 @@ def _intersect(
     return x0, y0, max(0, x1 - x0), max(0, y1 - y0)
 
 
+type PrepareReport = Callable[[float, BaseException | None], None]
+"""OCR 엔진 준비가 끝났을 때 (걸린 ms, 오류 또는 None)."""
+
+
+class _Preparation:
+    """OCR 엔진 준비 한 번 (`load()`가 있는 엔진만 — 없으면 바로 끝난 것). 자기 스레드에서 한다:
+    세션 만들기는 끊을 수 없으므로 기다리는 쪽이 취소·기한을 보며 기다린다."""
+
+    def __init__(self, engine: OcrEngine, report: PrepareReport | None) -> None:
+        load: object = getattr(engine, "load", None)
+        self._report = report
+        self._done = threading.Event()
+        self.error: BaseException | None = None
+        self.elapsed_ms = 0.0
+        if callable(load):
+            thread = threading.Thread(target=self._run, args=(load,), name="ocr-prepare")
+            thread.daemon = True
+            thread.start()
+        else:
+            self._done.set()
+
+    def _run(self, load: Callable[[], object]) -> None:
+        start = time.perf_counter()
+        try:
+            load()
+        except BaseException as exc:  # 첫 읽기가 그대로 낸다
+            self.error = exc
+        finally:
+            self.elapsed_ms = (time.perf_counter() - start) * 1000
+            self._done.set()
+        if self._report is not None:
+            with contextlib.suppress(Exception):
+                self._report(self.elapsed_ms, self.error)
+
+    def wait(self, check: Callable[[], None] | None) -> int:
+        """준비가 끝날 때까지 `SLICE_S`마다 `check`(취소·전체 기한)를 보며 기다린다. 기다린 ms."""
+        start = time.monotonic()
+        if check is None:
+            self._done.wait()
+        else:
+            while not self._done.wait(SLICE_S):
+                check()
+            check()  # 준비 중 취소됐으면 읽지 않는다
+        return int((time.monotonic() - start) * 1000)
+
+
 class RunEngines:
     """한 실행의 비전·OCR. `store`가 있으면 참조 이미지를 그 저장소로 읽는다. 여러 스레드에서
     불러도 된다."""
@@ -196,6 +249,7 @@ class RunEngines:
         self._ocr_name = ocr_engine
         self._ocr_options = dict(ocr_options or {})
         self._ocr: Ocr | None = None if ocr is None else Ocr(ocr, store)
+        self._prep: _Preparation | None = None
         self._lock = threading.Lock()
         self._files: dict[Path, Pixels] = {}
 
@@ -354,6 +408,57 @@ class RunEngines:
                 self._ocr = Ocr(create_engine(self._ocr_name, self._ocr_options), self.store)
             return self._ocr
 
+    def _preparation(self, reader: Ocr, report: PrepareReport | None = None) -> _Preparation:
+        with self._lock:
+            if self._prep is None:
+                self._prep = _Preparation(reader.engine, report)
+            return self._prep
+
+    def prepare_ocr(self, report: PrepareReport | None = None) -> None:
+        """OCR 엔진 준비(모델 찾기·해시 확인·세션 만들기)를 지금 백그라운드 스레드로 시작한다 —
+        runner가 OCR 노드를 쓰는 실행의 시작 때 부른다. 첫 읽기는 그 준비가 끝나기를 기다린다
+        (`read_text`). `report(걸린 ms, 오류)`는 준비가 끝나면 그 스레드에서 한 번 불린다. 잘못된
+        엔진 설정이면 아무것도 하지 않는다(첫 읽기가 그 오류를 낸다)."""
+        try:
+            reader = self._reader()
+        except Exception:
+            return
+        self._preparation(reader, report)
+
+    def await_ocr(self, check: Callable[[], None] | None = None) -> int:
+        """OCR 엔진 준비가 끝나기를 기다린다(아직 시작하지 않았으면 지금 시작한다). 기다린 ms.
+        runner가 OCR 노드 함수를 부르기 **전**에 부른다 — 노드 기한(`ctx.deadline`)은 그 뒤에
+        만들어지므로 준비 시간이 노드 기한도 설정 기한도 먹지 않는다. 기다리는 동안은 `check`(취소·
+        전체 기한)만 본다. 준비 오류는 여기서 내지 않는다(그 노드의 첫 읽기가 낸다)."""
+        try:
+            reader = self._reader()
+        except Exception:
+            return 0
+        return self._preparation(reader).wait(check)
+
+    def before_node(self, node_type: str, check: Callable[[], None]) -> None:
+        """노드 함수를 부르기 전 (`PreparingPlatform`): 코어 OCR 노드면 OCR 엔진 준비를 기다린다."""
+        if node_type in OCR_NODE_TYPES:
+            self.await_ocr(check)
+
+    def _await_ocr(self, reader: Ocr, limits: ObservationLimits | None) -> ObservationLimits | None:
+        """OCR 엔진 준비가 끝나기를 기다린다. **관측 기한에 넣지 않는다**: 첫 읽기에서 모델을
+        불러오는 시간(느린 PC·가상 머신에서 몇 초)이 설정 기한(`capture_timeout`, 기본 2초)이나
+        노드 기한을 먹어 정상 화면을 시간 초과로 판정하지 않게 한다 (M2 사람 확인 S 결함 ②).
+        기다리는 동안은 취소·전체 기한만 본다(`limits.check`). 기다린 만큼 전체 기한의 남은 시간을
+        줄인 기한 재료를 돌려준다(노드 기한은 그대로 — 준비 뒤 관측 하나가 그 몫을 받는다). 준비가
+        실패했으면 그 오류(`ocr_model_missing` 등)를 내고, 다음 읽기가 다시 준비한다."""
+        prep = self._preparation(reader)
+        waited_ms = prep.wait(None if limits is None else limits.check)
+        if prep.error is not None:
+            with self._lock:
+                if self._prep is prep:
+                    self._prep = None
+            raise prep.error
+        if limits is None or limits.run_ms is None or waited_ms <= 0:
+            return limits
+        return replace(limits, run_ms=max(0, limits.run_ms - waited_ms))
+
     def read_text(
         self,
         image: Image,
@@ -362,8 +467,8 @@ class RunEngines:
         sensitive: bool = False,
         limits: ObservationLimits | None = None,
     ) -> OcrResult:
-        deadline = deadline_of(limits)
         reader = self._reader()
+        deadline = deadline_of(self._await_ocr(reader, limits))
         stored = self._stored(image)
         if stored is not None:
             meta = stored[1]

@@ -80,7 +80,7 @@ from kookabug_core.engine import (
     RunResult,
     SystemClock,
 )
-from kookabug_core.engine.context import InputObserver, ObservationLimits
+from kookabug_core.engine.context import OCR_NODE_TYPES, InputObserver, ObservationLimits
 from kookabug_core.engine.errors import EngineError
 from kookabug_core.engine.executor import run_record_policy
 from kookabug_core.engine.scenario import FakeScenario, ScenarioError, ScenarioPlatform
@@ -598,6 +598,8 @@ class Runner:
         refused = self._open_platform(snap.workspace)
         if refused is not None:
             return refused
+        if _uses_ocr(program):
+            self._prepare_ocr()
 
         # 8. 입력 임대권 → 입력 액터
         if _uses_input(program, registry) and spec.platform.kind in ("fake", "windows"):
@@ -609,6 +611,22 @@ class Runner:
         # 9. 실행 (영상을 남길 수 있으면 인코더 준비가 끝난 뒤 첫 스텝)
         self._wait_video_probe(program)
         return self._run_program(program, registry)
+
+    def _prepare_ocr(self) -> None:
+        """OCR 노드를 쓰는 실행: OCR 엔진 준비(모델 확인·세션 만들기)를 지금 백그라운드로 시작한다
+        (M2 사람 확인 S 결함 ②). 첫 OCR 스텝 전 스텝들과 겹쳐 끝나고, 덜 끝났으면 실행기가 그 OCR
+        노드 함수를 부르기 전에 기다린다(`PreparingPlatform` — 노드 기한·설정 기한 밖). 오래
+        걸렸으면 stderr에 남긴다(느린 PC 진단)."""
+        engines = getattr(self.platform, "engines", None)
+        prepare = getattr(engines, "prepare_ocr", None)
+        if not callable(prepare):
+            return
+
+        def report(elapsed_ms: float, error: BaseException | None) -> None:
+            if error is None and elapsed_ms >= OCR_PREPARE_NOTE_MS:
+                print(f"OCR 엔진 준비에 {elapsed_ms / 1000:.1f}초 걸렸다", file=sys.stderr)
+
+        prepare(report)
 
     def _wait_video_probe(self, program: Program) -> None:
         """영상을 남길 수 있는 실행은 인코더 열기 시험이 끝난 뒤 첫 스텝을 시작한다 (M3 사람 확인 R1
@@ -1129,6 +1147,15 @@ class Runner:
 def _setting_use(lookup: SettingLookup) -> dict[str, Any]:
     """`run.json`의 `SettingUse`: 찾은 계층과 값 (설정은 비밀값이 아니다)."""
     return {"layer": lookup.layer, "value": lookup.value}
+
+
+OCR_PREPARE_NOTE_MS: Final = 1000
+"""OCR 엔진 준비가 이만큼 넘게 걸리면 runner stderr에 남긴다."""
+
+
+def _uses_ocr(program: Program) -> bool:
+    graphs = program.graphs.values()
+    return any(node.type in OCR_NODE_TYPES for graph in graphs for node in graph.nodes.values())
 
 
 def _uses_input(program: Program, registry: Registry) -> bool:

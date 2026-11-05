@@ -4,7 +4,7 @@
 ;   KB_MAX_REL_PATH   설치 폴더 기준 가장 긴 상대 경로 길이
 ;   kbRemoveTree      설치 트리의 맨 위 항목을 지우는 매크로 (감사한 트리에서 만든다)
 ;
-; - 사용자별 설치만 한다 (M1 U2). 설치 범위(모든 사용자/나만) 고르기 화면을 건너뛴다
+; - 사용자별 설치만 한다 (M1 U2). 설치 범위(모든 사용자/나만) 고르기 화면을 넣지 않는다 (no-install-mode-page.nsh)
 ; - 사용자 PATH에 bin을 더하고 제거할 때 그 항목만 뺀다. 다른 항목·구분자·값 형식은 그대로 둔다. 읽지 못하거나
 ;   너무 길면 고치지 않고 안내만 한다 (user-path.nsh)
 ; - 실행 중인 앱을 끌 때는 설치 폴더 안(경계 \ 포함)의 실행 파일로 돈 프로세스만 본다. 확인할 수 없으면 아무것도
@@ -27,6 +27,9 @@
 !include FileFunc.nsh
 !include WinMessages.nsh
 !include "${__FILEDIR__}\user-path.nsh"
+
+; 이 폴더 (매크로가 펼쳐지는 곳에서는 __FILEDIR__가 그 파일을 가리킨다)
+!define KB_PACKAGING_DIR "${__FILEDIR__}"
 
 ; Windows 경로 한도 (MAX_PATH 260, 끝 NUL 제외)
 !define KB_PATH_LIMIT 259
@@ -137,13 +140,42 @@
 
 ; ---------------------------------------------------------------- 설치 범위·폴더 길이
 
-!macro customInstallMode
+; 기본 스크립트는 perMachine: false여도 설치 범위(모든 사용자/나만) 화면을 페이지 목록에 넣고, 그 화면의 앞 함수에서
+; customInstallMode로 건너뛴다. 그 건너뛰기에 기대지 않는다: Windows Sandbox(관리자·UAC 꺼짐)에서 그 화면이 떴고
+; (M2 사람 확인 S3), 건너뛴 화면이 첫 화면(폴더 고르기)의 "뒤로"로 남아 누르면 설치 프로그램이 그냥 끝났다.
+; 그래서 그 페이지를 아예 넣지 않는다: 기본 스크립트가 PAGE_INSTALL_MODE를 넣기 직전 훅에서 그 매크로를 빈
+; 것(no-install-mode-page.nsh)으로 바꾼다. 설치 모드는 .onInit(initMultiUser)이 사용자별로 정한다 (무인 설치와 같은 길)
+!macro kbDropInstallModePage
+  !macroundef PAGE_INSTALL_MODE
+  !include "${KB_PACKAGING_DIR}\no-install-mode-page.nsh"
+!macroend
+
+!macro customWelcomePage
+  !insertmacro kbDropInstallModePage
+!macroend
+
+!macro customUnWelcomePage
+  !insertmacro MUI_UNPAGE_WELCOME
+  !insertmacro kbDropInstallModePage
+!macroend
+
+; 기본 스크립트(multiUserUi.nsh)가 맨 위에 선언한 그 화면의 변수. 화면이 없으면 아무도 쓰지 않아 makensis가 경고(6001,
+; warningsAsErrors라 빌드 실패)를 낸다. 초기화 함수에서 비워 둔다
+!macro kbInstallModePageVars
+  StrCpy $HasTwoAvailableOptions ""
+  StrCpy $RadioButtonLabel1 ""
+  StrCpy $isForceMachineInstall "0"
   StrCpy $isForceCurrentInstall "1"
+!macroend
+
+!macro customUnInit
+  !insertmacro kbInstallModePageVars
 !macroend
 
 ; 설치 폴더 + 가장 긴 상대 경로가 MAX_PATH를 넘으면 파일을 푸는 중에 실패한다. 무인 설치(/D=)는 시작할 때
 ; 사유를 남기고 종료 코드 7로 끝난다
 !macro customInit
+  !insertmacro kbInstallModePageVars
   StrLen $0 $INSTDIR
   IntOp $1 ${KB_PATH_LIMIT} - ${KB_MAX_REL_PATH}
   IntOp $1 $1 - 1

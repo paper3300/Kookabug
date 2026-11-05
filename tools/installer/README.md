@@ -9,7 +9,7 @@ M1 2.12, M2 2.14). M2부터 electron-builder(고정판 `apps/desktop/package.jso
 | `pbs.toml` | 빌드 입력 고정: uv 판(실행기 구성요소 표의 기준), python-build-standalone(태그·파일·주소·크기·SHA256), 앱 로컬 VC++ 런타임 파일 |
 | `build.py` | 스테이징 트리(M1 구조) → 빌드 입력 감사 → 제거 → compileall → 데스크톱 앱 배포 빌드 → electron-builder `--dir`(최종 트리) → 최종 트리 감사·NOTICES → 판마다 `--prepackaged` NSIS (제품 판, `--test-setup`이면 테스트 판도) |
 | `../../apps/desktop/electron-builder.yml` | electron-builder 기본 설정 (사용자별 설치, 실행 파일 이름, zip 묶음). 판·경로는 build.py가 extends 하는 설정으로 넣는다 |
-| `../../apps/desktop/packaging/installer.nsh` | NSIS 조각: 설치 범위 화면 건너뛰기, 폴더 길이 제한, 설치 폴더 경계 안 프로세스만 끄기(확인 못 하면 멈춤), 예제 `local.json`(UTF-8), 제거 범위, StdUtils(LGPL) 대신 System 플러그인 |
+| `../../apps/desktop/packaging/installer.nsh` | NSIS 조각: 설치 범위 화면을 넣지 않음(`no-install-mode-page.nsh`, build.py가 컴파일 표식 확인), 폴더 길이 제한, 설치 폴더 경계 안 프로세스만 끄기(확인 못 하면 멈춤), 예제 `local.json`(UTF-8), 제거 범위, StdUtils(LGPL) 대신 System 플러그인 |
 | `../../apps/desktop/packaging/user-path.nsh` | 사용자 PATH 더하기·빼기: 형식·크기를 먼저 읽고, 못 읽거나 한도면 고치지 않음. 이 설치가 더한 항목과 구분자만 뺌 (`tools/tests/test_installer_user_path.py`가 임시 키로 실제 NSIS 실행) |
 | `dllcheck.py` | 설치 트리의 모든 `.pyd`·`.dll`·`.exe` import를 그 파일 폴더·앱 폴더·등록 근거가 확인된 DLL 폴더·System32로만 풀어 본다 |
 | `smoke.py` | 판 확인 → 무인 설치 → 최종 트리 감사·앱 번들 검사 → Python 없는 환경 CLI 스모크 → 앱 스모크(`Kookabug.exe --smoke`) → DLL 검사 → 제거 → 설치 흔적 원상 확인 |
