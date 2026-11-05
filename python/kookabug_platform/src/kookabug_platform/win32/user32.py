@@ -188,6 +188,7 @@ UnhookWinEvent = bind(_dll, "UnhookWinEvent", BOOL, wintypes.HANDLE)
 SetThreadDpiAwarenessContext = bind(
     _dll, "SetThreadDpiAwarenessContext", ctypes.c_void_p, ctypes.c_void_p
 )
+GetWindowDpiAwarenessContext = bind(_dll, "GetWindowDpiAwarenessContext", ctypes.c_void_p, HWND)
 SendInput = bind(_dll, "SendInput", UINT, UINT, ctypes.POINTER(INPUT), ctypes.c_int)
 GetAsyncKeyState = bind(_dll, "GetAsyncKeyState", ctypes.c_short, ctypes.c_int)
 MapVirtualKeyW = bind(_dll, "MapVirtualKeyW", UINT, UINT, UINT)

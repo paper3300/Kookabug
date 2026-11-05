@@ -138,7 +138,7 @@ def test_find_owned_popup_only_with_owned_flag(tmp_path: Path, title: str) -> No
         assert find_windows(title=title, owned=True) == [popup, game.hwnd]
 
 
-@pytest.mark.parametrize("mode", ["pmv2", "unaware"])
+@pytest.mark.parametrize("mode", ["pmv2", "unaware", "system"])
 def test_client_rect_physical_pixels(tmp_path: Path, title: str, mode: str) -> None:
     with launch(tmp_path, title, "--dpi-awareness", mode, "--size", "800x500") as game:
         info = window_info(game.hwnd)
@@ -153,9 +153,10 @@ def test_client_rect_physical_pixels(tmp_path: Path, title: str, mode: str) -> N
             assert info.dpi == monitor_dpi
             assert info.client_size == (800, 500)
         else:
-            # unaware 게임은 논리 800x500을 그리고 시스템이 모니터 배율만큼 확대한다
-            assert info.dpi == 96
-            scale = monitor_dpi / 96
+            # unaware 게임은 창 DPI 96, system-aware 게임은 로그온 때 시스템 DPI로 800x500을 그리고
+            # 모니터 DPI가 다르면(로그아웃 없이 바꾼 배율) 시스템이 그 비율만큼 확대한다
+            assert info.dpi == (96 if mode == "unaware" else game.ready["dpi"])
+            scale = monitor_dpi / info.dpi
             assert info.client_size == (round(800 * scale), round(500 * scale))
         assert (info.hwnd, info.pid, info.title) == (game.hwnd, game.pid, title)
         assert info.class_name == "TkTopLevel" and info.visible and not info.minimized
@@ -189,18 +190,22 @@ def test_set_client_size_exact(game: SampleGame) -> None:
     assert not set_client_size(0x7FFF0000, 100, 100)  # 없는 창
 
 
-def test_set_client_size_unaware_window(tmp_path: Path, title: str) -> None:
-    # unaware 창: 창 DPI(96)로 계산한 테두리는 확대된 실제 테두리와 다르다 → 실측으로 고쳐 맞춘다
-    with launch(tmp_path, title, "--dpi-awareness", "unaware") as game:
-        scale = independent_monitor_dpi(game.hwnd) / 96
+@pytest.mark.parametrize("mode", ["unaware", "system"])
+def test_set_client_size_unaware_window(tmp_path: Path, title: str, mode: str) -> None:
+    # 배율로 확대되는 창(unaware, 로그아웃 없이 배율을 바꾼 system-aware): 창 좌표로 맞춘다
+    with launch(tmp_path, title, "--dpi-awareness", mode) as game:
+        scale = independent_monitor_dpi(game.hwnd) / window_info(game.hwnd).dpi
         after = game.last_seq()
         # 960x600은 100·125·150·200% 어느 배율에서도 논리 정수 크기다
         assert set_client_size(game.hwnd, 960, 600)
         assert window_info(game.hwnd).client_size == (960, 600)
         assert client_rect(game.hwnd)[2:] == (960, 600)
-        # 게임(unaware)은 논리 크기로 받는다
+        # 게임은 자기 창 좌표(논리) 크기로 받는다
         logical = [round(960 / scale), round(600 / scale)]
         game.wait_event("resize", after=after, client_size=logical)
+        # 클라이언트 점의 화면 좌표는 원점 + 점 (확대되는 창에서도 1~2 px 잃지 않는다)
+        x, y, _, _ = client_rect(game.hwnd)
+        assert client_to_screen(game.hwnd, (959, 599)) == (x + 959, y + 599)
 
 
 def test_foreground_independent_second_window_refused(tmp_path: Path, title: str) -> None:

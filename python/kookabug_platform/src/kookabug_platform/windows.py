@@ -26,7 +26,7 @@ from ctypes import wintypes
 from dataclasses import dataclass
 from typing import Any, Final, Protocol
 
-from kookabug_platform.dpi import per_monitor_v2_thread
+from kookabug_platform.dpi import per_monitor_v2_thread, scale_length, window_dpi_thread
 from kookabug_platform.errors import (
     INPUT_DESKTOP_UNAVAILABLE,
     POINT_OBSCURED,
@@ -41,6 +41,7 @@ from kookabug_platform.win32.api import DEFAULT_API, WindowApi
 
 __all__ = [
     "WIN32_FOREGROUND",
+    "ClientSizeOps",
     "ForegroundOps",
     "Win32Foreground",
     "WindowInfo",
@@ -54,6 +55,7 @@ __all__ = [
     "describe",
     "find_window",
     "find_windows",
+    "fit_client_size",
     "integrity_exceeds",
     "is_fullscreen",
     "is_owned_by",
@@ -92,7 +94,8 @@ class WindowInfo:
     """창 DPI (`GetDpiForWindow`). DPI를 모르는(unaware) 창은 모니터와 무관하게 늘 96이다."""
     monitor_dpi: int
     """창이 있는 모니터의 실제 DPI (`GetDpiForMonitor`, 96 = 100%). 물리 픽셀 배율은 이것이다 —
-    unaware 창은 논리 크기에 `monitor_dpi / 96`을 곱한 크기로 확대돼 그려진다."""
+    창 DPI와 다르면(unaware 창, 로그온 뒤 배율을 바꾼 system-aware 창) 창 좌표 크기에
+    `monitor_dpi / dpi`를 곱한 크기로 확대돼 그려진다."""
     monitor: Box
     minimized: bool
     visible: bool
@@ -460,45 +463,128 @@ def activate(hwnd: int, *, tap_alt: Callable[[], bool] | None = None) -> bool:
         return False
 
 
+type Size = tuple[int, int]
+
+
+class ClientSizeOps(Protocol):
+    """`fit_client_size`가 쓰는 창 조작 (검사가 가짜 배율 창으로 바꿔 끼운다).
+
+    `physical_client` 말고는 모두 **창 자신의 좌표**(창 DPI 기준)다.
+    """
+
+    def frame_for(self, width: int, height: int) -> Size | None:
+        """클라이언트 크기 → 바깥 크기 (창 스타일·메뉴·창 DPI, `AdjustWindowRectExForDpi`)."""
+        ...
+
+    def set_outer(self, width: int, height: int) -> bool:
+        """바깥 크기를 바꾼다 (`SetWindowPos`, 위치·Z 순서·활성 그대로)."""
+        ...
+
+    def outer(self) -> Size | None: ...
+    def client(self) -> Size | None: ...
+    def physical_client(self) -> Size | None:
+        """확인용: PMv2로 읽은 클라이언트 크기 (물리 픽셀)."""
+        ...
+
+
+def fit_client_size(target: Size, window_dpi: int, monitor_dpi: int, ops: ClientSizeOps) -> bool:
+    """물리 클라이언트 크기 `target`을 창 좌표로 바꿔 맞추고, 물리 크기를 다시 읽어 확인한다.
+
+    배율로 확대되는 창(창 DPI ≠ 모니터 DPI — DPI unaware 창, 로그온 뒤 배율을 바꾼 system-aware
+    창)은 창 좌표 1이 물리 `monitor_dpi / window_dpi` px다. 물리 크기로 `SetWindowPos`하면
+    Windows가 창 좌표로 반올림해 받고, 물리로 다시 읽을 때 창·클라이언트 경계를 따로 반올림한다.
+    그래서 150%처럼 배율이 정수가 아니면 바깥 크기(테두리 포함)의 물리 값이 정수가 아니라 1 px씩
+    흔들려 맞지 않았다. 창 좌표로 계산·설정하면 테두리는 창 DPI 그대로 맞고, 창 좌표 클라이언트
+    크기에 배율을 곱한 값이 정수인 한(960x600은 100·125·150·200%에서 그렇다) 위치와 무관하게 물리
+    크기가 정확하다.
+
+    다시 읽은 클라이언트가 다르면(메뉴 줄 바뀜, 게임의 크기 조정) 그 차이만큼 바깥 크기를 고친다.
+    """
+    width, height = target
+    logical = (
+        scale_length(width, monitor_dpi, window_dpi),
+        scale_length(height, monitor_dpi, window_dpi),
+    )
+    outer = ops.frame_for(*logical)
+    if outer is None:
+        return False
+    for _ in range(_SIZE_ATTEMPTS):
+        if not ops.set_outer(*outer):
+            return False
+        client = ops.client()
+        if client is None:
+            return False
+        if client == logical:
+            break
+        window = ops.outer()
+        if window is None:
+            return False
+        outer = (window[0] + logical[0] - client[0], window[1] + logical[1] - client[1])
+    return ops.physical_client() == target
+
+
+class _Win32ClientSizeOps:
+    """`ClientSizeOps` 실제 구현. 부르는 스레드가 창의 DPI 인식이어야 한다(`window_dpi_thread`)."""
+
+    def __init__(self, hwnd: int, dpi: int) -> None:
+        self.hwnd = hwnd
+        self.dpi = dpi
+        self.style = int(user32.GetWindowLongPtrW(hwnd, user32.GWL_STYLE)) & 0xFFFFFFFF
+        self.exstyle = int(user32.GetWindowLongPtrW(hwnd, user32.GWL_EXSTYLE)) & 0xFFFFFFFF
+        self.has_menu = bool(user32.GetMenu(hwnd)) and not self.style & user32.WS_CHILD
+
+    def frame_for(self, width: int, height: int) -> Size | None:
+        rect = wintypes.RECT(0, 0, width, height)
+        if not user32.AdjustWindowRectExForDpi(
+            ctypes.byref(rect), self.style, self.has_menu, self.exstyle, self.dpi
+        ):
+            return None
+        return rect.right - rect.left, rect.bottom - rect.top
+
+    def set_outer(self, width: int, height: int) -> bool:
+        flags = user32.SWP_NOMOVE | user32.SWP_NOZORDER | user32.SWP_NOACTIVATE
+        return bool(user32.SetWindowPos(self.hwnd, None, 0, 0, width, height, flags))
+
+    def outer(self) -> Size | None:
+        window = wintypes.RECT()
+        if not user32.GetWindowRect(self.hwnd, ctypes.byref(window)):
+            return None
+        return window.right - window.left, window.bottom - window.top
+
+    def client(self) -> Size | None:
+        return _client_size(self.hwnd)
+
+    def physical_client(self) -> Size | None:
+        with per_monitor_v2_thread():
+            return _client_size(self.hwnd)
+
+
 def set_client_size(hwnd: int, width: int, height: int) -> bool:
     """클라이언트 영역을 정확히 `width` x `height` 물리 픽셀로. 다시 읽어 다르면 False.
 
-    창 스타일·메뉴·창 DPI로 바깥 크기를 계산하고(`AdjustWindowRectExForDpi`), 다시 읽은 클라이언트가
-    다르면 그 차이만큼 바깥 크기를 고쳐 한 번 더 맞춘다 — DPI를 모르는(unaware) 창은 창 DPI가 96이라
-    첫 계산의 테두리 크기가 실제(확대된) 물리 테두리와 다르다. 창이 크기를 거부하거나(최소·최대
-    크기, 고정 크기 게임) 배율 때문에 그 물리 크기를 가질 수 없거나 최소화 상태면 False다.
+    창 자신의 DPI 인식으로(`window_dpi_thread`) 창 좌표에서 맞춘다(`fit_client_size`) — 배율로
+    확대되는 창도 테두리·반올림이 어긋나지 않는다. 창 DPI는 `GetDpiForWindow`(unaware 창은 96,
+    system-aware 창은 로그온 때 시스템 DPI), 배율은 창이 있는 모니터의 실제 DPI로 정하므로
+    로그아웃 없이 바꾼 배율과 로그온 때부터의 배율 모두 맞다. 창이 크기를 거부하거나(최소·최대 크기,
+    고정 크기 게임) 배율 때문에 그 물리 크기를 가질 수 없거나(창 좌표 크기에 배율을 곱한 값이 정수가
+    아님) 최소화 상태면 False다.
     """
     if not user32.IsWindow(hwnd) or user32.IsIconic(hwnd):
         return False
-    style = int(user32.GetWindowLongPtrW(hwnd, user32.GWL_STYLE)) & 0xFFFFFFFF
-    exstyle = int(user32.GetWindowLongPtrW(hwnd, user32.GWL_EXSTYLE)) & 0xFFFFFFFF
-    has_menu = bool(user32.GetMenu(hwnd)) and not style & user32.WS_CHILD
-    flags = user32.SWP_NOMOVE | user32.SWP_NOZORDER | user32.SWP_NOACTIVATE
+    window_dpi = int(user32.GetDpiForWindow(hwnd))
+    if window_dpi <= 0:
+        return False
     with per_monitor_v2_thread():
-        rect = wintypes.RECT(0, 0, width, height)
-        dpi = int(user32.GetDpiForWindow(hwnd))
-        if not user32.AdjustWindowRectExForDpi(ctypes.byref(rect), style, has_menu, exstyle, dpi):
+        handle = user32.MonitorFromWindow(hwnd, user32.MONITOR_DEFAULTTONEAREST)
+        monitor_dpi = _monitor_dpi(handle)
+    with window_dpi_thread(hwnd) as switched:
+        if not switched:
             return False
-        outer = (rect.right - rect.left, rect.bottom - rect.top)
-        for _ in range(_SIZE_ATTEMPTS):
-            if not user32.SetWindowPos(hwnd, None, 0, 0, outer[0], outer[1], flags):
-                return False
-            client = _client_size(hwnd)
-            if client is None:
-                return False
-            if client == (width, height):
-                return True
-            window = wintypes.RECT()
-            if not user32.GetWindowRect(hwnd, ctypes.byref(window)):
-                return False
-            outer = (
-                window.right - window.left + width - client[0],
-                window.bottom - window.top + height - client[1],
-            )
-    return False
+        ops = _Win32ClientSizeOps(hwnd, window_dpi)
+        return fit_client_size((width, height), window_dpi, monitor_dpi, ops)
 
 
-def _client_size(hwnd: int) -> tuple[int, int] | None:
+def _client_size(hwnd: int) -> Size | None:
     client = wintypes.RECT()
     if not user32.GetClientRect(hwnd, ctypes.byref(client)):
         return None

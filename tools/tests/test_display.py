@@ -277,6 +277,13 @@ def grown_outer(geometry: str, client: tuple[int, int]) -> tuple[int, int, int, 
         patch.object(user32, "GetWindowLongPtrW", side_effect=style),
         patch.object(user32, "GetMenu", return_value=0),
         patch.object(user32, "GetDpiForWindow", return_value=96),
+        # 창 DPI 인식은 PMv2(가짜 창), 모니터는 못 읽음 → 96: 이 PC 배율과 무관하게 96 DPI 계산
+        patch.object(
+            user32,
+            "GetWindowDpiAwarenessContext",
+            return_value=user32.DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+        ),
+        patch.object(user32, "MonitorFromWindow", return_value=0),
         patch.object(user32, "SetWindowPos", side_effect=resized),
         patch.object(windows, "_client_size", return_value=client),
     ):

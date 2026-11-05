@@ -13,7 +13,7 @@ from ctypes import wintypes
 from typing import Final, Protocol
 
 from kookabug_core.win import identify
-from kookabug_platform.dpi import per_monitor_v2_thread
+from kookabug_platform.dpi import client_to_screen, per_monitor_v2_thread
 from kookabug_platform.win32 import advapi32, dwmapi, kernel32, user32, wtsapi32
 from kookabug_platform.win32._ffi import last_error_text
 
@@ -92,11 +92,7 @@ class Win32Api:
             return user32.WindowFromPoint(wintypes.POINT(x, y)) or 0
 
     def client_to_screen(self, hwnd: int, x: int, y: int) -> tuple[int, int]:
-        pt = wintypes.POINT(x, y)
-        with per_monitor_v2_thread():
-            if not user32.ClientToScreen(hwnd, ctypes.byref(pt)):
-                raise OSError(f"ClientToScreen 실패: hwnd={hwnd}")
-        return pt.x, pt.y
+        return client_to_screen(hwnd, (x, y))
 
     def window_pid(self, hwnd: int) -> int:
         pid = wintypes.DWORD()

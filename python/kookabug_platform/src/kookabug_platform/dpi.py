@@ -30,6 +30,8 @@ __all__ = [
     "per_monitor_v2_thread",
     "pixels_to_normalized",
     "round_half_up",
+    "scale_length",
+    "window_dpi_thread",
 ]
 
 type Rect = tuple[int, int, int, int]
@@ -55,6 +57,27 @@ def per_monitor_v2_thread() -> Iterator[None]:
     finally:
         if previous:
             user32.SetThreadDpiAwarenessContext(previous)
+
+
+@contextmanager
+def window_dpi_thread(hwnd: int) -> Iterator[bool]:
+    """이 스레드를 잠깐 그 창의 DPI 인식으로 둔다. 그동안 좌표·크기는 **창 자신의 좌표**(창 DPI
+    기준, unaware 창이면 논리 픽셀)다. 창의 인식을 못 읽으면(창이 닫힘) 바꾸지 않고 False를 준다."""
+    context = user32.GetWindowDpiAwarenessContext(hwnd) if hwnd else None
+    previous = user32.SetThreadDpiAwarenessContext(context) if context else None
+    try:
+        yield bool(previous)
+    finally:
+        if previous:
+            user32.SetThreadDpiAwarenessContext(previous)
+
+
+def scale_length(value: int, from_dpi: int, to_dpi: int) -> int:
+    """정수 길이를 `from_dpi` 기준에서 `to_dpi` 기준으로 (`MulDiv`처럼 0.5는 0에서 먼 쪽으로)."""
+    if from_dpi <= 0 or to_dpi <= 0:
+        raise ValueError(f"DPI는 양수여야 한다: {from_dpi}, {to_dpi}")
+    scaled = (abs(value) * to_dpi * 2 + from_dpi) // (2 * from_dpi)
+    return scaled if value >= 0 else -scaled
 
 
 def round_half_up(value: float) -> int:
@@ -143,9 +166,16 @@ def offset_point(origin: tuple[int, int], point: tuple[int, int]) -> tuple[int, 
 
 
 def client_to_screen(hwnd: int, point: tuple[int, int]) -> tuple[int, int]:
-    """클라이언트 물리 픽셀 점 → 화면 물리 픽셀 점 (`ClientToScreen`, PMv2 스레드)."""
-    pt = wintypes.POINT(*point)
+    """클라이언트 물리 픽셀 점 → 화면 물리 픽셀 점 = 클라이언트 원점 + 점.
+
+    원점만 `ClientToScreen(0, 0)`(PMv2 스레드)으로 읽고 점은 더한다. 점을 `ClientToScreen`에 그대로
+    넣으면 배율로 확대되는 창(DPI unaware 창, 로그온 뒤 배율을 바꾼 system-aware 창)에서
+    Windows가 그 점을 창의 논리 좌표로 바꿨다 되돌리며 1~2 px 잃는다(150%에서 (10, 20) →
+    원점 + (9, 19), 200%에서 원점 + (8, 19)). 캡처 자르기(`WindowInfo.client_origin`)도 같은
+    원점을 쓰므로, 원점 + 점이 캡처 프레임의 그 픽셀 자리다.
+    """
+    origin = wintypes.POINT(0, 0)
     with per_monitor_v2_thread():
-        if not user32.ClientToScreen(hwnd, ctypes.byref(pt)):
+        if not user32.ClientToScreen(hwnd, ctypes.byref(origin)):
             raise OSError(f"ClientToScreen 실패: hwnd={hwnd}")
-    return pt.x, pt.y
+    return offset_point((origin.x, origin.y), point)

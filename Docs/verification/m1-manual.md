@@ -120,7 +120,7 @@ uv run pytest python/kookabug_platform/tests/test_windows.py python/kookabug_pla
 
 3. **200%** 로 바꿔 같은 명령을 `d7_dpi200.log`로 다시 돌린다. 끝나면 원래 배율로 돌린다
 
-- 기대 결과: 두 배율 모두 실패 0 (`test_client_rect_physical_pixels[unaware]`·`test_set_client_size_unaware_window` 포함)
+- 기대 결과: 두 배율 모두 실패 0 (`test_client_rect_physical_pixels[unaware·system]`·`test_set_client_size_unaware_window[unaware·system]` 포함). 로그아웃 없이 바꾼 배율(시스템 DPI는 로그온 값)과 로그온 때부터의 배율 모두 같은 기대 결과다
 - 기록: 배율별 통과·실패 수, 실제로 쓴 배율 값(사용자 지정이면 그렇게)
 
 ## 2. 깨끗한 Windows 설치 (S)
