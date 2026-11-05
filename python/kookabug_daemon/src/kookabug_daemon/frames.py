@@ -103,6 +103,11 @@ class FrameCache:
             while len(self._frames) > self.limit:
                 self._frames.popitem(last=False)
 
+    def discard(self, frame_id: str) -> None:
+        """그 정지 화면을 지운다 (녹화 세션 정리 — 그 뒤 `frame_expired`)."""
+        with self._lock:
+            self._frames.pop(frame_id, None)
+
     def get(self, frame_id: str) -> EditorFrame:
         with self._lock:
             frame = self._frames.get(frame_id)

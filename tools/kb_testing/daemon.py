@@ -28,6 +28,7 @@ from kookabug_core.win import CHILD_FLAGS
 from kookabug_daemon.app import Daemon, DaemonConfig
 from kookabug_daemon.client import UI_CLIENT, DaemonClient
 from kookabug_daemon.methods import MethodSpec, RunsLike
+from kookabug_daemon.recorder_hook import HookTesting
 from kookabug_daemon.session import DaemonLock, SessionInfo
 from kookabug_daemon.transport import Limits
 
@@ -154,6 +155,9 @@ class ThreadDaemon:
         watch_interval_s: float = 1.0,
         platform_fake: Path | None = None,
         plugin_modules: tuple[str, ...] = (),
+        recorder_script: Path | None = None,
+        recorder_script_speed: float | None = float("inf"),
+        recorder_testing: HookTesting | None = None,
     ) -> None:
         self.root = root
         config = DaemonConfig(
@@ -163,6 +167,9 @@ class ThreadDaemon:
             watch_interval_s=watch_interval_s,
             platform_fake=platform_fake,
             plugin_modules=plugin_modules,
+            recorder_script=recorder_script,
+            recorder_script_speed=recorder_script_speed,
+            recorder_testing=recorder_testing,
         )
         if service is None:
             service = WorkspaceService(root, environ=dict(environ or {}))

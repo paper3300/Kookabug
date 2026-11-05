@@ -205,18 +205,41 @@ class SessionTargets:
                 self.drafts[reused.key].uses += 1
                 return "draft", reused.key
             return "reuse", reused.key
+        draft_id = self.add_draft(
+            image,
+            meta,
+            crop.box,
+            name=name,
+            frame_t_ns=frame_t_ns,
+            offset=crop.offset,
+            search_region=crop.search_region,
+        )
+        return "draft", draft_id
+
+    def add_draft(
+        self,
+        image: Pixels,
+        meta: FrameMeta,
+        box: Box,
+        *,
+        name: Callable[[int], str],
+        frame_t_ns: int | None,
+        offset: tuple[float, float] = (0.0, 0.0),
+        search_region: Box | None = None,
+    ) -> str:
+        """새 초안 하나 (보호 영역 검사는 부르는 쪽이 끝냈다). 초안 ID를 돌려준다."""
         number = next(self._ids)
         draft_id = f"d{number}"
-        x, y, w, h = crop.box
+        x, y, w, h = box
         pixels = image[y : y + h, x : x + w].copy()
         spec = target_spec(
             f"{number:02d}_{draft_id}.png",
             client_size=meta.client_size,
             dpi=meta.dpi,
-            offset=crop.offset,
-            search_region=crop.search_region,
+            offset=offset,
+            search_region=search_region,
         )
-        draft = TargetDraft(draft_id, name(number), pixels, spec, crop.box, frame_t_ns)
+        draft = TargetDraft(draft_id, name(number), pixels, spec, box, frame_t_ns)
         self.drafts[draft_id] = draft
         self.vision.put_image(TargetImage.of_pixels(pixels, draft.image_path))
-        return "draft", draft_id
+        return draft_id

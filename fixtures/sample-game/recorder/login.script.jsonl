@@ -1,0 +1,70 @@
+{"format": "kookabug.recorder-script/0", "geometry": {"client_origin": [101, 131], "client_size": [1024, 640], "dpi": 96, "frame_bounds": [100, 100, 1026, 672]}, "kind": "header", "scene": "title", "title": "SampleRPG"}
+{"fg": "target", "focus_password": false, "hkl": "4090409", "kind": "observe", "point": "target", "t_ns": 0}
+{"input": {"extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "mouse_move", "x": 613, "y": 543}, "kind": "input", "t_ns": 500000000}
+{"input": {"button": "left", "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "mouse_down", "x": 613, "y": 543}, "kind": "input", "t_ns": 620000000}
+{"input": {"button": "left", "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "mouse_up", "x": 613, "y": 543}, "kind": "input", "t_ns": 660000000}
+{"input": {"extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "mouse_move", "x": 661, "y": 361}, "kind": "input", "t_ns": 1500000000}
+{"input": {"button": "left", "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "mouse_down", "x": 661, "y": 361}, "kind": "input", "t_ns": 1620000000}
+{"input": {"button": "left", "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "mouse_up", "x": 661, "y": 361}, "kind": "input", "t_ns": 1660000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 81}, "kind": "input", "t_ns": 2000000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 81}, "kind": "input", "t_ns": 2030000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 65}, "kind": "input", "t_ns": 2110000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 65}, "kind": "input", "t_ns": 2140000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 160}, "kind": "input", "t_ns": 2220000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 189}, "kind": "input", "t_ns": 2230000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 189}, "kind": "input", "t_ns": 2260000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 160}, "kind": "input", "t_ns": 2270000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 84}, "kind": "input", "t_ns": 2350000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 84}, "kind": "input", "t_ns": 2380000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 69}, "kind": "input", "t_ns": 2460000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 69}, "kind": "input", "t_ns": 2490000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 83}, "kind": "input", "t_ns": 2570000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 83}, "kind": "input", "t_ns": 2600000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 84}, "kind": "input", "t_ns": 2680000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 84}, "kind": "input", "t_ns": 2710000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 69}, "kind": "input", "t_ns": 2790000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 69}, "kind": "input", "t_ns": 2820000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 82}, "kind": "input", "t_ns": 2900000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 82}, "kind": "input", "t_ns": 2930000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 160}, "kind": "input", "t_ns": 3010000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 189}, "kind": "input", "t_ns": 3020000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 189}, "kind": "input", "t_ns": 3050000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 160}, "kind": "input", "t_ns": 3060000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 48}, "kind": "input", "t_ns": 3140000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 48}, "kind": "input", "t_ns": 3170000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 49}, "kind": "input", "t_ns": 3250000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 49}, "kind": "input", "t_ns": 3280000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 9}, "kind": "input", "t_ns": 3660000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 9}, "kind": "input", "t_ns": 3700000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 83}, "kind": "input", "t_ns": 4200000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 83}, "kind": "input", "t_ns": 4230000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 65}, "kind": "input", "t_ns": 4310000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 65}, "kind": "input", "t_ns": 4340000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 77}, "kind": "input", "t_ns": 4420000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 77}, "kind": "input", "t_ns": 4450000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 80}, "kind": "input", "t_ns": 4530000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 80}, "kind": "input", "t_ns": 4560000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 76}, "kind": "input", "t_ns": 4640000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 76}, "kind": "input", "t_ns": 4670000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 69}, "kind": "input", "t_ns": 4750000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 69}, "kind": "input", "t_ns": 4780000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 189}, "kind": "input", "t_ns": 4860000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 189}, "kind": "input", "t_ns": 4890000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 80}, "kind": "input", "t_ns": 4970000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 80}, "kind": "input", "t_ns": 5000000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 65}, "kind": "input", "t_ns": 5080000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 65}, "kind": "input", "t_ns": 5110000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 83}, "kind": "input", "t_ns": 5190000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 83}, "kind": "input", "t_ns": 5220000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 83}, "kind": "input", "t_ns": 5300000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 83}, "kind": "input", "t_ns": 5330000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 189}, "kind": "input", "t_ns": 5410000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 189}, "kind": "input", "t_ns": 5440000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 48}, "kind": "input", "t_ns": 5520000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 48}, "kind": "input", "t_ns": 5550000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_down", "scan": 0, "vk": 49}, "kind": "input", "t_ns": 5630000000}
+{"input": {"extended": false, "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "key_up", "scan": 0, "vk": 49}, "kind": "input", "t_ns": 5660000000}
+{"input": {"extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "mouse_move", "x": 613, "y": 539}, "kind": "input", "t_ns": 6340000000}
+{"input": {"button": "left", "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "mouse_down", "x": 613, "y": 539}, "kind": "input", "t_ns": 6460000000}
+{"input": {"button": "left", "extra_info": 0, "injected": false, "injected_lower_il": false, "kind": "mouse_up", "x": 613, "y": 539}, "kind": "input", "t_ns": 6500000000}
+{"kind": "mark", "label": "lobby", "t_ns": 7300000000}

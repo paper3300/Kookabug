@@ -92,6 +92,15 @@ class EditorCache:
                 raise RequestFailed("io_error", text, message=text) from exc
             self._trim(keep=name)
 
+    def remove(self, name: str) -> None:
+        """그 PNG를 지운다 (녹화 세션 정리). 없으면 아무것도 하지 않는다."""
+        path = self.path_of(name)
+        with self._lock:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError as exc:
+                log.warning("편집기 캐시 %s를 지우지 못했다: %s", name, exc)
+
     def _trim(self, *, keep: str) -> None:
         files: list[tuple[int, int, str]] = []
         for entry in self._files():

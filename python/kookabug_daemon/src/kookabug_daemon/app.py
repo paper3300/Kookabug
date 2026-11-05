@@ -45,7 +45,9 @@ from kookabug_daemon.methods.secrets import RecorderSecretSource
 from kookabug_daemon.methods.tools import Authorizer
 from kookabug_daemon.options import DEFAULT_IDLE_TIMEOUT_S, SESSION_WAIT_S, add_arguments
 from kookabug_daemon.protocol import DAEMON_VERSION, PROTOCOL, json_text
+from kookabug_daemon.recorder import RecorderService
 from kookabug_daemon.recorder_hook import HookTesting, testing_options
+from kookabug_daemon.recorder_store import RecorderStore
 from kookabug_daemon.runs import RunManager
 from kookabug_daemon.session import (
     LOGS_DIR,
@@ -113,6 +115,10 @@ class DaemonConfig:
     watch_interval_s: float = WATCH_INTERVAL_S
     recorder_testing: HookTesting | None = None
     """검사 전용 녹화 옵션 (`KOOKABUG_TESTING=1`일 때만, M4 계획 2.2)."""
+    recorder_script: Path | None = None
+    """가짜 플랫폼 녹화가 흘릴 각본 JSONL (`--recorder-script`, 가짜 플랫폼일 때만)."""
+    recorder_script_speed: float | None = 1.0
+    """각본을 흘리는 빠르기 (`inf` = 기다리지 않음, None = 검사가 직접 흘림)."""
 
 
 def plugin_registry(modules: tuple[str, ...]) -> Callable[[], Registry]:
@@ -186,6 +192,8 @@ class Daemon:
         self._idle_since: float | None = time.monotonic()
         self.recorder_secrets: RecorderSecretSource | None = None
         """녹화 세션 메모리의 원문 (`secrets.create`). 녹화 세션(M4 T8)이 둔다."""
+        self.recorder = RecorderService(self)
+        """녹화 세션 (M4 T8, `recorder.*`)."""
 
     # ---------------------------------------------------------------- Host (transport)
 
@@ -244,6 +252,7 @@ class Daemon:
     def connection_closed(self, number: int) -> None:
         self._documents.release_connection(number)
         self._run_manager.connection_closed(number)
+        self.recorder.connection_closed(number)
 
     # ---------------------------------------------------------------- 실행 알림 (runs.RunSink)
 
@@ -348,8 +357,10 @@ class Daemon:
         self._stop = asyncio.Event()
         self._run_manager.sink = self
         try:
-            # 편집기 캐시는 시작 때 비운다 (옛 daemon의 frame_id는 모두 만료다)
+            # 편집기 캐시는 시작 때 비운다 (옛 daemon의 frame_id는 모두 만료다). 녹화 세션 저장소도
+            # (지난 daemon이 남긴 세션 — 원문이 찍힌 화면 PNG가 있을 수 있다)
             await asyncio.to_thread(self._image_cache.reset)
+            await asyncio.to_thread(RecorderStore.clear_all, self.root)
             async with self.transport.serve() as server:
                 port = self.transport.bound(server)
                 await asyncio.to_thread(_faults.fault_point, "daemon.before_session_publish")
@@ -387,6 +398,7 @@ class Daemon:
                     task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
         finally:
+            await asyncio.to_thread(self.recorder.close)
             await asyncio.to_thread(self._run_manager.close)
             self._checker.close()
             if self.session is not None:
@@ -430,6 +442,11 @@ def config_from_args(args: argparse.Namespace) -> DaemonConfig:
         )
     except ValueError as exc:
         raise UsageError(str(exc)) from exc
+    script: Path | None = None
+    if args.recorder_script is not None:
+        if fake is None:
+            raise UsageError("--recorder-script는 --platform-fake와 함께만 쓴다")
+        script = Path(args.recorder_script).resolve()
     return DaemonConfig(
         workspace=root,
         idle_timeout_s=args.idle_timeout_s,
@@ -438,6 +455,8 @@ def config_from_args(args: argparse.Namespace) -> DaemonConfig:
         plugin_modules=tuple(args.plugin_modules),
         log_level=args.log_level,
         recorder_testing=testing,
+        recorder_script=script,
+        recorder_script_speed=args.recorder_script_speed,
     )
 
 

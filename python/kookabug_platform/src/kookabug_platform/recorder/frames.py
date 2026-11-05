@@ -42,6 +42,7 @@ __all__ = [
     "TransitionLog",
     "Unresolved",
     "box_diff",
+    "click_frame",
     "pre_click",
     "pre_hover",
 ]
@@ -245,6 +246,16 @@ def pre_click(
     if entry is None:
         return Unresolved("no_frame")
     return _same_generation(entry, timeline, t_down_ns, screen_point)
+
+
+def click_frame(
+    entry: RingEntry | None, timeline: GeometryTimeline, t_ns: int, screen_point: Sequence[int]
+) -> ClickFrame | Unresolved:
+    """붙잡아 둔 프레임(`FrameHolds.hold_before`)과 입력의 세대 검사 — `pre_click`과 같은 규칙.
+    프레임이 없으면 `no_frame`."""
+    if entry is None:
+        return Unresolved("no_frame")
+    return _same_generation(entry, timeline, t_ns, screen_point)
 
 
 def _same_generation(

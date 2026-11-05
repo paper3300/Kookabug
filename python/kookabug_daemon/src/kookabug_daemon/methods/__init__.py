@@ -133,6 +133,7 @@ def registry() -> dict[str, MethodSpec]:
         debug,
         graph,
         nodes,
+        recorder,
         run,
         secrets,
         session,
@@ -143,6 +144,7 @@ def registry() -> dict[str, MethodSpec]:
 
     return {
         **debug.METHODS,
+        **recorder.METHODS,
         **secrets.METHODS,
         **session.METHODS,
         **workspace.METHODS,

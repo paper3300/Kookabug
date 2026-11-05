@@ -12,6 +12,11 @@
 - 글자: 입력 칸 구간(`FieldSpan`)에 쌓인다. 구간 밖 글자는 1초 안 간격 묶음
 - 창 떠남 동안 눌려 있던 키, 일시정지 중 뗀 키, 누른 채 끝난 입력은 동작을 만들지 않고 경고
 - 일본어·중국어 입력기 자판의 글쇠는 글자가 아니라 키 사슬(`ime_other` 배지)
+- 창 전환 조합(Alt+Tab·Alt+Esc·Win+…): 누르는 순간에는 포그라운드가 아직 대상이라 `key`가 남는다.
+  다음 이벤트에서 포그라운드가 대상이 아니면 바로 앞의 그 조합을 지운다
+- 구간 열림 알림(`on_span_open`): 구간에 첫 편집(글자·지우기·전체 선택)이 들어온 순간 한 번.
+  클릭마다 구간 후보가 열리지만 편집이 없는 구간(단추 클릭)은 칸이 아니므로 알리지 않는다 —
+  받는 쪽(녹화 세션)이 그때 칸 상자를 정하고 보호 영역·칸 존재·판정을 연다(시각은 `t_start`)
 """
 
 from __future__ import annotations
@@ -53,6 +58,14 @@ __all__ = [
 ]
 
 MS: Final = 1_000_000
+_SWITCH_COMBOS: Final = frozenset(
+    {"alt+tab", "alt+shift+tab", "ctrl+alt+tab", "alt+esc", "alt+shift+esc"}
+)
+"""포그라운드를 다른 창으로 옮기는 조합 (그 밖에 `win`이 든 조합 전부)."""
+
+
+def _is_switch_combo(keys: str) -> bool:
+    return keys in _SWITCH_COMBOS or "win" in keys.split("+")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -212,6 +225,7 @@ class _Counts:
 
 
 type FieldBox = Callable[[FieldSpan], tuple[int, int, int, int] | None]
+type SpanOpened = Callable[[FieldSpan], None]
 
 
 class Converter:
@@ -226,8 +240,13 @@ class Converter:
         layout: KeyLayout | None = None,
         presence: FieldPresence | None = None,
         field_box: FieldBox | None = None,
+        on_span_open: SpanOpened | None = None,
     ) -> None:
         self.o = options or ConverterOptions()
+        self.on_span_open = on_span_open
+        self._announced: set[int] = set()
+        self.counts_switch = 0
+        """지운 창 전환 조합 수."""
         self.filter = WindowFilter(target_hwnd, geometry)
         self.geometry = geometry
         self.layout = layout or UsLayout()
@@ -300,6 +319,16 @@ class Converter:
                 self._key_up(event, verdict)
             case _:
                 pass
+        self._announce()
+
+    def _announce(self) -> None:
+        """지금 구간에 첫 편집이 들어왔으면 한 번 알린다."""
+        span = self._span
+        if span is None or span.empty or span.span_id in self._announced:
+            return
+        self._announced.add(span.span_id)
+        if self.on_span_open is not None:
+            self.on_span_open(span)
 
     # ------------------------------------------------------------ 창 판정
 
@@ -320,7 +349,12 @@ class Converter:
 
     def _left_window(self) -> None:
         """포그라운드가 대상 창이 아님을 관측했다: 눌려 있던 키(수정 키·글자 키·그 밖)는 떼어진
-        것으로 보고 동작을 만들지 않는다(돌아온 뒤 뗀 것도). 아직 확정하지 않은 글자도 버린다."""
+        것으로 보고 동작을 만들지 않는다(돌아온 뒤 뗀 것도). 아직 확정하지 않은 글자도 버린다.
+        바로 앞 동작이 창 전환 조합이면 그 조합 때문에 떠난 것이라 지운다."""
+        last = self._items[-1] if self._items else None
+        if isinstance(last, KeyAction) and _is_switch_combo(last.keys):
+            self._items.pop()
+            self.counts_switch += 1
         for held in self._held.values():
             if held.modifier or held.keys is not None or held.char is not None:
                 self.warnings.append(ConverterWarning("key_held_across_focus_loss", held.t_ns))
@@ -678,6 +712,7 @@ class Converter:
         span = self._span
         if span is None:
             return
+        self._announce()  # 같은 입력에서 첫 편집과 닫힘이 함께 올 수 있다
         self._span = None
         if span.empty:
             return
@@ -688,6 +723,7 @@ class Converter:
     def pause(self) -> None:
         """일시정지: 열린 구간은 열어 둔다. 그동안 들어온 입력은 버린다."""
         self._commit_pending()
+        self._announce()
         self._paused = True
 
     def resume(self) -> None:
@@ -719,6 +755,21 @@ class Converter:
             self._close_span(*(("cut_by_stop",) if reason == "cut" else ()))
             self._finished = True
         return self.actions()
+
+    @property
+    def span(self) -> FieldSpan | None:
+        """지금 열린 구간."""
+        return self._span
+
+    def settled(self, now_ns: int, settle_ns: int = 400 * MS) -> bool:
+        """닫힌 구간이 모두 마지막 편집 뒤 `settle_ns`가 지났는가 — `actions()`가 글자를 짜도 되는가
+        (IME 표본이 마지막 키 뒤 300 ms까지 온다)."""
+        for item in self._items:
+            if isinstance(item, _Closed):
+                last = item.span.t_last if item.span.t_last is not None else item.span.t_start
+                if now_ns - last < settle_ns:
+                    return False
+        return True
 
     def actions(self) -> list[Action]:
         """지금까지의 동작 (시각 차례). 닫힌 구간은 여기서 글자를 짠다 — IME 표본이 모인 뒤에."""

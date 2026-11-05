@@ -58,6 +58,10 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--recorder-ime-query-window", type=int, default=None, help=argparse.SUPPRESS
     )
+    # 테스트·E2E용 (M4 계획 2.9 "가짜 원천", --platform-fake와 함께): 녹화가 흘릴 가짜 각본 JSONL과
+    # 흘리는 빠르기 (inf = 기다리지 않음)
+    parser.add_argument("--recorder-script", metavar="FILE", default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--recorder-script-speed", type=float, default=1.0, help=argparse.SUPPRESS)
     # 테스트용: 경쟁에서 졌을 때 유효한 세션을 기다리는 시간
     parser.add_argument(
         "--session-wait-s", type=_positive_float, default=SESSION_WAIT_S, help=argparse.SUPPRESS
