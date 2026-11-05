@@ -141,7 +141,7 @@ def wait_any(ctx: Context, targets: dict[str, Target], timeout_ms: int = 10000) 
 | `process` | `ctx.process.*`, `ctx.windows.set_client_size`·`activate` |
 | (효과 없이) | `ctx.windows.find`·`info`, `ctx.set_window`, 기록·시간·변수·설정 |
 
-**관측 호출의 기한** (`deadline` 인자): `capture`·`vision.find`·`ocr.read`·`process.find_window`는 노드가 `ctx.deadline(timeout_ms)`로 만든 기한을 받는다. 관측 하나의 유효 기한은 `min(설정 기한 run.capture_timeout_ms, 노드 기한 남은 시간, 전체 기한 남은 시간)`이다. 노드 기한 때문에 끝나면 `ObservationTimeout`이고 노드는 이것을 잡아 `timeout` 출구로 간다. 남은 시간이 0이면 관측을 시작하지 않고 바로 `ObservationTimeout`이다. 설정 기한으로 끝나면 `capture_timeout`(`error`), 전체 기한이면 `deadline_exceeded`다. 워커는 남은 시간(ms)을 관측 요청에 실어 러너가 같은 규칙을 쓴다. 예외: `process.find_window`(창이 뜨기를 기다리기)에는 설정 기한을 걸지 않는다 — `min(노드 기한, 전체 기한)`. 게임 시작은 캡처 한 번보다 길다
+**관측 호출의 기한** (`deadline` 인자): `capture`·`vision.find`·`ocr.read`·`process.find_window`는 노드가 `ctx.deadline(timeout_ms)`로 만든 기한을 받는다. 관측 하나의 유효 기한은 `min(설정 기한 run.capture_timeout_ms, 노드 기한 남은 시간, 전체 기한 남은 시간)`이다. 노드 기한 때문에 끝나면 `ObservationTimeout`이고 노드는 이것을 잡아 `timeout` 출구로 간다. 남은 시간이 0이면 관측을 시작하지 않고 바로 `ObservationTimeout`이다. 설정 기한으로 끝나면 `capture_timeout`(`error`), 전체 기한이면 `deadline_exceeded`다. 워커는 남은 시간(ms)을 관측 요청에 실어 러너가 같은 규칙을 쓴다. 예외: `process.find_window`(창이 뜨기를 기다리기)에는 설정 기한을 걸지 않는다 — `min(노드 기한, 전체 기한)`. 게임 시작은 캡처 한 번보다 길다. 코어 대기 노드(공용 폴링)는 첫 프레임의 찾기·OCR에 노드 기한을 넘기지 않는다(설정·전체 기한만, 캡처는 노드 기한 그대로) — 찾기 한 번이 `timeout_ms`보다 긴 느린 환경에서도 한 번은 끝까지 보아 매칭 후보가 남는다. 끝났을 때 노드 기한이 지났으면 결과는 버리고 `timeout`이다(기한 뒤에 확정된 관측은 내보내지 않는다)
 
 **예외**
 

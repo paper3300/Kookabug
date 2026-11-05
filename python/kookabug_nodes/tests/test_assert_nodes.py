@@ -16,8 +16,8 @@ from kb_testing.sample_game import FRAMES_DIR
 from kookabug_core.registry import default_registry
 from kookabug_nodes.assert_ import not_visible, text, visible
 from kookabug_sdk import Secret, SecretMessage
-from kookabug_sdk.testing import fake_context, load_target
-from kookabug_sdk.types import Rect, Target
+from kookabug_sdk.testing import FakeClock, fake_context, load_target
+from kookabug_sdk.types import Image, OcrResult, Rect, Target
 
 TITLE: Final = FRAMES_DIR / "title.png"
 LOGIN: Final = FRAMES_DIR / "login.png"
@@ -118,6 +118,23 @@ def test_text_failure_shows_read_text() -> None:
     assert result.exit == "fail"
     assert result.outputs["text"] == "SampleRPG"
     assert "'SampleRPG'" in (result.message or "") and "'Other'" in (result.message or "")
+
+
+@pytest.mark.parametrize("equals", ["late-result", "Other"])
+def test_text_late_first_read_is_discarded(equals: str) -> None:
+    """첫 읽기가 노드 기한 뒤에 끝나면 맞든 안 맞든 버린다: 실패 출력·메시지에 그 글자가 없다
+    (CI 수정 7 검수 H1)."""
+    clock = FakeClock()
+
+    class SlowOcr:
+        def read(self, image: Image, **_kwargs: Any) -> OcrResult:
+            clock.advance(500)
+            return OcrResult("late-result")
+
+    ctx = fake_context(frames=[Image(width=100, height=100)], clock=clock, ocr=SlowOcr())
+    result = text(ctx, equals=equals, timeout_ms=100)
+    assert result.exit == "fail" and result.outputs["text"] == ""
+    assert "late-result" not in (result.message or "") and ctx.captured == 1
 
 
 def test_text_needs_exactly_one_check() -> None:

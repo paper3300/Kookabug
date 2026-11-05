@@ -106,7 +106,9 @@ def test_wait_any_candidates_from_closest_target_not_exit_order(tmp_path: Path) 
             "core.image.wait_any",
             inputs={
                 "targets": {e: target(t) for e, t in zip(exits, order, strict=True)},
-                "timeout_ms": 300,
+                # 한 프레임만 본다: 폴링하면 느린 환경에서 뒤 프레임의 찾기가 첫 target만 끝내고
+                # 노드 기한에 걸려 그 캡처의 후보가 앞 target 것이 될 수 있다 (CI 수정 7)
+                "timeout_ms": 0,
             },
             config={"exits": exits},
         )

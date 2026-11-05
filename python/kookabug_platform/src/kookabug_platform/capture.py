@@ -10,7 +10,9 @@
   않으면 최신 프레임을 이 관측으로 쓴다(`reused`). 조건 전부: ① 세션이 살아 있음
   (`on_closed`·콜백 예외·스레드 종료 없음), ② 이 세션의 첫 프레임을 이미 받음, ③ 바인딩
   살아 있고 최소화 아님, ④ 지금 확장 프레임 크기·창 DPI가 그 프레임의 것과 같음. WGC는
-  화면이 바뀔 때만 프레임을 주므로 "새 프레임 없음 + 위 조건"은 화면이 멈춘 것이다
+  화면이 바뀔 때만 프레임을 주므로 "새 프레임 없음 + 위 조건"은 화면이 멈춘 것이다. 단 최소화를
+  본 뒤 복원을 확인하면 세션을 다시 연다: 옛 세션 프레임은 복원 뒤 화면이라는 보장이 없고(최소화
+  확인 뒤 늦은 콜백·애니메이션), WGC가 복원 뒤 새 프레임을 주지 않으면 옛 화면을 관측한다
 - **장애 구분**: 첫 프레임이 기한 안에 안 옴 → `capture_timeout`. 크기·DPI가 바뀌었는데
   맞는 프레임이 기한 안에 안 옴 → `capture_timeout`(0.25초 안에 안 오면 세션을 한 번 다시 열어
   첫 프레임을 받는다 — windows-capture는 크기가 바뀐 프레임을 프레임 풀을 다시 만들며 버리므로
@@ -449,6 +451,8 @@ class CaptureService:
         self._calls = _Calls()
         self._restarted: dict[str, tuple[int, int, int]] = {}
         """바인딩 → 크기 불일치로 세션을 다시 연 창 기하 (같은 기하로는 한 번만)."""
+        self._minimized: set[str] = set()
+        """최소화를 본 뒤 아직 복원을 확인하지 않은 바인딩 (복원을 확인하면 세션을 다시 연다)."""
         self.sessions_started = 0
         tracker.on_death(self._binding_dead)
 
@@ -583,6 +587,7 @@ class CaptureService:
                 self._retire(current)
             targets = [s for s in self._retired if s.binding.binding_id == binding_id]
             ring = self._rings.pop(binding_id, None)
+            self._minimized.discard(binding_id)
         if ring is not None:
             ring.clear()
         return self._stop_and_wait(targets, _STOP_TIMEOUT_S)
@@ -596,6 +601,7 @@ class CaptureService:
             targets = list(self._retired)
             rings = list(self._rings.values())
             self._rings.clear()
+            self._minimized.clear()
         for ring in rings:
             ring.clear()
         return self._stop_and_wait(targets, timeout_s)
@@ -622,6 +628,8 @@ class CaptureService:
                 self.close(binding.binding_id)
             raise
         if info.minimized:
+            # 복원을 확인하면 세션을 다시 연다 (`_capture` 시작)
+            self._minimized.add(binding.binding_id)
             raise PlatformError(
                 WINDOW_MINIMIZED, f"대상 창 {info.title!r}(hwnd {binding.hwnd:#x})이 최소화돼 있다"
             )
@@ -686,6 +694,16 @@ class CaptureService:
         fresh_waited = False
         changed = ""
         self._window(binding)
+        if binding.binding_id in self._minimized:
+            # 최소화를 본 뒤 복원을 확인했다: 옛 세션의 프레임은 (최소화 확인 뒤 늦게 온 콜백·
+            # 애니메이션 프레임도) 복원 뒤 화면이라는 보장이 없고, WGC가 복원 뒤 새 프레임을 주지
+            # 않을 수도 있다(CI에서 5초 동안 없었다). 세션을 다시 열면 첫 프레임이 지금 화면이다
+            self._minimized.discard(binding.binding_id)
+            with self._lock:
+                stale = self._sessions.get(binding.binding_id)
+                if stale is not None:
+                    self._retire(stale)
+            self._reap()
         with self._lock:
             session = self._open(binding)
         used.append(session)

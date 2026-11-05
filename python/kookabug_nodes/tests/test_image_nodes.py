@@ -15,7 +15,7 @@ from helpers.graphs import target
 from helpers.run import tk
 
 from kb_testing.sample_game import FRAMES_DIR
-from kookabug_nodes._observe import POLL_MS
+from kookabug_nodes._observe import POLL_MS, poll
 from kookabug_nodes.image import click, wait, wait_any, wait_gone
 from kookabug_nodes.screen import capture, wait_stable
 from kookabug_sdk.testing import FakeContext, InputCall, fake_context, load_target
@@ -104,6 +104,27 @@ def test_wait_zero_timeout_looks_once(loaded: dict[str, Target]) -> None:
     assert wait(ctx, target=loaded[START], timeout_ms=0).exit == "timeout"
     assert ctx.captured == 1 and ctx.clock.now_ms() == 0
     assert ctx.artifacts.saved["timeout"].path == LOGIN
+
+
+def test_poll_first_look_has_no_node_deadline() -> None:
+    """첫 프레임의 찾기는 노드 기한 없이 끝까지 본다: 느린 환경에서 찾기 한 번이 `timeout_ms`보다
+    길어도 한 번은 보고 timeout이 된다 (CI 수정 7). 그 뒤 프레임은 노드 기한을 받는다."""
+    ctx = frames_ctx(TITLE)
+    seen: list[object] = []
+    found, frame = poll(ctx, 300, lambda f, d: seen.append(d))
+    assert found is None and frame is not None
+    assert seen[0] is None and len(seen) == ctx.captured == 3
+    assert all(d is not None for d in seen[1:])
+
+    # 첫 관측이 노드 기한 뒤에 끝나면 결과는 버리고 timeout이다 (다시 보지 않는다)
+    ctx = frames_ctx(TITLE)
+
+    def slow(_frame: Image, _deadline: object) -> bool:
+        ctx.clock.advance(500)
+        return True
+
+    found, frame = poll(ctx, 300, slow)
+    assert found is None and frame is not None and ctx.captured == 1
 
 
 # ---------------------------------------------------------------- core.image.wait_any

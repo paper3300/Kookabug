@@ -2,7 +2,8 @@
 
 - 기다리는 노드는 `ctx.deadline(timeout_ms)`를 관측 호출(캡처·찾기·OCR)에 넘긴다. 관측이 노드
   기한에 걸리면 `ObservationTimeout`이고 그 노드의 `timeout`(또는 `not_found`·`fail`) 출구다.
-  설정 기한(`capture_timeout`)·전체 기한은 노드가 잡지 않는다 (구현 계획 M1 2.6)
+  설정 기한(`capture_timeout`)·전체 기한은 노드가 잡지 않는다 (구현 계획 M1 2.6). 예외: 첫 프레임의
+  찾기·OCR은 노드 기한 없이 끝까지 한다 (`poll`)
 - 화면이 멈춰 있으면 캡처는 같은 프레임을 다시 준다(오류가 아님). 그래서 없는 대상을 기다리는
   노드는 `timeout_ms` 안에 `timeout`으로 끝난다
 - `region`은 찾기 대상(`$target` — 지금 화면에서 찾은 상자) 또는 사각형(클라이언트 픽셀
@@ -51,10 +52,14 @@ def poll[T](
 ) -> tuple[T | None, Image | None]:
     """`look(프레임, 노드 기한)`이 값을 줄 때까지 `timeout_ms` 동안 캡처해 본다. `(값, 마지막
     프레임)`이고, 기한 안에 못 얻으면 값이 None이다. `timeout_ms`가 0이면 기다리지 않고 지금 화면을
-    한 번만 본다(노드 기한 없이 — 설정 기한·전체 기한만).
+    한 번만 본다(노드 기한 없이 — 설정 기한·전체 기한만). 0이 아니어도 첫 프레임의 `look`은 노드
+    기한 없이 받는다 — 대기는 적어도 한 번은 끝까지 보고(매칭 후보가 남는다) timeout이 된다. 그
+    관측이 노드 기한 뒤에 끝났으면 결과는 버리고(`on_reset`도 부른다) timeout이다(캡처는 노드 기한
+    그대로). 매칭 후보(진단 증거)는 남는다.
 
     `look`이 폴링을 넘어 관측을 쥐면(읽은 글자 등) `on_reset`으로 그것을 버린다 — 디버거로 멈췄다
-    재개하면 직전 프레임과 함께 부른 뒤 버렸다고 알린다. 쥔 관측을 버리지 않고 알리면 재개 전 값이
+    재개하면 직전 프레임과 함께 부른 뒤 버렸다고 알린다. 첫 관측이 노드 기한 뒤에 끝났을 때도
+    부른다. 쥔 관측을 버리지 않고 알리면 재개 전 값이
     재개 뒤 관측으로 세탁된다."""
     if timeout_ms == 0:
         ctx.check_cancel()
@@ -62,11 +67,22 @@ def poll[T](
         return look(now, None), now
     deadline = ctx.deadline(timeout_ms)
     frame: Image | None = None
+    looked = False
     try:
         while True:
             ctx.check_cancel()
             frame = ctx.capture(deadline=deadline)
-            found = look(frame, deadline)
+            # 첫 프레임은 노드 기한으로 끊지 않고 끝까지 본다(설정·전체 기한만): 느린 환경에서 찾기
+            # 한 번이 `timeout_ms`보다 길면 한 번도 못 보고 timeout이 되어 매칭 후보도 남지 않는다
+            first = not looked
+            looked = True
+            found = look(frame, None if first else deadline)
+            if first and deadline.passed:
+                # 노드 기한 뒤에 끝난 관측은 버린다 — 반환값도, `look`이 쥔 관측(읽은 글자 등)도.
+                # 끊긴 관측과 같은 규칙이다(기한 밖 글자가 실패 출력·메시지로 나가지 않게)
+                if on_reset is not None:
+                    on_reset()
+                break
             if found is not None:
                 return found, frame
             if deadline.passed:

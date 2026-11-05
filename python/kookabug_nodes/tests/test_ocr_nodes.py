@@ -157,6 +157,28 @@ def test_wait_text_short_timeout_with_slow_ocr_exits_timeout(scene: Any) -> None
     assert elapsed < 5
 
 
+def test_assert_text_late_first_read_not_in_fail_output(scene: Any) -> None:
+    """첫 읽기는 노드 기한으로 끊지 않지만 기한 뒤에 끝났으면 버린다: `core.assert.text`의 fail
+    출력·메시지에 기한 밖 글자가 나가지 않는다 (CI 수정 7 검수 H1)."""
+    engine = RapidOcrEngine(det=_SlowDet(0.5), rec=_Rec(), characters=["가", "나", "A"])
+    g = (
+        tk()
+        .entry("n_launch")
+        .node(
+            "n_launch", "core.app.launch", inputs={"path": "game.exe"}, next={"attached": "n_check"}
+        )
+        .node(
+            "n_check",
+            "core.assert.text",
+            inputs={"region": [262, 190, 500, 170], "equals": "가A", "timeout_ms": 100},
+        )
+    )
+    ran = scene(g, ocr=engine, clock=SystemClock(CancelToken()))
+    end = ran.end("n_check")
+    assert end["exit"] == "fail" and end["outputs"]["text"] == "", end
+    assert "가A" not in end["message"] and "읽지 못했다" in end["message"], end
+
+
 # ---------------------------------------------------------------- core.ocr.click_text
 
 

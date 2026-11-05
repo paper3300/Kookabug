@@ -110,8 +110,10 @@ def text(
     if found is not None:
         return Result.ok("ok", text=found.text)
     if not last:
-        name = region.name if isinstance(region, Target) else "?"
-        return Result.fail("fail", f"영역 target '{name}'이(가) 보이지 않는다", text="")
+        if isinstance(region, Target):
+            return Result.fail("fail", f"영역 target '{region.name}'이(가) 보이지 않는다", text="")
+        # 기한 안에 끝난 읽기가 없다 (첫 읽기가 노드 기한 뒤에 끝나 버림 등)
+        return Result.fail("fail", f"{timeout_ms}ms 안에 글자를 읽지 못했다", text="")
     read = last[0].text
     wanted = (
         f"{equals!r}와(과) 같지"

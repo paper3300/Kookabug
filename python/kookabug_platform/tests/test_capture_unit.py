@@ -202,6 +202,24 @@ def test_reuse_conditions_table(rig: Rig, breaks: Callable[[Rig], str]) -> None:
         rig.fails(expect)
 
 
+def test_restore_after_minimize_reopens_session(rig: Rig) -> None:
+    """최소화를 본 뒤 복원을 확인하면 세션을 다시 연다: 최소화 확인 뒤·복원 전에 옛 세션으로 온
+    프레임(늦은 콜백·애니메이션)도 복원 뒤 화면으로 쓰지 않는다. 옛 세션은 복원 뒤 프레임을 주지
+    않는다 (CI 수정 7 검수 H2)."""
+    rig.capture()
+    rig.screen.minimized = True
+    rig.fails(WINDOW_MINIMIZED)
+    rig.backend.last.push(rig.screen.bgra(20))  # 최소화 확인 뒤 늦게 온 콜백
+    rig.screen.minimized = False
+    rig.backend.on_start = lambda s: s.push(rig.screen.bgra(30))  # 복원 뒤 화면
+    shot = rig.capture()
+    assert (shot.pixels == 30).all() and not shot.info.reused
+    assert rig.service.sessions_started == 2 and rig.backend.sessions[0].stopped
+    # 그 뒤로는 평소대로 (다시 열지 않고 재사용)
+    again = rig.capture()
+    assert again.info.reused and rig.service.sessions_started == 2
+
+
 def test_size_change_waits_for_matching_frame(rig: Rig) -> None:
     first = rig.capture()
     screen = rig.screen

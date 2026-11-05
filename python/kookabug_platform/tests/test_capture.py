@@ -497,7 +497,7 @@ def check_restore_shows_new_scene(
     assert np.array_equal(shot.pixels, reference), f"{note}: {pixel_diff(shot.pixels, reference)}"
 
 
-def test_restore_shows_scene_changed_while_minimized(tmp_path: Path, title: str) -> None:
+def launch_held_loading(tmp_path: Path, title: str) -> tuple[SampleGame, Path]:
     signal = tmp_path / "game.signal"
     game = launch(
         tmp_path,
@@ -509,11 +509,37 @@ def test_restore_shows_scene_changed_while_minimized(tmp_path: Path, title: str)
         "--signal-file",
         str(signal),
     )
+    return game, signal
+
+
+def test_restore_shows_scene_changed_while_minimized(tmp_path: Path, title: str) -> None:
+    game, signal = launch_held_loading(tmp_path, title)
     with game:
         fit_on_monitor(game.hwnd)
         r = Rig(game)
         try:
             check_restore_shows_new_scene(r, signal)
+        finally:
+            r.close()
+
+
+def test_restore_without_new_frame_reopens_session(tmp_path: Path, title: str) -> None:
+    """WGC가 복원 뒤 새 프레임을 주지 않아도(최소화 뒤 그 세션의 프레임을 막음) 최소화 전 프레임을
+    재사용하지 않고 세션을 다시 열어 복원 뒤 화면을 관측한다 (CI 수정 7: CI에서 복원 뒤 5초 동안
+    프레임이 없어 옛 로딩 화면만 재사용했다)."""
+    game, signal = launch_held_loading(tmp_path, title)
+    with game:
+        fit_on_monitor(game.hwnd)
+        gate = Gate()
+        r = Rig(game, gate)
+        try:
+
+            def block_old_sessions() -> None:
+                first_new = gate.started
+                gate.allow = lambda index: index >= first_new
+
+            check_restore_shows_new_scene(r, signal, on_minimized=block_old_sessions)
+            assert gate.started >= 2
         finally:
             r.close()
 
