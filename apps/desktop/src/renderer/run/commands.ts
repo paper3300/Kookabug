@@ -3,7 +3,7 @@
 
 export interface RunTabLike {
   path: string;
-  kind: "graph" | "target" | "run" | "file";
+  kind: "graph" | "target" | "run" | "file" | "rec";
   graphKind?: string | null;
   /** 실행 스냅샷 그래프 (읽기 전용, M3 T10): 실행하지 않는다 */
   snapshot?: boolean;
@@ -18,7 +18,11 @@ export interface RunAvailabilityInput {
   running: boolean;
   /** 시작 중인 그래프 경로 (저장·run.start 응답 대기) */
   starting: string | null;
+  /** 녹화 준비·녹화·일시정지 중 (M4 2.3·2.11): 실행을 막는다. 정지 뒤 다듬는 중(stopped)에는 false */
+  recording?: boolean;
 }
+
+export const RECORDING_RUN_TITLE = "녹화 중에는 실행할 수 없어요";
 
 export interface RunAvailability {
   /** 실행할 그래프 경로 (그래프 탭이 아니거나 서브그래프면 null) */
@@ -29,14 +33,15 @@ export interface RunAvailability {
   runTitle: string;
 }
 
-export function runAvailability({ tab, connected, running, starting }: RunAvailabilityInput): RunAvailability {
+export function runAvailability({ tab, connected, running, starting, recording = false }: RunAvailabilityInput): RunAvailability {
   const graph = tab?.kind === "graph" ? tab : undefined;
   const subgraph = graph?.graphKind === "subgraph";
   const snapshot = graph?.snapshot === true;
   const path = graph !== undefined && !subgraph && !snapshot ? graph.path : null;
-  const canRun = path !== null && connected && !running && starting === null;
-  const runTitle =
-    graph === undefined
+  const canRun = path !== null && connected && !running && starting === null && !recording;
+  const runTitle = recording
+    ? RECORDING_RUN_TITLE
+    : graph === undefined
       ? "그래프 탭에서 실행해요"
       : snapshot
         ? "실행 기록의 스냅샷은 실행하지 않아요"

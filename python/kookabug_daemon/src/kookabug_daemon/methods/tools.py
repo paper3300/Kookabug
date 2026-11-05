@@ -42,6 +42,7 @@ RECORDER_METHODS: Final = frozenset(
         "recorder.commit_prepare",
         "recorder.commit_finish",
         "recorder.commit_abort",
+        "recorder.target.materialize",
         "secrets.list",
         "secrets.create",
         "target.read_text",

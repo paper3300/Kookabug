@@ -6,7 +6,13 @@ import { describe, expect, test } from "vitest";
 import { mainOptions } from "../../scripts/build-options.mjs";
 import { E2E_HOOKS_ENV, E2E_HOOKS_GLOBAL, e2eHooksEnabled, installE2EHooks, ResponseDelays } from "./e2e-hooks";
 
-const hooks = { dropDaemonConnection: () => true, delayResponses: () => {} };
+const hooks = {
+  dropDaemonConnection: () => true,
+  delayResponses: () => {},
+  pressRecorderHotkey: () => false,
+  recorderAccelerators: () => [],
+  blockRecorderHotkey: () => {},
+};
 
 describe("훅 등록 조건", () => {
   test("test_packaged_app_never_installs_hook_even_with_env", () => {

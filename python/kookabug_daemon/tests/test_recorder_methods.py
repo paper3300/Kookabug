@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import threading
 from pathlib import Path
@@ -42,6 +43,8 @@ AGENT = {"kind": "agent", "name": "mcp", "version": "0", "id": "agent-7"}
 LOBBY_TITLE = [412, 90, 200, 60]
 """로비 화면 "서버 선택" 제목 자리 (화면 확인 영역)."""
 GRAPH = "tests/rec_login.graph.json"
+SECRET_TEXT = "sample-pass-01"
+"""예제 각본의 비밀번호 원문 (`EXAMPLE_SECRET_ENV` 값)."""
 START = {"launch": {}, "hotkeys": HOTKEYS}
 
 
@@ -179,6 +182,7 @@ VALID_PARAMS: dict[str, dict[str, Any]] = {
     "recorder.commit_prepare": {"mode": "new_test", "graph_path": GRAPH},
     "recorder.commit_finish": {"token": "x" * 22, "graph_path": GRAPH},
     "recorder.commit_abort": {"token": "x" * 22},
+    "recorder.target.materialize": {"step": "rs1"},
     "secrets.create": {"key": "a.b", "from_step": "rs1"},
     "target.read_text": {"frame_id": "f_1", "rect": LOBBY_TITLE},
 }
@@ -448,3 +452,130 @@ def test_disconnect_during_committing_leaves_written_targets(tmp_path: Path) -> 
         wait_until(lambda: session.state == "discarded", timeout=20)
         assert written_targets(rig) == paths  # 써진 target은 유효한 파일로 남는다
         assert no_session_folders(rig)
+
+
+# ---------------------------------------------------------------- 미리 쓰기·값 확인 기댓값
+
+
+def test_materialize_writes_one_draft_and_commit_does_not_rewrite(tmp_path: Path) -> None:
+    """REC 탭 "찾기 대상 탭으로 열기": 초안 하나만 지금 파일로, 스텝은 그 파일을 가리키고 커밋은
+    다시 쓰지 않는다. 소유 연결만."""
+    rig = drafts_rig(tmp_path)
+    with rig.daemon() as d, d.client() as ui, d.client() as other:
+        steps = record_login(ui)
+        click = next(s for s in steps if s["kind"] == "click")
+        assert click["target"]["source"] == "draft"
+        assert refused(other, "recorder.target.materialize", {"step": click["step"]}).kind == (
+            "not_owner"
+        )
+        done = ui.call("recorder.target.materialize", {"step": click["step"]})
+        rel = done["path"]
+        assert rel.startswith("targets/rec/") and written_targets(rig) == [rel]
+        first_bytes = (rig.root / rel).read_bytes()
+        after = next(s for s in steps_of(ui) if s["step"] == click["step"])
+        assert after["target"] == {"source": "file", "path": rel, "reused": False}
+        # 초안이 이미 파일이 됨: 다시 부르면 초안이 없다
+        error = refused(ui, "recorder.target.materialize", {"step": click["step"]})
+        assert error.kind == "target_missing"
+        choose_secret(ui, steps_of(ui))
+        prepared = ui.call("recorder.commit_prepare", {"mode": "new_test", "graph_path": GRAPH})
+        paths = [t["path"] for t in prepared["targets"]]
+        assert paths.count(rel) == 1
+        # 미리 쓴 파일은 그대로, 같은 초안을 다른 이름으로 다시 쓰지 않았다
+        assert (rig.root / rel).read_bytes() == first_bytes
+        assert len(written_targets(rig)) == len(set(paths))
+
+
+def test_check_text_equals_patch_and_secret_text_rejected(tmp_path: Path) -> None:
+    rig = RecorderRig.make(tmp_path)
+    with rig.daemon() as d, d.client() as ui:
+        ui.call("recorder.start", START)
+        wait_recorded(ui)
+        live = ui.call("recorder.frame", {"which": "live"})
+        inserted = ui.call(
+            "recorder.insert_check",
+            {"kind": "text", "frame_id": live["frame"]["frame_id"], "rect": LOBBY_TITLE},
+        )["step"]
+        assert inserted["kind"] == "check_text" and isinstance(inserted["equals"], str)
+        sid = inserted["step"]
+        updated = ui.call("recorder.step.update", {"step": sid, "patch": {"equals": "서버 고르기"}})
+        assert updated["step"]["equals"] == "서버 고르기"
+        # 비밀번호 원문을 담은 기댓값은 거부하고 원문을 오류에 싣지 않는다
+        error = refused(
+            ui, "recorder.step.update", {"step": sid, "patch": {"equals": "x sample-pass-01 y"}}
+        )
+        assert error.kind == "secret_region_overlap"
+        assert "sample-pass-01" not in str(error) and "sample-pass-01" not in str(error.data)
+        assert next(s for s in steps_of(ui) if s["step"] == sid)["equals"] == "서버 고르기"
+        click = next(s for s in steps_of(ui) if s["kind"] == "click")
+        assert refused(
+            ui, "recorder.step.update", {"step": click["step"], "patch": {"equals": "a"}}
+        ).kind == ("recorder_state_invalid")
+        ui.call("recorder.stop", {})
+        choose_secret(ui, steps_of(ui))
+        fragment = ui.call("recorder.commit_prepare", {"mode": "new_test", "graph_path": GRAPH})[
+            "fragment"
+        ]
+        texts = [n["in"]["equals"] for n in fragment["nodes"] if n["type"] == "core.assert.text"]
+        assert texts == ["서버 고르기"]
+
+
+def _assert_check_equals_never_leaks(
+    rig: RecorderRig, d: Any, ui: DaemonClient, frame_id: str, rect: list[int], raw: str
+) -> None:
+    """새 값 확인 스텝의 OCR 기댓값이 비밀값 원문을 담을 때 세 경로 — `insert_check` 응답,
+    `recorder.changed` 뒤 `recorder.steps`, 세션 `steps.json` — 어디에도 원문이 없다 (B5 검수 2차
+    High). 스텝은 기댓값을 비우고 `secret_overlap`으로 버린다."""
+    result = ui.call("recorder.insert_check", {"kind": "text", "frame_id": frame_id, "rect": rect})
+    step = result["step"]
+    assert raw not in json.dumps(result, ensure_ascii=False), "insert_check 응답에 원문"
+    assert step["kind"] == "check_text" and step["equals"] == ""
+    assert "secret_overlap" in step["needs_review"]
+    session = d.daemon.recorder.session
+    session.changed()
+    listed = steps_of(ui)
+    assert raw not in json.dumps(listed, ensure_ascii=False), "recorder.steps에 원문"
+    stored = session.store.folder / "steps.json"
+    wait_until(lambda: step["step"] in stored.read_text(encoding="utf-8-sig"), timeout=10)
+    assert raw not in stored.read_text(encoding="utf-8-sig"), "steps.json에 원문"
+    # 원문 없는 커밋 거부 (기댓값을 버린 값 확인)
+    choose_secret(ui, steps_of(ui))
+    error = refused(ui, "recorder.commit_prepare", {"mode": "new_test", "graph_path": GRAPH})
+    assert error.kind == "secret_region_overlap" and step["step"] in error.data["steps"]
+    assert raw not in str(error) and raw not in str(error.data)
+
+
+@pytest.mark.usefixtures("secret_env")
+def test_new_check_text_equals_with_secret_ocr_not_exposed(tmp_path: Path) -> None:
+    """반례 1: 안전한 영역의 OCR이 이미 알려진 비밀번호(`sample-pass-01`)를 읽은 경우."""
+    rig = RecorderRig.make(tmp_path, login_script())
+    with rig.daemon(speed=None) as d, d.client() as ui:
+        ui.call("recorder.start", START)
+        rig.advance(d, 20000)
+        frame = ui.call("recorder.frame", {"which": "live"})["frame"]["frame_id"]
+        ui.call("recorder.stop", {})
+        assert any(s.get("text_state") == "secret" for s in steps_of(ui))
+        session = d.daemon.recorder.session
+        assert session is not None and session.pipeline is not None
+        session.pipeline.read_text = lambda image, rect: f"안내 {SECRET_TEXT}"
+        _assert_check_equals_never_leaks(rig, d, ui, frame, LOBBY_TITLE, SECRET_TEXT)
+
+
+@pytest.mark.timeout(180)
+def test_new_check_text_equals_real_ocr_secret_elsewhere_not_exposed(tmp_path: Path) -> None:
+    """반례 2 (실제 OCR): 비밀번호 `Enter`가 화면 아래 안내문 "Enter: 로그인"에도 보인다."""
+    script = ScriptBuilder(scene="login")
+    script.at(500).click(ACCOUNT_POINT)
+    script.at(1000).type("reviewuser")
+    script.at(2800).key("tab")
+    script.at(3500).type("Enter")
+    script.at(5000).key("tab")
+    script.at(6000).mark("done")
+    rig = RecorderRig.make(tmp_path, script.lines)
+    with rig.daemon(speed=None) as d, d.client() as ui:
+        ui.call("recorder.start", START)
+        rig.advance(d, 6000)
+        frame = ui.call("recorder.frame", {"which": "live"})["frame"]["frame_id"]
+        ui.call("recorder.stop", {})
+        assert any(s.get("text_state") == "secret" for s in steps_of(ui))
+        _assert_check_equals_never_leaks(rig, d, ui, frame, [300, 570, 430, 45], "Enter")

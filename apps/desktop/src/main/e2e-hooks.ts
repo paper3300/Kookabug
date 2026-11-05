@@ -15,6 +15,12 @@ export interface E2EHooks {
    * 다르게 도착하는 경우를 만든다 (T12 target.preview 역순 응답 검사)
    */
   delayResponses(method: string, delaysMs: number[]): void;
+  /** 녹화 전역 단축키를 누른 것처럼 (M4 T9). 등록돼 있지 않으면 false */
+  pressRecorderHotkey(role: "stop" | "mark_secret"): boolean;
+  /** 지금 등록된 녹화 단축키 가속기 */
+  recorderAccelerators(): string[];
+  /** 다음 등록에서 이 가속기를 다른 앱이 쥔 것처럼 실패시킨다 (null이면 되돌림) */
+  blockRecorderHotkey(accelerator: string | null): void;
 }
 
 /** 메서드별 남은 응답 지연 (delayResponses). 꺼낼 때마다 하나씩 줄어든다 */

@@ -155,6 +155,8 @@ class _Session:
     cancelled: bool = False
     shots: dict[str, _EditorShot] = field(default_factory=dict[str, _EditorShot])
     written: dict[str, tuple[str, str]] = field(default_factory=dict[str, tuple[str, str]])
+    materialized: dict[str, str] = field(default_factory=dict[str, str])
+    """`recorder.target.materialize`로 미리 쓴 target 경로 → 그 초안 ID."""
     commit: _Commit | None = None
 
 
@@ -617,6 +619,20 @@ class RecorderSession:
                     texts.set_secret_key(span, patch["secret_key"])
                 if "text" in patch and span is not None:
                     texts.replace_ordinary(span, str(patch["text"]))
+                if "equals" in patch:
+                    if step.kind != "check_text":
+                        raise RequestFailed(
+                            "recorder_state_invalid", "값 확인 스텝이 아니다", state=self.s.state
+                        )
+                    equals = str(patch["equals"])
+                    # 기댓값도 이름·제목처럼 세션의 비밀값·판정 대기·확인 필요 원문을 담지 않는다
+                    if pipeline.leaks_secret(equals):
+                        raise RequestFailed(
+                            "secret_region_overlap",
+                            "비밀값 글자는 기댓값으로 쓸 수 없다",
+                            steps=[step.step_id],
+                        )
+                    step.equals = equals
                 if patch.get("keep"):
                     step.kept = True
                 if "timeout_ms" in patch:
@@ -653,7 +669,17 @@ class RecorderSession:
     def _revalidate(self, pipeline: Pipeline) -> None:
         """파이프라인 재검사 + 버린 초안 중 이 세션이 이미 쓴 target 파일 정리 (잠금은 부르는
         쪽)."""
-        pipeline.revalidate()
+        bad = set(pipeline.revalidate())
+        # 미리 쓴(materialize) target의 초안이 버려졌으면 그 경로를 가리키는 스텝도 버린다 —
+        # 아래에서 그 파일을 지운다(이 세션이 쓴 그대로일 때)
+        gone = {rel for rel, draft in self.s.materialized.items() if draft in bad}
+        if gone:
+            for step in pipeline.steps:
+                if not step.deleted and step.target in gone:
+                    pipeline.invalidate(step)
+            for rel in gone:
+                self.s.materialized.pop(rel, None)
+            pipeline.rev += 1
         self._forget_written(pipeline)
 
     def _forget_written(self, pipeline: Pipeline) -> None:
@@ -779,6 +805,34 @@ class RecorderSession:
             self.s.shots[frame_id] = _EditorShot(frame.cache, pixels, t_ns, max(1, dpi))
         return {"frame": frame.to_json(), "protected": protected, "which": which}
 
+    def materialize(self, step_id: str) -> dict[str, Any]:
+        """REC 탭 "찾기 대상 탭으로 열기": 그 스텝의 녹화 초안만 지금 파일로 쓴다. 최신 보호
+        영역·원문으로 먼저 다시 본다(걸리면 `secret_region_overlap`). 쓴 경로는 커밋 멱등 기록
+        (`written`)에 들어가 커밋이 다시 쓰지 않고, 스텝은 이후 그 파일을 가리킨다(사람이 TARGET
+        탭에서 고쳐도 그 파일을 쓴다)."""
+        with self.lock:
+            self._require("recording", "paused", "stopped")
+        pipeline = self._settled()
+        with pipeline.lock:
+            step = self._step(pipeline, step_id)
+            self._revalidate(pipeline)
+            draft_id = step.target
+            if step.invalidated:
+                raise RequestFailed(
+                    "secret_region_overlap",
+                    "비밀값 칸과 겹치거나 그 글자를 담은 대상이다 — 영역을 다시 고르세요",
+                    steps=[step.step_id],
+                )
+            if draft_id is None or draft_id not in pipeline.targets.drafts:
+                raise RequestFailed("target_missing", "파일로 쓸 녹화 초안이 없다", steps=[step_id])
+            rel, revision = self._write_target(pipeline, draft_id, self.s.session_id)
+            with self.lock:
+                self.s.materialized[rel] = draft_id
+            step.target, step.reused = rel, False
+            pipeline.rev += 1
+        self._after_update()
+        return {"path": rel, "revision": revision, "reused": False}
+
     def insert_check(self, kind: str, frame_id: str, rect: list[int]) -> dict[str, Any]:
         with self.lock:
             self._require("recording", "paused", "stopped")
@@ -805,6 +859,8 @@ class RecorderSession:
                 )
             except SecretRegionOverlap as exc:
                 raise RequestFailed("secret_region_overlap", str(exc), steps=[]) from exc
+            # 새 스텝(OCR 기댓값·이름)을 응답·알림·저장 전에 지금 원문 목록으로 다시 본다
+            self._revalidate(pipeline)
             result = {"rev": pipeline.rev, "step": pipeline.step_json(step, reveal=True)}
         self._after_update()
         return result
@@ -1247,6 +1303,23 @@ class RecorderService:
         if spans:
             raise RequestFailed(
                 "secret_region_overlap", "비밀값 칸과 겹치는 영역은 읽지 않는다", steps=[]
+            )
+
+    def check_read_result(self, result: Mapping[str, Any]) -> None:
+        """`target.read_text` 뒤 검사: 읽은 글자가 녹화 세션의 비밀값·판정 대기·확인 필요 원문을
+        담으면(보호 영역 밖 다른 자리에 다시 보인 경우) 결과를 주지 않는다. 오류에 원문을 싣지
+        않는다."""
+        session = self.session
+        pipeline = None if session is None else session.pipeline
+        if pipeline is None:
+            return
+        texts = [str(result.get("text") or "")]
+        texts += [str(line.get("text") or "") for line in result.get("lines") or ()]
+        with pipeline.lock:
+            leaked = any(pipeline.leaks_secret(t) for t in texts)
+        if leaked:
+            raise RequestFailed(
+                "secret_region_overlap", "비밀값 글자가 보이는 영역은 읽지 않는다", steps=[]
             )
 
     def session_ended(self, session: RecorderSession) -> None:

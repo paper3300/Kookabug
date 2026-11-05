@@ -2,6 +2,7 @@
 // 기한은 프로필처럼 그 실행의 조건이라 프로필 옆에 둔다 (따로 설정 화면을 만들지 않는다)
 // 정지 ■는 M3에서 시안대로 디버그 툴바로 옮겼다 (debug/DebugToolbar.tsx). 녹화·에디터 분할은 숨긴다 (U3).
 // 검증 오류로 실행을 막으면 "검증 오류 N개"를 띄운다
+import { recordingBlocksRun, useRecorder } from "../recorder/recorderStore";
 import { useTabs } from "../store/tabs";
 import { useUi } from "../store/ui";
 import { useWorkspace } from "../store/workspace";
@@ -16,7 +17,8 @@ export function useRunAvailability(): RunAvailability {
   const connected = useWorkspace((s) => s.daemon.status === "connected");
   const running = useRun((s) => s.current?.phase === "running");
   const starting = useRun((s) => s.starting);
-  return runAvailability({ tab, connected, running, starting });
+  const recording = useRecorder((s) => recordingBlocksRun(s.state));
+  return runAvailability({ tab, connected, running, starting, recording });
 }
 
 function availabilityNow(): RunAvailability {
@@ -27,6 +29,7 @@ function availabilityNow(): RunAvailability {
     connected: useWorkspace.getState().daemon.status === "connected",
     running: run.current?.phase === "running",
     starting: run.starting,
+    recording: recordingBlocksRun(useRecorder.getState().state),
   });
 }
 

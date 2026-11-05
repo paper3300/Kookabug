@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { wireStringify } from "@kookabug/schema";
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, shell } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, nativeTheme, session, shell } from "electron";
 import type { OpenResult, OutputLine, ThemeMode, ThemeState } from "../preload/bridge";
 import { locateCli } from "./cli-locate";
 import { CloseGuard } from "./close-guard";
@@ -14,6 +14,7 @@ import { APP_CHANNEL, checkAppAction, checkSender, EVENT_CHANNEL, IpcGuardError,
 import { handleProtocols, registerSchemes } from "./protocols";
 import { APP_ORIGIN, isExternalOpenAllowed, lockedWebPreferences } from "./security";
 import { checkWorkspaceFolder, isThemeMode, Settings } from "./settings";
+import { guardRecorderCall, RECORDER_HOTKEYS, RecorderShortcuts, type ShortcutHost } from "./shortcuts";
 import { parseSmokeArgs, runSmoke, type SmokeArgs, withDeadline } from "./smoke";
 
 /** 빌드가 정한다 (scripts/build-options.mjs): 배포 빌드는 false라 E2E 훅 분기가 번들에서 빠진다 */
@@ -114,6 +115,31 @@ function start(): void {
   const themeState = (): ThemeState => ({ mode: settings.theme, dark: nativeTheme.shouldUseDarkColors });
 
   const forward = createNotificationForwarder(send);
+  // 녹화 단축키 (M4 T9, shortcuts.ts): 녹화 중에만 전역 등록. E2E는 등록 실패를 흉내 내고 누름을 부른다
+  const hotkeyCallbacks = new Map<string, () => void>();
+  const blockedHotkeys = new Set<string>();
+  const shortcutHost: ShortcutHost = {
+    register(accelerator, callback) {
+      if (blockedHotkeys.has(accelerator)) return false;
+      const ok = globalShortcut.register(accelerator, callback);
+      if (ok) hotkeyCallbacks.set(accelerator, callback);
+      return ok;
+    },
+    unregister(accelerator) {
+      hotkeyCallbacks.delete(accelerator);
+      globalShortcut.unregister(accelerator);
+    },
+  };
+  // 정지 단축키는 주 프로세스가 바로 daemon에 보낸다 (렌더러가 바빠도 멈춘다). 같은 연결이라 소유 연결이다
+  const shortcuts = new RecorderShortcuts(shortcutHost, () => {
+    void daemonCall("recorder.stop", {}, "{}").catch((err: unknown) => {
+      console.warn(`녹화 정지 단축키: ${(err as Error).message}`);
+    });
+  });
+  app.on("will-quit", () => {
+    shortcuts.disarm();
+    globalShortcut.unregisterAll();
+  });
   const manager = new DaemonManager(
     nodeDeps({
       client: { kind: "ui", name: "Kookabug", version: app.getVersion() },
@@ -121,8 +147,14 @@ function start(): void {
       extraArgs: parseExtraArgs(process.env.KOOKABUG_DAEMON_ARGS),
     }),
     {
-      state: (state) => send("daemon.state", state),
-      notification: (method, params) => forward(method, params),
+      state: (state) => {
+        shortcuts.onConnection(state.status);
+        send("daemon.state", state);
+      },
+      notification: (method, params) => {
+        if (method === "recorder.changed") shortcuts.onRecorderState((params as { state?: unknown } | null)?.state);
+        forward(method, params);
+      },
       log: (level, message) => {
         const line: OutputLine = { time: new Date().toISOString(), level, message };
         output.push(line);
@@ -142,6 +174,17 @@ function start(): void {
       hooks: {
         dropDaemonConnection: () => manager.dropConnection(),
         delayResponses: (method, delaysMs) => delays.set(method, delaysMs),
+        pressRecorderHotkey(role) {
+          const accelerator = RECORDER_HOTKEYS.find((h) => h.role === role)?.accelerator;
+          const callback = accelerator === undefined ? undefined : hotkeyCallbacks.get(accelerator);
+          callback?.();
+          return callback !== undefined;
+        },
+        recorderAccelerators: () => shortcuts.accelerators(),
+        blockRecorderHotkey(accelerator) {
+          blockedHotkeys.clear();
+          if (accelerator !== null) blockedHotkeys.add(accelerator);
+        },
       },
     });
     if (installed) {
@@ -154,6 +197,9 @@ function start(): void {
       };
     }
   }
+
+  // 녹화 문지기는 맨 바깥: 렌더러 요청·정지 단축키가 모두 거친다
+  daemonCall = guardRecorderCall(daemonCall, shortcuts, wireStringify);
 
   handleProtocols(RENDERER_ROOT, () => manager.root);
 
@@ -241,6 +287,8 @@ function start(): void {
         call: (method, params) => daemonCall(method, params, wireStringify(params)),
       });
     },
+    recorderArm: () => shortcuts.arm(),
+    recorderDisarm: () => shortcuts.disarm(),
   };
   // 창 닫기 확인 (close-guard.ts): 저장 안 된 그래프가 있으면 렌더러가 저장·버림·취소를 묻는다
   const closeGuard = new CloseGuard({

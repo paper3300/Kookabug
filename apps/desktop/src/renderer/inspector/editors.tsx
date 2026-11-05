@@ -1,8 +1,9 @@
 // 속성 편집기 입력 상자 (M2 계획 2.11): 숫자 상자·한 줄 상자·확인란·선택 상자·점/사각형 칸·줄 편집·JSON 상자와
 // 특수 값(연결·대상·설정·비밀·그대로 넣은 값) 보기. 글자 입력은 Enter·포커스를 떠날 때 한 번 반영한다(실행 취소
 // 하나). 틀린 값은 바로 아래에 알리고 반영하지 않는다. Esc는 고치던 글자를 버린다
-import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { own, specialTag } from "../graph/model";
+import { loadSecrets, useRecorder } from "../recorder/recorderStore";
 import { useWorkspace } from "../store/workspace";
 import {
   CELL_NAMES,
@@ -92,6 +93,7 @@ function ParsedInput<T>({
   onCommit,
   ctx,
   mono,
+  list,
 }: {
   label: string;
   shown: string;
@@ -100,6 +102,8 @@ function ParsedInput<T>({
   onCommit(v: T): void;
   ctx: EditorContext;
   mono?: boolean;
+  /** 제안 목록 datalist id (자유 입력은 그대로) */
+  list?: string;
 }) {
   const [draft, setDraft] = useDraft();
   const keys = useEditKeys();
@@ -123,6 +127,7 @@ function ParsedInput<T>({
           className={mono ? css.mono : undefined}
           value={draft ?? shown}
           placeholder={placeholder}
+          list={list}
           disabled={ctx.locked}
           spellCheck={false}
           onChange={(e) => setDraft(e.target.value)}
@@ -320,6 +325,13 @@ export function KeyInput({
   ctx: EditorContext;
 }) {
   const kind = tag === "$setting" ? "설정" : "비밀";
+  const secret = tag === "$secret";
+  // $secret 제안: 자격 증명 관리자의 이 워크스페이스 키 (secrets.list, 값 없음 — M4 B2 인계). 자유 입력 유지
+  const keys = useRecorder((s) => s.secrets);
+  useEffect(() => {
+    if (secret) void loadSecrets();
+  }, [secret]);
+  const listId = `kb-secret-keys-${label.replace(/[^A-Za-z0-9_-]/g, "_")}`;
   return (
     <div className={css.keyRow} data-part="key-input" data-tag={tag}>
       <span className={`${css.chip} ${tag === "$secret" ? css.chipSecret : css.chipSetting}`}>{kind}</span>
@@ -332,7 +344,17 @@ export function KeyInput({
           onCommit={onCommit}
           ctx={ctx}
           mono
+          list={secret ? listId : undefined}
         />
+        {secret && (
+          <datalist id={listId} data-part="secret-key-suggestions">
+            {keys.map((k) => (
+              <option key={k.key} value={k.key}>
+                {k.key} (자격 증명 관리자)
+              </option>
+            ))}
+          </datalist>
+        )}
       </div>
     </div>
   );

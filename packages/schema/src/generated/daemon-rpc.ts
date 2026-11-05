@@ -895,6 +895,12 @@ export interface Methods {
     result: RecorderStateResult;
     tool: "ui_only";
   };
+  "recorder.target.materialize": {
+    params: RecorderMaterializeParams;
+    renderer: true;
+    result: RecorderWrittenTarget;
+    tool: "ui_only";
+  };
   "run.cancel": {
     params: RunIdParams;
     renderer: true;
@@ -1261,6 +1267,10 @@ export interface RecorderStepResult {
 export interface RecorderStep {
   badges: RecorderBadge[];
   /**
+   * 값 확인(check_text) 스텝의 기댓값 (영역 OCR 제안 또는 사람이 고친 값). 비밀값 원문과 겹치면 daemon이 비운다
+   */
+  equals?: string;
+  /**
    * recorder.frame으로 열 수 있는 이 스텝의 프레임
    */
   frames?: RecorderFrameWhich[];
@@ -1441,6 +1451,10 @@ export interface RecorderStepUpdateParams {
 export interface RecorderStepPatch {
   confirm_reveal?: true;
   delete?: true;
+  /**
+   * 값 확인(check_text) 스텝의 기댓값 고치기 (사람 수정·글자 읽기 결과). 세션의 비밀값·판정 대기·확인 필요 원문을 담으면 secret_region_overlap
+   */
+  equals?: string;
   frame?: "pre_click" | "pre_hover" | "pre_next";
   frame_id?: string;
   keep?: true;
@@ -1472,6 +1486,15 @@ export interface RecorderStepsParams {
 export interface RecorderStepsResult {
   rev: number;
   steps: RecorderStep[];
+}
+/**
+ * recorder.target.materialize: REC 탭 '찾기 대상 탭으로 열기' — 그 스텝의 녹화 초안만 지금 target 파일로 쓴다(최신 보호 영역 재검사 뒤, targets/rec/<세션 ID>/). 그 스텝은 이후 그 파일을 가리키고 커밋은 다시 쓰지 않는다. 초안이 없는 스텝이면 target_missing
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RecorderMaterializeParams".
+ */
+export interface RecorderMaterializeParams {
+  step: RecorderStepId;
 }
 /**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema

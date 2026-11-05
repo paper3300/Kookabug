@@ -1839,6 +1839,17 @@ class RecorderInsertCheckParams(BaseModel):
     rect: Rect
 
 
+class RecorderMaterializeParams(BaseModel):
+    """
+    recorder.target.materialize: REC 탭 '찾기 대상 탭으로 열기' — 그 스텝의 녹화 초안만 지금 target 파일로 쓴다(최신 보호 영역 재검사 뒤, targets/rec/<세션 ID>/). 그 스텝은 이후 그 파일을 가리키고 커밋은 다시 쓰지 않는다. 초안이 없는 스텝이면 target_missing
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    step: RecorderStepId
+
+
 class RecorderTargetSpec(BaseModel):
     """
     target 초안 사양 (읽기 RecorderTargetDraft.spec = 전체, 쓰기 RecorderStepPatch.target = 바꿀 필드만 — 같은 모양). rect·search는 자른 프레임의 클라이언트 물리 픽셀(search null = 검색 범위 없음). 나머지는 target 파일 필드와 같다: click.anchor·click.offset, match.threshold·rgb(색까지 확인)·methods·color_tolerance, sensitive
@@ -2356,6 +2367,16 @@ class RecorderCommitFinish(BaseModel):
     tool: Literal["ui_only"]
 
 
+class RecorderTargetMaterialize(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: RecorderMaterializeParams
+    renderer: Literal[True]
+    result: RecorderWrittenTarget
+    tool: Literal["ui_only"]
+
+
 class RunChildren(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -2619,6 +2640,12 @@ class RecorderStepPatch(BaseModel):
     )
     confirm_reveal: Literal[True] | None = None
     delete: Literal[True] | None = None
+    equals: Annotated[
+        str | None,
+        Field(
+            description="값 확인(check_text) 스텝의 기댓값 고치기 (사람 수정·글자 읽기 결과). 세션의 비밀값·판정 대기·확인 필요 원문을 담으면 secret_region_overlap"
+        ),
+    ] = None
     frame: Literal["pre_click", "pre_hover", "pre_next"] | None = None
     frame_id: Annotated[str | None, Field(min_length=1)] = None
     keep: Literal[True] | None = None
@@ -2811,6 +2838,12 @@ class RecorderStep(BaseModel):
         extra="forbid",
     )
     badges: list[RecorderBadge]
+    equals: Annotated[
+        str | None,
+        Field(
+            description="값 확인(check_text) 스텝의 기댓값 (영역 OCR 제안 또는 사람이 고친 값). 비밀값 원문과 겹치면 daemon이 비운다"
+        ),
+    ] = None
     frames: Annotated[
         list[RecorderFrameWhich] | None,
         Field(description="recorder.frame으로 열 수 있는 이 스텝의 프레임"),
@@ -2940,6 +2973,9 @@ class Methods(BaseModel):
     recorder_step_update: Annotated[RecorderStepUpdate, Field(alias="recorder.step.update")]
     recorder_steps: Annotated[RecorderSteps, Field(alias="recorder.steps")]
     recorder_stop: Annotated[RecorderStop, Field(alias="recorder.stop")]
+    recorder_target_materialize: Annotated[
+        RecorderTargetMaterialize, Field(alias="recorder.target.materialize")
+    ]
     run_cancel: Annotated[RunCancel, Field(alias="run.cancel")]
     run_children: Annotated[RunChildren, Field(alias="run.children")]
     run_compare: Annotated[RunCompare, Field(alias="run.compare")]

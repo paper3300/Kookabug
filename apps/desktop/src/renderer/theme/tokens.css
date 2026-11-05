@@ -140,6 +140,26 @@
   --kb-target-toolbar-bg: #252526;
   --kb-target-score-fg: #181818;
   --kb-target-click: #f14c4c;
+  /* 녹화 (시안 Recorder: 상태 바 빨강·REC 점·정지 단추·비밀값 띠·스텝 줄 점·선택 줄·확인 필요 메모, M4 T9·T10) */
+  --kb-statusbar-recording-bg: #a1260d;
+  --kb-kind-rec: #f14c4c;
+  --kb-recorder-dot: #f14c4c;
+  --kb-recorder-rec-fg: #f48771;
+  --kb-recorder-stop-bg: #a1260d;
+  --kb-recorder-stop-fg: #ffffff;
+  --kb-recorder-secret-bg: #2a2416;
+  --kb-recorder-secret-border: #6b5320;
+  --kb-recorder-secret-fg: #e2c08d;
+  --kb-recorder-step-selected-bg: #04395e;
+  --kb-recorder-step-selected-fg: #ffffff;
+  --kb-recorder-step-error-bg: #4a1f1c;
+  --kb-recorder-dot-step: #4daafc;
+  --kb-recorder-dot-special: #f0883e;
+  --kb-recorder-dot-wait: #616161;
+  --kb-recorder-dot-fg: #181818;
+  --kb-recorder-note-review: #cca700;
+  --kb-recorder-note-secret: #e2c08d;
+  --kb-recorder-protected: #f0883e;
   /* 기록 뷰어 (시안 RunViewer: 실행 목록 결과 점·배지, RUN 머리 결과, 회차 막대, 스크린샷 칸·생략 칸·후보 상자, M3 T10) */
   --kb-run-dot-pass: #89d185;
   --kb-run-dot-fail: #f14c4c;
@@ -310,6 +330,26 @@
   --kb-target-toolbar-bg: #f8f8f8;
   --kb-target-score-fg: #ffffff;
   --kb-target-click: #e51400;
+  /* 녹화 (Recorder는 다크 시안뿐: 라이트는 같은 역할의 라이트 빨강·주황·노랑과 옅은 바탕) */
+  --kb-statusbar-recording-bg: #b42318;
+  --kb-kind-rec: #e51400;
+  --kb-recorder-dot: #e51400;
+  --kb-recorder-rec-fg: #b42318;
+  --kb-recorder-stop-bg: #b42318;
+  --kb-recorder-stop-fg: #ffffff;
+  --kb-recorder-secret-bg: #fdf3dd;
+  --kb-recorder-secret-border: #d7ba7d;
+  --kb-recorder-secret-fg: #6b4e00;
+  --kb-recorder-step-selected-bg: #cfe4fa;
+  --kb-recorder-step-selected-fg: #1f1f1f;
+  --kb-recorder-step-error-bg: #fde7e9;
+  --kb-recorder-dot-step: #005fb8;
+  --kb-recorder-dot-special: #b85c00;
+  --kb-recorder-dot-wait: #8a8a8a;
+  --kb-recorder-dot-fg: #ffffff;
+  --kb-recorder-note-review: #946b00;
+  --kb-recorder-note-secret: #8a5a00;
+  --kb-recorder-protected: #b85c00;
   /* 기록 뷰어 (RunViewer는 다크 시안뿐: 라이트는 MainLight의 같은 역할 색 — 성공·실패·경고 글자와 옅은 바탕) */
   --kb-run-dot-pass: #2e7d32;
   --kb-run-dot-fail: #e51400;
@@ -361,6 +401,7 @@
   --kb-titlebar-height: 36px; /* + 아래 테두리 1px = 시안 37px */
   --kb-activitybar-width: 48px; /* + 오른쪽 테두리 1px */
   --kb-sidebar-width: 249px; /* + 오른쪽 테두리 1px */
+  --kb-recorder-sidebar-width: 311px; /* 녹화 사이드바 (시안 Recorder 액티비티 바 + 사이드바 360px) */
   --kb-row-height: 22px;
   --kb-header-height: 35px;
   --kb-statusbar-height: 22px;

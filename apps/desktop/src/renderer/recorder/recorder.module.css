@@ -1,0 +1,425 @@
+/* 녹화 사이드바·REC 탭 (시안 Recorder, M4 T9·T10). 색은 토큰만 */
+
+.sidebar {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  color: var(--kb-sidebar-fg);
+  font-size: 12px;
+}
+
+.header {
+  flex: 0 0 var(--kb-header-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px 0 20px;
+  font-size: var(--kb-font-size-small);
+  letter-spacing: 0.04em;
+}
+
+.rec {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--kb-recorder-rec-fg);
+  white-space: nowrap;
+}
+
+.headState {
+  color: var(--kb-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--kb-recorder-dot);
+  flex: 0 0 8px;
+}
+
+.scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.controls,
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 10px;
+}
+
+.buttons {
+  padding: 0;
+}
+
+.button,
+.primary,
+.stop {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 2px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.button {
+  background: var(--kb-input-bg);
+  color: var(--kb-fg);
+  border: 1px solid var(--kb-input-border);
+}
+
+.button[aria-pressed="true"] {
+  border-color: var(--kb-accent);
+}
+
+.primary {
+  background: var(--kb-button-primary-bg);
+  color: var(--kb-button-primary-fg);
+  border: 0;
+}
+
+.stop {
+  background: var(--kb-recorder-stop-bg);
+  color: var(--kb-recorder-stop-fg);
+  border: 0;
+}
+
+.button:disabled,
+.primary:disabled,
+.stop:disabled {
+  opacity: 0.45;
+}
+
+.link {
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--kb-link-fg);
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+.start {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.hint {
+  color: var(--kb-fg-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.select {
+  min-width: 0;
+  height: 24px;
+  background: var(--kb-input-bg);
+  color: var(--kb-fg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  font-size: 12px;
+}
+
+.errorBand,
+.infoBand,
+.warnBand {
+  margin: 0 12px 10px;
+  padding: 6px 10px;
+  border-radius: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  justify-content: space-between;
+}
+
+.errorBand {
+  background: var(--kb-banner-error-bg);
+  color: var(--kb-banner-error-fg);
+}
+
+.infoBand {
+  background: var(--kb-banner-info-bg);
+  color: var(--kb-banner-info-fg);
+}
+
+.warnBand {
+  background: var(--kb-banner-warn-bg);
+  color: var(--kb-banner-warn-fg);
+}
+
+/* 시안 비밀값 띠 */
+.secretBanner {
+  margin: 0 12px 10px;
+  padding: 8px 10px;
+  background: var(--kb-recorder-secret-bg);
+  border: 1px solid var(--kb-recorder-secret-border);
+  border-radius: 2px;
+  color: var(--kb-recorder-secret-fg);
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.secretRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.secretField {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--kb-fg);
+}
+
+.secretField .select {
+  flex: 1 1 auto;
+  padding: 0 4px;
+}
+
+.secretActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.section {
+  flex: 0 0 var(--kb-row-height);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--kb-border);
+  color: var(--kb-sidebar-fg);
+  font-size: var(--kb-font-size-small);
+  font-weight: 700;
+  text-align: left;
+}
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 8px;
+}
+
+.step {
+  display: flex;
+  gap: 10px;
+  padding: 7px 12px 7px 16px;
+  cursor: default;
+}
+
+.step:hover {
+  background: var(--kb-hover-bg);
+}
+
+.step:focus-visible {
+  outline: 1px solid var(--kb-accent);
+  outline-offset: -1px;
+}
+
+.stepSelected,
+.stepSelected:hover {
+  background: var(--kb-recorder-step-selected-bg);
+  color: var(--kb-recorder-step-selected-fg);
+}
+
+.stepFlagged {
+  background: var(--kb-recorder-step-error-bg);
+}
+
+.dot {
+  flex: 0 0 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--kb-recorder-dot-step);
+  color: var(--kb-recorder-dot-fg);
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dotSpecial {
+  background: var(--kb-recorder-dot-special);
+}
+
+.dotWait {
+  background: var(--kb-recorder-dot-wait);
+}
+
+.stepText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.stepTitle {
+  overflow-wrap: anywhere;
+}
+
+.stepRaw {
+  font-size: 11px;
+  color: var(--kb-fg-muted);
+  font-family: var(--kb-font-mono);
+  overflow-wrap: anywhere;
+}
+
+.note,
+.noteReview,
+.noteSecret {
+  font-size: 11px;
+}
+
+.note {
+  color: var(--kb-fg-muted);
+}
+
+.noteReview {
+  color: var(--kb-recorder-note-review);
+}
+
+.noteSecret {
+  color: var(--kb-recorder-note-secret);
+}
+
+.rowActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.empty {
+  padding: 7px 16px;
+  color: var(--kb-fg-muted);
+  font-size: 11px;
+}
+
+.options {
+  padding: 6px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.check input {
+  accent-color: var(--kb-accent);
+}
+
+.checkFixed {
+  color: var(--kb-fg-muted);
+}
+
+.committed {
+  margin: 4px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.5;
+}
+
+.save {
+  flex: 0 0 auto;
+  padding: 12px;
+  border-top: 1px solid var(--kb-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.save .primary {
+  flex: 1 1 140px;
+  height: 28px;
+}
+
+.save .button {
+  flex: 1 1 100px;
+  height: 28px;
+}
+
+/* ── REC 탭 ── */
+
+.recTab {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.recToolbar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 8px 16px;
+  background: var(--kb-target-toolbar-bg);
+  border-bottom: 1px solid var(--kb-border);
+  font-size: 12px;
+}
+
+.recTitle {
+  color: var(--kb-fg-strong);
+}
+
+.recGuide {
+  color: var(--kb-fg-muted);
+}
+
+.spacer {
+  flex: 1 1 20px;
+}
+
+.refusal {
+  padding: 6px 16px;
+  background: var(--kb-banner-error-bg);
+  color: var(--kb-banner-error-fg);
+  font-size: 12px;
+}
+
+.checkBand {
+  padding: 6px 16px;
+  background: var(--kb-banner-info-bg);
+  color: var(--kb-banner-info-fg);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}

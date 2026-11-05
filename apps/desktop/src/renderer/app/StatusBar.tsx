@@ -2,6 +2,8 @@
 // 시간을 쓴다. 디버거로 멈췄으면 파랑 그대로 "⏸ 멈춤 · <노드>"(M3 U2). 입력 임대권 소유자("입력: 실행 #…"), 연결 상태와 실행 환경(캡처·OCR·Python·플러그인 수).
 // 녹화(빨강)·Agent(보라) 상태는 해당 단계에서 붙인다
 import { pausedTitle } from "../debug/PauseBanner";
+import { statusBarItems, statusBarRecording } from "../recorder/labels";
+import { elapsedNow, useRecorder } from "../recorder/recorderStore";
 import { formatCount, formatElapsed, loopProgress } from "../run/highlight";
 import { useRun, type LeaseOwner } from "../run/runStore";
 import { openRun } from "../runs/open";
@@ -30,9 +32,19 @@ function pythonVersion(v: string): string {
   return v.split(".").slice(0, 2).join(".");
 }
 
-function leaseText(owner: LeaseOwner): string {
+export function leaseText(owner: LeaseOwner): string {
+  if (owner.kind === "recorder") return "입력: 녹화";
   if (typeof owner.run_id === "string") return `입력: 실행 #${owner.run_id}`;
   return `입력: ${typeof owner.kind === "string" ? owner.kind : "사용 중"}`;
+}
+
+/** 녹화 항목 (시안 Recorder 상태 바, M4 T9). 녹화 중이면 맨 앞에 흰 점 */
+function useRecorderStatus(): { recording: boolean; items: { left: string[]; right: string[] } | null } {
+  const state = useRecorder((s) => s.state);
+  const stateAt = useRecorder((s) => s.stateAt);
+  const now = useNow(state?.state === "recording", 500);
+  if (state === null) return { recording: false, items: null };
+  return { recording: statusBarRecording(state), items: statusBarItems(state, elapsedNow({ state, stateAt }, now)) };
 }
 
 function RunItems() {
@@ -132,6 +144,7 @@ export function StatusBar() {
   const info = useWorkspace((s) => s.info);
   const running = useRun((s) => s.current?.phase === "running");
   const lease = useRun((s) => s.lease);
+  const rec = useRecorderStatus();
   const [label, tone] = CONNECTION[daemon.status];
   const runtime = info?.runtime;
   const capture = runtime ? `캡처 ${runtime.capture ? runtime.capture.toUpperCase() : "없음"}` : null;
@@ -139,12 +152,25 @@ export function StatusBar() {
   return (
     <footer
       aria-label="상태 바"
-      className={`${css.statusbar} ${running ? css.statusbarRunning : ""}`}
+      className={`${css.statusbar} ${rec.recording ? css.statusbarRecording : running ? css.statusbarRunning : ""}`}
       data-part="statusbar"
       data-running={running}
+      data-recording={rec.recording}
     >
-      {running && <RunState />}
-      <span className={css.statusItem} data-status={daemon.status} title={daemon.message}>
+      {rec.items?.left.map((text, i) => (
+        <span key={i} className={css.statusItem} data-part={i === 0 ? "rec-status" : "rec-status-item"}>
+          {i === 0 && rec.recording && <DotIcon />}
+          {text}
+        </span>
+      ))}
+      {running && !rec.recording && <RunState />}
+      {/* 녹화 중에는 시안처럼 녹화 항목만 (연결 표시는 숨기되 data-status는 남긴다 — 검사가 연결 상태를 본다) */}
+      <span
+        className={css.statusItem}
+        data-status={daemon.status}
+        title={daemon.message}
+        style={rec.recording ? { display: "none" } : undefined}
+      >
         <DotIcon className={running ? undefined : tone} />
         {label}
       </span>
@@ -156,9 +182,14 @@ export function StatusBar() {
         </span>
       )}
       <div className={css.spacer} />
+      {rec.items?.right.map((text) => (
+        <span key={text} className={css.statusItem} data-part="rec-status-right">
+          {text}
+        </span>
+      ))}
       <VideoPolicy />
       <Retention />
-      {runtime && (
+      {runtime && !rec.recording && (
         <>
           <span className={css.statusItem} title={runtime.ocr ?? undefined}>
             {capture} · {ocr}

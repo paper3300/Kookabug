@@ -627,6 +627,9 @@ class Pipeline:
             text = None if self.read_text is None else self.read_text(image, rect)
             step.equals = text or ""
         step.target, step.name = draft, name
+        # 보호 영역 밖이라도 다른 자리에 다시 보인 비밀값 원문을 OCR이 읽을 수 있다:
+        # 응답·알림·저장 전에 본다
+        self.scrub_equals(step)
         step.frames["pre_next"] = image
         self._before(step, image)
         self._insert(step)
@@ -719,6 +722,24 @@ class Pipeline:
             self.rev += 1
         return sorted(bad_drafts)
 
+    def invalidate(self, step: Step) -> None:
+        """세션이 미리 쓴 target 파일(materialize)의 초안이 버려졌을 때 그 스텝도 버린다."""
+        self._invalidate(step)
+
+    def leaks_secret(self, text: str) -> bool:
+        """`text`가 세션의 비밀값·판정 대기·확인 필요 원문을 담는가 (값 확인 기댓값·글자 읽기)."""
+        raws = [t for t in self.texts.protected_texts() if t]
+        return bool(text) and any(_contains(text, raw) for raw in raws)
+
+    def scrub_equals(self, step: Step) -> bool:
+        """값 확인 기댓값이 원문을 담으면 비우고 스텝을 `secret_overlap`으로 버린다(재검사와 같은
+        처리). 기댓값을 내보내는 모든 경로(새 확인 스텝·`step_json`)가 이것을 거친다."""
+        if step.equals and self.leaks_secret(step.equals):
+            self._invalidate(step)
+            self.rev += 1
+            return True
+        return False
+
     def _invalidate(self, step: Step) -> None:
         """초안이든 기존 파일 재사용이든 스텝의 target 참조를 버린다 — 재사용 경로도 공개 스텝·
         저장소로 나가지 않게 (기존 사용자 파일은 그대로 둔다)."""
@@ -748,6 +769,9 @@ class Pipeline:
 
     def step_json(self, step: Step, *, reveal: bool, base_ns: int = 0) -> dict[str, Any]:
         """`RecorderStep`. `reveal=False`면 일반 글자도 싣지 않는다 (세션 저장소)."""
+        # 직렬화 방어: 어떤 경로로 만든 기댓값이든 내보내기 직전에 원문 목록과 대조한다
+        if step.kind == "check_text":
+            self.scrub_equals(step)
         review = set(step.needs_review)
         title = step.title
         out: dict[str, Any] = {
@@ -773,6 +797,9 @@ class Pipeline:
                 badges.append(_badge("secret_required"))
         out["badges"] = badges
         out["needs_review"] = sorted(review)
+        if step.kind == "check_text":
+            # 위 scrub_equals를 지난 값 (원문을 담았으면 비었다)
+            out["equals"] = step.equals or ""
         if step.needs_target:
             out["target"] = self.target_json(step)
         frames = sorted(step.frames)

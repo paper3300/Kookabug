@@ -389,9 +389,9 @@ function commitEdit(path: string, fn: (value: GraphValue) => GraphValue, select?
   return true;
 }
 
-function travel(path: string, step: typeof undoHistory): boolean {
+function travel(path: string, step: typeof undoHistory, system = false): boolean {
   const doc = getDoc(path);
-  if (!editable(doc) || editsLocked()) return false;
+  if (!editable(doc) || (!system && editsLocked())) return false;
   const moved = step(doc.history, doc.value);
   if (moved === null) return false;
   update(
@@ -415,6 +415,14 @@ export function undoEdit(path: string): boolean {
 
 export function redoEdit(path: string): boolean {
   return travel(path, redoHistory);
+}
+
+/**
+ * 앱이 스스로 하는 되돌리기 (사용자 편집 잠금 중에도): 녹화 삽입이 저장에 실패하면 잠근 채로 넣은 편집을
+ * 되돌린다 (M4 B5 검수 H1)
+ */
+export function undoSystemEdit(path: string): boolean {
+  return travel(path, undoHistory, true);
 }
 
 export function canUndo(doc: GraphDoc | undefined): boolean {

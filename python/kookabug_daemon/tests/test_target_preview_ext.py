@@ -137,7 +137,9 @@ def test_read_text_refuses_recorder_protected_region(root: Path) -> None:
         session = SimpleNamespace(
             lock=threading.RLock(),
             s=SimpleNamespace(shots={frame_id: shot}),
-            pipeline=SimpleNamespace(lock=threading.RLock(), protect=protect),
+            pipeline=SimpleNamespace(
+                lock=threading.RLock(), protect=protect, leaks_secret=lambda text: False
+            ),
         )
         d.daemon.recorder.session = session  # pyright: ignore[reportAttributeAccessIssue]
         try:
@@ -148,6 +150,12 @@ def test_read_text_refuses_recorder_protected_region(root: Path) -> None:
             # 겹치지 않는 영역은 읽는다
             ok = client.call("target.read_text", {"frame_id": frame_id, "rect": list(LOGIN_BUTTON)})
             assert ok["text"] == "가짜" and engine.calls == [LOGIN_BUTTON]
+            # 보호 영역 밖이어도 읽은 글자가 세션 비밀값 원문을 담으면 주지 않는다 (원문 없는 오류)
+            session.pipeline.leaks_secret = lambda text: "가짜" in text
+            with pytest.raises(DaemonError) as caught:
+                client.call("target.read_text", {"frame_id": frame_id, "rect": list(LOGIN_BUTTON)})
+            assert caught.value.kind == "secret_region_overlap"
+            assert "가짜" not in str(caught.value) and "가짜" not in str(caught.value.data)
         finally:
             d.daemon.recorder.session = None  # pyright: ignore[reportAttributeAccessIssue]
 

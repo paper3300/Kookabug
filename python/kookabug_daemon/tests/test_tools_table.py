@@ -43,6 +43,7 @@ M4_DENIED = {
     "recorder.commit_prepare",
     "recorder.commit_finish",
     "recorder.commit_abort",
+    "recorder.target.materialize",
     "secrets.list",
     "secrets.create",
     "target.read_text",

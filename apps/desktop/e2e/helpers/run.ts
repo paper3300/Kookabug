@@ -95,7 +95,8 @@ export interface RunSession {
 /** 앱을 띄워 이 워크스페이스를 연다. scaleFactor 1 = 시안 비교 스크린샷 */
 export async function openRunApp(
   ws: RunWorkspace,
-  options: { scaleFactor?: number; userData?: string } = {},
+  /** env: 앱 환경을 통째로 바꾼다 (녹화 E2E — helpers/recorder.ts) */
+  options: { scaleFactor?: number; userData?: string; env?: Record<string, string> } = {},
 ): Promise<RunSession> {
   const launched = await launchApp({ env: runEnv(ws), ...options });
   const page = await launched.app.firstWindow();

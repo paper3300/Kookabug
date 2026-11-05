@@ -7,6 +7,7 @@ import { client, toRpcError } from "../rpc/client";
 import { SessionRecovery } from "../rpc/recovery";
 import { breakpointModel } from "../debug/breakpoints";
 import { fileViewModel } from "../file/fileViewStore";
+import { onRecorderChanged, refreshState as refreshRecorderState, resetRecorder } from "../recorder/recorderStore";
 import { runModel } from "../run/runStore";
 import { connectRunViewer } from "../runs/live";
 import { runIndexModel } from "../runs/runIndexStore";
@@ -111,6 +112,7 @@ function switchProject(root: string | null): void {
   runIndexModel.reset();
   runListModel.reset();
   breakpointModel.reset();
+  resetRecorder();
   recovery.reset();
   useWorkspace.setState({
     root,
@@ -128,6 +130,8 @@ let unnumbered = 0;
 async function onDaemonState(state: DaemonState): Promise<void> {
   if (state.root !== useWorkspace.getState().root) switchProject(state.root);
   useWorkspace.setState({ daemon: state });
+  // 연결이 끊기면 daemon이 그 연결의 녹화를 버린다(U9): 다시 붙으면 recorder.state로 다시 읽는다
+  if (state.status !== "connected") resetRecorder();
   // 문서 참조는 연결 단위다 (다시 열기 전에 지금 연결을 알려 둔다)
   setDocumentsConnection(
     state.status === "connected" && state.startId !== undefined
@@ -148,7 +152,15 @@ async function onDaemonState(state: DaemonState): Promise<void> {
   // 적용한 마지막 seq부터 다시 구독했다
   const runs = kind === "same_connection" ? Promise.resolve() : runModel.syncActive();
   // 브레이크포인트는 daemon 파일 값이 기준이다: 붙을 때마다 받는다 (끊긴 동안 다른 창이 바꿨을 수 있다)
-  await Promise.all([refreshTree(), refreshInfo(), loadRegistry(), runs, breakpointModel.load(), runListModel.reload()]);
+  await Promise.all([
+    refreshTree(),
+    refreshInfo(),
+    loadRegistry(),
+    runs,
+    breakpointModel.load(),
+    runListModel.reload(),
+    refreshRecorderState(),
+  ]);
 }
 
 async function loadRegistry(): Promise<void> {
@@ -195,6 +207,8 @@ export async function initWorkspace(): Promise<void> {
   });
   connectRunViewer();
   client().on("lease.changed", (p) => runModel.lease(p));
+  // 녹화 (M4 T9): 소유 연결은 rev·counts, 다른 연결은 state만 온다 → 상태·스텝을 다시 읽는다
+  client().on("recorder.changed", (p) => onRecorderChanged(p));
   breakpointModel.setNote((message) => note("warn", message));
   client().on("debug.breakpoints.changed", (p) => breakpointModel.changed(p));
   recovery.addRuns(runModel.cursors);

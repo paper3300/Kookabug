@@ -11,6 +11,7 @@ import {
   RPC_CHANNEL,
 } from "../main/ipc-guard";
 import type { RpcErrorShape } from "../main/rpc-connection";
+import type { ArmResult } from "../main/shortcuts";
 
 type Listener = (event: unknown, ...args: unknown[]) => void;
 
@@ -48,7 +49,7 @@ export interface WindowState {
   maximized: boolean;
 }
 
-export type { DaemonState, ExportResult, RpcErrorShape };
+export type { ArmResult, DaemonState, ExportResult, RpcErrorShape };
 
 /** 앱 API. 주 프로세스가 동작 이름과 인자를 다시 검사한다 */
 export interface AppApi {
@@ -73,6 +74,10 @@ export interface AppApi {
   closeAnswer(ok: boolean): Promise<void>;
   /** 실행 폴더를 zip으로: 저장 대화 상자가 고른 곳에 run.export (M3 T11) */
   exportRun(runId: string): Promise<ExportResult>;
+  /** 녹화 단축키 등록 (M4 T9). 실패하면 recorder.start를 보내지 않는다 */
+  recorderArm(): Promise<ArmResult>;
+  /** 녹화 단축키 해제 */
+  recorderDisarm(): Promise<void>;
 }
 
 export interface KookabugBridge {
@@ -109,6 +114,8 @@ function appApi(ipc: IpcRendererLike): AppApi {
     closeGuard: call("closeGuard"),
     closeAnswer: call("closeAnswer"),
     exportRun: call("exportRun"),
+    recorderArm: call("recorderArm"),
+    recorderDisarm: call("recorderDisarm"),
   };
 }
 

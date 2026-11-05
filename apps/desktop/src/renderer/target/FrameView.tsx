@@ -277,6 +277,16 @@ export function FrameView({ doc, adapter }: { doc: TargetEditorView; adapter: Ta
       {shown === null && <div className={css.frameEmpty}>창에서 캡처하거나 이미지에서 정지 화면을 고르세요</div>}
       {view !== null && doc.frame !== null && (
         <svg className={css.overlay} aria-hidden="true">
+          {(doc.protectedRects?.length ?? 0) > 0 && (
+            <defs>
+              <pattern id="kb-protected-hatch" patternUnits="userSpaceOnUse" width="8" height="8" patternTransform="rotate(45)">
+                <line className={css.protectedHatch} x1="0" y1="0" x2="0" y2="8" />
+              </pattern>
+            </defs>
+          )}
+          {(doc.protectedRects ?? []).map((r) => (
+            <rect key={`p${r.join(",")}`} className={css.protectedRect} data-part="protected-rect" data-rect={r.join(",")} fill="url(#kb-protected-hatch)" {...rectPath(r, view)} />
+          ))}
           {liveSearch !== null && (
             <g data-part="search-rect" data-rect={liveSearch.join(",")}>
               <rect className={css.searchRect} {...rectPath(liveSearch, view)} />

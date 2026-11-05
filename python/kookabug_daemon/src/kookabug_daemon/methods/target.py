@@ -115,7 +115,11 @@ def _read_text(call: Call) -> dict[str, Any]:
     recorder = getattr(call.daemon, "recorder", None)
     if recorder is not None:
         recorder.check_read_region(frame_id, rect)
-    return call.daemon.targets.read_text(frame_id, rect)
+    result = call.daemon.targets.read_text(frame_id, rect)
+    if recorder is not None:
+        # 보호 영역 밖에 다시 보인 비밀값 원문도 응답으로 내보내지 않는다 (B5 검수 2차 High)
+        recorder.check_read_result(result)
+    return result
 
 
 async def _read_text_handler(call: Call) -> dict[str, Any]:

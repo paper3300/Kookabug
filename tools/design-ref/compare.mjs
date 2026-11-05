@@ -39,6 +39,13 @@ export const SCREENS = {
   target: { dark: "Recorder", light: "Recorder" },
   // target 편집기 확장(민감 대상·색 허용치·검색 범위 숫자·글자 읽기·다른 배율), M4 T11. 시안에 없는 요소(U14)라 배치·색만 대조
   "target-ext": { dark: "Recorder", light: "Recorder" },
+  // 녹화 화면 전체(사이드바·REC 탭·빨간 상태 바), M4 T9·T10. 시안에 없는 상태(녹화 전·일시정지·정지 뒤·오류)는 같은 시안과
+  // 나란히 본다(사람 확인용)
+  recorder: { dark: "Recorder", light: "Recorder" },
+  "recorder-idle": { dark: "Recorder" },
+  "recorder-paused": { dark: "Recorder" },
+  "recorder-stopped": { dark: "Recorder" },
+  "recorder-error": { dark: "Recorder" },
   // 기록 뷰어(사이드바 실행 목록·RUN 머리·타임라인·스크린샷 줄·후보 표), M3 T10. RunViewer도 다크 시안뿐이다
   runviewer: { dark: "RunViewer", light: "RunViewer" },
   // 기록 뷰어 2(머리 단추·하위 탭·회차 막대·"스크린샷 | 영상" 전환·비교 상자·보관 문구), M3 T11. 통계·비교 탭 내용은

@@ -4,7 +4,9 @@ import { useEffect, useRef } from "react";
 import { Problems, useProblems, useRunProblems } from "../problems/Problems";
 import { NodeResult } from "../run/NodeResult";
 import { RunLog } from "../run/RunLog";
-import { useUi, type PanelTab } from "../store/ui";
+import { useTabs } from "../store/tabs";
+import { panelSide, useUi, type PanelTab } from "../store/ui";
+import { ChevronDownIcon, ChevronUpIcon } from "../theme/icons";
 import { useWorkspace } from "../store/workspace";
 import css from "./shell.module.css";
 
@@ -48,19 +50,21 @@ function Output() {
 
 export function Panel() {
   const tab = useUi((s) => s.panelTab);
+  const side = panelSide(useTabs((s) => s.tabs.find((t) => t.path === s.active)?.kind));
+  const open = useUi((s) => s[side]);
   const docProblems = useProblems();
   const problems = docProblems.length + useRunProblems(docProblems).items.length;
   return (
-    <section aria-label="하단 패널" className={css.panel}>
+    <section aria-label="하단 패널" className={`${css.panel} ${open ? "" : css.panelCollapsed}`} data-part="panel" data-open={open}>
       <div role="tablist" aria-label="하단 패널 탭" className={css.panelTabs} data-part="panel-tabs">
         {TABS.map(([id, label]) => (
           <button
             key={id}
             type="button"
             role="tab"
-            aria-selected={tab === id}
+            aria-selected={open && tab === id}
             className={css.panelTab}
-            onClick={() => useUi.setState({ panelTab: id })}
+            onClick={() => useUi.setState({ panelTab: id, [side]: true })}
           >
             {label}
             {id === "problems" && problems > 0 && (
@@ -70,7 +74,19 @@ export function Panel() {
             )}
           </button>
         ))}
+        <span className={css.spacer} />
+        <button
+          type="button"
+          className={css.panelToggle}
+          aria-label={open ? "패널 접기" : "패널 펼치기"}
+          title={open ? "패널 접기" : "패널 펼치기"}
+          data-part="panel-toggle"
+          onClick={() => useUi.setState({ [side]: !open })}
+        >
+          {open ? <ChevronDownIcon /> : <ChevronUpIcon />}
+        </button>
       </div>
+      {open && (
       <div role="tabpanel" aria-label={TABS.find(([id]) => id === tab)?.[1]} className={css.panelBody}>
         {tab === "output" ? (
           <Output />
@@ -82,6 +98,7 @@ export function Panel() {
           <RunLog />
         )}
       </div>
+      )}
     </section>
   );
 }

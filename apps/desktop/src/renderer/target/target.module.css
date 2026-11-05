@@ -427,6 +427,17 @@
   stroke-dasharray: 3 3;
 }
 
+/* 녹화 정지 화면의 보호 영역 (비밀번호 칸, M4 T10): 빗금 */
+.protectedRect {
+  stroke: var(--kb-recorder-protected);
+  stroke-width: 1;
+}
+
+.protectedHatch {
+  stroke: var(--kb-recorder-protected);
+  stroke-width: 2;
+}
+
 .peaks {
   color: var(--kb-status-fail);
 }

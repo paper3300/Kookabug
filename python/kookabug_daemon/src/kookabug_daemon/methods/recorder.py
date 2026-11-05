@@ -69,6 +69,11 @@ async def _insert_check(call: Call) -> dict[str, Any]:
     return await _run(session.insert_check, str(p["kind"]), str(p["frame_id"]), list(p["rect"]))
 
 
+async def _materialize(call: Call) -> dict[str, Any]:
+    session = _owned(call)
+    return await _run(session.materialize, str(call.params["step"]))
+
+
 async def _commit_prepare(call: Call) -> dict[str, Any]:
     return await _run(_owned(call).commit_prepare, call.params)
 
@@ -94,6 +99,7 @@ METHODS: Final[dict[str, MethodSpec]] = {
     "recorder.step.update": MethodSpec(_step_update),
     "recorder.frame": MethodSpec(_frame),
     "recorder.insert_check": MethodSpec(_insert_check),
+    "recorder.target.materialize": MethodSpec(_materialize),
     "recorder.commit_prepare": MethodSpec(_commit_prepare),
     "recorder.commit_finish": MethodSpec(_commit_finish),
     "recorder.commit_abort": MethodSpec(_commit_abort),

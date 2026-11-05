@@ -7,6 +7,7 @@ import { DebugToolbar } from "../debug/DebugToolbar";
 import { FileView } from "../file/FileView";
 import { PauseBanner } from "../debug/PauseBanner";
 import { GraphCanvas } from "../graph/Canvas";
+import { RecTab } from "../recorder/RecTab";
 import { RunToolbar } from "../run/Toolbar";
 import { RunTab } from "../runs/RunTab";
 import { TargetEditor } from "../target/TargetEditor";
@@ -55,7 +56,9 @@ function Tabs() {
                 className={`${css.kind} ${
                   badge.tone === "target"
                     ? css.kindTarget
-                    : badge.tone === "run"
+                    : badge.tone === "rec"
+                      ? css.kindRec
+                      : badge.tone === "run"
                       ? css.kindRun
                       : badge.tone === "file"
                         ? css.kindFile
@@ -89,7 +92,13 @@ function Breadcrumb() {
   const run = useRun((s) => s.current);
   const doc = useDocuments((s) => (active === null ? undefined : s.docs.get(active)));
   const parts =
-    active === null || name === null ? [] : tab?.kind === "run" ? [name, "실행 기록", tab.title] : [name, ...active.split("/")];
+    active === null || name === null
+      ? []
+      : tab?.kind === "run"
+        ? [name, "실행 기록", tab.title]
+        : tab?.kind === "rec"
+          ? [name, "녹화", tab.title]
+          : [name, ...active.split("/")];
   return (
     <div aria-label="경로" className={css.breadcrumb} data-part="breadcrumb">
       {parts.map((p, i) => (
@@ -200,6 +209,8 @@ export function Editor({ children }: { children?: ReactNode }) {
           <RunTab key={active} runId={activeTab.runId} />
         ) : activeTab?.kind === "file" ? (
           <FileView key={active} path={active} />
+        ) : activeTab?.kind === "rec" ? (
+          <RecTab />
         ) : (
           <div className={css.canvas} data-part="canvas" data-path={active} />
         )}

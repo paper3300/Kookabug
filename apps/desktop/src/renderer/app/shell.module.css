@@ -253,6 +253,10 @@
   border-right: 1px solid var(--kb-border);
 }
 
+.sidebarRecorder {
+  flex-basis: calc(var(--kb-recorder-sidebar-width) + 1px);
+}
+
 .sidebarInner {
   flex: 1 1 auto;
   min-width: 0;
@@ -486,6 +490,11 @@
   color: var(--kb-kind-run);
 }
 
+/* 녹화 REC 탭 (시안 Recorder, M4 T10) */
+.kindRec {
+  color: var(--kb-kind-rec);
+}
+
 /* 읽기 전용 보기 탭 (다듬기 P1-B, 탐색기 설정 파일 글자 색) */
 .kindFile {
   color: var(--kb-file-json);
@@ -658,6 +667,29 @@
   border-top: 1px solid var(--kb-border);
 }
 
+/* 접힌 하단 패널: 탭 줄만 (REC·TARGET 탭 기본, M4 B5) */
+.panelCollapsed {
+  flex: 0 0 auto;
+}
+
+.panelToggle {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  color: var(--kb-fg-muted);
+}
+
+.panelToggle:hover {
+  background: var(--kb-hover-bg);
+  color: var(--kb-fg);
+}
+
 .panelTabs {
   flex: 0 0 auto;
   display: flex;
@@ -766,6 +798,13 @@
   background: var(--kb-statusbar-running-bg);
   color: var(--kb-statusbar-fg);
   border-top-color: var(--kb-statusbar-running-bg);
+}
+
+/* 녹화 중 (시안 Recorder 상태 바 빨강, M4 T9). 실행 파랑보다 앞선다 */
+.statusbarRecording {
+  background: var(--kb-statusbar-recording-bg);
+  color: var(--kb-statusbar-fg);
+  border-top-color: var(--kb-statusbar-recording-bg);
 }
 
 /* 시안 Main 상태 바 맨 앞 "▶ 실행 중" 칸 */

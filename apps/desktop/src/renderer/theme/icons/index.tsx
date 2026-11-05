@@ -82,6 +82,25 @@ export function HistoryIcon(props: IconProps) {
   );
 }
 
+/** 액티비티 바 "녹화" (시안 Recorder 4번째 아이콘, M4 T9). 안쪽 점은 녹화 빨강 */
+export function RecordIcon(props: IconProps) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true" {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="4" fill="var(--kb-recorder-dot)" stroke="none" />
+    </svg>
+  );
+}
+
+/** 하단 패널 펼치기 (접힌 패널, M4 B5) */
+export function ChevronUpIcon(props: IconProps) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" {...props}>
+      <path d="M4 10l4-4 4 4" fill="none" stroke="currentColor" strokeWidth="1.3" />
+    </svg>
+  );
+}
+
 /** 섹션 머리 펼침 (시안 Main 사이드바) */
 export function ChevronDownIcon(props: IconProps) {
   return (

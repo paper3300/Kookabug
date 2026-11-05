@@ -64,6 +64,7 @@ TOOLS = {
     "recorder.commit_prepare": "ui_only",
     "recorder.commit_finish": "ui_only",
     "recorder.commit_abort": "ui_only",
+    "recorder.target.materialize": "ui_only",
     "secrets.list": "ui_only",
     "secrets.create": "ui_only",
     "target.read_text": "ui_only",

@@ -56,6 +56,7 @@ export const RENDERER_METHODS: ReadonlySet<string> = new Set([
   "recorder.commit_prepare",
   "recorder.commit_finish",
   "recorder.commit_abort",
+  "recorder.target.materialize",
   "secrets.list",
   "secrets.create",
   "target.read_text",
@@ -111,6 +112,9 @@ export const APP_ACTIONS: ReadonlySet<string> = new Set([
   "closeAnswer",
   // 기록 뷰어 "분석 번들 내보내기": 저장 대화 상자 → run.export (M3 T11, dialogs.ts)
   "exportRun",
+  // 녹화 단축키 등록·해제 (M4 T9, shortcuts.ts): 등록에 성공해야 recorder.start를 보낸다
+  "recorderArm",
+  "recorderDisarm",
 ]);
 
 export class IpcGuardError extends Error {

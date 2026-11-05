@@ -2,7 +2,7 @@
 // 같은 모양·다른 배율·검색 범위 숫자·글자 읽기)은 문서가 무엇이든 같다. 문서마다 다른 것(편집을 어디에 쓰는가,
 // 미리보기 요청의 템플릿이 무엇인가)만 어댑터가 정한다
 // - 파일 target: targetStore (TARGET 탭, target.save로 저장) — fileTargetAdapter
-// - 녹화 초안: REC 탭이 recorder.step.update로 쓴다 — draftAdapter.ts (자리만, 구현은 T10)
+// - 녹화 초안: REC 탭이 recorder.step.update로 쓴다 — recorder/recAdapter.ts (M4 T10)
 import type { daemonRpc } from "@kookabug/schema";
 import type { Rect } from "./geometry";
 import type { TargetSpec } from "./spec";
@@ -22,7 +22,11 @@ export type TargetEditorView = Pick<
   | "preview"
   | "previewNote"
   | "previewPending"
-> & { path: string };
+> & {
+  path: string;
+  /** 정지 화면의 보호 영역(비밀번호 칸, 정지 화면 픽셀) — 판에 빗금. 녹화 초안만 (M4 T10) */
+  protectedRects?: readonly Rect[];
+};
 
 export type PreviewParams = Omit<daemonRpc.TargetPreviewParams, "seq">;
 

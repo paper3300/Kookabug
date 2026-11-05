@@ -29,7 +29,7 @@ export function fileBadgeText(path: string): string {
 export interface EditorTab {
   /** 파일 탭은 워크스페이스 기준 경로, RUN 탭은 `run:<run_id>` */
   path: string;
-  kind: "graph" | "target" | "run" | "file";
+  kind: "graph" | "target" | "run" | "file" | "rec";
   graphKind: TreeEntry["graph_kind"] | null;
   title: string;
   /** RUN 탭의 실행, 스냅샷 그래프 탭이면 그 그래프를 돈 실행 */
@@ -106,6 +106,21 @@ export function openSnapshotTab(path: string, runId: string, shortId: string): v
   });
 }
 
+/** 녹화 REC 탭 자리 (M4 T10, 녹화 세션 하나에 하나 — 세션이 끝나면 닫힌다) */
+export const REC_TAB_PATH = "rec:capture";
+
+/** REC 탭 (제목 "<창 제목> 캡처"). 이미 열려 있으면 제목만 고치고 앞으로 */
+export function openRecTab(windowTitle: string | null, focus = true): void {
+  const title = `${windowTitle ?? "게임"} 캡처`;
+  useTabs.setState((s) => {
+    if (s.tabs.some((t) => t.path === REC_TAB_PATH)) {
+      return { tabs: s.tabs.map((t) => (t.path === REC_TAB_PATH ? { ...t, title } : t)), active: focus ? REC_TAB_PATH : s.active };
+    }
+    const tab: EditorTab = { path: REC_TAB_PATH, kind: "rec", graphKind: null, title };
+    return { tabs: [...s.tabs, tab], active: focus ? REC_TAB_PATH : (s.active ?? REC_TAB_PATH) };
+  });
+}
+
 /** 열린 탭의 제목만 바꾼다 (RUN 탭: 스냅샷에서 테스트 제목을 읽은 뒤) */
 export function renameTab(path: string, title: string): void {
   useTabs.setState((s) =>
@@ -136,8 +151,9 @@ export function closeAllTabs(): void {
 /** 탭 왼쪽 종류 글자 (시안: TEST·SUB·TARGET·RUN, 스냅샷 그래프는 SNAPSHOT, 보기 탭은 fileBadgeText) */
 export function tabBadge(
   tab: Pick<EditorTab, "kind" | "graphKind"> & { snapshot?: boolean; path?: string },
-): { text: string; tone: "test" | "target" | "run" | "file" } {
+): { text: string; tone: "test" | "target" | "run" | "file" | "rec" } {
   if (tab.kind === "target") return { text: "TARGET", tone: "target" };
+  if (tab.kind === "rec") return { text: "REC", tone: "rec" };
   if (tab.kind === "run") return { text: "RUN", tone: "run" };
   if (tab.kind === "file") return { text: fileBadgeText(tab.path ?? ""), tone: "file" };
   if (tab.snapshot === true) return { text: "SNAPSHOT", tone: "run" };
