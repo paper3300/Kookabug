@@ -37,11 +37,13 @@ from kookabug_core.record.video import (
     Encoder,
     EncoderProbe,
     FakeEncoderFactory,
+    VideoFrame,
     VideoGate,
     VideoRecorder,
     stamp,
 )
 from kookabug_core.schema import check_shape
+from kookabug_sdk.types import WindowRef
 
 FINISHING = "run.end 뒤 최대"
 """runner가 영상 마무리 단계를 허락받았을 때 stderr에 남기는 말의 일부."""
@@ -59,11 +61,31 @@ class SlowOpenFactory(FakeEncoderFactory):
         return super().open(path, size)
 
 
+class CountingPlatform(ScenarioPlatform):
+    """녹화 프레임을 몇 번 가져갔는지 센다 (`wait_preroll`)."""
+
+    grabs = 0
+
+    def video_frame(self, window: WindowRef, timeout_ms: int) -> VideoFrame:
+        frame = super().video_frame(window, timeout_ms)
+        self.grabs += 1
+        return frame
+
+
+def wait_preroll(recorder: VideoRecorder) -> None:
+    """녹화 스레드가 시험 대기 중 프레임을 하나 이상 모을 때까지 기다린다. 두 번째 가져가기는 첫
+    프레임을 모은 뒤에만 온다(같은 스레드). 고정 sleep은 느린 러너에서 0장일 수 있고, 그러면 멈출 때
+    늦은 대기에 들어가지 않아 표식이 생기지 않는다 (CI b64b889)."""
+    source = recorder.source
+    assert isinstance(source, CountingPlatform)
+    wait_until(lambda: source.grabs >= 2, timeout=10)
+
+
 def recorder_on(
     tmp_path: Path, probe_delay_s: float, *, slow_open: bool = False
 ) -> tuple[VideoRecorder, VideoGate, Any, Path]:
     scenario = FakeScenario.load(write_scenario(tmp_path / "scenario"))
-    platform = ScenarioPlatform(scenario)
+    platform = CountingPlatform(scenario)
     game = scenario.launch_game("game.exe")
     gate = VideoGate()
     gate.set_base("on")
@@ -293,14 +315,14 @@ def test_marker_stays_until_late_frames_are_written(tmp_path: Path) -> None:
     signal = tmp_path / "write"
     stuck = {"op": "write", "nth": 1, "resume_after_s": 1.5, "signal": str(signal)}
     recorder = VideoRecorder(
-        run_dir, gate, ScenarioPlatform(scenario), FakeEncoderFactory(stuck=stuck),
+        run_dir, gate, CountingPlatform(scenario), FakeEncoderFactory(stuck=stuck),
         probe=EncoderProbe(FakeEncoderFactory(probe_delay_s=1.0)), late_wait_s=None,
     )  # fmt: skip
     marker = run_dir / VIDEO_DIR / ENCODER_WAIT_FILE
     recorder.start()
     gate.hold("s1")
     gate.classify("s1", "failed_only", secret=False, window=game.window)
-    time.sleep(0.6)
+    wait_preroll(recorder)
     gate.release("s1")
     gate.close()
     recorder.request_stop()
@@ -357,7 +379,7 @@ def test_late_result_journal_failure_keeps_writing_marker(
     recorder.start()
     gate.hold("s1")
     gate.classify("s1", "on", secret=False, window=game.window)
-    time.sleep(0.4)
+    wait_preroll(recorder)
     gate.close()
     assert recorder.stop()
     assert (recorder.status, recorder.reason) == ("failed", "write_failed")  # 메모리에만 있다
@@ -386,13 +408,13 @@ def test_unavailable_result_settles_marker_only_when_recorded(
     run_dir.mkdir()
     probe = EncoderProbe(FakeEncoderFactory(probe_delay_s=1.0, unavailable="mf_missing"))
     recorder = VideoRecorder(
-        run_dir, gate, ScenarioPlatform(scenario), FakeEncoderFactory(), probe=probe
+        run_dir, gate, CountingPlatform(scenario), FakeEncoderFactory(), probe=probe
     )
     attempts = journal_full(monkeypatch, run_dir) if full else []
     recorder.start()
     gate.hold("s1")
     gate.classify("s1", "on", secret=False, window=game.window)
-    time.sleep(0.4)
+    wait_preroll(recorder)
     gate.close()
     assert recorder.stop()
     monkeypatch.undo()
@@ -419,7 +441,7 @@ def test_give_up_settles_marker_only_when_recorded(
     recorder.start()
     gate.hold("s1")
     gate.classify("s1", "on", secret=False, window=game.window)
-    time.sleep(0.4)
+    wait_preroll(recorder)
     gate.close()
     assert recorder.stop()  # 스스로 포기한다 (`PREROLL_STOP_WAIT_S`)
     monkeypatch.undo()
@@ -451,14 +473,14 @@ def test_recorded_late_frames_survive_marker_reader_handle(
     signal = tmp_path / "write"
     stuck = {"op": "write", "nth": 1, "resume_after_s": 1.5, "signal": str(signal)}
     recorder = VideoRecorder(
-        run_dir, gate, ScenarioPlatform(scenario), FakeEncoderFactory(stuck=stuck),
+        run_dir, gate, CountingPlatform(scenario), FakeEncoderFactory(stuck=stuck),
         probe=EncoderProbe(FakeEncoderFactory(probe_delay_s=1.5)),
     )  # fmt: skip
     marker = run_dir / VIDEO_DIR / ENCODER_WAIT_FILE
     recorder.start()
     gate.hold("s1")
     gate.classify("s1", "failed_only", secret=False, window=game.window)
-    time.sleep(0.4)
+    wait_preroll(recorder)
     gate.close()
     recorder.request_stop()
     wait_until(lambda: Path(f"{signal}.ready").exists(), timeout=10)  # 준비 뒤 첫 쓰기
@@ -504,13 +526,13 @@ def test_recorder_gives_up_late_wait_with_reason(tmp_path: Path) -> None:
     run_dir.mkdir()
     probe = EncoderProbe(FakeEncoderFactory(probe_delay_s=30.0))
     recorder = VideoRecorder(
-        run_dir, gate, ScenarioPlatform(scenario), FakeEncoderFactory(), probe=probe,
+        run_dir, gate, CountingPlatform(scenario), FakeEncoderFactory(), probe=probe,
         late_wait_s=None,
     )  # fmt: skip
     recorder.start()
     gate.hold("s1")
     gate.classify("s1", "failed_only", secret=False, window=game.window)
-    time.sleep(0.6)
+    wait_preroll(recorder)
     gate.release("s1")
     gate.close()
     closed = time.time()

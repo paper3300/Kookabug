@@ -654,8 +654,10 @@ def test_frame_info_fields(rig: Rig) -> None:
     assert (info.client_size, info.client_origin_screen) == ((w, h), (x, y))
     assert info.dpi == int(user32.GetDpiForWindow(rig.game.hwnd))
     assert info.region is None and not info.fullscreen
-    assert info.pixels_at <= info.observed_at <= time.time() + 0.01
-    assert time.time() - info.observed_at < 5
+    # 시각은 단조 시계를 시작 때 차이로 옮긴 값이다(실행 안에서 거꾸로 가지 않게). 벽시계가
+    # 실행 중 보정되면(CI VM 시각 동기화) `time.time()`과 수십 ms 어긋날 수 있어 같은 시계로 본다
+    assert info.pixels_at <= info.observed_at <= wall_time(time.monotonic())
+    assert abs(time.time() - info.observed_at) < 5
     assert info.frame_seq > 0 and isinstance(info.reused, bool)
 
 
