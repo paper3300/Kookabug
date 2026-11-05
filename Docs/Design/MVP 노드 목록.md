@@ -205,7 +205,7 @@
 | 끌기 | `core.image.wait` + `core.input.drag` |
 | 휠 | `core.input.scroll` |
 | 키·조합키 | `core.input.key` |
-| 글자 입력 | `core.input.type_text` |
+| 글자 입력 | 칸 클릭(`core.image.click`, 기다림) + target 없는 `core.input.type_text` — 입력 칸 구간(클릭·Tab ~ 칸 밖 클릭·Tab·Enter·Esc·창 떠남·칸 없음 확정) 하나에 하나, 쉼으로 나뉘지 않음. 구간 안 Backspace·Ctrl+A는 흡수해 최종 문자열과 `clear`로 (M4) |
 | 녹화 중 "검증 넣기" | `core.assert.visible` / `core.assert.text` |
 
 ## MVP에서 뺀 것

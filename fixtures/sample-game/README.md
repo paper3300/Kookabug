@@ -32,7 +32,7 @@ uv run python -m sample_game --event-log build/sample-game.jsonl
 | `--owned-popup` | 메인 창이 소유한 팝업(`<제목> Notice`, transient). 메인 클라이언트 왼쪽 위 (40, 40)에 겹친다 |
 | `--recreate-after MS` | MS 뒤 메인 창을 닫고 같은 제목으로 한 번 다시 만든다 (게임 상태는 이어짐) |
 
-테스트용 숨은 옵션: `--start-scene <장면>`(그 장면의 대표 상태로 시작), `--font <글꼴>`(기본 `Malgun Gothic`), `--signal-file <파일>`(그 파일이 생기면 읽고 지운 뒤 줄마다 명령 처리 — `fire`는 지금 걸린 타이머를 바로 끝낸다. 입력 없이 검사가 정한 때 장면을 바꾼다. 보내는 쪽은 `kb_testing.sample_game.send_signal`).
+테스트용 숨은 옵션: `--start-scene <장면>`(그 장면의 대표 상태로 시작), `--font <글꼴>`(기본 `Malgun Gothic`), `--signal-file <파일>`(그 파일이 생기면 읽고 지운 뒤 줄마다 명령 처리 — `fire`는 지금 걸린 타이머를 바로 끝낸다. 입력 없이 검사가 정한 때 장면을 바꾼다. 보내는 쪽은 `kb_testing.sample_game.send_signal`), `--press-feedback`(왼쪽 버튼 down에서 그 단추를 눌린 색으로 그리고 up에서 되돌린다 — 녹화의 "클릭 이전 프레임" 검사용. 없으면 그림은 그대로).
 
 - 결정성: 애니메이션 없음, 글자 크기는 픽셀 단위(DPI와 무관). 같은 상태 = 같은 그림
 - 팝업(점검·로그인 오류·인벤토리)은 같은 Canvas 안에 그린다 — 창 캡처에 찍힌다. 보조 창 두 개만 실제 별도 창이다

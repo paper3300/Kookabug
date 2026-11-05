@@ -189,6 +189,8 @@ class App:
         self._held: dict[str, set[str]] = {}
         self._focused: dict[str, bool] = {}
         self._last_scene: Scene | None = None
+        self.pressed: str | None = None
+        """`--press-feedback`: 왼쪽 버튼을 누르고 있는 단추 id."""
 
     # ------------------------------------------------------------ 수명
 
@@ -303,7 +305,7 @@ class App:
 
     def _redraw(self) -> None:
         if self.canvas is not None:
-            draw(self.canvas, self.game, self.size, self.font)
+            draw(self.canvas, self.game, self.size, self.font, self.pressed)
             self.canvas.update_idletasks()
 
     def _after_change(self) -> None:
@@ -386,6 +388,12 @@ class App:
         button = _BUTTON_NAMES.get(int(event.num), str(event.num))
         x, y = int(event.x), int(event.y)
         self.log.write(kind, window=window, button=button, x=x, y=y)
+        if self.o.press_feedback and window == "main" and button == "left":
+            pressed = hit(self.game.scene, Viewport(*self.size), x, y)
+            pressed = pressed if kind == "mouse_down" else None
+            if pressed != self.pressed:
+                self.pressed = pressed
+                self._redraw()
         # 클릭은 왼쪽 버튼을 뗄 때 그 자리의 버튼으로 판정한다
         if window == "main" and kind == "mouse_up" and button == "left":
             pressed = hit(self.game.scene, Viewport(*self.size), x, y)

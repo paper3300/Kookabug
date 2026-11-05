@@ -51,6 +51,7 @@ from kookabug_platform.errors import (
     WINDOW_MINIMIZED,
     PlatformError,
 )
+from kookabug_platform.recorder.frames import CaptureRing, RingPolicy
 from kookabug_platform.tracker import WindowBinding, WindowTracker
 from kookabug_platform.win32 import ole32, user32
 from kookabug_platform.windows import WindowInfo, window_info
@@ -298,8 +299,13 @@ class _Session:
         clock: Callable[[], float],
         on_closed: Callable[[str], None],
         calls: _Calls,
+        ring: CaptureRing | None = None,
+        ring_clock_ns: Callable[[], int] = time.monotonic_ns,
     ) -> None:
         self.binding = binding
+        self.ring = ring
+        """녹화 세션만 켠다 (M4 2.5): 원본 버퍼 + 단조 ns 도착 시각."""
+        self._ring_clock_ns = ring_clock_ns
         self.relay = _Relay(self, calls)
         self.cond = threading.Condition()
         self.latest: _Latest | None = None
@@ -319,6 +325,8 @@ class _Session:
     def on_frame(self, buffer: Pixels) -> None:
         if self.stopping:
             return
+        # 도착 시각은 복사 전에 (복사에 걸린 시간만큼 늦게 찍히지 않게)
+        arrival_ns = self._ring_clock_ns() if self.ring is not None else 0
         try:
             pixels = bgra_to_bgr(buffer)
             latest = _Latest(
@@ -337,6 +345,11 @@ class _Session:
             if not self.stopping:
                 self.latest = latest
             self.cond.notify_all()
+        ring = self.ring
+        if ring is not None and not self.stopping:
+            # 링은 자르지 않은 원본 버퍼를 든다 (클라이언트 자르기는 기하 세대로 따로)
+            with contextlib.suppress(ValueError):  # 시계가 거꾸로 간 프레임은 넣지 않는다
+                ring.push(latest.seq, arrival_ns, pixels)
 
     def on_closed(self) -> None:
         if self.stopping:
@@ -414,7 +427,14 @@ class CaptureService:
         dpi_of: Callable[[int], int] = _window_dpi,
         fresh_wait_ms: int = FRESH_WAIT_MS,
         clock: Callable[[], float] = time.monotonic,
+        ring: RingPolicy | None = None,
+        ring_clock_ns: Callable[[], int] = time.monotonic_ns,
     ) -> None:
+        self._ring_policy = ring
+        """녹화 세션만 링을 켠다 (M4 2.5). 실행(runner)의 캡처는 None."""
+        self._ring_clock_ns = ring_clock_ns
+        self._rings: dict[str, CaptureRing] = {}
+        """바인딩 → 링 (세션을 다시 열어도 이어진다)."""
         self._tracker = tracker
         self._backend: CaptureBackend = backend or WgcBackend()
         self._info = info
@@ -441,8 +461,19 @@ class CaptureService:
         session = self._sessions.get(binding.binding_id)
         if session is not None:
             return session
+        ring = None
+        if self._ring_policy is not None:
+            ring = self._rings.get(binding.binding_id)
+            if ring is None:
+                ring = self._rings[binding.binding_id] = CaptureRing(self._ring_policy)
         session = _Session(
-            binding, self._dpi_of, self._clock, self._tracker.notify_capture_closed, self._calls
+            binding,
+            self._dpi_of,
+            self._clock,
+            self._tracker.notify_capture_closed,
+            self._calls,
+            ring,
+            self._ring_clock_ns,
         )
         try:
             session.handle = self._backend.start(
@@ -486,6 +517,9 @@ class CaptureService:
         session = self._sessions.get(binding_id)  # 잠금 없이 읽는다 (dict 조회는 원자적)
         if session is not None:
             session.release()
+        ring = self._rings.pop(binding_id, None)
+        if ring is not None:
+            ring.clear()
         self._dead.append(binding_id)
 
     def _reap(self) -> None:
@@ -524,7 +558,20 @@ class CaptureService:
                     total += latest.nbytes
                 if s.client is not None and s.client[1] is not latest:
                     total += s.client[1].nbytes
-        return total
+        # 링은 최신 프레임과 같은 배열을 들 수 있지만 단순히 더한다 (진단용 상한)
+        return total + sum(ring.nbytes for ring in list(self._rings.values()))
+
+    def open_ring(self, binding: WindowBinding) -> CaptureRing:
+        """녹화: 그 창의 캡처 세션을 띄우고(없으면) 링을 준다. 링을 끈 서비스면 ValueError."""
+        if self._ring_policy is None:
+            raise ValueError("이 캡처 서비스는 링을 켜지 않았다 (녹화 세션만 켠다)")
+        with self._lock:
+            session = self._open(binding)
+        assert session.ring is not None
+        return session.ring
+
+    def ring(self, binding_id: str) -> CaptureRing | None:
+        return self._rings.get(binding_id)
 
     def close(self, binding_id: str) -> bool:
         """그 바인딩의 세션(사망 알림으로 회수 목록에 옮겨진 것 포함)을 멈추고 끝나기를
@@ -535,6 +582,9 @@ class CaptureService:
             if current is not None:
                 self._retire(current)
             targets = [s for s in self._retired if s.binding.binding_id == binding_id]
+            ring = self._rings.pop(binding_id, None)
+        if ring is not None:
+            ring.clear()
         return self._stop_and_wait(targets, _STOP_TIMEOUT_S)
 
     def close_all(self, timeout_s: float = _STOP_TIMEOUT_S) -> bool:
@@ -544,6 +594,10 @@ class CaptureService:
             for session in list(self._sessions.values()):
                 self._retire(session)
             targets = list(self._retired)
+            rings = list(self._rings.values())
+            self._rings.clear()
+        for ring in rings:
+            ring.clear()
         return self._stop_and_wait(targets, timeout_s)
 
     def all_finished(self) -> bool:

@@ -38,6 +38,9 @@ class Options:
     signal_file: Path | None = None
     """검사용 신호 파일: 생기면 읽고 지운 뒤 줄마다 명령을 처리한다 (`fire` = 지금 걸린 타이머를
     바로 끝냄). 입력 없이 검사가 정한 때 장면을 바꾼다."""
+    press_feedback: bool = False
+    """검사용: 왼쪽 버튼 down에서 그 단추를 눌린 색으로 그리고 up에서 되돌린다 (녹화의 "클릭
+    이전 프레임" 검사). 끄면 그림은 그대로다."""
 
 
 def _size(text: str) -> tuple[int, int]:
@@ -105,6 +108,7 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--start-scene", choices=[s.value for s in Scene], help=argparse.SUPPRESS)
     p.add_argument("--font", default=DEFAULT_FONT, help=argparse.SUPPRESS)
     p.add_argument("--signal-file", type=Path, help=argparse.SUPPRESS)
+    p.add_argument("--press-feedback", action="store_true", help=argparse.SUPPRESS)
     return p
 
 
@@ -130,4 +134,5 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
         start_scene=Scene(ns.start_scene) if ns.start_scene else None,
         font=ns.font,
         signal_file=ns.signal_file,
+        press_feedback=ns.press_feedback,
     )

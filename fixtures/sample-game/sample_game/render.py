@@ -26,15 +26,20 @@ FOCUS: Final = "#5fb0ff"
 ERROR: Final = "#ff6b6b"
 SELECT: Final = "#36507a"
 DIM: Final = "#0b0f16"
+PRESSED: Final = "#3a7a3a"
+"""`--press-feedback`의 눌린 단추 색 (어떤 단추 색과도 뚜렷이 다르게)."""
 
 INVENTORY_ITEMS: Final = ("포션", "검", "방패", "Key", "지도", "Gem", "활", "빵")
 
 
 class _Painter:
-    def __init__(self, canvas: tk.Canvas, viewport: Viewport, font: str) -> None:
+    def __init__(
+        self, canvas: tk.Canvas, viewport: Viewport, font: str, pressed: str | None = None
+    ) -> None:
         self.c = canvas
         self.v = viewport
         self.font = font
+        self.pressed = pressed
 
     def _font(self, size: int, bold: bool = False) -> tuple[str, int] | tuple[str, int, str]:
         # 음수 = 픽셀 크기. 포인트로 주면 DPI에 따라 글자 크기가 바뀌어 화면 PNG가 어긋난다
@@ -81,6 +86,8 @@ class _Painter:
 
     def button(self, button: Button, *, primary: bool = True) -> None:
         fill, color = (ACCENT, ACCENT_TEXT) if primary else (PANEL, TEXT)
+        if button.id == self.pressed:
+            fill = PRESSED
         self.rect(button.rect, fill, PANEL_EDGE if not primary else "", 2)
         x, y, w, h = button.rect
         self.text(x + w / 2, y + h / 2, button.label, 24, fill=color, bold=True)
@@ -92,11 +99,14 @@ class _Painter:
         self.text(x + w / 2, y + 28, title, 24, bold=True)
 
 
-def draw(canvas: tk.Canvas, game: Game, size: tuple[int, int], font: str) -> None:
+def draw(
+    canvas: tk.Canvas, game: Game, size: tuple[int, int], font: str, pressed: str | None = None
+) -> None:
+    """`pressed`(검사 옵션 `--press-feedback`)면 그 id의 단추를 눌린 색으로 그린다."""
     canvas.delete("all")
     viewport = Viewport(*size)
     canvas.create_rectangle(0, 0, size[0], size[1], fill=BG, outline="")
-    p = _Painter(canvas, viewport, font)
+    p = _Painter(canvas, viewport, font, pressed)
     scene = game.scene
     if scene in (Scene.TITLE, Scene.MAINTENANCE):
         _title(p)
