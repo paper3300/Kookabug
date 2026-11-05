@@ -54,6 +54,7 @@ jobs:
       - run: >-
           uv run pytest --ignore=tools/tests/test_installer_e2e.py
           --ignore=tools/tests/test_installer_video.py
+          --ignore=tools/tests/test_installer_pages.py
           --deselect python/kookabug_core/tests/acceptance/test_m1.py::test_installed_cli_runs_capture_and_ocr_without_python
           -m "not desktop_build"
 
@@ -223,7 +224,7 @@ jobs:
         run: |
           $b = Get-Content build/installer/build.json -Raw | ConvertFrom-Json
           $env:KOOKABUG_INSTALLER = $b.setups.test.path
-          uv run pytest tools/tests/test_installer_user_path.py tools/tests/test_installer_e2e.py tools/tests/test_installer_video.py "python/kookabug_core/tests/acceptance/test_m1.py::test_installed_cli_runs_capture_and_ocr_without_python" -v -s
+          uv run pytest tools/tests/test_installer_user_path.py tools/tests/test_installer_e2e.py tools/tests/test_installer_video.py tools/tests/test_installer_pages.py "python/kookabug_core/tests/acceptance/test_m1.py::test_installed_cli_runs_capture_and_ocr_without_python" -v -s
       - name: 크기 요약
         if: always()
         run: |
