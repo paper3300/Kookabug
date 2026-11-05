@@ -10,9 +10,10 @@ daemon의 메서드는 모두 도구 이름 하나(구현 계획 7장)에 대응
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import Final, Protocol
 
-from kookabug_core.permissions import Decision, Principal
+from kookabug_core.permissions import TOOLS, Decision, Principal
 from kookabug_core.service import ApprovalRequired, PermissionDenied
 from kookabug_daemon.protocol import UI_ONLY, RequestFailed
 
@@ -61,6 +62,13 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     "graph.save": "kb_graph_patch",
     "graph.create": "kb_graph_create",
     "graph.close": UI_ONLY,
+    # M5 B1: 연결별 툴셋·경로로 고치기 (계획 3.5)
+    "agent.toolsets.get": "kb_toolset_enable",
+    "agent.toolsets.enable": "kb_toolset_enable",
+    "graph.patch": "kb_graph_patch",
+    # M5 B1 검수: MCP 도구 이름 그대로 판정하는 진입점
+    "graph.list": "kb_graph_list",
+    "graph.check": "kb_graph_validate",
     "run.start": "kb_run_start",
     "run.cancel": "kb_run_cancel",
     "run.status": "kb_run_status",
@@ -125,6 +133,27 @@ class Authorizer:
 
     def __init__(self, service: ServiceLike) -> None:
         self.service = service
+
+    def gate(self, principal: Principal, method: str, toolsets: Collection[str]) -> None:
+        """판정 전 거부 (M5 계획 3.6 1~2단계): `AGENT_DENIED` → 툴셋 꺼짐(`toolset_disabled`).
+        사람(user) 연결은 툴셋과 무관하다. 전송이 모든 요청(스스로 판정하는 메서드 포함)에
+        부른다."""
+        if principal.kind != "agent":
+            return
+        tool = METHOD_TOOLS[method]
+        if tool == UI_ONLY:
+            if method in AGENT_DENIED:
+                raise RequestFailed(
+                    "permission_denied", f"에이전트 연결은 {method}를 쓸 수 없다 (ui_only)"
+                )
+            return
+        toolset = TOOLS[tool].toolset
+        if toolset not in toolsets:
+            raise RequestFailed(
+                "toolset_disabled",
+                f"툴셋 {toolset}이(가) 꺼져 있다 ({tool}). kb_toolset_enable로 먼저 켠다",
+                toolset=toolset,
+            )
 
     def require(self, principal: Principal, method: str, arg: str = "") -> Decision | None:
         """판정했으면 그 결과, `ui_only`라 판정하지 않았으면 None."""

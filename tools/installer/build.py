@@ -109,6 +109,7 @@ REQUIRED_PACKAGES: Final = (
     "kookabug-cli",
     "kookabug-core",
     "kookabug-daemon",
+    "kookabug-mcp",
     "kookabug-nodes",
     "kookabug-platform",
     "kookabug-sdk",

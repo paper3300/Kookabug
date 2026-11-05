@@ -16,13 +16,14 @@ import asyncio
 import json
 import shutil
 import threading
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Final, Self
 
 from kb_testing.proc import Spawned, direct_env, isolated_env, python_cmd, wait_until
+from kookabug_core.permissions import TOOLSETS
 from kookabug_core.service import WorkspaceService
 from kookabug_core.win import CHILD_FLAGS
 from kookabug_daemon.app import Daemon, DaemonConfig
@@ -158,9 +159,13 @@ class ThreadDaemon:
         recorder_script: Path | None = None,
         recorder_script_speed: float | None = float("inf"),
         recorder_testing: HookTesting | None = None,
+        agent_toolsets: Iterable[str] | None = None,
     ) -> None:
+        """`agent_toolsets`: agent 연결이 hello 때 갖는 툴셋. None이면 **전부**(M5 이전 검사가
+        툴셋 없이 판정만 보던 그대로). M5 툴셋 검사는 제품 기본값 `("core",)`을 넘긴다."""
         self.root = root
         config = DaemonConfig(
+            agent_toolsets=frozenset(TOOLSETS if agent_toolsets is None else agent_toolsets),
             workspace=root,
             idle_timeout_s=idle_timeout_s,
             limits=limits or Limits(),

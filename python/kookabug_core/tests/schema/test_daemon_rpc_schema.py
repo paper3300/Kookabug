@@ -68,6 +68,13 @@ TOOLS = {
     "secrets.list": "ui_only",
     "secrets.create": "ui_only",
     "target.read_text": "ui_only",
+    # M5 계획 3.5 (B1): 연결별 툴셋·경로로 고치기
+    "agent.toolsets.get": "kb_toolset_enable",
+    "agent.toolsets.enable": "kb_toolset_enable",
+    "graph.patch": "kb_graph_patch",
+    # B1 검수: MCP 도구 이름 그대로 판정하는 진입점
+    "graph.list": "kb_graph_list",
+    "graph.check": "kb_graph_validate",
 }
 
 
@@ -84,7 +91,17 @@ def test_method_table_matches_permission_table() -> None:
     assert {name: row["properties"]["tool"]["const"] for name, row in table.items()} == TOOLS
     internal = {n for n, row in table.items() if not row["properties"]["renderer"]["const"]}
     # run.export의 dest는 주 프로세스 저장 대화 상자가 정한다 (M3 계획 2.7)
-    assert internal == {"session.hello", "daemon.shutdown", "run.export"}
+    # M5: 에이전트(MCP)만 쓰는 메서드도 렌더러 표면에 내놓지 않는다
+    assert internal == {
+        "session.hello",
+        "daemon.shutdown",
+        "run.export",
+        "agent.toolsets.get",
+        "agent.toolsets.enable",
+        "graph.patch",
+        "graph.list",
+        "graph.check",
+    }
     for row in table.values():
         for part in ("params", "result"):
             ref = row["properties"][part]["$ref"]

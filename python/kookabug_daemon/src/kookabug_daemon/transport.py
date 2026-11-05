@@ -31,7 +31,7 @@ from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request, Response
 
 from kookabug_core.diagnostics import Diagnostic
-from kookabug_core.permissions import Principal
+from kookabug_core.permissions import TOOLSETS, Principal
 from kookabug_daemon.methods import Call, DaemonContext, MethodSpec
 from kookabug_daemon.methods.session import InvalidHello, hello
 from kookabug_daemon.methods.tools import Authorizer
@@ -194,6 +194,10 @@ class Connection:
         """`session.hello`가 정한 주체 (인증 전에는 None)."""
         self.client_kind = "agent"
         """`session.hello`의 `client.kind` (인증 전에는 `agent` — 가장 좁게 본다)."""
+        self.client_name = ""
+        """`session.hello`의 `client.name` (에이전트 연결 목록 표시용)."""
+        self.toolsets: frozenset[str] = frozenset()
+        """켜진 MCP 툴셋 (M5 계획 D3). agent 연결은 hello 때 daemon 기본값(core), ui는 전부."""
         self.mismatch = False
         self.tasks: set[asyncio.Task[None]] = set()
         self.lag_listeners: list[Callable[[str], None]] = []
@@ -298,6 +302,11 @@ class Host(Protocol):
 
     @property
     def shutting_down(self) -> bool: ...
+
+    @property
+    def agent_toolsets(self) -> frozenset[str]:
+        """agent 연결이 hello 때 갖는 툴셋 (M5 계획 D3, 기본 core)."""
+        ...
 
     def credentials(self) -> tuple[str, str, str] | None:
         """(토큰, start_id, 워크스페이스). 아직 세션을 정하지 않았으면 None."""
@@ -464,6 +473,10 @@ class Transport:
             )
         conn.principal = outcome.principal
         conn.client_kind = outcome.client_kind
+        conn.client_name = outcome.client_name
+        conn.toolsets = (
+            self.host.agent_toolsets if outcome.principal.kind == "agent" else frozenset(TOOLSETS)
+        )
         if outcome.mismatch is not None:
             conn.mismatch = True
             log.warning("연결 %d: 프로토콜 판이 다르다. daemon.shutdown만 받는다", conn.number)
@@ -543,6 +556,8 @@ class Transport:
                 params,
                 client_kind=conn.client_kind,
             )
+            # 판정 전 거부 (AGENT_DENIED·툴셋 꺼짐): 스스로 판정하는 메서드도 여기서 막는다
+            self.host.authorizer.gate(conn.principal, method, conn.toolsets)
             arg = spec.arg(call)
             if not spec.self_authorized:
                 await asyncio.to_thread(self.host.authorizer.require, conn.principal, method, arg)

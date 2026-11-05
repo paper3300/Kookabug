@@ -48,6 +48,8 @@ class HelloOutcome:
     client_kind: str = "agent"
     """`client.kind` (`ui`·`agent`). 사람이 UI에서 시작한 실행을 가리는 데 쓴다(M3 2.1) — 주체
     `kind`(`user`)로 판정하지 않는다."""
+    client_name: str = ""
+    """`client.name` (에이전트 연결 목록 표시용, M5)."""
 
 
 def hello(
@@ -86,6 +88,7 @@ def hello(
             "principal": principal_json(principal),
         },
         client_kind=str(fields["client"]["kind"]),
+        client_name=str(fields["client"]["name"]),
     )
 
 

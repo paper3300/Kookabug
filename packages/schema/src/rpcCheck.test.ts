@@ -24,7 +24,17 @@ test("test_method_table_tools_and_internal_methods", () => {
     .filter(([, info]) => !info.renderer)
     .map(([name]) => name);
   // M3: run.export의 dest는 주 프로세스 저장 대화 상자가 정한다
-  expect(internal.sort()).toEqual(["daemon.shutdown", "run.export", "session.hello"]);
+  // M5: 에이전트(MCP)만 쓰는 메서드도 렌더러 표면에 내놓지 않는다
+  expect(internal.sort()).toEqual([
+    "agent.toolsets.enable",
+    "agent.toolsets.get",
+    "daemon.shutdown",
+    "graph.check",
+    "graph.list",
+    "graph.patch",
+    "run.export",
+    "session.hello",
+  ]);
   expect(Object.keys(NOTIFICATIONS).sort()).toEqual([
     "debug.breakpoints.changed",
     "graph.changed",

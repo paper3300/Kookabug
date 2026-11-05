@@ -13,6 +13,7 @@ members = [
     "kookabug-cli",
     "kookabug-core",
     "kookabug-daemon",
+    "kookabug-mcp",
     "kookabug-nodes",
     "kookabug-platform",
     "kookabug-sdk",
@@ -223,6 +224,7 @@ source = { editable = "python/kookabug_cli" }
 dependencies = [
     { name = "kookabug-core" },
     { name = "kookabug-daemon" },
+    { name = "kookabug-mcp" },
     { name = "kookabug-sdk" },
 ]
 
@@ -230,6 +232,7 @@ dependencies = [
 requires-dist = [
     { name = "kookabug-core", editable = "python/kookabug_core" },
     { name = "kookabug-daemon", editable = "python/kookabug_daemon" },
+    { name = "kookabug-mcp", editable = "python/kookabug_mcp" },
     { name = "kookabug-sdk", editable = "python/kookabug_sdk" },
 ]
 
@@ -269,6 +272,23 @@ requires-dist = [
     { name = "kookabug-core", editable = "python/kookabug_core" },
     { name = "kookabug-sdk", editable = "python/kookabug_sdk" },
     { name = "websockets", specifier = "==17.2" },
+]
+
+[[package]]
+name = "kookabug-mcp"
+version = "0.1.0.dev0"
+source = { editable = "python/kookabug_mcp" }
+dependencies = [
+    { name = "jsonschema" },
+    { name = "kookabug-core" },
+    { name = "kookabug-daemon" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jsonschema", specifier = ">=4.25" },
+    { name = "kookabug-core", editable = "python/kookabug_core" },
+    { name = "kookabug-daemon", editable = "python/kookabug_daemon" },
 ]
 
 [[package]]

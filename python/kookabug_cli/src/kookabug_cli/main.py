@@ -7,6 +7,7 @@
     kookabug screen test <ID|파일> (--window 제목 | --hwnd N | --image PNG) ...       (screen_cmd)
     kookabug doctor [--profile headless|desktop] [--json]                            (doctor_cmd)
     kookabug daemon [--workspace DIR] [--idle-timeout-s 600] [--json]                (daemon_cmd)
+    kookabug mcp [--workspace DIR] [--agent-id ID] [--unattended] [--client 이름]   (kookabug_mcp)
     kookabug --version
 
 이 프로세스가 감독자다: `WorkspaceService.start_run`(권한 판정 → 감독자 시작) → 진행 출력(`follow`로
@@ -64,6 +65,7 @@ from kookabug_core.supervisor import (
     run_exit_code,
 )
 from kookabug_core.workspace import RunConditions, Workspace, WorkspaceError
+from kookabug_mcp import cli as mcp_cli
 from kookabug_sdk import _faults
 from kookabug_sdk.console import utf8_stdio
 
@@ -230,6 +232,7 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--json", action="store_true", help="결과 JSON 한 개만 출력한다")
 
     daemon_cmd.add_parser(commands)
+    mcp_cli.add_parser(commands)
     return parser
 
 
@@ -613,6 +616,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         dpi_error = dpi.enable_at_startup()
         return daemon_cmd.run(args, sys.stdout, sys.stderr, dpi_error=dpi_error)
+    if args.command == "mcp":
+        return mcp_cli.run(args)
     # 비전 명령은 opencv를 불러오므로 쓸 때만 import한다 (`kookabug run` 시작을 가볍게)
     try:
         if args.command == "target":

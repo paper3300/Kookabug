@@ -301,15 +301,22 @@ class DocumentTable:
                 raise document_failed(exc, where.given) from exc
             return self._register(where, connection, doc)
 
-    def create(self, where: WsPath, connection: int, kind: Any, title: str | None) -> Opened:
+    def create(
+        self,
+        where: WsPath,
+        connection: int,
+        kind: Any,
+        title: str | None,
+        change: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    ) -> Opened:
         """새 그래프 파일을 만들고 연다 (있으면 `exists`). 잠금 안에서 만들기 직전에 경로를 다시
-        검사한다."""
+        검사한다. `change`는 쓰기 전에 틀을 고친다(예외면 만들지 않음)."""
         with self.path_lock(where.key):
             where = recheck_path(self.root, where)
             if is_run_record(where.rel):
                 raise read_only_failed(where.rel)
             try:
-                doc = documents.create(where.path, kind, title)
+                doc = documents.create(where.path, kind, title, change=change)
                 if not isinstance(doc.value, dict):  # 틀은 항상 객체다 (read_graph와 같은 규칙)
                     raise DocumentError(
                         "invalid_json", "새 그래프가 객체가 아니다", path=where.path
@@ -382,6 +389,39 @@ class DocumentTable:
                 if connection in entry.refs:
                     entry.bases[connection] = doc
                     entry.notified.pop(connection, None)
+            return result, doc.value
+
+    def patch(
+        self, where: WsPath, base_revision: str, change: Callable[[Any], Any]
+    ) -> tuple[documents.SaveResult, Any]:
+        """경로로 고친다 (`graph.patch`, M5 계획 3.4). 경로 잠금 안에서 디스크를 읽고 revision을
+        기준과 비교한 뒤 `change(값)`이 돌려준 값을 저장한다(force 없음). `change`가 예외를 내면
+        아무것도 쓰지 않는다. 그 경로를 연 연결이 있으면 감시가 다음 주기에 `graph.changed`를
+        보낸다(이 연결의 기준 원문은 바꾸지 않는다)."""
+        with self.path_lock(where.key):
+            where = recheck_path(self.root, where)
+            if is_run_record(where.rel):
+                raise read_only_failed(where.rel)
+            try:
+                doc = read_graph(where.path)
+            except DocumentError as exc:
+                raise document_failed(exc, where.given) from exc
+            if doc.revision != base_revision:
+                raise RequestFailed(
+                    "revision_conflict",
+                    "파일이 밖에서 바뀌었다 (디스크가 기준 revision과 다르다)",
+                    revision=doc.revision,
+                )
+            value = change(copy.deepcopy(doc.value))
+            try:
+                result = documents.save(doc, value, base_revision, file=where.rel)
+            except DocumentError as exc:
+                raise document_failed(exc, where.given) from exc
+            with self._lock:
+                entry = self._by_key.get(where.key)
+                if entry is not None:
+                    entry.latest = doc
+                    entry.seen = None
             return result, doc.value
 
     def release(self, doc_id: str, connection: int) -> None:

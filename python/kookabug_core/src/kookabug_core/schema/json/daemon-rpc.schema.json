@@ -27,6 +27,64 @@
       "title": "AgentClientInfo",
       "type": "object"
     },
+    "AgentToolsetsEnableParams": {
+      "additionalProperties": false,
+      "description": "툴셋을 켠다 (끄기는 없다). 켜도 각 도구의 권한 판정은 그대로다",
+      "properties": {
+        "toolsets": {
+          "items": {
+            "$ref": "#/$defs/Toolset"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": ["toolsets"],
+      "title": "AgentToolsetsEnableParams",
+      "type": "object"
+    },
+    "AgentToolsetsEnableResult": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "items": {
+            "$ref": "#/$defs/Toolset"
+          },
+          "type": "array"
+        },
+        "tools": {
+          "description": "이번에 새로 쓸 수 있게 된 도구 이름 (권한 표 이름)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": ["enabled", "tools"],
+      "title": "AgentToolsetsEnableResult",
+      "type": "object"
+    },
+    "AgentToolsetsResult": {
+      "additionalProperties": false,
+      "description": "자기 연결의 켜진 툴셋 (M5 계획 D3). ui 연결은 툴셋과 무관해 모두 켜짐으로 답한다",
+      "properties": {
+        "available": {
+          "items": {
+            "$ref": "#/$defs/Toolset"
+          },
+          "type": "array"
+        },
+        "enabled": {
+          "items": {
+            "$ref": "#/$defs/Toolset"
+          },
+          "type": "array"
+        }
+      },
+      "required": ["available", "enabled"],
+      "title": "AgentToolsetsResult",
+      "type": "object"
+    },
     "BreakpointsResult": {
       "additionalProperties": false,
       "description": "debug.breakpoints.get·set 결과, debug.breakpoints.changed 알림 (다른 연결이 바꿨을 때)",
@@ -292,6 +350,35 @@
       "title": "GraphChangedParams",
       "type": "object"
     },
+    "GraphCheckParams": {
+      "additionalProperties": false,
+      "description": "경로로 검증 (kb_graph_validate로 판정, M5). value가 없으면 디스크 값, 있으면 그 값(쓰지 않음)",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/WorkspacePath"
+        },
+        "value": {
+          "$ref": "#/$defs/GraphValue"
+        }
+      },
+      "required": ["path"],
+      "title": "GraphCheckParams",
+      "type": "object"
+    },
+    "GraphCheckResult": {
+      "additionalProperties": false,
+      "properties": {
+        "diagnostics": {
+          "items": {
+            "$ref": "#/$defs/Diagnostic"
+          },
+          "type": "array"
+        }
+      },
+      "required": ["diagnostics"],
+      "title": "GraphCheckResult",
+      "type": "object"
+    },
     "GraphCloseParams": {
       "additionalProperties": false,
       "properties": {
@@ -310,6 +397,14 @@
         "kind": {
           "enum": ["subgraph", "test"]
         },
+        "ops": {
+          "description": "만들 틀에 적용할 graph.patch 연산 (M5). 틀리면 파일을 만들지 않는다",
+          "items": {
+            "$ref": "#/$defs/GraphPatchOp"
+          },
+          "maxItems": 1000,
+          "type": "array"
+        },
         "path": {
           "$ref": "#/$defs/WorkspacePath"
         },
@@ -319,6 +414,52 @@
       },
       "required": ["kind", "path"],
       "title": "GraphCreateParams",
+      "type": "object"
+    },
+    "GraphListEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["subgraph", "test"]
+        },
+        "path": {
+          "$ref": "#/$defs/WorkspacePath"
+        },
+        "problem": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": ["path"],
+      "title": "GraphListEntry",
+      "type": "object"
+    },
+    "GraphListParams": {
+      "additionalProperties": false,
+      "description": "그래프 파일 목록 (kb_graph_list로 판정, M5). 범위는 workspace.tree와 같다",
+      "properties": {
+        "under": {
+          "description": "이 폴더 아래만 (예: tests). 권한 인자",
+          "type": "string"
+        }
+      },
+      "title": "GraphListParams",
+      "type": "object"
+    },
+    "GraphListResult": {
+      "additionalProperties": false,
+      "properties": {
+        "graphs": {
+          "items": {
+            "$ref": "#/$defs/GraphListEntry"
+          },
+          "type": "array"
+        }
+      },
+      "required": ["graphs"],
+      "title": "GraphListResult",
       "type": "object"
     },
     "GraphOpenParams": {
@@ -339,6 +480,13 @@
         "canonical": {
           "description": "원문이 canonical 형식인가",
           "type": "boolean"
+        },
+        "created": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "graph.create ops의 add_node ref → 새 노드 ID (M5, ops를 줬을 때만)",
+          "type": "object"
         },
         "diagnostics": {
           "items": {
@@ -365,6 +513,311 @@
       },
       "required": ["canonical", "diagnostics", "doc_id", "revision", "shapes", "value"],
       "title": "GraphOpenResult",
+      "type": "object"
+    },
+    "GraphPatchNodeRef": {
+      "description": "노드 ID 또는 같은 묶음의 add_node ref",
+      "minLength": 1,
+      "title": "GraphPatchNodeRef",
+      "type": "string"
+    },
+    "GraphPatchOp": {
+      "description": "graph.patch 연산 하나 (M5 계획 3.4). 노드 ID는 바꿀 수 없다",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "새 노드. ID는 daemon이 만든다 (n_ + 8자)",
+          "properties": {
+            "config": {
+              "type": "object"
+            },
+            "in": {
+              "type": "object"
+            },
+            "op": {
+              "const": "add_node"
+            },
+            "position": {
+              "$ref": "#/$defs/GraphPatchPosition"
+            },
+            "ref": {
+              "description": "이 묶음 안 임시 이름 (결과 created에 ref → 새 ID)",
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "type": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "version": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": ["op", "ref", "type"],
+          "title": "GraphPatchOp_add_node",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "노드 고치기 (type·id는 바꿀 수 없다)",
+          "properties": {
+            "config": {
+              "description": "키 단위 병합. 값이 null이면 그 키를 지운다",
+              "type": "object"
+            },
+            "id": {
+              "$ref": "#/$defs/GraphPatchNodeRef"
+            },
+            "in": {
+              "description": "키 단위 병합. 값이 null이면 그 키를 지운다",
+              "type": "object"
+            },
+            "op": {
+              "const": "set_node"
+            },
+            "record": {
+              "type": ["object", "null"]
+            },
+            "title": {
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["id", "op"],
+          "title": "GraphPatchOp_set_node",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "노드와 그 노드를 가리키는 next·$link를 지운다",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/GraphPatchNodeRef"
+            },
+            "op": {
+              "const": "remove_node"
+            }
+          },
+          "required": ["id", "op"],
+          "title": "GraphPatchOp_remove_node",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "exec 연결 (next)",
+          "properties": {
+            "exit": {
+              "pattern": "^[a-z_][a-z0-9_]*$",
+              "type": "string"
+            },
+            "from": {
+              "$ref": "#/$defs/GraphPatchNodeRef"
+            },
+            "op": {
+              "const": "connect"
+            },
+            "to": {
+              "$ref": "#/$defs/GraphPatchNodeRef"
+            }
+          },
+          "required": ["exit", "from", "op", "to"],
+          "title": "GraphPatchOp_connect",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "exec 연결 끊기",
+          "properties": {
+            "exit": {
+              "pattern": "^[a-z_][a-z0-9_]*$",
+              "type": "string"
+            },
+            "from": {
+              "$ref": "#/$defs/GraphPatchNodeRef"
+            },
+            "op": {
+              "const": "disconnect"
+            }
+          },
+          "required": ["exit", "from", "op"],
+          "title": "GraphPatchOp_disconnect",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "데이터 연결 ($link)",
+          "properties": {
+            "from": {
+              "$ref": "#/$defs/GraphPatchNodeRef"
+            },
+            "op": {
+              "const": "link"
+            },
+            "output": {
+              "pattern": "^[a-z_][a-z0-9_]*$",
+              "type": "string"
+            },
+            "pin": {
+              "pattern": "^[a-z_][a-z0-9_]*$",
+              "type": "string"
+            },
+            "to": {
+              "$ref": "#/$defs/GraphPatchNodeRef"
+            }
+          },
+          "required": ["from", "op", "output", "pin", "to"],
+          "title": "GraphPatchOp_link",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "데이터 연결 끊기 (그 핀 값을 지운다)",
+          "properties": {
+            "op": {
+              "const": "unlink"
+            },
+            "pin": {
+              "pattern": "^[a-z_][a-z0-9_]*$",
+              "type": "string"
+            },
+            "to": {
+              "$ref": "#/$defs/GraphPatchNodeRef"
+            }
+          },
+          "required": ["op", "pin", "to"],
+          "title": "GraphPatchOp_unlink",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "레이아웃만",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/GraphPatchNodeRef"
+            },
+            "op": {
+              "const": "move"
+            },
+            "position": {
+              "$ref": "#/$defs/GraphPatchPosition"
+            }
+          },
+          "required": ["id", "op", "position"],
+          "title": "GraphPatchOp_move",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "그래프 머리 (null이면 지운다)",
+          "properties": {
+            "description": {
+              "type": ["string", "null"]
+            },
+            "op": {
+              "const": "set_meta"
+            },
+            "title": {
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["op"],
+          "title": "GraphPatchOp_set_meta",
+          "type": "object"
+        }
+      ],
+      "title": "GraphPatchOp"
+    },
+    "GraphPatchParams": {
+      "additionalProperties": false,
+      "description": "경로로 그래프를 고친다 (M5 계획 3.4). 모두 적용하거나 하나도 안 한다. 디스크가 base_revision과 다르면 revision_conflict, 연산이 틀리면 patch_invalid, 적용한 값이 그래프 형식에 맞지 않으면 validation_failed",
+      "properties": {
+        "base_revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "ops": {
+          "items": {
+            "$ref": "#/$defs/GraphPatchOp"
+          },
+          "maxItems": 1000,
+          "minItems": 1,
+          "type": "array"
+        },
+        "path": {
+          "$ref": "#/$defs/WorkspacePath"
+        }
+      },
+      "required": ["base_revision", "ops", "path"],
+      "title": "GraphPatchParams",
+      "type": "object"
+    },
+    "GraphPatchPosition": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        }
+      },
+      "required": ["x", "y"],
+      "title": "GraphPatchPosition",
+      "type": "object"
+    },
+    "GraphPatchRemovedRef": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "key": {
+          "description": "next면 출구 이름, link면 핀 이름",
+          "type": "string"
+        },
+        "kind": {
+          "enum": ["link", "next"]
+        }
+      },
+      "required": ["from", "key", "kind"],
+      "title": "GraphPatchRemovedRef",
+      "type": "object"
+    },
+    "GraphPatchResult": {
+      "additionalProperties": false,
+      "properties": {
+        "created": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "add_node ref → 새 노드 ID",
+          "type": "object"
+        },
+        "diagnostics": {
+          "items": {
+            "$ref": "#/$defs/Diagnostic"
+          },
+          "type": "array"
+        },
+        "removed_refs": {
+          "description": "remove_node가 함께 지운 연결",
+          "items": {
+            "$ref": "#/$defs/GraphPatchRemovedRef"
+          },
+          "type": "array"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        },
+        "wrote": {
+          "type": "boolean"
+        }
+      },
+      "required": ["created", "diagnostics", "removed_refs", "revision", "wrote"],
+      "title": "GraphPatchResult",
       "type": "object"
     },
     "GraphSaveParams": {
@@ -691,6 +1144,44 @@
       "additionalProperties": false,
       "description": "메서드 표 (단일 출처). 메시지가 아니라 타입 표다: params·result 모양, 권한 도구, 렌더러 표면에 내놓는지(false = Electron 주 프로세스 내부용)",
       "properties": {
+        "agent.toolsets.enable": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/AgentToolsetsEnableParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/AgentToolsetsEnableResult"
+            },
+            "tool": {
+              "const": "kb_toolset_enable"
+            }
+          },
+          "required": ["params", "renderer", "result", "tool"],
+          "type": "object"
+        },
+        "agent.toolsets.get": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/AgentToolsetsResult"
+            },
+            "tool": {
+              "const": "kb_toolset_enable"
+            }
+          },
+          "required": ["params", "renderer", "result", "tool"],
+          "type": "object"
+        },
         "daemon.shutdown": {
           "additionalProperties": false,
           "properties": {
@@ -748,6 +1239,25 @@
           "required": ["params", "renderer", "result", "tool"],
           "type": "object"
         },
+        "graph.check": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/GraphCheckParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/GraphCheckResult"
+            },
+            "tool": {
+              "const": "kb_graph_validate"
+            }
+          },
+          "required": ["params", "renderer", "result", "tool"],
+          "type": "object"
+        },
         "graph.close": {
           "additionalProperties": false,
           "properties": {
@@ -786,6 +1296,25 @@
           "required": ["params", "renderer", "result", "tool"],
           "type": "object"
         },
+        "graph.list": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/GraphListParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/GraphListResult"
+            },
+            "tool": {
+              "const": "kb_graph_list"
+            }
+          },
+          "required": ["params", "renderer", "result", "tool"],
+          "type": "object"
+        },
         "graph.open": {
           "additionalProperties": false,
           "properties": {
@@ -800,6 +1329,25 @@
             },
             "tool": {
               "const": "kb_graph_get"
+            }
+          },
+          "required": ["params", "renderer", "result", "tool"],
+          "type": "object"
+        },
+        "graph.patch": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/GraphPatchParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/GraphPatchResult"
+            },
+            "tool": {
+              "const": "kb_graph_patch"
             }
           },
           "required": ["params", "renderer", "result", "tool"],
@@ -1662,12 +2210,17 @@
         }
       },
       "required": [
+        "agent.toolsets.enable",
+        "agent.toolsets.get",
         "daemon.shutdown",
         "debug.breakpoints.get",
         "debug.breakpoints.set",
+        "graph.check",
         "graph.close",
         "graph.create",
+        "graph.list",
         "graph.open",
+        "graph.patch",
         "graph.save",
         "graph.validate",
         "nodes.list",
@@ -3230,7 +3783,7 @@
       "type": "object"
     },
     "RequestFailedCode": {
-      "description": "-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역)",
+      "description": "-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림)",
       "enum": [
         "approval_required",
         "classification_pending",
@@ -3285,14 +3838,17 @@
         "window_minimized",
         "window_mismatch",
         "window_not_foreground",
-        "window_not_found"
+        "window_not_found",
+        "toolset_disabled",
+        "force_not_allowed",
+        "patch_invalid"
       ],
       "title": "RequestFailedCode",
       "type": "string"
     },
     "RequestFailedData": {
       "additionalProperties": false,
-      "description": "error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝)",
+      "description": "error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message",
       "properties": {
         "code": {
           "$ref": "#/$defs/RequestFailedCode"
@@ -3311,6 +3867,12 @@
             "$ref": "#/$defs/Diagnostic"
           },
           "type": "array"
+        },
+        "index": {
+          "description": "patch_invalid: 틀린 연산의 순번 (0부터)",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
         },
         "line": {
           "maximum": 9007199254740991,
@@ -3352,6 +3914,9 @@
             "$ref": "#/$defs/RecorderStepId"
           },
           "type": "array"
+        },
+        "toolset": {
+          "$ref": "#/$defs/Toolset"
         }
       },
       "required": ["code"],
@@ -4323,6 +4888,7 @@
       "enum": [
         "kb_graph_create",
         "kb_graph_get",
+        "kb_graph_list",
         "kb_graph_patch",
         "kb_graph_validate",
         "kb_image_find",
@@ -4334,9 +4900,16 @@
         "kb_run_status",
         "kb_screen_capture",
         "kb_target_create",
+        "kb_toolset_enable",
         "ui_only"
       ],
       "title": "ToolName",
+      "type": "string"
+    },
+    "Toolset": {
+      "description": "MCP 툴셋 (구현 계획 7장). core는 늘 켜져 있다",
+      "enum": ["control", "core", "graph_edit", "observe", "run", "screens"],
+      "title": "Toolset",
       "type": "string"
     },
     "TreeEntry": {

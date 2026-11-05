@@ -137,11 +137,158 @@ class ExitShape(BaseModel):
     outputs: list[str]
 
 
+class GraphCheckResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    diagnostics: list[Diagnostic]
+
+
 class GraphCloseParams(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
     doc_id: DocId
+
+
+class GraphListParams(BaseModel):
+    """
+    그래프 파일 목록 (kb_graph_list로 판정, M5). 범위는 workspace.tree와 같다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    under: Annotated[str | None, Field(description="이 폴더 아래만 (예: tests). 권한 인자")] = None
+
+
+class GraphPatchNodeRef(RootModel[str]):
+    root: Annotated[
+        str,
+        Field(
+            description="노드 ID 또는 같은 묶음의 add_node ref",
+            min_length=1,
+            title="GraphPatchNodeRef",
+        ),
+    ]
+
+
+class GraphPatchOpSetNode(BaseModel):
+    """
+    노드 고치기 (type·id는 바꿀 수 없다)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    config: Annotated[
+        dict[str, Any] | None, Field(description="키 단위 병합. 값이 null이면 그 키를 지운다")
+    ] = None
+    id: GraphPatchNodeRef
+    in_: Annotated[
+        dict[str, Any] | None,
+        Field(alias="in", description="키 단위 병합. 값이 null이면 그 키를 지운다"),
+    ] = None
+    op: Literal["set_node"]
+    record: dict[str, Any] | None = None
+    title: str | None = None
+
+
+class GraphPatchOpRemoveNode(BaseModel):
+    """
+    노드와 그 노드를 가리키는 next·$link를 지운다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: GraphPatchNodeRef
+    op: Literal["remove_node"]
+
+
+class GraphPatchOpConnect(BaseModel):
+    """
+    exec 연결 (next)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    exit: Annotated[str, Field(pattern="^[a-z_][a-z0-9_]*$")]
+    from_: Annotated[GraphPatchNodeRef, Field(alias="from")]
+    op: Literal["connect"]
+    to: GraphPatchNodeRef
+
+
+class GraphPatchOpDisconnect(BaseModel):
+    """
+    exec 연결 끊기
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    exit: Annotated[str, Field(pattern="^[a-z_][a-z0-9_]*$")]
+    from_: Annotated[GraphPatchNodeRef, Field(alias="from")]
+    op: Literal["disconnect"]
+
+
+class GraphPatchOpLink(BaseModel):
+    """
+    데이터 연결 ($link)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    from_: Annotated[GraphPatchNodeRef, Field(alias="from")]
+    op: Literal["link"]
+    output: Annotated[str, Field(pattern="^[a-z_][a-z0-9_]*$")]
+    pin: Annotated[str, Field(pattern="^[a-z_][a-z0-9_]*$")]
+    to: GraphPatchNodeRef
+
+
+class GraphPatchOpUnlink(BaseModel):
+    """
+    데이터 연결 끊기 (그 핀 값을 지운다)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    op: Literal["unlink"]
+    pin: Annotated[str, Field(pattern="^[a-z_][a-z0-9_]*$")]
+    to: GraphPatchNodeRef
+
+
+class GraphPatchOpSetMeta(BaseModel):
+    """
+    그래프 머리 (null이면 지운다)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    description: str | None = None
+    op: Literal["set_meta"]
+    title: str | None = None
+
+
+class GraphPatchPosition(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    x: float
+    y: float
+
+
+class GraphPatchRemovedRef(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    from_: Annotated[str, Field(alias="from")]
+    key: Annotated[str, Field(description="next면 출구 이름, link면 핀 이름")]
+    kind: Literal["link", "next"]
 
 
 class GraphValue(BaseModel):
@@ -768,6 +915,9 @@ class RequestFailedCode(
             "window_mismatch",
             "window_not_foreground",
             "window_not_found",
+            "toolset_disabled",
+            "force_not_allowed",
+            "patch_invalid",
         ]
     ]
 ):
@@ -827,9 +977,12 @@ class RequestFailedCode(
             "window_mismatch",
             "window_not_foreground",
             "window_not_found",
+            "toolset_disabled",
+            "force_not_allowed",
+            "patch_invalid",
         ],
         Field(
-            description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역)",
+            description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림)",
             title="RequestFailedCode",
         ),
     ]
@@ -1174,6 +1327,7 @@ class ToolName(
         Literal[
             "kb_graph_create",
             "kb_graph_get",
+            "kb_graph_list",
             "kb_graph_patch",
             "kb_graph_validate",
             "kb_image_find",
@@ -1185,6 +1339,7 @@ class ToolName(
             "kb_run_status",
             "kb_screen_capture",
             "kb_target_create",
+            "kb_toolset_enable",
             "ui_only",
         ]
     ]
@@ -1193,6 +1348,7 @@ class ToolName(
         Literal[
             "kb_graph_create",
             "kb_graph_get",
+            "kb_graph_list",
             "kb_graph_patch",
             "kb_graph_validate",
             "kb_image_find",
@@ -1204,12 +1360,20 @@ class ToolName(
             "kb_run_status",
             "kb_screen_capture",
             "kb_target_create",
+            "kb_toolset_enable",
             "ui_only",
         ],
         Field(
             description="권한 판정에 쓰는 도구 이름 (구현 계획 7장). ui_only는 판정하지 않는 메서드 (agent 연결이면 daemon의 AGENT_DENIED 목록 — daemon.shutdown, M3 디버그 메서드 debug.breakpoints.get·set·run.pause·run.resume·run.restart, run.export, M4 녹화·비밀값 메서드 recorder.*·secrets.*·target.read_text — 를 판정 전에 거부)",
             title="ToolName",
         ),
+    ]
+
+
+class Toolset(RootModel[Literal["control", "core", "graph_edit", "observe", "run", "screens"]]):
+    root: Annotated[
+        Literal["control", "core", "graph_edit", "observe", "run", "screens"],
+        Field(description="MCP 툴셋 (구현 계획 7장). core는 늘 켜져 있다", title="Toolset"),
     ]
 
 
@@ -1339,6 +1503,39 @@ class WorkspaceReadResult(BaseModel):
     truncated: Annotated[bool, Field(description="1 MiB를 넘어 뒤를 잘랐다")]
 
 
+class AgentToolsetsEnableParams(BaseModel):
+    """
+    툴셋을 켠다 (끄기는 없다). 켜도 각 도구의 권한 판정은 그대로다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    toolsets: Annotated[list[Toolset], Field(min_length=1)]
+
+
+class AgentToolsetsEnableResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    enabled: list[Toolset]
+    tools: Annotated[
+        list[str], Field(description="이번에 새로 쓸 수 있게 된 도구 이름 (권한 표 이름)")
+    ]
+
+
+class AgentToolsetsResult(BaseModel):
+    """
+    자기 연결의 켜진 툴셋 (M5 계획 D3). ui 연결은 툴셋과 무관해 모두 켜짐으로 답한다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    available: list[Toolset]
+    enabled: list[Toolset]
+
+
 class ClientInfo(RootModel[UiClientInfo | AgentClientInfo]):
     root: Annotated[UiClientInfo | AgentClientInfo, Field(title="ClientInfo")]
 
@@ -1367,17 +1564,33 @@ class GraphChangedParams(BaseModel):
     revision: Revision | None
 
 
-class GraphCreateParams(BaseModel):
+class GraphCheckParams(BaseModel):
     """
-    새 그래프 (canonical 틀). 파일이 있으면 exists. 결과는 graph.open과 같다
+    경로로 검증 (kb_graph_validate로 판정, M5). value가 없으면 디스크 값, 있으면 그 값(쓰지 않음)
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
-    kind: Literal["subgraph", "test"]
     path: WorkspacePath
+    value: GraphValue | None = None
+
+
+class GraphListEntry(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["subgraph", "test"] | None = None
+    path: WorkspacePath
+    problem: str | None = None
     title: str | None = None
+
+
+class GraphListResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    graphs: list[GraphListEntry]
 
 
 class GraphOpenParams(BaseModel):
@@ -1385,6 +1598,95 @@ class GraphOpenParams(BaseModel):
         extra="forbid",
     )
     path: WorkspacePath
+
+
+class GraphPatchOpAddNode(BaseModel):
+    """
+    새 노드. ID는 daemon이 만든다 (n_ + 8자)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    config: dict[str, Any] | None = None
+    in_: Annotated[dict[str, Any] | None, Field(alias="in")] = None
+    op: Literal["add_node"]
+    position: GraphPatchPosition | None = None
+    ref: Annotated[
+        str, Field(description="이 묶음 안 임시 이름 (결과 created에 ref → 새 ID)", min_length=1)
+    ]
+    title: str | None = None
+    type: Annotated[str, Field(min_length=1)]
+    version: Annotated[int | None, Field(ge=1, le=9007199254740991)] = None
+
+
+class GraphPatchOpMove(BaseModel):
+    """
+    레이아웃만
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: GraphPatchNodeRef
+    op: Literal["move"]
+    position: GraphPatchPosition
+
+
+class GraphPatchOp(
+    RootModel[
+        GraphPatchOpAddNode
+        | GraphPatchOpSetNode
+        | GraphPatchOpRemoveNode
+        | GraphPatchOpConnect
+        | GraphPatchOpDisconnect
+        | GraphPatchOpLink
+        | GraphPatchOpUnlink
+        | GraphPatchOpMove
+        | GraphPatchOpSetMeta
+    ]
+):
+    root: Annotated[
+        GraphPatchOpAddNode
+        | GraphPatchOpSetNode
+        | GraphPatchOpRemoveNode
+        | GraphPatchOpConnect
+        | GraphPatchOpDisconnect
+        | GraphPatchOpLink
+        | GraphPatchOpUnlink
+        | GraphPatchOpMove
+        | GraphPatchOpSetMeta,
+        Field(
+            description="graph.patch 연산 하나 (M5 계획 3.4). 노드 ID는 바꿀 수 없다",
+            title="GraphPatchOp",
+        ),
+    ]
+
+
+class GraphPatchParams(BaseModel):
+    """
+    경로로 그래프를 고친다 (M5 계획 3.4). 모두 적용하거나 하나도 안 한다. 디스크가 base_revision과 다르면 revision_conflict, 연산이 틀리면 patch_invalid, 적용한 값이 그래프 형식에 맞지 않으면 validation_failed
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_revision: Revision
+    ops: Annotated[list[GraphPatchOp], Field(max_length=1000, min_length=1)]
+    path: WorkspacePath
+
+
+class GraphPatchResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    created: Annotated[dict[str, str], Field(description="add_node ref → 새 노드 ID")]
+    diagnostics: list[Diagnostic]
+    removed_refs: Annotated[
+        list[GraphPatchRemovedRef], Field(description="remove_node가 함께 지운 연결")
+    ]
+    revision: Revision
+    wrote: bool
 
 
 class GraphSaveParams(BaseModel):
@@ -1487,6 +1789,56 @@ class MatchInfo(BaseModel):
     rect: Rect
     scale: float
     score: float
+
+
+class AgentToolsetsEnable(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: AgentToolsetsEnableParams
+    renderer: Literal[False]
+    result: AgentToolsetsEnableResult
+    tool: Literal["kb_toolset_enable"]
+
+
+class AgentToolsetsGet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[False]
+    result: AgentToolsetsResult
+    tool: Literal["kb_toolset_enable"]
+
+
+class GraphCheck(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: GraphCheckParams
+    renderer: Literal[False]
+    result: GraphCheckResult
+    tool: Literal["kb_graph_validate"]
+
+
+class GraphList(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: GraphListParams
+    renderer: Literal[False]
+    result: GraphListResult
+    tool: Literal["kb_graph_list"]
+
+
+class GraphPatch(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: GraphPatchParams
+    renderer: Literal[False]
+    result: GraphPatchResult
+    tool: Literal["kb_graph_patch"]
 
 
 class GraphSave(BaseModel):
@@ -1929,7 +2281,7 @@ class Request(BaseModel):
 
 class RequestFailedData(BaseModel):
     """
-    error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝)
+    error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message
     """
 
     model_config = ConfigDict(
@@ -1944,6 +2296,10 @@ class RequestFailedData(BaseModel):
         ),
     ] = None
     diagnostics: list[Diagnostic] | None = None
+    index: Annotated[
+        int | None,
+        Field(description="patch_invalid: 틀린 연산의 순번 (0부터)", ge=0, le=9007199254740991),
+    ] = None
     line: Annotated[int | None, Field(ge=1, le=9007199254740991)] = None
     message: str | None = None
     owner: LeaseOwner | None = None
@@ -1953,6 +2309,7 @@ class RequestFailedData(BaseModel):
     run_id: RunId | None = None
     state: RecorderState | None = None
     steps: list[RecorderStepId] | None = None
+    toolset: Toolset | None = None
 
 
 class RunChildrenParams(BaseModel):
@@ -2296,6 +2653,26 @@ class Frame(BaseModel):
     width: Annotated[int, Field(ge=0, le=9007199254740991)]
 
 
+class GraphCreateParams(BaseModel):
+    """
+    새 그래프 (canonical 틀). 파일이 있으면 exists. 결과는 graph.open과 같다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["subgraph", "test"]
+    ops: Annotated[
+        list[GraphPatchOp] | None,
+        Field(
+            description="만들 틀에 적용할 graph.patch 연산 (M5). 틀리면 파일을 만들지 않는다",
+            max_length=1000,
+        ),
+    ] = None
+    path: WorkspacePath
+    title: str | None = None
+
+
 class GraphOpenResult(BaseModel):
     """
     value는 Python이 읽은 값. 원문 텍스트는 보내지 않는다
@@ -2305,6 +2682,10 @@ class GraphOpenResult(BaseModel):
         extra="forbid",
     )
     canonical: Annotated[bool, Field(description="원문이 canonical 형식인가")]
+    created: Annotated[
+        dict[str, str] | None,
+        Field(description="graph.create ops의 add_node ref → 새 노드 ID (M5, ops를 줬을 때만)"),
+    ] = None
     diagnostics: list[Diagnostic]
     doc_id: DocId
     read_only: Annotated[
@@ -2949,12 +3330,17 @@ class Methods(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    agent_toolsets_enable: Annotated[AgentToolsetsEnable, Field(alias="agent.toolsets.enable")]
+    agent_toolsets_get: Annotated[AgentToolsetsGet, Field(alias="agent.toolsets.get")]
     daemon_shutdown: Annotated[DaemonShutdown, Field(alias="daemon.shutdown")]
     debug_breakpoints_get: Annotated[DebugBreakpointsGet, Field(alias="debug.breakpoints.get")]
     debug_breakpoints_set: Annotated[DebugBreakpointsSet, Field(alias="debug.breakpoints.set")]
+    graph_check: Annotated[GraphCheck, Field(alias="graph.check")]
     graph_close: Annotated[GraphClose, Field(alias="graph.close")]
     graph_create: Annotated[GraphCreate, Field(alias="graph.create")]
+    graph_list: Annotated[GraphList, Field(alias="graph.list")]
     graph_open: Annotated[GraphOpen, Field(alias="graph.open")]
+    graph_patch: Annotated[GraphPatch, Field(alias="graph.patch")]
     graph_save: Annotated[GraphSave, Field(alias="graph.save")]
     graph_validate: Annotated[GraphValidate, Field(alias="graph.validate")]
     nodes_list: Annotated[NodesList, Field(alias="nodes.list")]

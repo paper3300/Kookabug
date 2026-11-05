@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Literal
@@ -290,11 +291,21 @@ def template(kind: Literal["test", "subgraph"], title: str | None = None) -> dic
 
 
 def create(
-    path: str | os.PathLike[str], kind: Literal["test", "subgraph"], title: str | None = None
+    path: str | os.PathLike[str],
+    kind: Literal["test", "subgraph"],
+    title: str | None = None,
+    *,
+    change: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> Document:
-    """새 그래프 파일을 canonical 틀로 만든다. 파일이 이미 있으면 `exists` (덮어쓰지 않는다)."""
+    """새 그래프 파일을 canonical 틀로 만든다. 파일이 이미 있으면 `exists` (덮어쓰지 않는다).
+
+    `change`는 쓰기 전에 틀을 고친다 (에이전트의 만들기 + 연산, M5). 예외를 내면 파일을 만들지
+    않는다."""
     path = Path(path)
-    data = canonical_dumps(template(kind, title)).encode("utf-8")
+    value = template(kind, title)
+    if change is not None:
+        value = change(value)
+    data = canonical_dumps(value).encode("utf-8")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         # 배타적 생성: 확인과 쓰기 사이에 생긴 파일도 덮지 않는다

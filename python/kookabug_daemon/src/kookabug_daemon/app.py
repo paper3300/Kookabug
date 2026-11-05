@@ -26,7 +26,7 @@ import os
 import secrets
 import sys
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -87,6 +87,7 @@ EXIT_USAGE: Final = 6
 LOG_KEEP: Final = 20
 WATCH_INTERVAL_S: Final = 1.0
 """파일 변경 폴링 간격 (M2 계획 Q10)."""
+DEFAULT_AGENT_TOOLSETS: Final = frozenset({"core"})
 
 
 class NoRuns:
@@ -119,6 +120,8 @@ class DaemonConfig:
     """가짜 플랫폼 녹화가 흘릴 각본 JSONL (`--recorder-script`, 가짜 플랫폼일 때만)."""
     recorder_script_speed: float | None = 1.0
     """각본을 흘리는 빠르기 (`inf` = 기다리지 않음, None = 검사가 직접 흘림)."""
+    agent_toolsets: frozenset[str] = DEFAULT_AGENT_TOOLSETS
+    """agent 연결이 hello 때 갖는 툴셋 (M5 계획 D3: core). 검사 헬퍼만 바꾼다."""
 
 
 def plugin_registry(modules: tuple[str, ...]) -> Callable[[], Registry]:
@@ -216,6 +219,22 @@ class Daemon:
     @property
     def shutting_down(self) -> bool:
         return self._shutting_down
+
+    @property
+    def agent_toolsets(self) -> frozenset[str]:
+        return self.config.agent_toolsets
+
+    def connection_toolsets(self, connection: int) -> frozenset[str]:
+        conn = self.transport.find(connection)
+        return frozenset() if conn is None else conn.toolsets
+
+    def enable_toolsets(self, connection: int, toolsets: Iterable[str]) -> frozenset[str]:
+        """그 연결의 툴셋을 켠다 (이벤트 루프 안). 켠 뒤의 전체를 돌려준다."""
+        conn = self.transport.find(connection)
+        if conn is None:
+            return frozenset()
+        conn.toolsets = conn.toolsets | frozenset(toolsets)
+        return conn.toolsets
 
     @property
     def platform_fake(self) -> Path | None:

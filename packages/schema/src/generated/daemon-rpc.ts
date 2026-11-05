@@ -1,6 +1,13 @@
 /* 생성물 (packages/schema/*.schema.json → scripts/gen.mjs). 직접 고치지 않는다. */
 
 /**
+ * MCP 툴셋 (구현 계획 7장). core는 늘 켜져 있다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Toolset".
+ */
+export type Toolset = "control" | "core" | "graph_edit" | "observe" | "run" | "screens";
+/**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "ClientInfo".
  */
@@ -30,7 +37,7 @@ export type DaemonErrorCode = -32700 | -32600 | -32601 | -32602 | -32603 | -3210
  */
 export type DaemonErrorObject = DaemonStandardError | DaemonRequestFailedError;
 /**
- * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역)
+ * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RequestFailedCode".
@@ -89,7 +96,10 @@ export type RequestFailedCode =
   | "window_minimized"
   | "window_mismatch"
   | "window_not_foreground"
-  | "window_not_found";
+  | "window_not_found"
+  | "toolset_disabled"
+  | "force_not_allowed"
+  | "patch_invalid";
 /**
  * 실행 ID: 소문자·숫자 8자
  *
@@ -186,6 +196,29 @@ export type Revision = string;
  * via the `definition` "GraphValue".
  */
 export type GraphValue = {[key: string]: unknown};
+/**
+ * graph.patch 연산 하나 (M5 계획 3.4). 노드 ID는 바꿀 수 없다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "GraphPatchOp".
+ */
+export type GraphPatchOp =
+  | GraphPatchOpAddNode
+  | GraphPatchOpSetNode
+  | GraphPatchOpRemoveNode
+  | GraphPatchOpConnect
+  | GraphPatchOpDisconnect
+  | GraphPatchOpLink
+  | GraphPatchOpUnlink
+  | GraphPatchOpMove
+  | GraphPatchOpSetMeta;
+/**
+ * 노드 ID 또는 같은 묶음의 add_node ref
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "GraphPatchNodeRef".
+ */
+export type GraphPatchNodeRef = string;
 /**
  * 요청 순번 (graph.validate·target.preview). 응답이 같은 값을 돌려주고, 클라이언트는 마지막으로 보낸 seq의 응답만 쓴다
  *
@@ -335,6 +368,7 @@ export type Seq = number;
 export type ToolName =
   | "kb_graph_create"
   | "kb_graph_get"
+  | "kb_graph_list"
   | "kb_graph_patch"
   | "kb_graph_validate"
   | "kb_image_find"
@@ -346,6 +380,7 @@ export type ToolName =
   | "kb_run_status"
   | "kb_screen_capture"
   | "kb_target_create"
+  | "kb_toolset_enable"
   | "ui_only";
 
 /**
@@ -370,6 +405,39 @@ export interface AgentClientInfo {
   kind: "agent";
   name: string;
   version: string;
+}
+/**
+ * 툴셋을 켠다 (끄기는 없다). 켜도 각 도구의 권한 판정은 그대로다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "AgentToolsetsEnableParams".
+ */
+export interface AgentToolsetsEnableParams {
+  /**
+   * @minItems 1
+   */
+  toolsets: [Toolset, ...Toolset[]];
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "AgentToolsetsEnableResult".
+ */
+export interface AgentToolsetsEnableResult {
+  enabled: Toolset[];
+  /**
+   * 이번에 새로 쓸 수 있게 된 도구 이름 (권한 표 이름)
+   */
+  tools: string[];
+}
+/**
+ * 자기 연결의 켜진 툴셋 (M5 계획 D3). ui 연결은 툴셋과 무관해 모두 켜짐으로 답한다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "AgentToolsetsResult".
+ */
+export interface AgentToolsetsResult {
+  available: Toolset[];
+  enabled: Toolset[];
 }
 /**
  * debug.breakpoints.get·set 결과, debug.breakpoints.changed 알림 (다른 연결이 바꿨을 때)
@@ -436,7 +504,7 @@ export interface DaemonRequestFailedError {
   message: string;
 }
 /**
- * error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝)
+ * error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RequestFailedData".
@@ -451,6 +519,10 @@ export interface RequestFailedData {
     [k: string]: unknown | undefined;
   };
   diagnostics?: Diagnostic[];
+  /**
+   * patch_invalid: 틀린 연산의 순번 (0부터)
+   */
+  index?: number;
   line?: number | null;
   message?: string;
   owner?: LeaseOwner | null;
@@ -460,6 +532,7 @@ export interface RequestFailedData {
   run_id?: RunId;
   state?: RecorderState;
   steps?: RecorderStepId[];
+  toolset?: Toolset;
 }
 /**
  * 검증 진단 (kookabug_core.diagnostics.Diagnostic.to_dict)
@@ -577,6 +650,23 @@ export interface GraphChangedParams {
   revision: Revision | null;
 }
 /**
+ * 경로로 검증 (kb_graph_validate로 판정, M5). value가 없으면 디스크 값, 있으면 그 값(쓰지 않음)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "GraphCheckParams".
+ */
+export interface GraphCheckParams {
+  path: WorkspacePath;
+  value?: GraphValue;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "GraphCheckResult".
+ */
+export interface GraphCheckResult {
+  diagnostics: Diagnostic[];
+}
+/**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "GraphCloseParams".
  */
@@ -591,8 +681,152 @@ export interface GraphCloseParams {
  */
 export interface GraphCreateParams {
   kind: "subgraph" | "test";
+  /**
+   * 만들 틀에 적용할 graph.patch 연산 (M5). 틀리면 파일을 만들지 않는다
+   *
+   * @maxItems 1000
+   */
+  ops?: GraphPatchOp[];
   path: WorkspacePath;
   title?: string;
+}
+/**
+ * 새 노드. ID는 daemon이 만든다 (n_ + 8자)
+ */
+export interface GraphPatchOpAddNode {
+  config?: {
+    [k: string]: unknown | undefined;
+  };
+  in?: {
+    [k: string]: unknown | undefined;
+  };
+  op: "add_node";
+  position?: GraphPatchPosition;
+  /**
+   * 이 묶음 안 임시 이름 (결과 created에 ref → 새 ID)
+   */
+  ref: string;
+  title?: string;
+  type: string;
+  version?: number;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "GraphPatchPosition".
+ */
+export interface GraphPatchPosition {
+  x: number;
+  y: number;
+}
+/**
+ * 노드 고치기 (type·id는 바꿀 수 없다)
+ */
+export interface GraphPatchOpSetNode {
+  /**
+   * 키 단위 병합. 값이 null이면 그 키를 지운다
+   */
+  config?: {
+    [k: string]: unknown | undefined;
+  };
+  id: GraphPatchNodeRef;
+  /**
+   * 키 단위 병합. 값이 null이면 그 키를 지운다
+   */
+  in?: {
+    [k: string]: unknown | undefined;
+  };
+  op: "set_node";
+  record?: {
+    [k: string]: unknown | undefined;
+  } | null;
+  title?: string | null;
+}
+/**
+ * 노드와 그 노드를 가리키는 next·$link를 지운다
+ */
+export interface GraphPatchOpRemoveNode {
+  id: GraphPatchNodeRef;
+  op: "remove_node";
+}
+/**
+ * exec 연결 (next)
+ */
+export interface GraphPatchOpConnect {
+  exit: string;
+  from: GraphPatchNodeRef;
+  op: "connect";
+  to: GraphPatchNodeRef;
+}
+/**
+ * exec 연결 끊기
+ */
+export interface GraphPatchOpDisconnect {
+  exit: string;
+  from: GraphPatchNodeRef;
+  op: "disconnect";
+}
+/**
+ * 데이터 연결 ($link)
+ */
+export interface GraphPatchOpLink {
+  from: GraphPatchNodeRef;
+  op: "link";
+  output: string;
+  pin: string;
+  to: GraphPatchNodeRef;
+}
+/**
+ * 데이터 연결 끊기 (그 핀 값을 지운다)
+ */
+export interface GraphPatchOpUnlink {
+  op: "unlink";
+  pin: string;
+  to: GraphPatchNodeRef;
+}
+/**
+ * 레이아웃만
+ */
+export interface GraphPatchOpMove {
+  id: GraphPatchNodeRef;
+  op: "move";
+  position: GraphPatchPosition;
+}
+/**
+ * 그래프 머리 (null이면 지운다)
+ */
+export interface GraphPatchOpSetMeta {
+  description?: string | null;
+  op: "set_meta";
+  title?: string | null;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "GraphListEntry".
+ */
+export interface GraphListEntry {
+  kind?: "subgraph" | "test";
+  path: WorkspacePath;
+  problem?: string;
+  title?: string;
+}
+/**
+ * 그래프 파일 목록 (kb_graph_list로 판정, M5). 범위는 workspace.tree와 같다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "GraphListParams".
+ */
+export interface GraphListParams {
+  /**
+   * 이 폴더 아래만 (예: tests). 권한 인자
+   */
+  under?: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "GraphListResult".
+ */
+export interface GraphListResult {
+  graphs: GraphListEntry[];
 }
 /**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -612,6 +846,12 @@ export interface GraphOpenResult {
    * 원문이 canonical 형식인가
    */
   canonical: boolean;
+  /**
+   * graph.create ops의 add_node ref → 새 노드 ID (M5, ops를 줬을 때만)
+   */
+  created?: {
+    [k: string]: string | undefined;
+  };
   diagnostics: Diagnostic[];
   doc_id: DocId;
   /**
@@ -672,6 +912,52 @@ export interface OutputShape {
   name: string;
   nullable: boolean;
   type: string;
+}
+/**
+ * 경로로 그래프를 고친다 (M5 계획 3.4). 모두 적용하거나 하나도 안 한다. 디스크가 base_revision과 다르면 revision_conflict, 연산이 틀리면 patch_invalid, 적용한 값이 그래프 형식에 맞지 않으면 validation_failed
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "GraphPatchParams".
+ */
+export interface GraphPatchParams {
+  base_revision: Revision;
+  /**
+   * @minItems 1
+   * @maxItems 1000
+   */
+  ops: [GraphPatchOp, ...GraphPatchOp[]];
+  path: WorkspacePath;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "GraphPatchRemovedRef".
+ */
+export interface GraphPatchRemovedRef {
+  from: string;
+  /**
+   * next면 출구 이름, link면 핀 이름
+   */
+  key: string;
+  kind: "link" | "next";
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "GraphPatchResult".
+ */
+export interface GraphPatchResult {
+  /**
+   * add_node ref → 새 노드 ID
+   */
+  created: {
+    [k: string]: string | undefined;
+  };
+  diagnostics: Diagnostic[];
+  /**
+   * remove_node가 함께 지운 연결
+   */
+  removed_refs: GraphPatchRemovedRef[];
+  revision: Revision;
+  wrote: boolean;
 }
 /**
  * 값 전체 저장 (M2 계획 2.6). 디스크가 base_revision과 다르면 revision_conflict(force면 덮어씀). 수 규칙(number_out_of_range·number_not_finite)에 걸리면 validation_failed
@@ -763,6 +1049,18 @@ export interface MatchInfo {
  * via the `definition` "Methods".
  */
 export interface Methods {
+  "agent.toolsets.enable": {
+    params: AgentToolsetsEnableParams;
+    renderer: false;
+    result: AgentToolsetsEnableResult;
+    tool: "kb_toolset_enable";
+  };
+  "agent.toolsets.get": {
+    params: EmptyParams;
+    renderer: false;
+    result: AgentToolsetsResult;
+    tool: "kb_toolset_enable";
+  };
   "daemon.shutdown": {
     params: DaemonShutdownParams;
     renderer: false;
@@ -781,6 +1079,12 @@ export interface Methods {
     result: BreakpointsResult;
     tool: "ui_only";
   };
+  "graph.check": {
+    params: GraphCheckParams;
+    renderer: false;
+    result: GraphCheckResult;
+    tool: "kb_graph_validate";
+  };
   "graph.close": {
     params: GraphCloseParams;
     renderer: true;
@@ -793,11 +1097,23 @@ export interface Methods {
     result: GraphOpenResult;
     tool: "kb_graph_create";
   };
+  "graph.list": {
+    params: GraphListParams;
+    renderer: false;
+    result: GraphListResult;
+    tool: "kb_graph_list";
+  };
   "graph.open": {
     params: GraphOpenParams;
     renderer: true;
     result: GraphOpenResult;
     tool: "kb_graph_get";
+  };
+  "graph.patch": {
+    params: GraphPatchParams;
+    renderer: false;
+    result: GraphPatchResult;
+    tool: "kb_graph_patch";
   };
   "graph.save": {
     params: GraphSaveParams;

@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
@@ -90,6 +90,14 @@ class DaemonContext(Protocol):
 
     def request_shutdown(self, *, force: bool, reason: str) -> None: ...
 
+    def connection_toolsets(self, connection: int) -> frozenset[str]:
+        """그 연결의 켜진 툴셋 (M5 계획 D3)."""
+        ...
+
+    def enable_toolsets(self, connection: int, toolsets: Iterable[str]) -> frozenset[str]:
+        """그 연결의 툴셋을 켜고 켠 뒤 전체를 돌려준다."""
+        ...
+
     def breakpoints_changed(self, connection: int, breakpoints: list[dict[str, str]]) -> None:
         """브레이크포인트 목록이 바뀌었다: 바꾼 연결(`connection`) 말고 UI 연결들에 알린다
         (`debug.breakpoints.changed`, 이벤트 루프 안)."""
@@ -130,6 +138,7 @@ class MethodSpec:
 def registry() -> dict[str, MethodSpec]:
     """이 daemon이 처리하는 메서드. 계약에 있지만 여기 없는 메서드는 `method_not_found`다."""
     from kookabug_daemon.methods import (
+        agent,
         debug,
         graph,
         nodes,
@@ -143,6 +152,7 @@ def registry() -> dict[str, MethodSpec]:
     )
 
     return {
+        **agent.METHODS,
         **debug.METHODS,
         **recorder.METHODS,
         **secrets.METHODS,
