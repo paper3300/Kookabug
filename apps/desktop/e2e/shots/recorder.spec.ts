@@ -5,7 +5,7 @@
 //   recorder-paused-dark  일시정지 (시안 없음)
 //   recorder-stopped-dark 정지 뒤 다듬는 중 (상태 바 기본 색, 시안 없음)
 //   recorder-error-dark   오류로 멈춤 hook_lost (사이드바 빨간 띠, 시안 없음)
-// 결과 build/ui-shots/<이름>.png → node tools/design-ref/compare.mjs recorder
+// 결과 build/ui-shots/<이름>.png → node tools/design-ref/compare.mjs recorder recorder-idle recorder-paused recorder-stopped recorder-error
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";

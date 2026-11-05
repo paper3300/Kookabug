@@ -236,7 +236,8 @@ test("test_setting_and_secret_keys", async () => {
   await inspect(page, "n_enter_world");
   const password = field(page, "password");
   await expect(password).toHaveAttribute("data-mode", "secret");
-  const secretKey = password.getByRole("textbox", { name: "password 비밀 키" });
+  // 비밀 키 칸은 키 제안 목록(datalist)이 붙어 combobox 역할이다 (M4 B5)
+  const secretKey = password.getByRole("combobox", { name: "password 비밀 키" });
   await expect(secretKey).toHaveValue("accounts.qa_tester_01");
   await secretKey.fill("accounts.qa_tester_02");
   await secretKey.press("Enter");

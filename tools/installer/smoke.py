@@ -16,7 +16,8 @@
 4. `kookabug --version`(VERSION 파일과 같음), `kookabug doctor --profile headless --json`(전부 통과,
    설치본 Python·설치 폴더 VC++ 런타임), 예제 헤드리스 스모크 그래프 `kookabug run`(통과),
    영상(M3: 예제 사본을 영상 `on`으로 돌려 OS Media Foundation H.264 조각이 남음. 인코더가 없는
-   PC면 `unavailable`과 이유 — 실행은 그대로 통과)
+   PC면 `unavailable`과 이유 — 실행은 그대로 통과), 녹화기(M4: 훅 프로세스가 설치 트리 Python으로
+   떠 `hook.hello`까지, 입력 없이)
 5. 앱 스모크: 예제 워크스페이스 사본으로 `Kookabug.exe --smoke` (daemon 띄우기·session.hello·
    graph.open·graph.save 무수정 wrote: false·daemon.shutdown, 종료 코드 0). 끝난 뒤 설치 폴더에서
    돌던 프로세스(daemon)가 남지 않는다
@@ -865,6 +866,73 @@ def app_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
         shutil.rmtree(base, ignore_errors=True)
 
 
+_HOOK_SCRIPT: Final = (
+    "import json, sys, tempfile, time\n"
+    "from pathlib import Path\n"
+    "from kookabug_daemon.recorder_hook import HookClient, hook_command\n"
+    "stops = []\n"
+    "logs = Path(tempfile.mkdtemp(prefix='kb-hook-smoke-'))\n"
+    "client = HookClient(mono_base_ns=time.monotonic_ns(), on_update=lambda u: None,\n"
+    "                    on_stop=stops.append, logs_dir=logs)\n"
+    "out = {'command': hook_command()[0]}\n"
+    "try:\n"
+    "    hello = client.start(timeout=30)\n"
+    "    out['hello'] = {k: hello.get(k) for k in ('protocol', 'hooks', 'pid')}\n"
+    "    out['pid'] = client.pid\n"
+    "finally:\n"
+    "    client.stop()\n"
+    "process = client._process\n"
+    "out['exit'] = None if process is None else process.exit_code()\n"
+    "out['stops'] = [s.reason for s in stops]\n"
+    "err = logs / 'hook.stderr.log'\n"
+    "text = err.read_text(encoding='utf-8', errors='replace') if err.exists() else ''\n"
+    "out['stderr'] = text[-800:]\n"
+    "print(json.dumps(out, ensure_ascii=False))\n"
+)
+
+
+def recorder_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
+    """설치본 녹화기 (M4 계획 T13): 훅 프로세스가 설치 트리의 Python으로 떠 `hook.hello`(저수준
+    마우스·키보드 훅 걸림, 프로토콜 일치)까지 오고 정상으로 끝난다. 입력은 보내지 않는다 — 그 사이
+    사람이 친 키가 잡혀도 내용은 보지 않는다. 검사 표식 옵션(`KOOKABUG_TESTING`)은 뺀다."""
+    from kookabug_core.recorder.contract import HOOK_PROTOCOL
+
+    clean = {k: v for k, v in env.items() if k.upper() != "KOOKABUG_TESTING"}
+    python = root / "python" / "python.exe"
+    try:
+        proc = subprocess.run(
+            [str(python), "-X", "utf8", "-c", _HOOK_SCRIPT],
+            env=clean,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=RUN_TIMEOUT_S,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"설치본 Python을 실행하지 못했다: {exc}"
+    try:
+        body = json.loads(proc.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError) as exc:
+        return False, f"결과를 읽지 못했다 ({exc}): {proc.stdout[-800:]} {proc.stderr[-1500:]}"
+    hello = body.get("hello") or {}
+    command = Path(str(body.get("command", "")))
+    in_tree = same_file(str(command), python)
+    ok = (
+        in_tree
+        and hello.get("protocol") == HOOK_PROTOCOL
+        and hello.get("hooks") == {"mouse": True, "keyboard": True}
+        and hello.get("pid") == body.get("pid")
+        and body.get("exit") == 0
+        and not body.get("stops")
+    )
+    return ok, (
+        f"훅 명령 {command} (설치 트리={in_tree}), hello {hello}, 종료 코드 {body.get('exit')}, "
+        f"멈춤 {body.get('stops')}, stderr {body.get('stderr')!r}"
+    )
+
+
 def dll_step(root: Path) -> tuple[bool, str]:
     report = dllcheck.check_tree(root)
     if report.problems:
@@ -891,6 +959,7 @@ def smoke_installed(report: SmokeReport) -> None:
     report.step("cli.doctor_headless", lambda: doctor_step(root, env))
     report.step("cli.smoke_graph", lambda: graph_step(root, env))
     report.step("cli.video", lambda: video_step(root, env))
+    report.step("recorder.hook", lambda: recorder_step(root, env))
     report.step("app.smoke", lambda: app_step(root, env))
     report.step("dll.check", lambda: dll_step(root))
 

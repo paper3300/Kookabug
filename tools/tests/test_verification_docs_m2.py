@@ -52,6 +52,11 @@ M3_SCREENS: Final = frozenset(
     }
 )
 """M3에서 늘린 비교 화면 (M3 계획 T9~T11). M2 절차서가 아니라 M3 절차서(T12)가 맡는다."""
+M4_SCREENS: Final = frozenset(
+    {"recorder", "recorder-idle", "recorder-paused", "recorder-stopped", "recorder-error"}
+    | {"target-ext"}
+)
+"""M4에서 늘린 비교 화면 (M4 계획 2.14). M4 절차서(T13)가 맡는다."""
 
 
 def compare_screens() -> list[str]:
@@ -66,7 +71,7 @@ def compare_screens() -> list[str]:
         assert found is not None, spec
         shot.update(found.group(1).split())
     assert shot <= set(ids), shot - set(ids)
-    return [i for i in ids if i in shot and i not in M3_SCREENS]
+    return [i for i in ids if i in shot and i not in M3_SCREENS | M4_SCREENS]
 
 
 def test_sections_and_result_rows_match() -> None:
