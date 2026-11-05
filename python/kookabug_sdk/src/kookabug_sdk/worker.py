@@ -323,11 +323,12 @@ class WorkerContext:
         self.check_cancel()
         if ms < 0:
             raise ValueError(f"sleep 시간은 0 이상이다: {ms}")
-        remaining = self._run_end - self._clock.now_ms()
-        if self._cancel.wait(min(ms, max(remaining, 0)) / 1000):
-            self.check_cancel()
-        if ms >= remaining:
-            raise RunDeadline("테스트 전체 기한을 넘었다")
+        # 기한 판정은 check_cancel과 같은 시계 하나로 한다. Event.wait는 타이머 해상도 때문에
+        # 조금 일찍 깰 수 있어서, 목표 시각에 닿을 때까지 남은 만큼 다시 기다린다
+        end = min(self._clock.now_ms() + ms, self._run_end)
+        while (left := end - self._clock.now_ms()) > 0:
+            if self._cancel.wait(left / 1000):
+                break
         self.check_cancel()
 
     def check_cancel(self) -> None:

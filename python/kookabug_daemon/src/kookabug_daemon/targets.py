@@ -500,11 +500,12 @@ def _scale_score(
         )
         result = _vision(image).find(pixels, meta, TargetSpec.of(target))
     shown = result.match if result.match is not None else result.best
+    # 기본 결과(`result_json`)와 같은 자릿수로 낸다: 1.0배 줄이 match 점수와 똑같아야 한다
     return {
         "factor": factor,
         "found": result.found,
-        "score": None if shown is None else shown.score,
-        "scale": None if shown is None else shown.scale,
+        "score": None if shown is None else round(shown.score, 4),
+        "scale": None if shown is None else round(shown.scale, 4),
     }
 
 

@@ -674,17 +674,18 @@ def test_stuck_encoder_video_omitted_and_cleaned_by_supervisor(
 # ---------------------------------------------------------------- 6. 기록 끈 구간은 영상에도 없음
 
 
-def hidden_tree() -> tuple[GraphBuilder, dict[str, GraphBuilder]]:
+def hidden_tree(seen_ms: int = DELAY) -> tuple[GraphBuilder, dict[str, GraphBuilder]]:
     """a → 비밀값 호출(c: 비밀값 직접, d: 일반 대기, 중첩 호출 e) → b → 영상 끈 서브그래프(f) → h.
 
-    비밀값 호출·영상 끈 서브그래프 구간의 장면(c·d·e·f)은 어느 조각에도 없어야 한다."""
+    비밀값 호출·영상 끈 서브그래프 구간의 장면(c·d·e·f)은 어느 조각에도 없어야 한다. `seen_ms`는
+    보여야 하는 장면(a·b·h)을 띄워 두는 시간이다."""
     g = tk().entry("n_launch")
     launch(g, "n_launch", "n_a")
-    show(g, "n_a", "a", "n_call")
+    show(g, "n_a", "a", "n_call", ms=seen_ms)
     g.call("n_call", SUB, inputs={"pw": secret("acc.pw")}, next={"done": "n_b"})
-    show(g, "n_b", "b", "n_off")
+    show(g, "n_b", "b", "n_off", ms=seen_ms)
     g.call("n_off", "subgraphs/off.graph.json", next={"done": "n_h"})
-    show(g, "n_h", "h", "n_pass")
+    show(g, "n_h", "h", "n_pass", ms=seen_ms)
     g.node("n_pass", "core.test.pass")
 
     sub = tk("subgraph", interface=subgraph_interface(inputs={"pw": "secret"})).entry("n_c")
@@ -776,8 +777,8 @@ def classify_flash() -> Callable[[dict[str, Any], Any, Any], None]:
     return on_event("step.start", "n_call", flash)
 
 
-def flash_run(tmp_path: Path, **kw: Any) -> Any:
-    g, subs = hidden_tree()
+def flash_run(tmp_path: Path, seen_ms: int = DELAY, **kw: Any) -> Any:
+    g, subs = hidden_tree(seen_ms)
     return run_video(
         tmp_path,
         g,
@@ -816,8 +817,12 @@ def test_flash_check_fails_without_pending_block(
 
 @pytest.mark.media
 def test_record_off_and_secret_spans_absent_from_decoded_mp4(tmp_path: Path) -> None:
-    # media: 같은 실행을 실제 H.264 조각으로 쓰고 모든 조각을 디코드해 장면을 대조한다
-    ran = flash_run(tmp_path, factory=MsmfFactory(), decode=decode_image, stop_grace_s=30.0)
+    # media: 같은 실행을 실제 H.264 조각으로 쓰고 모든 조각을 디코드해 장면을 대조한다.
+    # 빈 구간 뒤 새 조각의 첫 프레임은 MSMF 쓰기 열기만큼 늦을 수 있어(설계상 2초까지 허용) 느린
+    # 러너에서 0.6초 장면은 통째로 빠진다 (CI 0455c4e: {'b'}뿐) — 보여야 할 장면을 2.5초 띄운다
+    ran = flash_run(
+        tmp_path, seen_ms=2500, factory=MsmfFactory(), decode=decode_image, stop_grace_s=30.0
+    )
     assert ran.result.verdict == "pass", ran.result.reason
     assert ran.writer_done, "녹화 스레드가 정지 유예 안에 끝나지 않았다 (MSMF 마무리 지연)"
     assert ran.index is not None and ran.index["segments"]

@@ -596,8 +596,10 @@ def test_failure_video_kept_with_ten_second_encoder_preparation(
         assert not [g for g in index["gaps"] if g["gap"] == "starting"], index
         assert FINISHING not in h.stderr()
     else:
-        # 사전 대기는 남은 기한의 절반에서 끊기고, 실행은 준비보다 먼저 끝났다
-        assert ts(launch_start["t"]) - run_start < 6.0, (launch_start, run_start)
+        # 사전 대기는 남은 기한의 절반에서 끊기고, 실행은 준비보다 먼저 끝났다. 절반(5초) 앞에
+        # run.start 뒤 플랫폼 준비가 붙어 느린 러너에서 1초 넘게 걸린다 (CI 0455c4e 6.31초) —
+        # 60초 기한 쪽 하한 8초와 겹치지 않는 데까지 연다
+        assert ts(launch_start["t"]) - run_start < 7.5, (launch_start, run_start)
         assert ts(done.run_end["t"]) - run_start < 9.5, done.run_end
         assert FINISHING in h.stderr()
         assert granted(h) and granted(h)[0]["granted"] is True
