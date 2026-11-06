@@ -138,7 +138,7 @@ export type DaemonErrorCode = -32700 | -32600 | -32601 | -32602 | -32603 | -3210
  */
 export type DaemonErrorObject = DaemonStandardError | DaemonRequestFailedError;
 /**
- * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다)
+ * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RequestFailedCode".
@@ -213,7 +213,16 @@ export type RequestFailedCode =
   | "approval_timeout"
   | "always_not_allowed"
   | "settings_invalid"
-  | "recorder_store_unclean";
+  | "recorder_store_unclean"
+  | "plugin_failed"
+  | "op_not_found";
+/**
+ * 플러그인 작업 ID (= 설치 거래 ID, 작업 로그 이름)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginOpId".
+ */
+export type PluginOpId = string;
 /**
  * 녹화 세션 상태: idle → starting → recording ⇄ paused → stopped → committing → committed | stopped, 또는 discarded. 오류로 멈춤(hook_lost·input_overflow·window_gone·storage_full)도 stopped (stop_reason)
  *
@@ -313,12 +322,33 @@ export type GraphPatchNodeRef = string;
  */
 export type RequestSeq = number;
 /**
+ * ready 준비됨 · missing 환경 없음([준비…]) · stale 조건(Python·SDK)이 앱과 다름([다시 잠그기…]) · broken 환경이 깨짐([준비…]로 새로)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginEnvStatus".
+ */
+export type PluginEnvStatus = "ready" | "missing" | "stale" | "broken";
+/**
  * 권한 판정 값
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "PermissionVerdict".
  */
 export type PermissionVerdict = "allow" | "ask" | "deny";
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginOpKind".
+ */
+export type PluginOpKind = "install" | "upgrade" | "remove" | "sync" | "relock" | "gc";
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginIsolation".
+ */
+export type PluginIsolation = "auto" | "shared" | "isolated";
+/**
+ * 그래프 파일 revision: 디스크 바이트의 sha256 hex
+ */
+export type Revision1 = string;
 /**
  * 커밋 토큰 (commit_prepare가 주고 commit_finish·commit_abort가 받는다)
  *
@@ -841,7 +871,7 @@ export interface DaemonRequestFailedError {
   message: string;
 }
 /**
- * error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message. M5 B3: approval_required → decision·reason
+ * error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message. M5 B3: approval_required → decision·reason. M6: plugin_failed → plugin_error, op_not_found → op_id
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RequestFailedData".
@@ -862,8 +892,10 @@ export interface RequestFailedData {
   index?: number;
   line?: number | null;
   message?: string;
+  op_id?: string;
   owner?: LeaseOwner | null;
   path?: string;
+  plugin_error?: PluginErrorInfo;
   protocol?: number;
   /**
    * approval_required: no_approver(사람 연결 없음). M6: permission_denied: dev_modules_agent(개발 모듈 daemon의 에이전트 실행)
@@ -919,6 +951,23 @@ export interface LeaseDevice {
    */
   input_log?: string;
   kind: "fake" | "none" | "windows";
+}
+/**
+ * 플러그인 작업 오류 요약 (kookabug_core.plugins.PluginError.to_json — 인증 정보를 가린 값). code는 설치 거래 오류 코드(M6 3.5)·plugin_busy·internal_error, 원문은 작업 로그(.kookabug/plugins/logs/<op_id>.log)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginErrorInfo".
+ */
+export interface PluginErrorInfo {
+  code: string;
+  conflicts?: string[];
+  env?: string;
+  message: string;
+  op_id?: PluginOpId;
+  packages?: string[];
+  plugin?: string;
+  stage: null | string;
+  [k: string]: unknown | undefined;
 }
 /**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -1560,6 +1609,60 @@ export interface Methods {
     result: PermissionsSetResult;
     tool: "ui_only";
   };
+  "plugins.cancel": {
+    params: PluginsOpIdParams;
+    renderer: true;
+    result: EmptyResult;
+    tool: "ui_only";
+  };
+  "plugins.gc": {
+    params: EmptyParams;
+    renderer: true;
+    result: PluginsOpResult;
+    tool: "ui_only";
+  };
+  "plugins.install": {
+    params: PluginsOpIdParams;
+    renderer: true;
+    result: PluginsOpResult;
+    tool: "ui_only";
+  };
+  "plugins.list": {
+    params: EmptyParams;
+    renderer: true;
+    result: PluginsListResult;
+    tool: "kb_project_info";
+  };
+  "plugins.preview": {
+    params: PluginsPreviewParams;
+    renderer: true;
+    result: PluginsPreviewResult;
+    tool: "ui_only";
+  };
+  "plugins.relock": {
+    params: EmptyParams;
+    renderer: true;
+    result: PluginsOpResult;
+    tool: "ui_only";
+  };
+  "plugins.remove": {
+    params: PluginsRemoveParams;
+    renderer: true;
+    result: PluginsOpResult;
+    tool: "ui_only";
+  };
+  "plugins.sync": {
+    params: PluginsSyncParams;
+    renderer: true;
+    result: PluginsOpResult;
+    tool: "ui_only";
+  };
+  "plugins.upgrade": {
+    params: PluginsUpgradeParams;
+    renderer: true;
+    result: PluginsPreviewResult;
+    tool: "ui_only";
+  };
   "recorder.commit_abort": {
     params: RecorderCommitTokenParams;
     renderer: true;
@@ -1862,18 +1965,33 @@ export interface Methods {
   };
 }
 /**
- * 팔레트: 레지스트리의 플러그인마다 노드 스키마 문서 하나 (kookabug_core.palette.export)
+ * 팔레트: 레지스트리의 플러그인마다 노드 스키마 문서 하나 (kookabug_core.palette.export). M6: plugins = 설치 플러그인 요약 (잠금이 없거나 깨졌으면 빈 목록)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "NodesListResult".
  */
 export interface NodesListResult {
+  plugins?: PluginInstalled[];
   /**
    * Items: 노드 스키마 문서 (node-schema 형식 kookabug.nodes/0 그대로)
    */
   schemas: {
     [k: string]: unknown | undefined;
   }[];
+}
+/**
+ * nodes.list의 설치 플러그인 요약 (kb_node_search가 노드마다 보인다)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginInstalled".
+ */
+export interface PluginInstalled {
+  env: string;
+  env_status: PluginEnvStatus;
+  id: string;
+  permissions: string[];
+  title?: string;
+  version: string;
 }
 /**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -1969,6 +2087,188 @@ export interface PermissionsSetParams {
  */
 export interface PermissionsSetResult {
   revision: Revision;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginsOpIdParams".
+ */
+export interface PluginsOpIdParams {
+  op_id: PluginOpId;
+}
+/**
+ * 작업을 시작했다. 진행은 plugins.progress, 끝은 plugins.done
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginsOpResult".
+ */
+export interface PluginsOpResult {
+  op_id: PluginOpId;
+}
+/**
+ * 플러그인 목록 (M6 3.8, 읽기만). lock_sha256 = 정규 잠금 해시 — 준비(plugins.sync)에 그대로 넘긴다. trusted = 이 PC에서 신뢰 확인한 잠금
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginsListResult".
+ */
+export interface PluginsListResult {
+  busy: PluginJob | null;
+  environments: {
+    [k: string]: PluginEnvInfo | undefined;
+  };
+  gc_candidates: PluginGcCandidates;
+  lock_sha256: Revision | null;
+  plugins: PluginListEntry[];
+  /**
+   * 잠금 파일 revision (plugins.remove의 base_revision)
+   */
+  revision: Revision | null;
+  stale_reason: null | string;
+  trusted: boolean;
+}
+/**
+ * 이 daemon에서 진행 중인 플러그인 작업 (waiting = 미리보기가 승인을 기다림). 승인을 기다리는 미리보기의 op_id는 그 미리보기를 연 연결에만 보이고 다른 연결에는 null (승인·취소는 연 연결만)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginJob".
+ */
+export interface PluginJob {
+  kind: PluginOpKind;
+  op_id: PluginOpId | null;
+  stage: null | string;
+  waiting: boolean;
+}
+/**
+ * 잠금의 환경 하나의 상태 (M6 3.8). folder = runner가 고를 폴더 이름 (검증 없이 찾은 것)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginEnvInfo".
+ */
+export interface PluginEnvInfo {
+  folder: null | string;
+  plugins: string[];
+  status: PluginEnvStatus;
+}
+/**
+ * gc가 지울 후보 이름 (표시용 — 실제 gc는 검증한 선택으로 다시 판정한다)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginGcCandidates".
+ */
+export interface PluginGcCandidates {
+  envs: string[];
+  staging: string[];
+  wheels: string[];
+}
+/**
+ * 잠금의 플러그인 항목(plugin-lock LockPlugin) + 환경 상태 + 노드 (커밋된 wheel의 스키마)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginListEntry".
+ */
+export interface PluginListEntry {
+  conflicts?: string[];
+  dist?: string;
+  env: string;
+  env_status: PluginEnvStatus;
+  id: string;
+  isolated_because?: null | string;
+  /**
+   * 잠금의 manifest (title·modules·permissions·min_core·isolation·ui)
+   */
+  manifest: {
+    [k: string]: unknown | undefined;
+  };
+  nodes: PluginNodeInfo[];
+  requires?: string[];
+  schema_sha256?: string;
+  /**
+   * 원천 출처 (git·wheel·path — 인증 정보 없음)
+   */
+  source: {
+    [k: string]: unknown | undefined;
+  };
+  version: string;
+  wheel?: string;
+  wheel_sha256?: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginNodeInfo".
+ */
+export interface PluginNodeInfo {
+  effects: string[];
+  title?: string;
+  type: string;
+}
+/**
+ * 원천: git+<url>[@ref] · *.whl 경로·https URL(sha256 필수) · 폴더. 받고 정적으로 읽기만 한다 (코드 실행 없음)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginsPreviewParams".
+ */
+export interface PluginsPreviewParams {
+  isolation?: PluginIsolation;
+  ref?: string;
+  sha256?: string;
+  source: string;
+}
+/**
+ * 신뢰 확인 재료 (설치 거래 ①②). expires_in_s 안에 plugins.install {op_id}로 승인, plugins.cancel로 취소. untrusted = 이 PC에서 신뢰 확인하지 않은 잠금이면 함께 신뢰할 기존 플러그인 ID 전체
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginsPreviewResult".
+ */
+export interface PluginsPreviewResult {
+  dependencies: string[];
+  dist: string;
+  expires_in_s: number;
+  id: string;
+  isolation: PluginIsolation;
+  op_id: PluginOpId;
+  permissions: string[];
+  /**
+   * upgrade면 바꾸는 판
+   */
+  replaces: null | string;
+  /**
+   * 원천 출처 (인증 정보 없음)
+   */
+  source: {
+    [k: string]: unknown | undefined;
+  };
+  title: null | string;
+  untrusted: string[];
+  version: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginsRemoveParams".
+ */
+export interface PluginsRemoveParams {
+  /**
+   * 확인할 때 본 잠금 revision (plugins.list). null = 확인할 때 잠금이 없었다 (비교 생략이 아님). 거래 안에서 읽은 잠금과 null까지 비교해 다르면 revision_conflict
+   */
+  base_revision: Revision | null;
+  id: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginsSyncParams".
+ */
+export interface PluginsSyncParams {
+  lock_sha256: Revision1;
+}
+/**
+ * 잠금의 원천을 다시 받아 미리보기 (plugins.preview와 같은 흐름 — plugins.install {op_id}로 승인)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginsUpgradeParams".
+ */
+export interface PluginsUpgradeParams {
+  id: string;
+  isolation?: PluginIsolation;
+  ref?: string;
+  sha256?: string;
 }
 /**
  * recorder.commit_abort: 그래프 단계가 실패 → stopped로 돌아가 다른 이름·위치로 다시 commit_prepare (써진 target 재사용)
@@ -3289,6 +3589,15 @@ export interface Notifications {
   "lease.changed": {
     params: LeaseChangedParams;
   };
+  "plugins.changed": {
+    params: PluginsChangedParams;
+  };
+  "plugins.done": {
+    params: PluginsDoneParams;
+  };
+  "plugins.progress": {
+    params: PluginsProgressParams;
+  };
   "recorder.changed": {
     params: RecorderChangedParams;
   };
@@ -3304,6 +3613,44 @@ export interface Notifications {
   "workspace.changed": {
     params: WorkspaceChangedParams;
   };
+}
+/**
+ * kookabug.lock이 바뀌었다 (daemon 작업이든 밖에서든). daemon은 레지스트리를 다시 만들었다 — nodes.list·검증을 다시 부른다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginsChangedParams".
+ */
+export interface PluginsChangedParams {
+  /**
+   * 잠금 파일 바이트 sha256 (없어졌으면 null)
+   */
+  revision: Revision | null;
+}
+/**
+ * 플러그인 작업이 끝났다 (ui 연결에만). ok가 거짓이면 error, 참이면 result (작업별 결과)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginsDoneParams".
+ */
+export interface PluginsDoneParams {
+  error?: PluginErrorInfo;
+  kind: PluginOpKind;
+  ok: boolean;
+  op_id: PluginOpId;
+  result?: {
+    [k: string]: unknown | undefined;
+  };
+}
+/**
+ * 플러그인 작업 진행 (ui 연결에만). stage = 거래 단계 (kookabug_core.plugins.STAGES)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginsProgressParams".
+ */
+export interface PluginsProgressParams {
+  message: string;
+  op_id: PluginOpId;
+  stage: string;
 }
 /**
  * recorder.changed: 녹화 상태·스텝이 바뀜. 소유 연결에는 rev·counts·warnings도 (스텝 목록은 rev로 recorder.steps를 다시 부른다), 다른 연결에는 state만. 글자는 싣지 않는다. session은 그 알림의 녹화 세션(idle이면 없음) — 받는 쪽은 아는 지금 세션과 다른 알림으로 상태를 바꾸지 않는다 (M5 SECFIX)

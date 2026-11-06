@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import enum
 import hashlib
 from collections.abc import Callable
 from pathlib import Path
@@ -21,6 +22,8 @@ from kookabug_core.schema import check_shape
 
 __all__ = [
     "LOCK_FORMAT",
+    "UNCHECKED",
+    "Unchecked",
     "dumps_lock",
     "lock_sha256",
     "parse_lock",
@@ -30,6 +33,16 @@ __all__ = [
 ]
 
 LOCK_FORMAT: Final = "kookabug.lock/0"
+
+
+class Unchecked(enum.Enum):
+    """확인 인자(사람이 본 잠금 revision·해시)를 비교하지 않는다는 표시. 명시적 None("확인할 때
+    잠금이 없었다")과 다르다 — None도 거래 안에서 읽은 값과 비교한다."""
+
+    UNCHECKED = enum.auto()
+
+
+UNCHECKED: Final = Unchecked.UNCHECKED
 
 
 def revision_of(data: bytes | None) -> str | None:

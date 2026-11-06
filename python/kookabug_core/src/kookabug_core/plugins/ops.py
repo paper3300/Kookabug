@@ -39,7 +39,14 @@ from kookabug_core.plugins import envs as envs_mod
 from kookabug_core.plugins import sources, trust
 from kookabug_core.plugins.errors import PluginError
 from kookabug_core.plugins.layout import Layout
-from kookabug_core.plugins.lockfile import LOCK_FORMAT, lock_sha256, read_lock, write_lock
+from kookabug_core.plugins.lockfile import (
+    LOCK_FORMAT,
+    UNCHECKED,
+    Unchecked,
+    lock_sha256,
+    read_lock,
+    write_lock,
+)
 from kookabug_core.plugins.manifest import (
     SDK_DIST,
     Manifest,
@@ -62,7 +69,7 @@ from kookabug_core.win import Job
 from kookabug_core.workspace import Workspace
 from kookabug_sdk import _faults
 
-__all__ = ["SDK_WHEEL_ENV", "STAGES", "AppInfo", "PluginOps", "Preview"]
+__all__ = ["SDK_WHEEL_ENV", "STAGES", "UNCHECKED", "AppInfo", "PluginOps", "Preview"]
 
 SDK_WHEEL_ENV: Final = "KOOKABUG_SDK_WHEEL"
 STAGES: Final = (
@@ -231,8 +238,12 @@ class PluginOps:
         app: AppInfo | None = None,
         fault: Callable[[str], None] | None = None,
         worker_timeout_s: float = WORKER_TIMEOUT_S,
+        op_id: str | None = None,
     ) -> None:
+        """`fault(단계)`: 거래 단계마다 불린다 (검사의 고장 주입, daemon의 진행 알림). `op_id`:
+        거래 ID를 정해 준다 (daemon 작업 ID = 작업 로그 이름). 없으면 거래마다 새로."""
         self.root = Path(root).resolve()
+        self.op_id = op_id
         self.layout = Layout(self.root)
         self.environ = dict(os.environ if environ is None else environ)
         self._app = app
@@ -306,7 +317,7 @@ class PluginOps:
         """busy.lock + ⓪ staging 정리 + 설치 작업 Job. 실패하면 이 작업의 staging만 지운다."""
         with self.layout.busy():
             remove_tree(self.layout.staging)  # ⓪ 남은 staging (staging/ 아래만)
-            op_id = uuid.uuid4().hex
+            op_id = self.op_id or uuid.uuid4().hex
             staging = self.layout.staging / op_id
             staging.mkdir(parents=True)
             job = Job.create()
@@ -975,13 +986,24 @@ class PluginOps:
     # ------------------------------------------------------------ remove
 
     def remove(
-        self, plugin_id: str, *, confirm: Callable[[dict[str, Any]], bool]
+        self,
+        plugin_id: str,
+        *,
+        confirm: Callable[[dict[str, Any]], bool],
+        base_revision: str | Unchecked | None = UNCHECKED,
     ) -> dict[str, Any]:
         """잠금에서 빼고 바꿔 넣는다. 공유에서 빼면 남은 플러그인 + 기존 판으로 새 지문 공유 환경을
-        ⑦로 고른다 (해석·빌드 없음). wheel·폴더는 gc가 치운다."""
+        ⑦로 고른다 (해석·빌드 없음). wheel·폴더는 gc가 치운다. `base_revision`(사람이 본 잠금의
+        revision, 잠금이 없었으면 **명시적 None**)을 주면 거래 안에서 읽은 지금 잠금이 그것일
+        때만 (아니면 `revision_conflict`). 생략(`UNCHECKED`)만 비교하지 않는다 (CLI: 거래 안
+        확인)."""
         with self._transaction() as (op_id, staging, runner):
             with self.layout.op():
                 lock, revision = read_lock(self.layout.lock)
+            if base_revision is not UNCHECKED and base_revision != revision:
+                raise PluginError(
+                    "revision_conflict", "확인한 뒤 kookabug.lock이 바뀌었다", stage="check"
+                )
             entry = next((p for p in (lock or {}).get("plugins", []) if p["id"] == plugin_id), None)
             if lock is None or entry is None:
                 raise PluginError("plugin_not_found", f"플러그인 {plugin_id}이(가) 없다")
@@ -1027,16 +1049,34 @@ class PluginOps:
     # ------------------------------------------------------------ list·verify
 
     def status(self) -> dict[str, Any]:
-        """`list`: 잠금 항목 + 환경 상태(`ready`·`missing`·`stale`). digest는 다시 계산하지
-        않는다."""
-        lock, revision = self.read_lock()
+        """`list`: 잠금 항목 + 환경 상태(`ready`·`missing`·`stale`·`broken`). digest는 다시
+        계산하지 않는다 (읽기만 — 잠금이 없으면 잠금 파일도 만들지 않는다). `lock_sha256`·
+        `trusted`는 준비(sync) 확인 재료."""
+        lock, revision = self.read_lock() if self.layout.lock.is_file() else (None, None)
         if lock is None:
-            return {"revision": None, "plugins": [], "environments": {}, "stale_reason": None}
-        stale = self.app.stale_reason(lock)
+            return {
+                "revision": None,
+                "plugins": [],
+                "environments": {},
+                "stale_reason": None,
+                "lock_sha256": None,
+                "trusted": True,
+            }
+        try:
+            stale = self.app.stale_reason(lock)
+        except PluginError as exc:  # 앱의 SDK wheel을 찾지 못함: 이 앱으로는 쓸 수 없다
+            stale = exc.message
+        current = lock_sha256(lock)
         environments: dict[str, Any] = {}
         for name, env in lock["environments"].items():
-            folder = envs_mod.find_env(self.layout.envs, name, env["fingerprint"])
-            status = "stale" if stale else ("ready" if folder is not None else "missing")
+            fp = env["fingerprint"]
+            folder = envs_mod.find_env(self.layout.envs, name, fp)
+            if stale:
+                status = "stale"
+            elif folder is not None:
+                status = "ready"
+            else:
+                status = "broken" if envs_mod.broken_of(self.layout.envs, name, fp) else "missing"
             environments[name] = {
                 "status": status,
                 "folder": None if folder is None else folder.name,
@@ -1051,6 +1091,8 @@ class PluginOps:
             "plugins": plugins,
             "environments": environments,
             "stale_reason": stale,
+            "lock_sha256": current,
+            "trusted": trust.is_trusted(self.root, current),
         }
 
     def verify(self) -> dict[str, Any]:
@@ -1116,9 +1158,10 @@ class PluginOps:
         self,
         *,
         confirm: Callable[[dict[str, Any]], bool],
-        lock_sha256: str | None = None,
+        lock_sha256: str | Unchecked | None = UNCHECKED,
     ) -> dict[str, Any]:
-        """잠금 → 환경 (`sync.py`). 잠금 파일을 쓰지 않는다."""
+        """잠금 → 환경 (`sync.py`). 잠금 파일을 쓰지 않는다. `lock_sha256`: 사람이 확인한 정규
+        잠금 해시(잠금이 없었으면 명시적 None) — 생략만 비교하지 않는다."""
         from kookabug_core.plugins.sync import sync
 
         return sync(self, confirm=confirm, expected_sha256=lock_sha256)

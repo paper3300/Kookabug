@@ -36,6 +36,7 @@ __all__ = [
     "RunPlugins",
     "acquire",
     "check_hello",
+    "inspect",
     "installed_schemas",
     "marker_name",
     "release_markers",
@@ -212,13 +213,21 @@ def acquire(
         if fault is not None:
             fault("marked")
         return result
+    # 재시도를 다 썼다: 마지막에 읽은 잠금으로 검증 진단만 낸다 (워커 없음). 잠금 해시는 그 잠금의
+    # 것을 남기고(run.json 형식), 노드는 커밋된 wheel의 스키마로 등록하게 한다
+    # (unknown_node_type 없음)
     message = "kookabug.lock이 실행을 준비하는 동안 계속 바뀌었다"
-    if last is not None:
-        last.envs = []
-    return RunPlugins(
-        lock_bytes=None if last is None else last.lock_bytes,
+    assert last is not None  # 반복은 한 번 이상 돈다
+    failed = RunPlugins(
+        lock_bytes=last.lock_bytes,
+        lock_sha256=last.lock_sha256,
+        versions=last.versions,
         problems=[Problem("plugin_env_missing", pid, message) for pid in sorted(wanted)],
     )
+    if last.lock_bytes is not None:
+        entries = parse_lock(last.lock_bytes)["plugins"]
+        failed.unready.update(_schemas(layout, [e for e in entries if e["id"] in wanted]))
+    return failed
 
 
 def _mark(result: RunPlugins, ident: ProcessId) -> bool:
@@ -382,6 +391,50 @@ def installed_schemas(root: Path) -> dict[str, dict[str, Any]]:
     except PluginError:
         return {}
     return _schemas(layout, lock["plugins"])
+
+
+def inspect(
+    root: Path, used: Iterable[str], *, stale: Callable[[Mapping[str, Any]], str | None]
+) -> tuple[list[Problem], dict[str, str]]:
+    """편집기 사전 검증용 (daemon): `acquire`와 같은 판정을 **읽기만으로** — op.lock·사용 표식·
+    digest 재계산·깨짐 기록 없음 (완성 표식의 지문만 본다). 실행은 runner가 다시 검증한다.
+    `stale(잠금)`: 조건(D10)이 앱과 다르면 이유. (문제, 잠금의 플러그인 판)."""
+    wanted = set(used)
+    if not wanted:
+        return [], {}
+    layout = Layout(Path(root))
+    data = _read(layout.lock)
+    if data is None:
+        return _not_installed(wanted), {}
+    try:
+        lock = parse_lock(data)
+    except PluginError as exc:
+        return [Problem("plugin_env_missing", pid, exc.message) for pid in sorted(wanted)], {}
+    entries = {str(p["id"]): p for p in lock["plugins"]}
+    versions = {pid: str(e["version"]) for pid, e in entries.items()}
+    problems = _not_installed(wanted - entries.keys())
+    installed = sorted(wanted & entries.keys())
+    if installed and (reason := stale(lock)) is not None:
+        message = "{pid}: " + reason + ". 이 앱으로 쓰려면 kookabug plugin relock (사람이 확인)"
+        problems += [Problem("plugin_env_stale", pid, message.format(pid=pid)) for pid in installed]
+        return problems, versions
+    for pid in installed:
+        name = str(entries[pid]["env"])
+        env = lock["environments"].get(name)
+        if env is None or envs_mod.find_env(layout.envs, name, env["fingerprint"]) is None:
+            why = (
+                "이(가) 깨졌다"
+                if env is not None and envs_mod.broken_of(layout.envs, name, env["fingerprint"])
+                else "이(가) 준비되지 않았다"
+            )
+            problems.append(
+                Problem(
+                    "plugin_env_missing",
+                    pid,
+                    f"{pid}의 환경 {name}{why} (플러그인 화면의 [준비…] 또는 kookabug plugin sync)",
+                )
+            )
+    return problems, versions
 
 
 def release_markers(root: Path, ident: ProcessId) -> int:

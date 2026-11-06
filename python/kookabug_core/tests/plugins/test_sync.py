@@ -240,3 +240,22 @@ def test_remove_on_untrusted_clone_trust_covers_all_shown(rig: Rig, tmp_path: Pa
     after = {**before, "plugins": before["plugins"][1:]}
     assert ops._remember(before, after, shown=[]) is False  # pyright: ignore[reportPrivateUsage]
     assert not (clone / ".kookabug" / "local.json").exists()
+
+
+def test_explicit_none_confirmation_is_compared(rig: Rig) -> None:
+    """확인 인자의 명시적 None("확인할 때 잠금이 없었다")은 비교 생략이 아니다: 잠금이 있으면
+    sync·remove 모두 `revision_conflict`이고 아무것도 바뀌지 않는다. 생략(CLI)은 그대로 진행
+    (B4 2라운드)."""
+    empty = rig.ops().sync(confirm=YES, lock_sha256=None)  # 잠금 없음 = 확인한 것과 같다
+    assert empty["created"] == [] and empty["lock_sha256"] is None
+    rig.add("sample")
+    before = rig.lock_bytes()
+    for call in (
+        lambda ops: ops.sync(confirm=YES, lock_sha256=None),
+        lambda ops: ops.remove("sample", confirm=YES, base_revision=None),
+    ):
+        with pytest.raises(PluginError) as caught:
+            call(rig.ops())
+        assert caught.value.code == "revision_conflict"
+        assert rig.lock_bytes() == before
+    assert rig.ops().remove("sample", confirm=YES)["removed"] == "sample"

@@ -112,6 +112,7 @@ class RecordingLink:
                 "diagnostics": [],
             },
             "nodes.list": {"schemas": []},
+            "plugins.list": {"plugins": [], "stale_reason": None},
             "run.list": {"runs": []},
             "run.status": {"state": "ended", "outcome": {"verdict": "fail"}},
             "run.failure": {"failure": {"node": "n", "step": "s1", "error": None}},

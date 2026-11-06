@@ -1,7 +1,8 @@
 """안 쓰는 환경·보관 wheel 정리 — 사람이 부르는 것만 (M6 계획 3.6, U13).
 
 `busy.lock`을 쥐고, 남길 환경은 `op.lock` 밖에서 고른 뒤(digest 계산) `op.lock` 안에서 잠금
-바이트를 다시 보고 사용 표식을 확인하며 지운다:
+바이트를 다시 보고 사용 표식을 확인하며 지운다. 사람 확인은 `op.lock` 밖에서 받고, 그 뒤 `op.lock`
+안에서는 다시 판정만 한다 (CLI·daemon 공통):
 
 - 남기는 것: 지금 잠금의 각 환경에 대해 runner·sync와 같은 선택(`envs.select`)이 고르는 폴더와
   읽지 못한 후보 전부(보수적), 살아 있는 사용 표식(`.in-use/<pid>-<생성시각>`)이 있는 환경 폴더,
@@ -27,7 +28,7 @@ from kookabug_core.plugins.lockfile import parse_lock
 from kookabug_core.plugins.uv import remove_tree
 from kookabug_core.win import ProcessId, is_alive
 
-__all__ = ["collect", "in_use", "keep_envs", "marker_name"]
+__all__ = ["candidates", "collect", "in_use", "keep_envs", "marker_name"]
 
 GC_ATTEMPTS: Final = 3
 """남길 환경을 고르는 동안 잠금이 바뀌면 처음부터 다시 하는 횟수."""
@@ -95,11 +96,13 @@ def plan(layout: Layout, lock: Mapping[str, Any] | None, keep: set[Path]) -> dic
     return {"envs": envs, "wheels": wheels, "staging": staging}
 
 
-def collect(layout: Layout, confirm: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
-    """busy.lock을 쥔 호출자가 부른다. 확인에서 취소하면 아무것도 지우지 않는다.
+type _Judged = tuple[bytes | None, dict[str, Any] | None, set[Path]]
 
-    남길 환경은 op.lock 밖에서 고르고(digest), 지우기 직전 op.lock 안에서 잠금 바이트가 그대로인지
-    다시 본다 — 그 사이 설치가 커밋했으면 처음부터. 사용 표식은 op.lock 안에서 본다."""
+
+def _judged[T](layout: Layout, act: Callable[[_Judged, dict[str, list[Path]]], T]) -> T:
+    """남길 환경은 op.lock 밖에서 고르고(digest), op.lock 안에서 잠금 바이트가 그대로인지 다시 본 뒤
+    지울 것을 정해 `act`에 넘긴다 (op.lock 안). 그 사이 설치가 커밋했으면 처음부터. 사용 표식은
+    op.lock 안에서 본다."""
     for _ in range(GC_ATTEMPTS):
         with layout.op():
             data = _read(layout.lock)
@@ -108,21 +111,45 @@ def collect(layout: Layout, confirm: Callable[[dict[str, Any]], bool]) -> dict[s
         with layout.op():
             if _read(layout.lock) != data:
                 continue
-            return _remove(layout, plan(layout, lock, keep), confirm)
+            return act((data, lock, keep), plan(layout, lock, keep))
     raise PluginError(
         "revision_conflict", "gc를 준비하는 동안 kookabug.lock이 계속 바뀌었다", stage="gc"
     )
 
 
-def _remove(
-    layout: Layout, targets: dict[str, list[Path]], confirm: Callable[[dict[str, Any]], bool]
-) -> dict[str, Any]:
-    """op.lock 안에서 부른다."""
-    names = {k: [p.name for p in v] for k, v in targets.items()}
-    if not any(targets.values()):
-        return {"removed": names, "failed": [], "cancelled": False}
-    if not confirm(names):
-        return {"removed": {k: [] for k in names}, "failed": [], "cancelled": True}
+def _names(targets: Mapping[str, list[Path]]) -> dict[str, list[str]]:
+    return {k: [p.name for p in v] for k, v in targets.items()}
+
+
+def _only(
+    targets: Mapping[str, list[Path]], shown: Mapping[str, list[str]]
+) -> dict[str, list[Path]]:
+    return {k: [p for p in v if p.name in shown.get(k, [])] for k, v in targets.items()}
+
+
+def collect(layout: Layout, confirm: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
+    """busy.lock을 쥔 호출자가 부른다. 확인에서 취소하면 아무것도 지우지 않는다.
+
+    사람 확인은 op.lock **밖**에서 받는다 (답을 기다리는 동안 실행 시작이 op.lock을 기다리지 않게).
+    확인 뒤 op.lock 안에서 다시 판정하고(잠금이 그대로면 고른 환경을 그대로 쓰고 사용 표식만 다시
+    본다), 확인에 나온 것 중 지금도 지울 것만 지운다 — 그 사이 생긴 사용 표식·새 잠금이 가리키는
+    것은 남는다."""
+    judged, targets = _judged(layout, lambda j, t: (j, t))
+    shown = _names(targets)
+    if not any(shown.values()):
+        return {"removed": shown, "failed": [], "cancelled": False}
+    if not confirm(shown):
+        return {"removed": {k: [] for k in shown}, "failed": [], "cancelled": True}
+    data, lock, keep = judged
+    with layout.op():
+        if _read(layout.lock) == data:
+            return _remove(layout, _only(plan(layout, lock, keep), shown))
+    # 확인하는 동안 잠금이 바뀌었다: 새 잠금으로 다시 판정 (확인한 것 중에서만)
+    return _judged(layout, lambda _, now: _remove(layout, _only(now, shown)))
+
+
+def _remove(layout: Layout, targets: dict[str, list[Path]]) -> dict[str, Any]:
+    """op.lock 안에서 부른다 (확인은 이미 받았다)."""
     failed: list[str] = []
     removed: dict[str, list[str]] = {k: [] for k in targets}
     for kind, paths in targets.items():
@@ -138,6 +165,22 @@ def _remove(
                 failed.append(f"{kind}/{path.name}")
     _drop_orphan_records(layout)
     return {"removed": removed, "failed": failed, "cancelled": False}
+
+
+def candidates(layout: Layout) -> dict[str, list[str]]:
+    """지금 gc가 지울 후보 이름 (목록 화면 표시용, 읽기만 — 잠금 파일·깨짐 기록을 쓰지 않는다).
+    남길 환경은 검증 없이(`find_env`) 고른다. 실제 gc는 검증한 선택으로 다시 판정하고 확인을
+    받는다."""
+    data = _read(layout.lock)
+    try:
+        lock = None if data is None else parse_lock(data, layout.lock.name)
+    except PluginError:
+        return {"envs": [], "wheels": [], "staging": []}
+    keep: set[Path] = set()
+    for name, env in (lock or {}).get("environments", {}).items():
+        if (found := envs_mod.find_env(layout.envs, name, env["fingerprint"])) is not None:
+            keep.add(found)
+    return _names(plan(layout, lock, keep))
 
 
 def _drop_orphan_records(layout: Layout) -> None:

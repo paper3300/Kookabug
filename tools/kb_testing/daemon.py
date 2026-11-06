@@ -161,14 +161,18 @@ class ThreadDaemon:
         recorder_testing: HookTesting | None = None,
         agent_toolsets: Iterable[str] | None = None,
         approval_timeout_s: float | None = None,
+        plugin_environ: Mapping[str, str] | None = None,
     ) -> None:
         """`agent_toolsets`: agent 연결이 hello 때 갖는 툴셋. None이면 **전부**(M5 이전 검사가
         툴셋 없이 판정만 보던 그대로). M5 툴셋 검사는 제품 기본값 `("core",)`을 넘긴다.
-        `approval_timeout_s`: 사람 확인 대기 (None이면 제품 기본값 120초)."""
+        `approval_timeout_s`: 사람 확인 대기 (None이면 제품 기본값 120초).
+        `plugin_environ`: 플러그인 작업의 환경 변수 (M6 — 검사의 SDK wheel·uv 캐시)."""
         self.root = root
         extra: dict[str, Any] = {}
         if approval_timeout_s is not None:
             extra["approval_timeout_s"] = approval_timeout_s
+        if plugin_environ is not None:
+            extra["plugin_environ"] = dict(plugin_environ)
         config = DaemonConfig(
             **extra,
             agent_toolsets=frozenset(TOOLSETS if agent_toolsets is None else agent_toolsets),

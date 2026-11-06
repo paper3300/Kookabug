@@ -21,6 +21,7 @@ __all__ = [
     "AGENT_DENIED",
     "AGENT_RAW",
     "METHOD_TOOLS",
+    "PLUGIN_CHANGE_METHODS",
     "RECORDER_METHODS",
     "UI_ONLY_AGENT_ALLOWED",
     "Authorizer",
@@ -51,6 +52,21 @@ RECORDER_METHODS: Final = frozenset(
         "target.read_text",
     }
 )
+
+PLUGIN_CHANGE_METHODS: Final = frozenset(
+    {
+        "plugins.preview",
+        "plugins.install",
+        "plugins.upgrade",
+        "plugins.remove",
+        "plugins.sync",
+        "plugins.relock",
+        "plugins.gc",
+        "plugins.cancel",
+    }
+)
+"""M6 플러그인 설치·제거·준비·다시 잠그기·정리 (계획 3.8·3.9, 엄격: Agent 권한): 사람만. 미리보기도
+원천을 받고(네트워크·디스크) 거래를 시작하므로 여기에 든다. 공개 MCP 도구는 없다."""
 
 METHOD_TOOLS: Final[dict[str, str]] = {
     "session.hello": UI_ONLY,
@@ -122,6 +138,9 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     "agents.get": UI_ONLY,
     "agents.detect": UI_ONLY,
     "agents.set": UI_ONLY,
+    # M6 B4: 플러그인 — 목록은 조회(kb_project_info), 변경은 사람만
+    "plugins.list": "kb_project_info",
+    **dict.fromkeys(sorted(PLUGIN_CHANGE_METHODS), UI_ONLY),
 }
 
 AGENT_DENIED: Final = frozenset(
@@ -143,6 +162,8 @@ AGENT_DENIED: Final = frozenset(
         "agents.get",
         "agents.detect",
         "agents.set",
+        # 에이전트는 플러그인을 설치·제거·준비하지 못한다 (M6 3.9, 사람 확인으로도 — U3)
+        *PLUGIN_CHANGE_METHODS,
     }
 )
 """`ui_only`이지만 agent 연결에는 판정 전에 거부하는 메서드. `ui_only`는 판정을 건너뛰므로

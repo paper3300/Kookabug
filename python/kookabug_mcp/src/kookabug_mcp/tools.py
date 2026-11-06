@@ -142,6 +142,7 @@ def _project_info(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     # shim이 기억한다(붙을 때·켤 때 daemon이 알려 준 값)
     info = _daemon(link, "workspace.info")
     permissions = _daemon(link, "permissions.get")
+    installed = _daemon(link, "plugins.list")
     verdicts = {t["tool"]: t["final"] for t in permissions["tools"]}
     enabled = set(link.toolsets)
     data = {
@@ -151,6 +152,19 @@ def _project_info(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
             "plugins": info["plugins"],
             "diagnostics": info["diagnostics"],
         },
+        # 설치 플러그인 (M6): ID·판·권한·환경 상태. 설치·제거·준비는 사람만 한다 (도구 없음)
+        "installed_plugins": [
+            {
+                "id": p["id"],
+                "version": p["version"],
+                "title": p["manifest"].get("title"),
+                "permissions": p["manifest"].get("permissions", []),
+                "env": p["env"],
+                "env_status": p["env_status"],
+            }
+            for p in installed["plugins"]
+        ],
+        "plugin_stale_reason": installed["stale_reason"],
         "principal": link.principal,
         "folders": FOLDERS,
         "agents_md": info.get("agents_md"),
@@ -237,8 +251,17 @@ def _node_search(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     query = str(args.get("query", "")).casefold()
     category = args.get("category")
     found: list[dict[str, Any]] = []
-    for doc in _daemon(link, "nodes.list")["schemas"]:
+    listed = _daemon(link, "nodes.list")
+    # 설치 플러그인의 권한·환경 상태 (M6: 환경이 준비되지 않은 플러그인 노드는 실행 전 검증 오류)
+    installed = {p["id"]: p for p in listed.get("plugins", [])}
+    for doc in listed["schemas"]:
         plugin = doc.get("plugin", {}).get("id")
+        extra: dict[str, Any] = {}
+        if plugin in installed:
+            extra = {
+                "plugin_permissions": installed[plugin]["permissions"],
+                "plugin_env_status": installed[plugin]["env_status"],
+            }
         for node in doc.get("nodes", []):
             if category is not None and node.get("category") != category:
                 continue
@@ -252,7 +275,10 @@ def _node_search(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
                 "version": node["version"],
                 "title": node.get("title"),
                 "plugin": plugin,
+                **extra,
             }
+            if node.get("effects"):
+                item["effects"] = list(node["effects"])
             for key in ("category", "description"):
                 if key in node:
                     item[key] = node[key]
@@ -573,8 +599,8 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_project_info",
         "프로젝트 정보",
-        "워크스페이스 루트·프로필·플러그인·폴더 규칙, 툴셋(켜짐 여부·도구), 이 연결의 주체. "
-        "처음에 부른다",
+        "워크스페이스 루트·프로필·플러그인(설치된 것의 권한·환경 상태)·폴더 규칙, 툴셋(켜짐 여부·"
+        "도구), 이 연결의 주체. 처음에 부른다. 플러그인 설치·제거·준비는 사람만 한다",
         _schema({}),
         _project_info,
     ),
@@ -620,7 +646,8 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_node_search",
         "노드 찾기",
-        "쓸 수 있는 노드 타입(제목·핀·출구·설정 이름)",
+        "쓸 수 있는 노드 타입(제목·핀·출구·설정 이름·효과). 설치 플러그인 노드는 그 플러그인의 "
+        "권한·환경 상태(ready가 아니면 실행 전 검증 오류 — 준비는 사람이 한다)",
         _schema({"query": {"type": "string"}, "category": {"type": "string"}}),
         _node_search,
     ),

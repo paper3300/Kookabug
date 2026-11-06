@@ -10,6 +10,7 @@ from helpers.plugins import Rig, tree_hashes
 
 from kookabug_core.plugins.envs import IN_USE_DIR, MARKER
 from kookabug_core.plugins.gc import marker_name
+from kookabug_core.plugins.layout import Layout, hold
 from kookabug_core.win import current, identify
 
 pytestmark = [pytest.mark.packaging, pytest.mark.timeout(600)]
@@ -39,6 +40,32 @@ def test_gc_keeps_locked_and_in_use(rig: Rig) -> None:
     assert not old.exists()
     assert tree_hashes(new) == new_files
     assert rig.ops().verify()["ok"]
+
+
+def test_gc_confirm_outside_op_lock_then_rejudged(rig: Rig) -> None:
+    """사람 확인을 기다리는 동안 op.lock은 비어 있다 (실행 시작이 기다리지 않는다, B4). 확인하는
+    사이 실행이 옛 환경을 쓰기 시작하면(사용 표식) 확인 뒤 다시 판정해 남긴다. 확인에 나오지 않은
+    것은 지우지 않는다."""
+    rig.add("sample")
+    old = rig.env_dir("shared")
+    rig.add("conflict_a")
+    layout = Layout(rig.root)
+    marker = old / IN_USE_DIR / marker_name(current())
+    shown: list[dict[str, list[str]]] = []
+
+    def confirm(names: dict[str, list[str]]) -> bool:
+        shown.append(names)
+        with hold(layout.private / "op.lock", wait_s=0.0):  # 곧바로 쥘 수 있다
+            pass
+        marker.parent.mkdir()
+        marker.touch()  # 확인하는 동안 실행이 시작했다
+        return True
+
+    result = rig.ops().gc(confirm=confirm)
+    assert shown and old.name in shown[0]["envs"]
+    assert result["removed"]["envs"] == [] and old.is_dir()
+    marker.unlink()
+    assert rig.ops().gc(confirm=_yes)["removed"]["envs"] == [old.name]
 
 
 def test_stale_marker_of_dead_process_ignored(rig: Rig) -> None:

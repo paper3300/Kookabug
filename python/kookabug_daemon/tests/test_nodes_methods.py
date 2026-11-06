@@ -20,7 +20,8 @@ def test_nodes_list_equals_palette_export(tmp_path: Path) -> None:
     with ThreadDaemon(root) as d, d.client() as client:
         result = client.call("nodes.list")
     expected = json.loads(json.dumps(palette.export(default_registry())))
-    assert result == {"schemas": expected}
+    # M6: 설치 플러그인 요약 (잠금이 없으면 빈 목록)
+    assert result == {"schemas": expected, "plugins": []}
     assert [s["plugin"]["id"] for s in result["schemas"]] == ["core"]
     for schema in result["schemas"]:
         assert check_shape(schema, "node-schema") == []

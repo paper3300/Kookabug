@@ -619,17 +619,6 @@ class GraphClose(BaseModel):
     tool: Literal["ui_only"]
 
 
-class NodesListResult(BaseModel):
-    """
-    팔레트: 레지스트리의 플러그인마다 노드 스키마 문서 하나 (kookabug_core.palette.export)
-    """
-
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    schemas: list[dict[str, Any]]
-
-
 class AgentConnectionsChanged(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -702,6 +691,76 @@ class PinShape(BaseModel):
     type: str
 
 
+class PluginEnvStatus(RootModel[Literal["ready", "missing", "stale", "broken"]]):
+    root: Annotated[
+        Literal["ready", "missing", "stale", "broken"],
+        Field(
+            description="ready 준비됨 · missing 환경 없음([준비…]) · stale 조건(Python·SDK)이 앱과 다름([다시 잠그기…]) · broken 환경이 깨짐([준비…]로 새로)",
+            title="PluginEnvStatus",
+        ),
+    ]
+
+
+class PluginGcCandidates(BaseModel):
+    """
+    gc가 지울 후보 이름 (표시용 — 실제 gc는 검증한 선택으로 다시 판정한다)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    envs: list[str]
+    staging: list[str]
+    wheels: list[str]
+
+
+class PluginInstalled(BaseModel):
+    """
+    nodes.list의 설치 플러그인 요약 (kb_node_search가 노드마다 보인다)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    env: str
+    env_status: PluginEnvStatus
+    id: str
+    permissions: list[str]
+    title: str | None = None
+    version: str
+
+
+class PluginIsolation(RootModel[Literal["auto", "shared", "isolated"]]):
+    root: Annotated[Literal["auto", "shared", "isolated"], Field(title="PluginIsolation")]
+
+
+class PluginNodeInfo(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    effects: list[str]
+    title: str | None = None
+    type: str
+
+
+class PluginOpId(RootModel[str]):
+    root: Annotated[
+        str,
+        Field(
+            description="플러그인 작업 ID (= 설치 거래 ID, 작업 로그 이름)",
+            pattern="^[0-9a-f]{32}$",
+            title="PluginOpId",
+        ),
+    ]
+
+
+class PluginOpKind(RootModel[Literal["install", "upgrade", "remove", "sync", "relock", "gc"]]):
+    root: Annotated[
+        Literal["install", "upgrade", "remove", "sync", "relock", "gc"],
+        Field(title="PluginOpKind"),
+    ]
+
+
 class PluginSummary(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -709,6 +768,87 @@ class PluginSummary(BaseModel):
     id: str
     title: str | None = None
     version: str
+
+
+class PluginsOpIdParams(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    op_id: PluginOpId
+
+
+class PluginsOpResult(BaseModel):
+    """
+    작업을 시작했다. 진행은 plugins.progress, 끝은 plugins.done
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    op_id: PluginOpId
+
+
+class PluginsPreviewParams(BaseModel):
+    """
+    원천: git+<url>[@ref] · *.whl 경로·https URL(sha256 필수) · 폴더. 받고 정적으로 읽기만 한다 (코드 실행 없음)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    isolation: PluginIsolation | None = None
+    ref: Annotated[str | None, Field(min_length=1)] = None
+    sha256: Annotated[str | None, Field(pattern="^[0-9a-fA-F]{64}$")] = None
+    source: Annotated[str, Field(min_length=1)]
+
+
+class PluginsPreviewResult(BaseModel):
+    """
+    신뢰 확인 재료 (설치 거래 ①②). expires_in_s 안에 plugins.install {op_id}로 승인, plugins.cancel로 취소. untrusted = 이 PC에서 신뢰 확인하지 않은 잠금이면 함께 신뢰할 기존 플러그인 ID 전체
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    dependencies: list[str]
+    dist: str
+    expires_in_s: Annotated[float, Field(ge=0.0)]
+    id: str
+    isolation: PluginIsolation
+    op_id: PluginOpId
+    permissions: list[str]
+    replaces: Annotated[str | None, Field(description="upgrade면 바꾸는 판")]
+    source: Annotated[dict[str, Any], Field(description="원천 출처 (인증 정보 없음)")]
+    title: str | None
+    untrusted: list[str]
+    version: str
+
+
+class PluginsProgressParams(BaseModel):
+    """
+    플러그인 작업 진행 (ui 연결에만). stage = 거래 단계 (kookabug_core.plugins.STAGES)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    message: str
+    op_id: PluginOpId
+    stage: str
+
+
+class PluginsUpgradeParams(BaseModel):
+    """
+    잠금의 원천을 다시 받아 미리보기 (plugins.preview와 같은 흐름 — plugins.install {op_id}로 승인)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: str
+    isolation: PluginIsolation | None = None
+    ref: Annotated[str | None, Field(min_length=1)] = None
+    sha256: Annotated[str | None, Field(pattern="^[0-9a-fA-F]{64}$")] = None
 
 
 class SearchItem(RootModel[int]):
@@ -1152,6 +1292,8 @@ class RequestFailedCode(
             "always_not_allowed",
             "settings_invalid",
             "recorder_store_unclean",
+            "plugin_failed",
+            "op_not_found",
         ]
     ]
 ):
@@ -1227,9 +1369,11 @@ class RequestFailedCode(
             "always_not_allowed",
             "settings_invalid",
             "recorder_store_unclean",
+            "plugin_failed",
+            "op_not_found",
         ],
         Field(
-            description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다)",
+            description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남)",
             title="RequestFailedCode",
         ),
     ]
@@ -2446,14 +2590,64 @@ class GraphSave(BaseModel):
     tool: Literal["kb_graph_patch"]
 
 
-class NodesList(BaseModel):
+class PluginsCancel(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: PluginsOpIdParams
+    renderer: Literal[True]
+    result: EmptyResult
+    tool: Literal["ui_only"]
+
+
+class PluginsGc(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
     params: EmptyParams
     renderer: Literal[True]
-    result: NodesListResult
-    tool: Literal["kb_node_search"]
+    result: PluginsOpResult
+    tool: Literal["ui_only"]
+
+
+class PluginsInstall(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: PluginsOpIdParams
+    renderer: Literal[True]
+    result: PluginsOpResult
+    tool: Literal["ui_only"]
+
+
+class PluginsPreview(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: PluginsPreviewParams
+    renderer: Literal[True]
+    result: PluginsPreviewResult
+    tool: Literal["ui_only"]
+
+
+class PluginsRelock(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[True]
+    result: PluginsOpResult
+    tool: Literal["ui_only"]
+
+
+class PluginsUpgrade(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: PluginsUpgradeParams
+    renderer: Literal[True]
+    result: PluginsPreviewResult
+    tool: Literal["ui_only"]
 
 
 class RecorderCommitAbort(BaseModel):
@@ -2628,6 +2822,18 @@ class NodeShapes(RootModel[dict[str, NodeShape]]):
     root: dict[str, NodeShape]
 
 
+class NodesListResult(BaseModel):
+    """
+    팔레트: 레지스트리의 플러그인마다 노드 스키마 문서 하나 (kookabug_core.palette.export). M6: plugins = 설치 플러그인 요약 (잠금이 없거나 깨졌으면 빈 목록)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    plugins: list[PluginInstalled] | None = None
+    schemas: list[dict[str, Any]]
+
+
 class Notification(BaseModel):
     """
     응답이 없는 알림 (daemon → 클라이언트). 이름별 모양은 Notifications 표
@@ -2660,6 +2866,13 @@ class LeaseChanged(BaseModel):
         extra="forbid",
     )
     params: LeaseChangedParams
+
+
+class PluginsProgress(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: PluginsProgressParams
 
 
 class RunLagged(BaseModel):
@@ -2732,6 +2945,151 @@ class PermissionsToolDecision(BaseModel):
     tool: Annotated[str, Field(description="권한 표 도구 이름 (M7 kb_screen_save 포함)")]
     toolset: Toolset
     verdict: PermissionVerdict
+
+
+class PluginEnvInfo(BaseModel):
+    """
+    잠금의 환경 하나의 상태 (M6 3.8). folder = runner가 고를 폴더 이름 (검증 없이 찾은 것)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    folder: str | None
+    plugins: list[str]
+    status: PluginEnvStatus
+
+
+class PluginErrorInfo(BaseModel):
+    """
+    플러그인 작업 오류 요약 (kookabug_core.plugins.PluginError.to_json — 인증 정보를 가린 값). code는 설치 거래 오류 코드(M6 3.5)·plugin_busy·internal_error, 원문은 작업 로그(.kookabug/plugins/logs/<op_id>.log)
+    """
+
+    code: str
+    conflicts: list[str] | None = None
+    env: str | None = None
+    message: str
+    op_id: PluginOpId | None = None
+    packages: list[str] | None = None
+    plugin: str | None = None
+    stage: str | None
+
+
+class PluginJob(BaseModel):
+    """
+    이 daemon에서 진행 중인 플러그인 작업 (waiting = 미리보기가 승인을 기다림). 승인을 기다리는 미리보기의 op_id는 그 미리보기를 연 연결에만 보이고 다른 연결에는 null (승인·취소는 연 연결만)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: PluginOpKind
+    op_id: PluginOpId | None
+    stage: str | None
+    waiting: bool
+
+
+class PluginListEntry(BaseModel):
+    """
+    잠금의 플러그인 항목(plugin-lock LockPlugin) + 환경 상태 + 노드 (커밋된 wheel의 스키마)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    conflicts: list[str] | None = None
+    dist: str | None = None
+    env: str
+    env_status: PluginEnvStatus
+    id: str
+    isolated_because: str | None = None
+    manifest: Annotated[
+        dict[str, Any],
+        Field(description="잠금의 manifest (title·modules·permissions·min_core·isolation·ui)"),
+    ]
+    nodes: list[PluginNodeInfo]
+    requires: list[str] | None = None
+    schema_sha256: str | None = None
+    source: Annotated[
+        dict[str, Any], Field(description="원천 출처 (git·wheel·path — 인증 정보 없음)")
+    ]
+    version: str
+    wheel: str | None = None
+    wheel_sha256: str | None = None
+
+
+class PluginsChangedParams(BaseModel):
+    """
+    kookabug.lock이 바뀌었다 (daemon 작업이든 밖에서든). daemon은 레지스트리를 다시 만들었다 — nodes.list·검증을 다시 부른다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    revision: Annotated[
+        Revision | None, Field(description="잠금 파일 바이트 sha256 (없어졌으면 null)")
+    ]
+
+
+class PluginsDoneParams(BaseModel):
+    """
+    플러그인 작업이 끝났다 (ui 연결에만). ok가 거짓이면 error, 참이면 result (작업별 결과)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    error: PluginErrorInfo | None = None
+    kind: PluginOpKind
+    ok: bool
+    op_id: PluginOpId
+    result: dict[str, Any] | None = None
+
+
+class PluginsListResult(BaseModel):
+    """
+    플러그인 목록 (M6 3.8, 읽기만). lock_sha256 = 정규 잠금 해시 — 준비(plugins.sync)에 그대로 넘긴다. trusted = 이 PC에서 신뢰 확인한 잠금
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    busy: PluginJob | None
+    environments: dict[str, PluginEnvInfo]
+    gc_candidates: PluginGcCandidates
+    lock_sha256: Revision | None
+    plugins: list[PluginListEntry]
+    revision: Annotated[
+        Revision | None,
+        Field(description="잠금 파일 revision (plugins.remove의 base_revision)"),
+    ]
+    stale_reason: str | None
+    trusted: bool
+
+
+class PluginsRemoveParams(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_revision: Annotated[
+        Revision | None,
+        Field(
+            description="확인할 때 본 잠금 revision (plugins.list). null = 확인할 때 잠금이 없었다 (비교 생략이 아님). 거래 안에서 읽은 잠금과 null까지 비교해 다르면 revision_conflict"
+        ),
+    ]
+    id: str
+
+
+class PluginsSyncParams(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    lock_sha256: Annotated[
+        Revision,
+        Field(
+            description="사람이 확인한 잠금의 정규 해시 (plugins.list lock_sha256). 그 사이 바뀌면 revision_conflict"
+        ),
+    ]
 
 
 class PreviewPeak(BaseModel):
@@ -2969,7 +3327,7 @@ class Request(BaseModel):
 
 class RequestFailedData(BaseModel):
     """
-    error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message. M5 B3: approval_required → decision·reason
+    error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message. M5 B3: approval_required → decision·reason. M6: plugin_failed → plugin_error, op_not_found → op_id
     """
 
     model_config = ConfigDict(
@@ -2990,8 +3348,10 @@ class RequestFailedData(BaseModel):
     ] = None
     line: Annotated[int | None, Field(ge=1, le=9007199254740991)] = None
     message: str | None = None
+    op_id: str | None = None
     owner: LeaseOwner | None = None
     path: str | None = None
+    plugin_error: PluginErrorInfo | None = None
     protocol: Annotated[int | None, Field(ge=1, le=9007199254740991)] = None
     reason: Annotated[
         str | None,
@@ -3578,6 +3938,16 @@ class GraphValidate(BaseModel):
     tool: Literal["kb_graph_validate"]
 
 
+class NodesList(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[True]
+    result: NodesListResult
+    tool: Literal["kb_node_search"]
+
+
 class PermissionsSet(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -3585,6 +3955,36 @@ class PermissionsSet(BaseModel):
     params: PermissionsSetParams
     renderer: Literal[True]
     result: PermissionsSetResult
+    tool: Literal["ui_only"]
+
+
+class PluginsList(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[True]
+    result: PluginsListResult
+    tool: Literal["kb_project_info"]
+
+
+class PluginsRemove(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: PluginsRemoveParams
+    renderer: Literal[True]
+    result: PluginsOpResult
+    tool: Literal["ui_only"]
+
+
+class PluginsSync(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: PluginsSyncParams
+    renderer: Literal[True]
+    result: PluginsOpResult
     tool: Literal["ui_only"]
 
 
@@ -3818,6 +4218,20 @@ class WorkspaceTree(BaseModel):
     tool: Literal["kb_project_info"]
 
 
+class PluginsChanged(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: PluginsChangedParams
+
+
+class PluginsDone(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: PluginsDoneParams
+
+
 class RecorderChanged(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -3864,6 +4278,9 @@ class Notifications(BaseModel):
     ]
     graph_changed: Annotated[GraphChanged, Field(alias="graph.changed")]
     lease_changed: Annotated[LeaseChanged, Field(alias="lease.changed")]
+    plugins_changed: Annotated[PluginsChanged, Field(alias="plugins.changed")]
+    plugins_done: Annotated[PluginsDone, Field(alias="plugins.done")]
+    plugins_progress: Annotated[PluginsProgress, Field(alias="plugins.progress")]
     recorder_changed: Annotated[RecorderChanged, Field(alias="recorder.changed")]
     run_ended: Annotated[RunEnded, Field(alias="run.ended")]
     run_event: Annotated[RunEvent, Field(alias="run.event")]
@@ -4299,6 +4716,15 @@ class Methods(BaseModel):
     nodes_list: Annotated[NodesList, Field(alias="nodes.list")]
     permissions_get: Annotated[PermissionsGet, Field(alias="permissions.get")]
     permissions_set: Annotated[PermissionsSet, Field(alias="permissions.set")]
+    plugins_cancel: Annotated[PluginsCancel, Field(alias="plugins.cancel")]
+    plugins_gc: Annotated[PluginsGc, Field(alias="plugins.gc")]
+    plugins_install: Annotated[PluginsInstall, Field(alias="plugins.install")]
+    plugins_list: Annotated[PluginsList, Field(alias="plugins.list")]
+    plugins_preview: Annotated[PluginsPreview, Field(alias="plugins.preview")]
+    plugins_relock: Annotated[PluginsRelock, Field(alias="plugins.relock")]
+    plugins_remove: Annotated[PluginsRemove, Field(alias="plugins.remove")]
+    plugins_sync: Annotated[PluginsSync, Field(alias="plugins.sync")]
+    plugins_upgrade: Annotated[PluginsUpgrade, Field(alias="plugins.upgrade")]
     recorder_commit_abort: Annotated[RecorderCommitAbort, Field(alias="recorder.commit_abort")]
     recorder_commit_finish: Annotated[RecorderCommitFinish, Field(alias="recorder.commit_finish")]
     recorder_commit_prepare: Annotated[

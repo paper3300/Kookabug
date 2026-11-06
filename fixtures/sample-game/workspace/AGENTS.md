@@ -13,4 +13,5 @@
 - 실패 분석은 `kb_run_status`(실패 요약)·`kb_run_events`부터 본다. 그다음 `kb_run_artifact_get`
   (스크린샷)·`kb_run_compare`(지난 성공과 비교)
 - 비밀값(비밀번호·토큰)을 파일·그래프에 쓰지 않는다. 그래프에서는 `{"$secret": "키"}`로 가리킨다
+- 플러그인 설치·제거·준비와 개발 모듈(`--plugin-module`) 실행은 사람만 한다 (에이전트 도구 없음)
 <!-- kookabug:end -->

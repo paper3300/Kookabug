@@ -25,6 +25,7 @@ import logging
 import os
 import secrets
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -32,7 +33,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, TextIO
 
+from kookabug_core.diagnostics import Diagnostic
+from kookabug_core.loader import Program
 from kookabug_core.permissions import TOOLSETS
+from kookabug_core.plugins import LOCK_FILE, PluginError
+from kookabug_core.plugins import runtime as plugin_runtime
+from kookabug_core.plugins.lockfile import revision_of
 from kookabug_core.plugins.runtime import installed_schemas
 from kookabug_core.registry import Registry, RegistryError, default_registry
 from kookabug_core.runner.spec import PlatformSpec
@@ -42,6 +48,7 @@ from kookabug_core.service import (
     cli_principal,
     refuse_dev_modules,
 )
+from kookabug_core.validate.plugins import plugin_diagnostics, used_plugins
 from kookabug_core.workspace import WorkspaceError
 from kookabug_daemon.agent_cache import AgentCache
 from kookabug_daemon.approvals import APPROVAL_TIMEOUT_S, ApprovalBroker
@@ -55,6 +62,7 @@ from kookabug_daemon.methods.secrets import RecorderSecretSource
 from kookabug_daemon.methods.tools import Authorizer
 from kookabug_daemon.options import DEFAULT_IDLE_TIMEOUT_S, SESSION_WAIT_S, add_arguments
 from kookabug_daemon.permission_files import PermissionFiles
+from kookabug_daemon.plugin_jobs import PluginJobs
 from kookabug_daemon.protocol import DAEMON_VERSION, PROTOCOL, json_text
 from kookabug_daemon.recorder import RecorderService
 from kookabug_daemon.recorder_hook import HookTesting, testing_options
@@ -138,32 +146,52 @@ class DaemonConfig:
     """agent 연결이 hello 때 갖는 툴셋 (M5 계획 D3: core). 검사 헬퍼만 바꾼다."""
     approval_timeout_s: float = APPROVAL_TIMEOUT_S
     """사람 확인을 기다리는 시간 (M5 U3: 120초). 검사 헬퍼만 바꾼다."""
+    plugin_environ: Mapping[str, str] | None = None
+    """플러그인 작업(uv·앱 SDK wheel 찾기)의 환경 변수. None이면 이 프로세스의 것 (검사 헬퍼만
+    바꾼다)."""
 
 
-def plugin_registry(modules: tuple[str, ...], root: Path | None = None) -> Callable[[], Registry]:
+class PluginRegistry:
     """코어 노드 + 개발 모듈 `modules`의 노드 선언(runner가 워커 hello로 등록하는 것과 같은 선언) +
     설치 플러그인(`root`의 `kookabug.lock`)의 노드 스키마. 설치 플러그인은 커밋된 wheel 안 스키마
     파일을 읽는다 — daemon은 플러그인 코드를 import하지 않는다 (M6 D9). 개발 모듈과 ID가 겹치면
-    개발 모듈이 이긴다 (runner와 같은 규칙)."""
-    if not modules and root is None:
-        return default_registry
+    개발 모듈이 이긴다 (runner와 같은 규칙). 부를 때마다 새 레지스트리를 만든다."""
 
-    def make() -> Registry:
+    def __init__(self, modules: tuple[str, ...], root: Path | None) -> None:
+        self.modules = modules
+        self.root = root
+        self.local: frozenset[str] = frozenset()
+        """코어·개발 모듈 플러그인 ID (설치 플러그인 진단에서 뺀다 — runner와 같은 규칙)."""
+
+    def __call__(self) -> Registry:
         found = default_registry()
-        if modules:
+        if self.modules:
             from kookabug_sdk.worker import collect_plugins
 
-            for plugin in collect_plugins(modules):
+            for plugin in collect_plugins(self.modules):
                 found.add_remote(plugin["schema"])
-        if root is not None:
-            for plugin_id, schema in sorted(installed_schemas(root).items()):
+        self.local = frozenset(found.plugins)
+        if self.root is not None:
+            for plugin_id, schema in sorted(installed_schemas(self.root).items()):
                 if plugin_id in found.plugins:
                     continue
                 with contextlib.suppress(RegistryError):
                     found.add_remote(schema)
         return found
 
-    return make
+
+def plugin_registry(modules: tuple[str, ...], root: Path | None = None) -> Callable[[], Registry]:
+    """`PluginRegistry` (개발 모듈도 설치 플러그인도 없으면 코어만)."""
+    if not modules and root is None:
+        return default_registry
+    return PluginRegistry(modules, root)
+
+
+def _read_or_none(path: Path) -> bytes | None:
+    try:
+        return path.read_bytes()
+    except OSError:
+        return None
 
 
 def run_platform(config: DaemonConfig) -> PlatformSpec:
@@ -193,7 +221,15 @@ class Daemon:
         self.service = service or WorkspaceService(self.root)
         self._authorizer = Authorizer(self.service)
         self._documents = DocumentTable(self.root)
-        self._checker = GraphChecker(self.root, plugin_registry(config.plugin_modules, self.root))
+        plugin_environ = os.environ if config.plugin_environ is None else config.plugin_environ
+        self.plugin_jobs = PluginJobs(self.root, plugin_environ, self)
+        """플러그인 작업 (M6 B4 `plugins.*`)."""
+        self._plugin_revision: str | None = revision_of(_read_or_none(self.root / LOCK_FILE))
+        self._plugin_revision_lock = threading.Lock()
+        registry_factory = PluginRegistry(config.plugin_modules, self.root)
+        self._checker = GraphChecker(
+            self.root, registry_factory, self._plugin_checker(registry_factory)
+        )
         self._frames = FrameCache()
         self._image_cache = EditorCache(self.root)
         self._targets = TargetStore(self.root, self._frames)
@@ -326,6 +362,7 @@ class Daemon:
         self._documents.release_connection(number)
         self._run_manager.connection_closed(number)
         self.recorder.connection_closed(number)
+        self.plugin_jobs.connection_closed(number)
         if number in self._agent_numbers:
             self._agent_numbers.discard(number)
             self.notify_ui("agent.connections.changed", {})
@@ -391,10 +428,48 @@ class Daemon:
                 self._agent_numbers.add(number)
                 self.notify_ui("agent.connections.changed", {})
 
+    # ---------------------------------------------------------------- 플러그인 (M6 B4)
+
+    def _plugin_checker(
+        self, factory: PluginRegistry
+    ) -> Callable[[Program, Registry], list[Diagnostic]]:
+        """편집기 사전 검증의 설치 플러그인 진단 (`plugin_not_installed`·`plugin_env_missing`·
+        `plugin_env_stale`·`plugin_version_differs`). 읽기만 한다 — 실행은 runner가 다시 본다."""
+        jobs = self.plugin_jobs
+
+        def stale(lock: Mapping[str, Any]) -> str | None:
+            try:
+                return jobs.app().stale_reason(lock)
+            except PluginError as exc:
+                return exc.message
+
+        def check(program: Program, registry: Registry) -> list[Diagnostic]:
+            used = used_plugins(program) - factory.local
+            if not used:
+                return []
+            problems, versions = plugin_runtime.inspect(self.root, used, stale=stale)
+            found = [(p.code, p.plugin, p.message) for p in problems]
+            return plugin_diagnostics(program, found, versions)
+
+        return check
+
+    def plugins_lock_check(self) -> None:
+        """`kookabug.lock`이 마지막으로 알린 것과 다르면 레지스트리를 다시 만들게 하고 모든 연결에
+        `plugins.changed {revision}` (잠금을 밖에서 바꿔도 — 감시가 부른다). 어느 스레드에서나."""
+        revision = revision_of(_read_or_none(self.root / LOCK_FILE))
+        with self._plugin_revision_lock:
+            if revision == self._plugin_revision:
+                return
+            self._plugin_revision = revision
+        self._checker.invalidate()
+        self.post(lambda: self.transport.broadcast("plugins.changed", {"revision": revision}))
+
     # ---------------------------------------------------------------- 파일 변경 알림
 
     def _publish_changes(self, paths: list[str], changes: list[DocChange]) -> None:
         """감시 결과를 알린다 (이벤트 루프 안). 문서 변경은 감시가 정한 연결에만 보낸다."""
+        if LOCK_FILE in paths:
+            self.plugins_lock_check()
         if paths:
             # agent 연결에는 screens/ 경로를 알리지 않는다 (화면 지도는 screens.*로만, M5 3.5 H4)
             hidden = [p for p in paths if not in_screens(p)]
@@ -433,7 +508,11 @@ class Daemon:
         interval = max(0.05, min(1.0, timeout / 4))
         while not self._shutting_down:
             now = time.monotonic()
-            busy = self.transport.count() > 0 or self._runs.active_run() is not None
+            busy = (
+                self.transport.count() > 0
+                or self._runs.active_run() is not None
+                or self.plugin_jobs.active()
+            )
             if busy:
                 self._idle_since = None
             elif self._idle_since is None:
@@ -495,6 +574,9 @@ class Daemon:
                     task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
         finally:
+            # 진행 중인 플러그인 작업은 취소하고 마무리(staging 정리)를 기다린다 — 커밋 전이면
+            # 잠금·기존 환경 그대로 (M6 3.5)
+            await asyncio.to_thread(self.plugin_jobs.close)
             await asyncio.to_thread(self.recorder.close)
             await asyncio.to_thread(self._run_manager.close)
             self._checker.close()

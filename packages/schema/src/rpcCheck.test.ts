@@ -54,6 +54,10 @@ test("test_method_table_tools_and_internal_methods", () => {
     "debug.breakpoints.changed",
     "graph.changed",
     "lease.changed",
+    // M6 B4 플러그인 작업 진행·끝, 잠금 변경
+    "plugins.changed",
+    "plugins.done",
+    "plugins.progress",
     "recorder.changed",
     "run.ended",
     "run.event",

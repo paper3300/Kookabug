@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from kookabug_daemon.frames import FrameCache
     from kookabug_daemon.image_cache import EditorCache
     from kookabug_daemon.permission_files import PermissionFiles
+    from kookabug_daemon.plugin_jobs import PluginJobs
     from kookabug_daemon.runs import RunManager
     from kookabug_daemon.targets import TargetStore
 
@@ -125,6 +126,11 @@ class DaemonContext(Protocol):
         """권한 파일 읽기·쓰기 (M5 3.6)."""
         ...
 
+    @property
+    def plugin_jobs(self) -> PluginJobs:
+        """플러그인 작업 (M6 3.8 `plugins.*`)."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class Call:
@@ -168,6 +174,7 @@ def registry() -> dict[str, MethodSpec]:
         graph,
         nodes,
         permissions,
+        plugins,
         recorder,
         run,
         run_agent,
@@ -185,6 +192,7 @@ def registry() -> dict[str, MethodSpec]:
         **approval.METHODS,
         **control.METHODS,
         **permissions.METHODS,
+        **plugins.METHODS,
         **debug.METHODS,
         **recorder.METHODS,
         **secrets.METHODS,

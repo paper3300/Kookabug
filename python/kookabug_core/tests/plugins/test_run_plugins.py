@@ -360,6 +360,19 @@ def _diagnostics(outcome: RunOutcome) -> list[str]:
     return [d["code"] for d in run_json.get("diagnostics", [])]
 
 
+def test_acquire_exhaustion_keeps_lock_hash_and_schemas(rig: Rig) -> None:
+    """사용 표식을 계속 만들지 못해 재시도를 다 써도 잠금 해시·노드 스키마는 남는다 (B4: run.json
+    `plugin_lock_sha256` 형식, `unknown_node_type` 없이 `plugin_env_missing`만)."""
+    rig.add("conflict_a")
+    (rig.env_dir("shared") / IN_USE_DIR).write_bytes(b"not a folder")
+    result = runtime.acquire(rig.root, {"conflict_a"}, current(), environ=rig.world.environ)
+    assert result.envs == [] and result.markers == []
+    assert [p.code for p in result.problems] == ["plugin_env_missing"]
+    assert result.lock_sha256 == lock_sha256(rig.lock())
+    assert set(result.unready) == {"conflict_a"}
+    assert result.versions == {"conflict_a": "0.1.0"}
+
+
 def test_env_missing_or_stale_is_validation_error(rig: Rig, tmp_path: Path) -> None:
     rig.add("sample")
     sample_graph(rig)

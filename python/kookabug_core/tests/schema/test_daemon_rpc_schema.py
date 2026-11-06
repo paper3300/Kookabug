@@ -99,6 +99,16 @@ TOOLS = {
     "agents.get": "ui_only",
     "agents.detect": "ui_only",
     "agents.set": "ui_only",
+    # M6 B4: 플러그인 — 목록은 조회, 변경은 사람만
+    "plugins.list": "kb_project_info",
+    "plugins.preview": "ui_only",
+    "plugins.install": "ui_only",
+    "plugins.upgrade": "ui_only",
+    "plugins.remove": "ui_only",
+    "plugins.sync": "ui_only",
+    "plugins.relock": "ui_only",
+    "plugins.gc": "ui_only",
+    "plugins.cancel": "ui_only",
 }
 AGENT_ONLY_B3 = {"control.click", "control.key", "control.type", "app.launch"}
 AGENT_ONLY_B2 = {
@@ -155,6 +165,9 @@ def test_notification_table() -> None:
         "debug.breakpoints.changed",
         "graph.changed",
         "lease.changed",
+        "plugins.changed",
+        "plugins.done",
+        "plugins.progress",
         "recorder.changed",
         "run.ended",
         "run.event",

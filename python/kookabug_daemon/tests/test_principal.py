@@ -135,6 +135,15 @@ def test_every_method_has_tool_or_ui_only() -> None:
         "agents.get",
         "agents.detect",
         "agents.set",
+        # M6 B4 플러그인 변경 (목록 plugins.list는 kb_project_info)
+        "plugins.preview",
+        "plugins.install",
+        "plugins.upgrade",
+        "plugins.remove",
+        "plugins.sync",
+        "plugins.relock",
+        "plugins.gc",
+        "plugins.cancel",
     } | RECORDER_METHODS
 
 

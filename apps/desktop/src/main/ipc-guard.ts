@@ -71,6 +71,16 @@ export const RENDERER_METHODS: ReadonlySet<string> = new Set([
   "agents.detect",
   "agents.set",
   "agent.connections",
+  // M6 B4 플러그인: 목록(조회)과 설치·제거·준비·다시 잠그기·정리(사람만 — daemon이 agent 연결을 거부한다)
+  "plugins.list",
+  "plugins.preview",
+  "plugins.install",
+  "plugins.upgrade",
+  "plugins.remove",
+  "plugins.sync",
+  "plugins.relock",
+  "plugins.gc",
+  "plugins.cancel",
 ]);
 
 // 주 프로세스 안에서만 쓰는 메서드. 렌더러 표면에서 뺀다. run.export는 dest(쓸 경로)를 주 프로세스의
@@ -95,6 +105,10 @@ export const RENDERER_EVENTS: ReadonlySet<string> = new Set([
   "approval.requested",
   "approval.resolved",
   "agent.connections.changed",
+  // M6 B4 플러그인 작업 진행·끝(ui 연결에만), 잠금 변경
+  "plugins.progress",
+  "plugins.done",
+  "plugins.changed",
 ]);
 
 // 주 프로세스가 보내는 앱 알림 (daemon 알림이 아님): 연결 상태, 출력 패널 줄, 창 최대화 상태, 테마,

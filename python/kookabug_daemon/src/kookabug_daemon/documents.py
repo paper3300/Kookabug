@@ -38,7 +38,9 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
 from kookabug_core import documents
+from kookabug_core.diagnostics import Diagnostic
 from kookabug_core.documents import Document, DocumentError
+from kookabug_core.loader import Program
 from kookabug_core.registry import Registry, default_registry
 from kookabug_core.shapes import value_shapes
 from kookabug_core.validate import check_graph_value
@@ -483,9 +485,16 @@ class GraphChecker:
     워크스페이스 설정(`kookabug.json`·`local.json`)은 검증할 때마다 다시 읽는다. 비밀값은 실행과
     같이 환경 변수에서 찾는다 (없으면 오류. 편집 중이라고 경고로 낮추지 않는다)."""
 
-    def __init__(self, root: Path, registry: Callable[[], Registry] | None = None) -> None:
+    def __init__(
+        self,
+        root: Path,
+        registry: Callable[[], Registry] | None = None,
+        plugin_check: Callable[[Program, Registry], list[Diagnostic]] | None = None,
+    ) -> None:
+        """`plugin_check(프로그램, 레지스트리)`: 설치 플러그인 진단 (M6 `plugin_env_*` — 읽기만)."""
         self.root = root
         self._make_registry = registry or default_registry
+        self._plugin_check = plugin_check
         self._registry: Registry | None = None
         self._registry_lock = threading.Lock()
         self._pool = ThreadPoolExecutor(VALIDATE_WORKERS, thread_name_prefix="kb-validate")
@@ -496,6 +505,11 @@ class GraphChecker:
             if self._registry is None:
                 self._registry = self._make_registry()
             return self._registry
+
+    def invalidate(self) -> None:
+        """레지스트리를 다음에 다시 만든다 (플러그인 잠금이 바뀌었다, M6 `plugins.changed`)."""
+        with self._registry_lock:
+            self._registry = None
 
     def check_sync(
         self, rel: str, value: Any, guard: Callable[[], object] | None = None
@@ -508,6 +522,8 @@ class GraphChecker:
             raise RequestFailed("io_error", str(exc), message=str(exc)) from exc
         registry = self.registry
         program, diagnostics = check_graph_value(workspace, rel, value, registry=registry)
+        if self._plugin_check is not None:
+            diagnostics = [*diagnostics, *self._plugin_check(program, registry)]
         shapes = value_shapes(program, rel, value, registry)
         return Checked(
             [d.to_dict() for d in diagnostics],
