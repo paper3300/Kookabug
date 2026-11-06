@@ -25,6 +25,21 @@ class PluginIndex(BaseModel):
     url: Annotated[str | None, Field(min_length=1)] = None
 
 
+class Lock(RootModel[str]):
+    root: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
+
+
+class PluginTrust(BaseModel):
+    """
+    M6: 이 PC에서 사람이 신뢰 확인한 kookabug.lock의 정규 잠금 해시들 (같은 잠금이면 다시 묻지 않는다, 오래된 것부터 버림)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    locks: Annotated[list[Lock] | None, Field(max_length=20)] = None
+
+
 class SettingKey(RootModel[str]):
     root: Annotated[str, Field(pattern="^[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)*$", title="SettingKey")]
 
@@ -84,4 +99,5 @@ class Local(BaseModel):
     format: Literal["kookabug.local/0"]
     permissions: Permissions | None = None
     plugin_index: PluginIndex | None = None
+    plugin_trust: PluginTrust | None = None
     settings: Settings | None = None

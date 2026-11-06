@@ -1,17 +1,25 @@
 """`kookabug plugin …` (M6 계획 3.7).
 
-    kookabug plugin add <wheel 파일> [--sha256 H] [--isolation auto|shared|isolated]
+    kookabug plugin add <원천> [--ref R] [--sha256 H] [--isolation auto|shared|isolated]
                         [--yes] [--json]
+        원천: git+<url>[@ref] · wheel 파일 · https://…whl(--sha256 필수) · 폴더
     kookabug plugin remove <id> [--yes] [--json]
+    kookabug plugin upgrade <id> [--ref R] [--sha256 H] [--yes] [--json]
+    kookabug plugin sync [--yes] [--json]      잠금 → 환경 (커밋된 wheel만, 잠금을 쓰지 않음)
+    kookabug plugin relock [--yes] [--json]    앱 Python·SDK로 다시 잠금
     kookabug plugin list [--json]
     kookabug plugin verify [--json]
     kookabug plugin gc [--yes] [--json]
 
-- 설치·제거·정리는 사람만: `KOOKABUG_AGENT`가 있으면 아무것도 하지 않고 종료 5. 목록·검증은 누구나
-- 신뢰 확인: `--yes` 또는 대화형 질문. 대화형이 아닌데 `--yes`가 없으면 종료 6 (아무것도 안 바뀜)
-- 종료 코드: 0 성공, 2 작업 실패(`--json`에 `{error: {code, stage, message}}`), 5 에이전트,
-  6 사용법·워크스페이스 없음·확인 필요
-- B1 원천은 wheel 파일. git·폴더·https wheel·`sync`·`relock`·`upgrade`는 다음 묶음(B2)
+- 설치·제거·upgrade·sync·relock·정리는 사람만: `KOOKABUG_AGENT`가 있으면 아무것도 하지 않고 종료 5.
+  목록·검증은 누구나
+- 신뢰 확인: `--yes` 또는 대화형 질문. 대화형이 아닌데 `--yes`가 없으면 종료 6 (아무것도 안 바뀜).
+  sync는 이 PC에서 신뢰한 잠금이면 묻지 않는다
+- 종료 코드: 0 성공, 2 작업 실패(`--json`에 `{error: {code, stage, message}}`, 조건 다름
+  `plugin_env_stale` 포함, 예상 밖 예외는 `unexpected_error`), 5 에이전트, 6 사용법·워크스페이스
+  없음·확인 필요
+- 오류 출력에는 인증 정보가 없다: `PluginError`는 만들 때 가리고, 그 밖의 예외도 이 명령의 최상위
+  경계에서 종류 + 가린 문구로만 낸다(원문 traceback 없음, `KOOKABUG_PLUGIN_DEBUG`면 가린 traceback)
 """
 
 from __future__ import annotations
@@ -30,7 +38,10 @@ EXIT_OK: Final = 0
 EXIT_FAILED: Final = 2
 EXIT_DENIED: Final = 5
 EXIT_USAGE: Final = 6
-_HUMAN_ONLY: Final = frozenset({"add", "remove", "gc"})
+_HUMAN_ONLY: Final = frozenset({"add", "remove", "upgrade", "sync", "relock", "gc"})
+_KEEPS: Final = frozenset({"add", "upgrade", "sync", "relock"})
+DEBUG_ENV: Final = "KOOKABUG_PLUGIN_DEBUG"
+"""있으면 예상 밖 오류의 traceback(인증 정보 가림)을 오류 출력에 낸다."""
 
 
 class _NeedsConfirm(Exception):
@@ -55,18 +66,40 @@ def add_parser(commands: Any) -> None:
                 "--yes", action="store_true", help="확인 없이 진행한다 (출처를 믿을 때만)"
             )
 
-    add = actions.add_parser("add", help="플러그인을 설치한다 (wheel 파일)")
-    add.add_argument("source", help="플러그인 wheel 파일 (*.whl)")
-    add.add_argument("--sha256", metavar="H", help="wheel의 sha256 (다르면 설치하지 않는다)")
+    def isolation(p: argparse.ArgumentParser) -> None:
+        p.add_argument(
+            "--isolation",
+            choices=("auto", "shared", "isolated"),
+            help="환경 (기본: 매니페스트, 없으면 auto — 충돌하면 그 플러그인만 격리)",
+        )
+
+    add = actions.add_parser("add", help="플러그인을 설치한다 (git·wheel·폴더)")
     add.add_argument(
-        "--isolation",
-        choices=("auto", "shared", "isolated"),
-        help="환경 (기본: 매니페스트, 없으면 auto — 충돌하면 그 플러그인만 격리)",
+        "source", help="git+<url>[@ref] · wheel 파일(*.whl) · https://…whl · 플러그인 폴더"
     )
+    add.add_argument("--ref", metavar="R", help="git 태그·브랜치·커밋 (기본 HEAD)")
+    add.add_argument("--sha256", metavar="H", help="wheel의 sha256 (https wheel은 필수)")
+    isolation(add)
     common(add, yes=True)
     remove = actions.add_parser("remove", help="플러그인을 뺀다 (폴더·wheel은 gc가 치운다)")
     remove.add_argument("id", help="플러그인 ID")
     common(remove, yes=True)
+    upgrade = actions.add_parser("upgrade", help="잠금의 원천을 다시 받아 바꾼다")
+    upgrade.add_argument("id", help="플러그인 ID")
+    upgrade.add_argument("--ref", metavar="R", help="git 원천의 새 ref (기본: 잠금의 ref)")
+    upgrade.add_argument("--sha256", metavar="H", help="https wheel 원천의 새 sha256")
+    isolation(upgrade)
+    common(upgrade, yes=True)
+    common(
+        actions.add_parser(
+            "sync", help="잠금대로 환경을 준비한다 (커밋된 wheel만, 빌드·잠금 쓰기 없음)"
+        ),
+        yes=True,
+    )
+    common(
+        actions.add_parser("relock", help="앱의 Python·SDK로 다시 잠근다 (조건이 다를 때)"),
+        yes=True,
+    )
     common(actions.add_parser("list", help="설치된 플러그인과 환경 상태"), yes=False)
     common(actions.add_parser("verify", help="환경 파일·커밋된 wheel을 잠금과 대조한다"), yes=False)
     common(actions.add_parser("gc", help="안 쓰는 환경·wheel을 지운다"), yes=True)
@@ -110,16 +143,23 @@ def run(args: argparse.Namespace, out: TextIO, err: TextIO, *, stdin: TextIO | N
     reader = stdin if stdin is not None else sys.stdin
     confirm = _confirmer(bool(getattr(args, "yes", False)), reader, err)
     try:
-        if action == "add":
-            source = args.source
-            if not os.path.isabs(source):
-                source = str(Path.cwd() / source)
-            result = ops.add(
-                source,
-                isolation=args.isolation,
-                sha256=args.sha256,
-                confirm=lambda p: confirm(_preview_text(p.to_json())),
-            )
+        if action in ("add", "upgrade"):
+            if action == "add":
+                result = ops.add(
+                    args.source,  # 상대 경로는 현재 폴더 기준 (parse_source)
+                    isolation=args.isolation,
+                    sha256=args.sha256,
+                    ref=args.ref,
+                    confirm=lambda p: confirm(_preview_text(p.to_json())),
+                )
+            else:
+                result = ops.upgrade(
+                    args.id,
+                    ref=args.ref,
+                    sha256=args.sha256,
+                    isolation=args.isolation,
+                    confirm=lambda p: confirm(_preview_text(p.to_json())),
+                )
             plugin = result["plugin"]
             return finish(
                 EXIT_OK,
@@ -128,9 +168,24 @@ def run(args: argparse.Namespace, out: TextIO, err: TextIO, *, stdin: TextIO | N
             )
         if action == "remove":
             result = ops.remove(
-                args.id, confirm=lambda p: confirm(f"{p['id']} {p['version']}을(를) 뺀다")
+                args.id,
+                confirm=lambda p: confirm(
+                    f"{p['id']} {p['version']}을(를) 뺀다" + _untrusted_text(p["untrusted"])
+                ),
             )
             return finish(EXIT_OK, {"ok": True, **result}, f"뺐다: {args.id}")
+        if action == "sync":
+            result = ops.sync(confirm=lambda p: confirm(_sync_text(p)))
+            text = (
+                f"환경을 만들었다: {', '.join(result['created'])}"
+                if result["created"]
+                else "환경이 이미 준비돼 있다"
+            )
+            return finish(EXIT_OK, {"ok": True, **result}, text)
+        if action == "relock":
+            result = ops.relock(confirm=lambda p: confirm(_relock_text(p)))
+            text = "다시 잠갔다" if result["changed"] else "잠금 조건이 이미 앱과 같다"
+            return finish(EXIT_OK, {"ok": True, **result}, text)
         if action == "list":
             result = ops.status()
             return finish(EXIT_OK, {"ok": True, **result}, _list_text(result))
@@ -161,9 +216,29 @@ def run(args: argparse.Namespace, out: TextIO, err: TextIO, *, stdin: TextIO | N
             EXIT_FAILED,
             {"ok": False, "error": exc.to_json()},
             f"오류: {exc.code}: {exc.message}"
-            + ("\n기존 플러그인·환경은 그대로다" if action == "add" else ""),
+            + ("\n기존 플러그인·환경은 그대로다" if action in _KEEPS else ""),
         )
+    except Exception as exc:
+        return _unexpected(exc, action, finish, err)
     raise AssertionError(action)
+
+
+def _unexpected(exc: Exception, action: str, finish: Callable[..., int], err: TextIO) -> int:
+    """`PluginError`가 아닌 예외(받기·하위 프로세스·예상 밖 오류): 예외 문구에 URL·인증 값이
+    있을 수 있어 종류와 가린 문구만 낸다 (종료 2). `KOOKABUG_PLUGIN_DEBUG`가 있으면 가린
+    traceback을 오류 출력에."""
+    import traceback
+
+    from kookabug_core.plugins.redact import mask
+
+    message = f"예상하지 못한 오류 {type(exc).__name__}: {mask(str(exc))}"
+    if os.environ.get(DEBUG_ENV):
+        print(mask("".join(traceback.format_exception(exc))), file=err)
+    return finish(
+        EXIT_FAILED,
+        {"ok": False, "error": {"code": "unexpected_error", "stage": None, "message": message}},
+        f"오류: {message}" + ("\n기존 플러그인·환경은 그대로다" if action in _KEEPS else ""),
+    )
 
 
 def _interactive(stream: TextIO) -> bool:
@@ -195,15 +270,55 @@ def _confirmer(yes: bool, stdin: TextIO, err: TextIO) -> Callable[[str], bool]:
     return confirm
 
 
+def _source_text(source: dict[str, Any]) -> str:
+    if source.get("kind") == "git":
+        ref = source.get("ref") or "HEAD"
+        return f"git {source['url']} @ {ref} ({str(source['commit'])[:12]})"
+    return f"{source.get('kind')} {source.get('path') or source.get('url')}"
+
+
+def _untrusted_text(ids: list[str]) -> str:
+    if not ids:
+        return ""
+    return (
+        "\n  이 PC에서 아직 신뢰 확인하지 않은 잠금이다. 진행하면 잠금의 다른 플러그인도 모두 "
+        "신뢰한다 (이 PC에서 실행될 수 있다): " + ", ".join(ids)
+    )
+
+
 def _preview_text(p: dict[str, Any]) -> str:
     lines = [
         "이 플러그인은 내 PC에서 내 권한으로 실행된다. 출처를 믿을 때만 설치한다.",
         f"  이름  {p.get('title') or p['id']} ({p['id']} {p['version']}, {p['dist']})",
-        f"  출처  {p['source'].get('path') or p['source'].get('url')}",
+        f"  출처  {_source_text(p['source'])}",
         f"  권한  {', '.join(p['permissions']) or '없음'}",
         f"  의존성 {len(p['dependencies'])}개: {', '.join(p['dependencies']) or '없음'}",
     ]
+    if p.get("replaces"):
+        lines.append(f"  바꾸는 판 {p['replaces']} → {p['version']}")
+    return "\n".join(lines) + _untrusted_text(p.get("untrusted") or [])
+
+
+def _sync_text(p: dict[str, Any]) -> str:
+    lines = [
+        "잠금(kookabug.lock)의 플러그인을 이 PC에 준비한다. 플러그인은 내 PC에서 내 권한으로 "
+        "실행된다. 출처를 믿을 때만 진행한다.",
+        *(
+            f"  {x['id']} {x['version']}  {_source_text(x['source'])}  권한 "
+            f"{', '.join(x['permissions']) or '없음'}"
+            for x in p["plugins"]
+        ),
+    ]
     return "\n".join(lines)
+
+
+def _relock_text(p: dict[str, Any]) -> str:
+    return (
+        f"잠금을 앱 조건으로 바꾼다: Python {p['from']['python']} → {p['to']['python']}, "
+        f"SDK {p['from']['sdk']} → {p['to']['sdk']}\n"
+        + "\n".join(f"  {x['id']} {x['version']}" for x in p["plugins"])
+        + _untrusted_text(p.get("untrusted") or [])
+    )
 
 
 def _list_text(result: dict[str, Any]) -> str:

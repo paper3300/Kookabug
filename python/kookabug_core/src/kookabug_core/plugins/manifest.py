@@ -18,6 +18,7 @@ from email.parser import HeaderParser
 from pathlib import Path
 from typing import Any, Final
 
+from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 
 from kookabug_core.plugins.errors import PluginError
@@ -28,10 +29,13 @@ __all__ = [
     "RESERVED_IDS",
     "SDK_DIST",
     "Manifest",
+    "ProjectManifest",
     "min_core_satisfied",
     "normalize_name",
+    "read_project_manifest",
     "read_wheel",
     "requirement_name",
+    "same_requirements",
 ]
 
 RESERVED_IDS: Final = frozenset({"core", "kookabug", "testkit"})
@@ -114,8 +118,10 @@ def _invalid(message: str) -> PluginError:
     return PluginError("manifest_invalid", message, stage="manifest")
 
 
-def read_wheel(path: Path) -> Manifest:
-    """wheel을 읽고 정적 검사한다. 문제가 있으면 `manifest_invalid`."""
+def read_wheel(path: Path, *, allow_direct: bool = False) -> Manifest:
+    """wheel을 읽고 정적 검사한다. 문제가 있으면 `manifest_invalid`. 의존성의 직접 URL 참조도
+    거부한다 — `allow_direct`(⑥ 빌드 wheel 확정)면 받아 두고 원천과의 대조(`build_failed`)에
+    맡긴다."""
     match = _WHEEL_NAME.match(path.name)
     if match is None:
         raise _invalid(f"{path.name}은(는) 유효한 wheel 파일 이름이 아니다")
@@ -171,6 +177,8 @@ def read_wheel(path: Path) -> Manifest:
             f"스키마 머리 판 {header['version']}이(가) 배포판 판 {metadata['version']}과 다르다"
         )
     requires = tuple(metadata["requires"])
+    if not allow_direct:
+        problems_ += _requirement_problems(requires)
     if not any(requirement_name(r) == SDK_DIST for r in requires):
         problems_.append(f"{SDK_DIST} 의존 선언이 없다 (예: kookabug-sdk>=0.1,<0.2)")
     min_core = header.get("min_core")
@@ -196,6 +204,125 @@ def read_wheel(path: Path) -> Manifest:
         schema=schema,
         schema_sha256=schema_digest(schema),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectManifest:
+    """git·path 원천의 정적 정보 (`pyproject.toml`만 읽는다 — 빌드·import 없음, 거래 ②).
+    노드·스키마는 승인 뒤 빌드한 wheel에서 다시 읽는다 (⑥, `read_wheel`)."""
+
+    id: str
+    dist: str
+    version: str
+    header: dict[str, Any]
+    requires: tuple[str, ...]
+
+    @property
+    def sdk_requires(self) -> tuple[str, ...]:
+        return tuple(r for r in self.requires if requirement_name(r) == SDK_DIST)
+
+    @property
+    def dependencies(self) -> tuple[str, ...]:
+        return tuple(r for r in self.requires if requirement_name(r) != SDK_DIST)
+
+    @property
+    def permissions(self) -> list[str]:
+        return list(self.header.get("permissions", []))
+
+    @property
+    def isolation(self) -> str:
+        return str(self.header.get("isolation", "auto"))
+
+    def lock_manifest(self) -> dict[str, Any]:
+        return {k: self.header[k] for k in _HEADER_KEYS if k in self.header}
+
+
+def read_project_manifest(root: Path) -> ProjectManifest:
+    """`pyproject.toml` 정적 검사: `[tool.kookabug]`(SDK `read_project`와 같은 규칙), ID 예약,
+    `[project].name`, 정적 `version`·`dependencies`(`dynamic`이면 `manifest_invalid`), SDK 의존
+    선언, `min_core` PEP 440."""
+    import tomllib
+
+    from kookabug_sdk.build import BuildError, plugin_header, read_project
+
+    try:
+        project = read_project(root)
+    except BuildError as exc:
+        raise _invalid("; ".join(exc.problems)) from exc
+    data = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    meta = data.get("project", {})
+    problems: list[str] = []
+    dynamic = meta.get("dynamic", [])
+    if isinstance(dynamic, list) and {"dependencies", "version"} & set(dynamic):
+        problems.append(
+            "[project].dynamic에 dependencies·version이 있다 (설치 전 정적으로 읽어야 한다)"
+        )
+    name = meta.get("name")
+    if not isinstance(name, str) or not name:
+        problems.append("[project].name이 없다")
+    raw = meta.get("dependencies", [])
+    if not isinstance(raw, list) or not all(isinstance(r, str) for r in raw):
+        problems.append("[project].dependencies는 문자열 목록이다")
+        raw = []
+    requires = tuple(str(r).strip() for r in raw)
+    problems += _requirement_problems(requires)
+    if project.id in RESERVED_IDS:
+        problems.append(f"플러그인 ID {project.id!r}은(는) 예약돼 있다")
+    if not any(requirement_name(r) == SDK_DIST for r in requires):
+        problems.append(f"{SDK_DIST} 의존 선언이 없다 (예: kookabug-sdk>=0.1,<0.2)")
+    if project.min_core is not None:
+        try:
+            Version(project.min_core)
+        except InvalidVersion:
+            problems.append(f"min_core {project.min_core!r}이(가) PEP 440 판이 아니다")
+    if problems:
+        raise _invalid("; ".join(problems))
+    return ProjectManifest(
+        id=project.id,
+        dist=str(name),
+        version=project.version,
+        header=plugin_header(project),
+        requires=requires,
+    )
+
+
+def _requirement_problems(requires: tuple[str, ...]) -> list[str]:
+    """읽을 수 없는 요구·직접 URL 참조(`이름 @ URL`). 직접 참조는 인덱스 해석·해시 잠금과 맞지
+    않아 받지 않는다 (의존성은 인덱스의 wheel만, D5)."""
+    problems: list[str] = []
+    # 메시지에는 배포판 이름과 이유만 (요구 원문·파서 예외 문구에는 URL·인증 정보가 있을 수 있다)
+    for number, requirement in enumerate(requires, start=1):
+        try:
+            parsed = Requirement(requirement)
+        except InvalidRequirement:
+            name = requirement_name(requirement) or "?"
+            problems.append(f"{number}번째 의존성({name})을 읽을 수 없다 (PEP 508 요구가 아니다)")
+            continue
+        if parsed.url:
+            problems.append(
+                f"의존성 {normalize_name(parsed.name)}이(가) 직접 URL 참조다 "
+                "(인덱스의 판 요구만 쓴다)"
+            )
+    return problems
+
+
+def _requirement_key(text: str) -> tuple[str, frozenset[str], frozenset[str], str, str]:
+    req = Requirement(text)
+    return (
+        normalize_name(req.name),
+        frozenset(req.extras),
+        frozenset(str(s) for s in req.specifier),
+        str(req.marker or ""),
+        req.url or "",  # 직접 참조 없음/있음·주소 차이도 다른 요구
+    )
+
+
+def same_requirements(a: tuple[str, ...], b: tuple[str, ...]) -> bool:
+    """두 의존성 목록이 같은 요구인가 (표기 순서·공백·이름 정규화 차이는 무시)."""
+    try:
+        return sorted(map(_requirement_key, a)) == sorted(map(_requirement_key, b))
+    except InvalidRequirement:
+        return False
 
 
 def _metadata(zf: zipfile.ZipFile, names: list[str]) -> dict[str, Any]:

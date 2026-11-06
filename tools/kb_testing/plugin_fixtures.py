@@ -37,6 +37,9 @@ __all__ = [
     "PLUGINS",
     "SAMPLE",
     "dist_wheel",
+    "git",
+    "git_env",
+    "git_repo",
     "index_files",
     "normalize",
     "plugin_wheel",
@@ -135,10 +138,11 @@ def _package_files(src: Path, package: str) -> dict[str, bytes]:
     return out
 
 
-def sdk_wheel(dest: Path) -> Path:
-    """레포의 `kookabug_sdk` 소스로 만든 SDK wheel (앱이 동봉하는 것과 같은 모양)."""
+def sdk_wheel(dest: Path, *, version: str | None = None) -> Path:
+    """레포의 `kookabug_sdk` 소스로 만든 SDK wheel (앱이 동봉하는 것과 같은 모양). `version`을 주면
+    배포판 판만 바꾼다 (앱 SDK가 바뀐 경우의 검사)."""
     project = tomllib.loads((SDK_PROJECT / "pyproject.toml").read_text(encoding="utf-8"))
-    version = str(project["project"]["version"])
+    version = version or str(project["project"]["version"])
     files = _package_files(SDK_PROJECT / "src", "kookabug_sdk")
     scripts = "[console_scripts]\nkookabug-sdk = kookabug_sdk.cli:main\n"
     return dist_wheel(dest, "kookabug-sdk", version, files, entry_points=scripts)
@@ -191,6 +195,73 @@ def plugin_wheel(
             files,
             requires=[str(r) for r in meta.get("dependencies", [])],
         )
+
+
+GIT_DATE: Final = "2026-01-01T00:00:00+00:00"
+
+
+def git_env(home: Path) -> dict[str, str]:
+    """검사용 git 환경: 이 PC의 전역·시스템 git 설정을 쓰지 않는다 (빈 HOME·전역 설정 파일)."""
+    import os
+
+    home.mkdir(parents=True, exist_ok=True)
+    config = home / "gitconfig"
+    if not config.exists():
+        config.write_bytes(b"")
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("GIT_")}
+    env.update(
+        HOME=str(home),
+        USERPROFILE=str(home),
+        GIT_CONFIG_NOSYSTEM="1",
+        GIT_CONFIG_GLOBAL=str(config),
+        GIT_TERMINAL_PROMPT="0",
+        GIT_AUTHOR_NAME="kb",
+        GIT_AUTHOR_EMAIL="kb@example.invalid",
+        GIT_COMMITTER_NAME="kb",
+        GIT_COMMITTER_EMAIL="kb@example.invalid",
+        GIT_AUTHOR_DATE=GIT_DATE,
+        GIT_COMMITTER_DATE=GIT_DATE,
+    )
+    return env
+
+
+def git(repo: Path, *args: str, env: Mapping[str, str]) -> str:
+    import subprocess
+
+    done = subprocess.run(
+        ["git", "-C", str(repo), *args],
+        env=dict(env),
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=60,
+    )
+    assert done.returncode == 0, done.stderr
+    return done.stdout.strip()
+
+
+def git_repo(
+    project: Path,
+    dest: Path,
+    *,
+    tag: str | None = "v0.1.0",
+    extra: Mapping[str, bytes] | None = None,
+) -> Path:
+    """`project`를 복사해 커밋 하나(+태그)의 로컬 git 레포를 만든다 (레포·워크스페이스 밖에 두는
+    "외부 레포"). 같은 입력이면 같은 커밋 해시다 (작성자·시각 고정). `extra`는 더할 파일."""
+    shutil.copytree(project, dest, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    for rel, data in (extra or {}).items():
+        target = dest / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    env = git_env(dest.parent / f".{dest.name}-home")
+    git(dest, "init", "--quiet", "--initial-branch=main", env=env)
+    git(dest, "-c", "core.autocrlf=false", "add", "-A", env=env)
+    git(dest, "commit", "--quiet", "-m", "fixture", env=env)
+    if tag:
+        git(dest, "tag", tag, env=env)
+    return dest
 
 
 def _dump_toml(data: Mapping[str, Any]) -> str:

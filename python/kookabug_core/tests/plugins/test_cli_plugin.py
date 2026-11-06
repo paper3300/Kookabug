@@ -17,6 +17,9 @@ def test_agent_env_refused_exit5(rig: Rig) -> None:
     for args in (
         ("add", wheel, "--yes", "--json"),
         ("remove", "sample", "--yes", "--json"),
+        ("upgrade", "sample", "--yes", "--json"),
+        ("sync", "--yes", "--json"),
+        ("relock", "--yes", "--json"),
         ("gc", "--yes", "--json"),
     ):
         proc = plugin_cli(rig, *args, KOOKABUG_AGENT="agent-1")

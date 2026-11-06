@@ -334,3 +334,13 @@ def tree_mtimes(folder: Path) -> dict[str, int]:
 
 
 YES: Callable[[Any], bool] = _yes
+
+
+def git_source(repo: Path, ref: str | None = "v0.1.0") -> str:
+    """로컬 git 레포의 원천 문자열 `git+file:///…[@ref]`."""
+    return f"git+{repo.as_uri()}" + (f"@{ref}" if ref else "")
+
+
+def calls_with(ops: PluginOps, *needles: str) -> list[tuple[str, ...]]:
+    """자식 명령 기록 중 인자에 `needles`가 모두 든 것."""
+    return [c for c in ops.calls if all(any(n in a for a in c) for n in needles)]

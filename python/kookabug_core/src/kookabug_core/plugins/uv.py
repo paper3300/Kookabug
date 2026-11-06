@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -25,10 +24,12 @@ from pathlib import Path
 from typing import Final
 
 from kookabug_core.plugins.errors import PluginError
+from kookabug_core.plugins.redact import SECRET_QUERY, mask
 from kookabug_core.win import CHILD_FLAGS, Job, resume_suspended
 
 __all__ = [
     "LINK_MODE",
+    "SECRET_QUERY",
     "UV_ENV",
     "Completed",
     "ProcessRunner",
@@ -53,12 +54,6 @@ _DROP: Final = frozenset(
         "PIP_REQUIRE_VIRTUALENV",
     }
 )
-_USERINFO = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/@\s]+@")
-
-
-def mask(text: str) -> str:
-    """URL의 사용자 정보(`user:token@`)를 가린다."""
-    return _USERINFO.sub(r"\1***@", text)
 
 
 def app_root() -> Path:

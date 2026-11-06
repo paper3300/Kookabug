@@ -4,7 +4,10 @@
 - `uv`·`resolve`: uv 찾기·실행(설치 작업 Job)·의존성 해석
 - `envs`: 환경 지문·찾기·digest·완성 표식
 - `lockfile`: `kookabug.lock` 형식·정규 해시·원자 쓰기
-- `ops`: 설치 거래(3.5)·제거·목록·검증
+- `sources`: 원천 받기 (git·wheel·폴더, git 설정 격리·전송·ref 검사·인증 정보 가림)
+- `ops`: 설치 거래(3.5, git·폴더는 staging 빌드)·upgrade·제거·목록·검증
+- `sync`·`relock`: 잠금 → 환경 (잠금 안 씀) / 앱 조건으로 다시 잠금
+- `trust`: 신뢰한 잠금 해시 기억 (`.kookabug/local.json`)
 - `gc`: 사람이 부르는 정리(3.6)
 """
 

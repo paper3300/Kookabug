@@ -1,0 +1,16 @@
+[project]
+name = "kbfix-plugin-build-marker"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = ["kookabug-sdk>=0.1.0.dev0,<0.2"]
+
+[tool.kookabug]
+id = "build_marker"
+title = "Build Marker"
+modules = ["kbfix_build_marker.nodes"]
+
+# 프로젝트 안 빌드 백엔드: 빌드할 때 표식 파일을 쓴다 (승인 전 미실행 검사)
+[build-system]
+requires = []
+build-backend = "kbfix_backend"
+backend-path = ["_backend"]

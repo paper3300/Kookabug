@@ -65,6 +65,22 @@
       "title": "PluginIndex",
       "type": "object"
     },
+    "PluginTrust": {
+      "additionalProperties": false,
+      "description": "M6: 이 PC에서 사람이 신뢰 확인한 kookabug.lock의 정규 잠금 해시들 (같은 잠금이면 다시 묻지 않는다, 오래된 것부터 버림)",
+      "properties": {
+        "locks": {
+          "items": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        }
+      },
+      "title": "PluginTrust",
+      "type": "object"
+    },
     "SettingKey": {
       "pattern": "^[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)*$",
       "title": "SettingKey",
@@ -92,6 +108,9 @@
     },
     "plugin_index": {
       "$ref": "#/$defs/PluginIndex"
+    },
+    "plugin_trust": {
+      "$ref": "#/$defs/PluginTrust"
     },
     "settings": {
       "$ref": "#/$defs/Settings"
