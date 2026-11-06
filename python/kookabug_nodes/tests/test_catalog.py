@@ -45,7 +45,7 @@ def node_functions() -> dict[str, NodeFunction]:
 
 def test_core_node_types_exact(schema: dict[str, Any]) -> None:
     types = [n["type"] for n in schema["nodes"]]
-    assert len(types) == 40
+    assert len(types) == 42
     assert set(types) == CORE_NODE_TYPES
     assert schema["plugin"]["id"] == "core"
 
@@ -57,7 +57,7 @@ def test_engine_nodes_exact(nodes: dict[str, dict[str, Any]]) -> None:
 
 def test_sdk_nodes_exact(nodes: dict[str, dict[str, Any]]) -> None:
     assert {t for t, n in nodes.items() if "engine" not in n} == SDK_NODE_TYPES
-    assert len(SDK_NODE_TYPES) == 32
+    assert len(SDK_NODE_TYPES) == 34
 
 
 def test_schema_matches_node_schema_metaschema(schema: dict[str, Any]) -> None:

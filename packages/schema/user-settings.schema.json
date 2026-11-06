@@ -1,5 +1,48 @@
 {
   "$defs": {
+    "Agent": {
+      "additionalProperties": false,
+      "description": "판단 노드·에이전트 패널이 띄우는 ACP 에이전트 하나. env의 비밀값은 {\"$secret\": 키}로만 쓴다 (실행 때 찾음)",
+      "properties": {
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "command": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "env": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/SecretRef"
+              }
+            ]
+          },
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "type": "object"
+        },
+        "id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["id", "name", "command"],
+      "title": "Agent",
+      "type": "object"
+    },
     "PermissionRule": {
       "additionalProperties": false,
       "description": "권한 규칙 하나. rule은 \"도구\" 또는 \"도구(인자 패턴)\". 도구·인자 모두 glob(*, ?), 대소문자 구분",
@@ -45,6 +88,19 @@
       },
       "title": "Permissions",
       "type": "object"
+    },
+    "SecretRef": {
+      "additionalProperties": false,
+      "description": "비밀값 저장소의 키 (값은 실행 때 찾는다)",
+      "properties": {
+        "$secret": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["$secret"],
+      "title": "SecretRef",
+      "type": "object"
     }
   },
   "$id": "urn:kookabug:user-settings:0",
@@ -52,6 +108,16 @@
   "additionalProperties": false,
   "description": "사용자 설정 (%APPDATA%\\Kookabug\\settings.json, 워크스페이스 밖)",
   "properties": {
+    "agents": {
+      "items": {
+        "$ref": "#/$defs/Agent"
+      },
+      "type": "array"
+    },
+    "default_agent": {
+      "description": "판단 노드의 agent가 null일 때 쓰는 에이전트 ID",
+      "type": "string"
+    },
     "format": {
       "const": "kookabug.user-settings/0"
     },

@@ -13,6 +13,8 @@
 | `deadline_exceeded` | 테스트 전체 기한을 넘었다 (G11) |
 | `cancelled` | 실행이 취소됐다 (판정은 `error`) |
 | `type_mismatch`·`input_invalid` | 실행 때 계산한 입력 값이 핀 타입·제약에 맞지 않는다 |
+| `agent_*`·`api_*` | 판단 노드(`core.agent.*`)의 에이전트·모델 API 고장 (M5, `agents/judge.py`) |
+| `not_supported` | 그 실행 ctx에 없는 기능 (워커·가짜 ctx의 판단 노드) |
 | 그 밖 | 검증을 건너뛴(`validate=False`) 그래프에서 실행 전 검증 코드와 같은 문제 |
 """
 
@@ -20,6 +22,7 @@ from __future__ import annotations
 
 from kookabug_sdk import NodeContractError
 from kookabug_sdk.context import ContextViolation
+from kookabug_sdk.errors import RunnerError
 
 __all__ = ["EngineError", "error_code"]
 
@@ -35,6 +38,9 @@ class EngineError(Exception):
 
 def error_code(exc: Exception) -> str:
     if isinstance(exc, EngineError):
+        return exc.code
+    if isinstance(exc, RunnerError):
+        # 노드가 실행 ctx에 없는 기능을 알렸다 (판단 노드의 `not_supported`, M5)
         return exc.code
     if isinstance(exc, ContextViolation):
         return "context_violation"

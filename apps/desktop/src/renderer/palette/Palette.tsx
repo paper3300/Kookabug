@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { canvasActions } from "../graph/canvasActions";
 import { useRegistry } from "../store/registry";
 import { useTabs } from "../store/tabs";
-import { dotColor } from "./categories";
+import { dotColor, isNondeterministic, NONDETERMINISTIC_BADGE } from "./categories";
 import { DEFAULT_OPEN, groupKey, PALETTE_MIME, paletteGroups, type PaletteItem } from "./groups";
 import css from "./palette.module.css";
 import shell from "../app/shell.module.css";
@@ -47,7 +47,7 @@ export function Palette() {
         {groups.map((g) => {
           const key = groupKey(g);
           const expanded = searching || open.has(key);
-          const src = g.items[0]?.src ?? "";
+          const src = g.src ?? g.items[0]?.src ?? "";
           return (
             <div key={key} role="group" aria-label={g.group} data-group={key}>
               <div
@@ -94,6 +94,11 @@ export function Palette() {
                     }}
                   >
                     <span className={css.name}>{item.title}</span>
+                    {isNondeterministic(item.info.category) && (
+                      <span className={css.badge} data-part="palette-badge">
+                        {NONDETERMINISTIC_BADGE}
+                      </span>
+                    )}
                   </div>
                 ))}
             </div>

@@ -9,7 +9,7 @@
 //   밖을 잇는 연결은 그룹 노드로 옮겨 그린다. 주석은 뒤에 깔리는 상자다
 // 이 함수는 값을 읽기만 한다 (mapping.test.ts가 코퍼스로 확인한다)
 import type { Edge, Node } from "@xyflow/react";
-import { categoryInfo, type HeadTone } from "../palette/categories";
+import { categoryInfo, isNondeterministic, NONDETERMINISTIC_BADGE, type HeadTone } from "../palette/categories";
 import { belongsTo, problemNode } from "../problems/locate";
 import { autoLayout } from "./autoLayout";
 import {
@@ -100,7 +100,7 @@ export interface KbNodeData extends Record<string, unknown> {
   head: HeadTone | "warn" | "error";
   rows: NodeRow[];
   note: { text: string; tone: NoteTone } | null;
-  status: { text: string; tone: "warn" | "error" | "muted" } | null;
+  status: { text: string; tone: "warn" | "error" | "muted" | "agent" } | null;
   errors: number;
   warnings: number;
   unknown: boolean;
@@ -476,7 +476,9 @@ export function toFlow({ path, value, shapes, types, diagnostics, view }: Mappin
             ? { text: errors > 1 ? `✕ 오류 ${errors}` : "✕ 오류", tone: "error" }
             : warnings > 0
               ? { text: "⚠ 경고", tone: "warn" }
-              : null,
+              : isNondeterministic(info?.category)
+                ? { text: NONDETERMINISTIC_BADGE, tone: "agent" }
+                : null,
         errors,
         warnings,
         unknown,

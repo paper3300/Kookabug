@@ -2,6 +2,141 @@
   "format": "kookabug.nodes/0",
   "nodes": [
     {
+      "category": "agent",
+      "config": {
+        "choices": {
+          "description": "선택지 (출구 이름, 1~16개)",
+          "min_items": 1,
+          "type": "list[string]"
+        },
+        "endpoint": {
+          "default": "",
+          "description": "API 주소 (빈 값 = 공급자 기본, https만 — http는 이 PC만)",
+          "type": "string"
+        },
+        "provider": {
+          "default": "anthropic",
+          "description": "API 모양 (Anthropic Messages / OpenAI 호환 Chat Completions)",
+          "enum": [
+            "anthropic",
+            "openai_compatible"
+          ],
+          "type": "string"
+        }
+      },
+      "description": "모델 API를 직접 불러 `image`와 `prompt`를 주고, 선택지 중 하나를 고르게 한다. `api_key`는\n비밀값(`$secret`)만 받는다.",
+      "exits": {
+        "extra": [
+          {
+            "kind": "fail",
+            "name": "unsure",
+            "outputs": [
+              "answer",
+              "reason"
+            ]
+          }
+        ],
+        "from_config": "choices",
+        "kind": "ok",
+        "outputs": [
+          "answer",
+          "reason"
+        ]
+      },
+      "inputs": {
+        "api_key": {
+          "type": "secret"
+        },
+        "image": {
+          "default": null,
+          "nullable": true,
+          "type": "image"
+        },
+        "model": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "timeout_ms": {
+          "default": 60000,
+          "minimum": 1,
+          "type": "int"
+        }
+      },
+      "outputs": {
+        "answer": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "title": "Agent 판단 · API",
+      "type": "core.agent.api_judge",
+      "version": 1
+    },
+    {
+      "category": "agent",
+      "config": {
+        "agent": {
+          "default": "",
+          "description": "사용자 설정의 에이전트 ID (빈 값 = 기본)",
+          "type": "string"
+        },
+        "choices": {
+          "description": "선택지 (출구 이름, 1~16개)",
+          "min_items": 1,
+          "type": "list[string]"
+        }
+      },
+      "description": "사용자 설정의 에이전트 CLI를 도구 없이 따로 띄워 `image`와 `prompt`를 주고, 선택지 중\n하나를 고르게 한다. 고른 선택지의 출구로 나간다.",
+      "exits": {
+        "extra": [
+          {
+            "kind": "fail",
+            "name": "unsure",
+            "outputs": [
+              "answer",
+              "reason"
+            ]
+          }
+        ],
+        "from_config": "choices",
+        "kind": "ok",
+        "outputs": [
+          "answer",
+          "reason"
+        ]
+      },
+      "inputs": {
+        "image": {
+          "default": null,
+          "nullable": true,
+          "type": "image"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "timeout_ms": {
+          "default": 60000,
+          "minimum": 1,
+          "type": "int"
+        }
+      },
+      "outputs": {
+        "answer": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "title": "Agent 판단 · CLI",
+      "type": "core.agent.cli_judge",
+      "version": 1
+    },
+    {
       "category": "app",
       "description": "창에 닫기를 보내고 기다린다. `force_after_ms` 안에 끝나지 않으면 강제로 끝내고 `timeout`.",
       "effects": [

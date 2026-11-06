@@ -431,6 +431,9 @@ class _StepRecord:
     """가림 여부와 상관없이 `sensitive` target으로 읽은 적이 있다."""
     withhold: list[str] = field(default_factory=list[str])
     """가림이 켜져 있었다면 남기지 않았을 증거 경로 (`step.end.agent_withhold`)."""
+    secret_fields: list[str] = field(default_factory=list[str])
+    """노드 쪽이 비밀값을 가린 `step.end` 필드 (pointer, `step.end.secret_paths`에 더한다 —
+    판단 노드가 답에서 인증값을 `***`로 바꾼 출력·메시지, M5)."""
 
 
 class Recorder:
@@ -543,6 +546,21 @@ class Recorder:
         record = self._open.get(step)
         if record is not None:
             record.secret = True
+
+    def mark_secret_fields(self, step: str, pointers: Sequence[str]) -> None:
+        """그 열린 스텝의 `step.end` 필드에 비밀값(가린 자리)이 있었다: 에이전트용 분류에 더하고
+        스텝도 `secret`으로 둔다."""
+        record = self._open.get(step)
+        if record is None:
+            return
+        record.secret = True
+        for pointer in pointers:
+            if pointer not in record.secret_fields:
+                record.secret_fields.append(pointer)
+
+    def secret_fields(self, step: str) -> list[str]:
+        record = self._open.get(step)
+        return [] if record is None else list(record.secret_fields)
 
     def agent_marks(self, step: str) -> tuple[bool, list[str]]:
         """스텝을 닫기 전에: (`step.end.secret`, `step.end.agent_withhold`) — 에이전트용 분류."""

@@ -23,7 +23,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import EllipsisType
-from typing import Any, Final, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Any, Final, Protocol, cast, runtime_checkable
 
 from kookabug_core.canonical import loads_strict
 from kookabug_core.engine.cancel import CancelToken, DeadlineExceeded
@@ -37,6 +37,9 @@ from kookabug_core.loader import Program
 from kookabug_core.record.artifacts import ArtifactStore, FindEvidence, Recorder, StagedFrame
 from kookabug_core.registry import Registry
 from kookabug_core.workspace import SettingLookup
+
+if TYPE_CHECKING:
+    from kookabug_core.agents.judge import JudgeEnv
 from kookabug_sdk.context import (
     ArtifactsApi,
     Clock,
@@ -294,6 +297,8 @@ class Runtime:
     """처음 관측."""
     foreground_tried: bool = False
     """이 실행에서 현재 창이 처음 정해질 때 그 창을 앞으로 가져오기를 했다 (D1, 한 번만)."""
+    judge_env: JudgeEnv | None = None
+    """판단 노드의 바깥(사용자 설정·비밀값·임시 폴더, M5 3.11). 없으면 이 프로세스 환경에서."""
 
     @property
     def epoch(self) -> int:
@@ -996,6 +1001,13 @@ class StepContext:
 
     def check_cancel(self) -> None:
         self._runtime.check()
+
+    def judge(self, **request: Any) -> dict[str, Any]:
+        """판단 노드(`core.agent.*`)의 외부 판단 한 번 (M5 3.11, runner 안 core 노드만 — SDK
+        `Context`에는 없다). `{"exit", "answer", "reason"}`, 고장은 `EngineError`."""
+        from kookabug_core.agents.judge import run_judge
+
+        return run_judge(self._runtime, self._step, env=self._runtime.judge_env, **request)
 
     def setting(self, key: str) -> Any:
         program = self._runtime.program

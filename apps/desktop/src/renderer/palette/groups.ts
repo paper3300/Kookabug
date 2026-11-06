@@ -13,6 +13,8 @@ export interface PaletteItem {
 export interface PaletteGroup {
   group: string;
   dot: DotTone;
+  /** 묶음 줄 오른쪽 칸 (코어 묶음의 고정 글, 예: Agent "CLI · API 키") */
+  src?: string;
   items: PaletteItem[];
 }
 
@@ -33,7 +35,7 @@ export function matches(info: NodeTypeInfo, query: string): boolean {
 
 export function paletteGroups(types: TypeIndex, query = ""): PaletteGroup[] {
   const groups = new Map<string, PaletteGroup>(
-    PALETTE_GROUPS.map((g) => [g.group, { group: g.group, dot: g.dot, items: [] }]),
+    PALETTE_GROUPS.map((g) => [g.group, { group: g.group, dot: g.dot, src: g.src, items: [] }]),
   );
   const plugins = new Map<string, PaletteGroup>();
   for (const info of types.values()) {

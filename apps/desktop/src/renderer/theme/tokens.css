@@ -133,6 +133,7 @@
   --kb-cat-vision: #39c5cf;
   --kb-cat-flow: #b392f0;
   --kb-cat-judge: #f0883e;
+  --kb-cat-agent: #c5b3eb;
   --kb-cat-plugin: #e2c08d;
   --kb-palette-item-fg: #bbbbbb;
   /* target 편집기 (시안 Recorder 오른쪽: 정지 화면 판·안내 줄·점수 배지·클릭 십자) */
@@ -323,6 +324,7 @@
   --kb-cat-vision: #00737d;
   --kb-cat-flow: #7048b8;
   --kb-cat-judge: #b85c00;
+  --kb-cat-agent: #5e43a6;
   --kb-cat-plugin: #7a5600;
   --kb-palette-item-fg: #4d4d4d;
   /* target 편집기 (Recorder는 다크 시안뿐: 라이트는 같은 자리의 MainLight 판·패널 색과 라이트 경고·빨강) */

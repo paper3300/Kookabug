@@ -2,11 +2,43 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel, StringConstraints
 
 
 class PermissionVerdict(RootModel[Literal["allow", "ask", "deny"]]):
     root: Annotated[Literal["allow", "ask", "deny"], Field(title="PermissionVerdict")]
+
+
+class SecretRef(BaseModel):
+    """
+    비밀값 저장소의 키 (값은 실행 때 찾는다)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    field_secret: Annotated[str, Field(alias="$secret", min_length=1)]
+
+
+class Agent(BaseModel):
+    """
+    판단 노드·에이전트 패널이 띄우는 ACP 에이전트 하나. env의 비밀값은 {"$secret": 키}로만 쓴다 (실행 때 찾음)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    args: list[str] | None = None
+    command: Annotated[str, Field(min_length=1)]
+    env: (
+        dict[
+            Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")],
+            str | SecretRef,
+        ]
+        | None
+    ) = None
+    id: Annotated[str, Field(pattern="^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$")]
+    name: Annotated[str, Field(min_length=1)]
 
 
 class PermissionRule(BaseModel):
@@ -47,5 +79,9 @@ class UserSettings(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    agents: list[Agent] | None = None
+    default_agent: Annotated[
+        str | None, Field(description="판단 노드의 agent가 null일 때 쓰는 에이전트 ID")
+    ] = None
     format: Literal["kookabug.user-settings/0"]
     permissions: Permissions | None = None

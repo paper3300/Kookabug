@@ -2,7 +2,14 @@
 import { describe, expect, test } from "vitest";
 import { readCoreSchema } from "../graph/corpus.testutil";
 import { indexNodeTypes } from "../graph/mapping";
-import { CORE_CATEGORIES, PALETTE_GROUPS, PLUGIN_CATEGORY, categoryInfo } from "./categories";
+import {
+  CORE_CATEGORIES,
+  NONDETERMINISTIC_BADGE,
+  PALETTE_GROUPS,
+  PLUGIN_CATEGORY,
+  categoryInfo,
+  isNondeterministic,
+} from "./categories";
 import { groupKey, matches, paletteGroups } from "./groups";
 
 const core = readCoreSchema() as { nodes: { category: string; type: string; engine?: string }[] };
@@ -30,9 +37,19 @@ describe("팔레트 묶음", () => {
   };
   const types = indexNodeTypes([core, plugin]);
 
+  test("Agent 분류: 판단 노드 2종, 묶음 줄 오른쪽 글, 비결정 배지 (M5 B4)", () => {
+    const agent = paletteGroups(types).find((g) => g.group === "Agent")!;
+    expect(agent.items.map((i) => i.type).sort()).toEqual(["core.agent.api_judge", "core.agent.cli_judge"]);
+    expect(agent.src).toBe("CLI · API 키");
+    expect(agent.dot).toBe("agent");
+    expect(agent.items.every((i) => isNondeterministic(i.info.category))).toBe(true);
+    expect(isNondeterministic("image")).toBe(false);
+    expect(NONDETERMINISTIC_BADGE).toBe("비결정");
+  });
+
   test("시안 분류 순서, 플러그인 분류는 플러그인 이름, 시작 노드는 뺀다", () => {
     const groups = paletteGroups(types);
-    expect(groups.map((g) => g.group)).toEqual(["창", "입력", "화면 인식", "흐름", "판정", "플러그인"]);
+    expect(groups.map((g) => g.group)).toEqual(["창", "입력", "화면 인식", "흐름", "판정", "Agent", "플러그인"]);
     const all = groups.flatMap((g) => g.items.map((i) => i.type));
     const entries = core.nodes.filter((n) => n.engine === "graph_entry").map((n) => n.type);
     expect(entries.length).toBe(1);

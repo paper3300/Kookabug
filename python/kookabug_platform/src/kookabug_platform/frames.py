@@ -56,6 +56,7 @@ __all__ = [
     "decode_image",
     "encode_jpeg",
     "encode_png",
+    "fit_png",
 ]
 
 MIB: Final = 1 << 20
@@ -92,6 +93,25 @@ def encode_png(pixels: Pixels) -> bytes:
     if not ok:
         raise ValueError(f"PNG로 인코딩할 수 없다: {pixels.shape}")
     return buffer.tobytes()
+
+
+def fit_png(data: bytes, max_side: int, max_bytes: int) -> tuple[bytes, int, int]:
+    """이미지 바이트 → 긴 변 `max_side` 이하·`max_bytes` 이하 PNG와 크기 (에이전트·모델에 보내는
+    이미지, M5 3.2·3.11). 읽을 수 없으면 ValueError."""
+    pixels = decode_image(data)
+    height, width = int(pixels.shape[0]), int(pixels.shape[1])
+    side = min(max_side, max(width, height))
+    while True:
+        scale = side / max(width, height)
+        if scale < 1:
+            size = (max(1, round(width * scale)), max(1, round(height * scale)))
+            shown = np.asarray(cv2.resize(pixels, size, interpolation=cv2.INTER_AREA), np.uint8)
+        else:
+            shown = pixels
+        png = encode_png(shown)
+        if len(png) <= max_bytes or side <= 64:
+            return png, int(shown.shape[1]), int(shown.shape[0])
+        side = int(side * 0.75)
 
 
 def encode_jpeg(pixels: Pixels, long_side: int | None = None) -> bytes:

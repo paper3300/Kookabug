@@ -37,25 +37,9 @@ NAME: Final = re.compile(r"^c\d+/[0-9a-f]{16}\.png$")
 
 def shrink_png(data: bytes, max_side: int = MAX_SIDE) -> tuple[bytes, int, int]:
     """이미지 바이트 → 긴 변 `max_side` 이하·1 MiB 이하 PNG와 크기. 읽을 수 없으면 ValueError."""
-    import cv2
-    import numpy as np
+    from kookabug_platform.frames import fit_png
 
-    from kookabug_platform.frames import decode_image, encode_png
-
-    pixels = decode_image(data)
-    height, width = int(pixels.shape[0]), int(pixels.shape[1])
-    side = min(max_side, max(width, height))
-    while True:
-        scale = side / max(width, height)
-        if scale < 1:
-            size = (max(1, round(width * scale)), max(1, round(height * scale)))
-            shown = np.asarray(cv2.resize(pixels, size, interpolation=cv2.INTER_AREA), np.uint8)
-        else:
-            shown = pixels
-        png = encode_png(shown)
-        if len(png) <= MAX_IMAGE_BYTES or side <= 64:
-            return png, int(shown.shape[1]), int(shown.shape[0])
-        side = int(side * 0.75)
+    return fit_png(data, max_side, MAX_IMAGE_BYTES)
 
 
 class AgentCache:

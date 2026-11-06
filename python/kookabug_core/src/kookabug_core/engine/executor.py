@@ -46,7 +46,7 @@ import copy
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
-from typing import Any, Final, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 from kookabug_core.diagnostics import Diagnostic, has_errors
 from kookabug_core.engine.cancel import Cancelled, CancelToken, DeadlineExceeded
@@ -98,6 +98,9 @@ from kookabug_sdk import Result, Secret, SecretMessage
 from kookabug_sdk.context import Deadline
 from kookabug_sdk.errors import StaleObservation
 from kookabug_sdk.types import FrameRef, WindowRef
+
+if TYPE_CHECKING:
+    from kookabug_core.agents.judge import JudgeEnv
 
 __all__ = [
     "DEFAULT_DEADLINE_MS",
@@ -202,6 +205,7 @@ class Executor:
         epochs: Epochs | None = None,
         video: VideoGate | None = None,
         on_observed: Callable[[FrameRef], None] | None = None,
+        judge_env: JudgeEnv | None = None,
     ) -> None:
         """`sink`는 이벤트를 더 보낼 곳이다 (`RunResult.events`에는 `collect_events`일 때 모인다).
 
@@ -224,6 +228,8 @@ class Executor:
         크기·DPI — runner가 `run.json.observed`로 남긴다, M3 2.6).
         플랫폼이 `PreparingPlatform`이면 노드 함수를 부르기 직전(시도마다, 노드가 자기 기한을 만들기
         전)에 `before_node`로 그 노드가 쓸 엔진 준비를 기다린다 (OCR, M2 사람 확인 S 결함 ②).
+        `judge_env`는 판단 노드의 바깥(사용자 설정 폴더·비밀값·임시 폴더, M5 3.11)이다 — 주지 않으면
+        이 프로세스 환경에서 정한다.
         """
         self.registry = registry or default_registry()
         self.invoker: NodeInvoker = invoker or InProcessInvoker()
@@ -240,6 +246,7 @@ class Executor:
         self.epochs = epochs
         self.video = video
         self.on_observed = on_observed
+        self.judge_env = judge_env
 
     def run(self, program: Program, options: ExecOptions | None = None) -> RunResult:
         options = options or ExecOptions()
@@ -283,6 +290,7 @@ class Executor:
             pause_point=self.pause_point,
             epochs=self.epochs if self.epochs is not None else Epochs(),
             on_observed=self.on_observed,
+            judge_env=self.judge_env,
         )
         policy = run_record_policy(program, root)
         recorder.redact_secrets = policy.redact_secrets
@@ -700,7 +708,9 @@ class _Run:
         self._evidence(node, step, "썸네일", recorder.thumbnail)
         self._evidence(node, step, "OCR 글자 기록", recorder.ocr_artifact)
         evidence = recorder.evidence(step)
-        # 에이전트용 분류 (M5 3.8): 입력·출력에 비밀값이 있던 스텝, 가림이 켜져 있었다면 빠졌을 증거
+        # 에이전트용 분류 (M5 3.8): 입력·출력에 비밀값이 있던 스텝, 가림이 켜져 있었다면 빠졌을
+        # 증거. 노드 쪽이 비밀값을 가린 필드(판단 노드의 답 속 인증값)도 같은 표시로
+        mark_secret(end, recorder.secret_fields(step))
         if any(p.startswith("/outputs") for p in end.get("secret_paths", ())):
             recorder.mark_secret(step)
         secret, withhold = recorder.agent_marks(step)

@@ -193,6 +193,7 @@
 
 - 선택지는 `config.choices` 배열이고 그대로 출구가 된다 (`wait_any`와 같은 방식)
 - 프롬프트·응답·이미지는 실행 기록에 남긴다. 결정적이지 않으므로 노드에 배지를 단다
+- (M5 확정) 입력 `prompt`·`image`(없어도 됨)·`timeout_ms`(기본 60000), api는 + `model`·`api_key`(비밀값만). config `choices`(1~16), cli `agent`(빈 값 = 사용자 설정 기본), api `provider`(`anthropic`·`openai_compatible`)·`endpoint`(빈 값 = 기본, https만 — http는 이 PC만). 선택지 밖·읽을 수 없는 답은 `unsure`(fail 출구), 시간 초과·시작 실패·프로토콜·HTTP 오류는 `error`(`agent_*`·`api_*`). 판단 에이전트에는 도구를 주지 않는다(MCP 없음·파일·터미널 없음·권한 요청 거절·워크스페이스 밖 빈 임시 폴더). 기록 `steps/<스텝>_judge.json`
 
 ---
 

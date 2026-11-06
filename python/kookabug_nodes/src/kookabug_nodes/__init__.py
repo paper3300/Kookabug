@@ -16,4 +16,5 @@ MODULES = (
     "kookabug_nodes.screen",
     "kookabug_nodes.assert_",
     "kookabug_nodes.ocr",
+    "kookabug_nodes.agent",
 )

@@ -68,7 +68,12 @@ M1_NODE_TYPES: Final = M1_APP_WINDOW_INPUT_NODE_TYPES | M1_OBSERVE_NODE_TYPES
 # 다듬기 P1: 산술 (MVP 노드 목록 8장, 사용자 결정 G17)
 P1_VALUE_NODE_TYPES: Final = frozenset({"core.math.calc", "core.var.add"})
 
-SDK_NODE_TYPES: Final = M0A_SDK_NODE_TYPES | M1_NODE_TYPES | P1_VALUE_NODE_TYPES
+# M5 B4: Agent 판단 (MVP 노드 목록 10장)
+M5_AGENT_NODE_TYPES: Final = frozenset({"core.agent.cli_judge", "core.agent.api_judge"})
+
+SDK_NODE_TYPES: Final = (
+    M0A_SDK_NODE_TYPES | M1_NODE_TYPES | P1_VALUE_NODE_TYPES | M5_AGENT_NODE_TYPES
+)
 
 CORE_NODE_TYPES: Final = ENGINE_NODE_TYPES | SDK_NODE_TYPES
 
@@ -87,4 +92,5 @@ CORE_NODE_MODULES: Final = (
     "kookabug_nodes.screen",
     "kookabug_nodes.assert_",
     "kookabug_nodes.ocr",
+    "kookabug_nodes.agent",
 )

@@ -275,6 +275,38 @@ describe("흐름·데이터 연결", () => {
     expect(kb(flow, "n_old").unknown).toBe(true);
   });
 
+  test("판단 노드: 선택지마다 출구 + unsure(fail), 머리에 비결정 배지 (M5 B4)", () => {
+    const value: GraphValue = {
+      nodes: {
+        n_cli: {
+          type: "core.agent.cli_judge",
+          version: 1,
+          config: { choices: ["maintenance", "event"] },
+          in: { prompt: "이 팝업은?" },
+        },
+        n_api: {
+          type: "core.agent.api_judge",
+          version: 1,
+          config: { choices: ["yes"], provider: "openai_compatible" },
+          in: { prompt: "?", model: "m", api_key: { $secret: "model.key" } },
+        },
+        n_wait: { type: "core.image.wait", version: 1, in: { target: { $target: "targets/a.target.json" } } },
+      },
+    };
+    const flow = toFlow(input(value));
+    const cli = kb(flow, "n_cli");
+    // 성공 출구(선택지 순서) → 출력 → 실패 출구 (wait_any와 같은 배치)
+    expect(cli.rows.map((r) => r.right?.label ?? null)).toEqual(["maintenance", "event", "answer", "reason", "unsure"]);
+    expect(cli.rows.find((r) => r.right?.label === "unsure")?.right?.tone).toBe("fail");
+    expect(cli.head).toBe("purple");
+    expect(cli.status).toEqual({ text: "비결정", tone: "agent" });
+    const api = kb(flow, "n_api").rows.map((r) => r.right?.label ?? null);
+    expect([api[0], api.at(-1)]).toEqual(["yes", "unsure"]);
+    expect(kb(flow, "n_api").status?.text).toBe("비결정");
+    // 결정적인 노드에는 배지가 없다
+    expect(kb(flow, "n_wait").status).toBeNull();
+  });
+
   test("흐름 입력: 시작·순수 노드에는 없다", () => {
     const flow = toFlow(input(linear, { shapes }));
     expect(kb(flow, "n_entry").rows[0].left).toBeNull();
