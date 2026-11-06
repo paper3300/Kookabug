@@ -3,6 +3,9 @@
 MCP 프로세스 하나 = daemon 연결 하나라 툴셋은 연결 상태다. agent 연결은 hello 때 `core`만 켜져
 있고, 꺼진 툴셋의 메서드는 전송이 판정 전에 `toolset_disabled`로 거부한다(`tools.Authorizer.gate`).
 켜기만 하고 끄기는 없다. 켜도 도구마다의 권한 판정은 그대로다. ui 연결은 툴셋과 무관하다.
+
+`agent.connections`(B5)는 ui 연결이 보는 agent 연결 목록이다(패널 바닥 줄·상태 바 "에이전트 N").
+`ui_only`·`AGENT_DENIED` — 바뀌면 ui 연결에 `agent.connections.changed`.
 """
 
 from __future__ import annotations
@@ -36,7 +39,12 @@ async def _enable(call: Call) -> dict[str, Any]:
     return {"enabled": _ordered(after), "tools": tools_of(after - before)}
 
 
+async def _connections(call: Call) -> dict[str, Any]:
+    return {"connections": call.daemon.agent_connections()}
+
+
 METHODS: Final = {
+    "agent.connections": MethodSpec(_connections),
     "agent.toolsets.get": MethodSpec(_get),
     "agent.toolsets.enable": MethodSpec(_enable),
 }

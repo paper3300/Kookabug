@@ -32,6 +32,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, TextIO
 
+from kookabug_core.permissions import TOOLSETS
 from kookabug_core.registry import Registry, default_registry
 from kookabug_core.runner.spec import PlatformSpec
 from kookabug_core.service import WorkspaceService
@@ -207,6 +208,8 @@ class Daemon:
         """권한 파일 읽기·쓰기 (M5 B3 `permissions.*`·"항상 허용")."""
         self.approvals = ApprovalBroker(self, self._authorizer, config.approval_timeout_s)
         """사람 확인 (M5 B3 `approval.*`)."""
+        self._agent_numbers: set[int] = set()
+        """붙은 agent 연결 번호 (M5 B5 `agent.connections.changed`를 알릴지 정한다)."""
 
     # ---------------------------------------------------------------- Host (transport)
 
@@ -243,8 +246,30 @@ class Daemon:
         conn = self.transport.find(connection)
         if conn is None:
             return frozenset()
+        before = conn.toolsets
         conn.toolsets = conn.toolsets | frozenset(toolsets)
+        if conn.toolsets != before and conn.number in self._agent_numbers:
+            self.notify_ui("agent.connections.changed", {})
         return conn.toolsets
+
+    def agent_connections(self) -> list[dict[str, Any]]:
+        """붙은 agent 연결 목록 (`agent.connections`, M5 B5). 번호 순서."""
+        out: list[dict[str, Any]] = []
+        for conn in sorted(self.transport.connections, key=lambda c: c.number):
+            principal = conn.principal
+            if principal is None or conn.mismatch or principal.kind != "agent":
+                continue
+            out.append(
+                {
+                    "connection": conn.number,
+                    "id": principal.id,
+                    "name": conn.client_name,
+                    "attended": principal.attended,
+                    "toolsets": [t for t in TOOLSETS if t in conn.toolsets],
+                    "since": conn.since,
+                }
+            )
+        return out
 
     @property
     def platform_fake(self) -> Path | None:
@@ -282,6 +307,9 @@ class Daemon:
         self._documents.release_connection(number)
         self._run_manager.connection_closed(number)
         self.recorder.connection_closed(number)
+        if number in self._agent_numbers:
+            self._agent_numbers.discard(number)
+            self.notify_ui("agent.connections.changed", {})
 
     # ---------------------------------------------------------------- 실행 알림 (runs.RunSink)
 
@@ -340,6 +368,9 @@ class Daemon:
         conn = self.transport.find(number)
         if conn is not None:
             self.transport.notify(conn, "lease.changed", {"owner": self._lease.owner})
+            if conn.principal is not None and conn.principal.kind == "agent":
+                self._agent_numbers.add(number)
+                self.notify_ui("agent.connections.changed", {})
 
     # ---------------------------------------------------------------- 파일 변경 알림
 

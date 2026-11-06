@@ -1,0 +1,552 @@
+/* 에이전트 패널 (시안 Main 오른쪽 "에이전트", M5 B5). 오른쪽 패널(320px) 안에 그린다. 색은 토큰만 */
+
+.panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--kb-agent-bg);
+  color: var(--kb-agent-text);
+}
+
+.head {
+  flex: 0 0 var(--kb-header-height);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px 0 14px;
+  border-bottom: 1px solid var(--kb-border);
+}
+
+.headTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  color: var(--kb-fg-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.iconButton {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--kb-fg);
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--kb-hover-bg);
+}
+
+.iconButton:disabled {
+  opacity: 0.4;
+}
+
+.chat {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 14px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+/* 대화가 길어지면 목록이 스크롤된다: 항목(특히 overflow: hidden 카드)이 눌리지 않게 */
+.chat > *,
+.external > * {
+  flex-shrink: 0;
+}
+
+.user {
+  align-self: flex-end;
+  max-width: 86%;
+  background: var(--kb-agent-bubble-bg);
+  color: var(--kb-agent-bubble-fg);
+  border-radius: 18px;
+  padding: 8px 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.userChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.answer {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tools {
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--kb-fg-muted);
+}
+
+.toolsButton {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--kb-fg-muted);
+  font-size: 13px;
+}
+
+.toolsButton:hover {
+  color: var(--kb-fg);
+}
+
+.toolRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 4px;
+  font-family: var(--kb-font-mono);
+  font-size: 12px;
+}
+
+.toolRow[data-status="failed"] {
+  color: var(--kb-agent-remove);
+}
+
+.toolRow[data-status="in_progress"],
+.toolRow[data-status="pending"] {
+  color: var(--kb-fg);
+}
+
+.card {
+  background: var(--kb-agent-card-bg);
+  border: 1px solid var(--kb-agent-card-border);
+  border-radius: 10px;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--kb-border);
+  color: var(--kb-fg-strong);
+}
+
+.cardHead svg {
+  flex: 0 0 auto;
+  color: var(--kb-agent-warn);
+}
+
+.cardTool {
+  margin-left: auto;
+  font-family: var(--kb-font-mono);
+  font-size: 11px;
+  color: var(--kb-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+
+.cardBody {
+  padding: 8px 12px;
+  font-family: var(--kb-font-mono);
+  font-size: 12px;
+  line-height: 1.7;
+  background: var(--kb-agent-card-code-bg);
+  overflow-wrap: anywhere;
+}
+
+.add {
+  color: var(--kb-agent-add);
+}
+
+.remove {
+  color: var(--kb-agent-remove);
+}
+
+.cardNote {
+  padding: 6px 12px 0;
+  font-size: 11px;
+  color: var(--kb-fg-muted);
+  overflow-wrap: anywhere;
+}
+
+.cardButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px;
+}
+
+.primary,
+.secondary,
+.danger {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.primary {
+  background: var(--kb-button-primary-bg);
+  color: var(--kb-button-primary-fg);
+  border: 0;
+}
+
+.secondary {
+  background: var(--kb-agent-secondary-bg);
+  color: var(--kb-agent-secondary-fg);
+  border: 1px solid var(--kb-agent-card-border);
+}
+
+.danger {
+  background: none;
+  color: var(--kb-agent-remove);
+  border: 0;
+  padding: 0 8px;
+}
+
+.primary:disabled,
+.secondary:disabled,
+.danger:disabled {
+  opacity: 0.5;
+}
+
+.cardResult {
+  padding: 8px 12px 10px;
+  font-size: 12px;
+  color: var(--kb-fg-muted);
+}
+
+.cardError {
+  padding: 0 12px 8px;
+  font-size: 12px;
+  color: var(--kb-agent-remove);
+}
+
+.external {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 0;
+}
+
+.externalLabel {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--kb-fg-muted);
+}
+
+.error {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-left: 3px solid var(--kb-agent-remove);
+  background: var(--kb-agent-card-bg);
+  font-size: 12px;
+  color: var(--kb-fg);
+}
+
+.lease {
+  margin: 10px 12px 0;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--kb-agent-card-bg);
+  border: 1px solid var(--kb-agent-card-border);
+  border-left: 3px solid var(--kb-agent-warn);
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.leaseTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--kb-fg-strong);
+}
+
+.leaseTitle svg {
+  color: var(--kb-agent-warn);
+}
+
+.composer {
+  flex: 0 0 auto;
+  padding: 8px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inputBox {
+  background: var(--kb-agent-input-bg);
+  border: 1px solid var(--kb-agent-input-border);
+  border-radius: 18px;
+  padding: 10px 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.inputBox:focus-within {
+  border-color: var(--kb-accent);
+}
+
+.textarea {
+  height: 40px;
+  resize: none;
+  background: none;
+  border: 0;
+  color: var(--kb-fg-strong);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  padding: 0 4px;
+}
+
+.textarea::placeholder {
+  color: var(--kb-fg-muted);
+}
+
+.inputRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chips {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 10px;
+  background: var(--kb-agent-chip-bg);
+  color: var(--kb-agent-chip-fg);
+  font-size: 11px;
+  line-height: 16px;
+  border: 0;
+}
+
+.chipStatic {
+  padding: 2px 8px;
+}
+
+.chipRemove {
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  color: inherit;
+  font-size: 11px;
+}
+
+.send {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--kb-agent-send-bg);
+  color: var(--kb-agent-send-fg);
+  border: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.send:disabled {
+  opacity: 0.35;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 0 6px;
+  font-size: 12px;
+  color: var(--kb-fg-muted);
+}
+
+.online {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--kb-agent-online);
+}
+
+.dot[data-status="ended"],
+.dot[data-status="error"] {
+  background: var(--kb-agent-remove);
+}
+
+.footerLink {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+}
+
+.footerLink:hover {
+  color: var(--kb-link-hover-fg);
+  text-decoration: underline;
+}
+
+.footerRight {
+  margin-left: auto;
+}
+
+/* 연결 안 된 화면 (시안 Setup5 압축판, U7) */
+.empty {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 13px;
+}
+
+.emptyTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--kb-fg-strong);
+}
+
+.emptyText {
+  margin: 0;
+  color: var(--kb-fg-muted);
+  line-height: 1.6;
+}
+
+.sectionLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--kb-fg-muted);
+}
+
+.agentList {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--kb-agent-card-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.agentRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--kb-agent-card-bg);
+}
+
+.agentRow + .agentRow {
+  border-top: 1px solid var(--kb-border);
+}
+
+.agentName {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.agentName b {
+  color: var(--kb-fg-strong);
+  font-weight: 600;
+}
+
+.agentName small {
+  font-family: var(--kb-font-mono);
+  font-size: 11px;
+  color: var(--kb-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notInstalled {
+  font-size: 11px;
+  color: var(--kb-fg-muted);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--kb-fg-muted);
+}
+
+.input,
+.select {
+  height: 26px;
+  padding: 0 6px;
+  background: var(--kb-input-bg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  color: var(--kb-fg);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.input:focus,
+.select:focus {
+  outline: 1px solid var(--kb-accent);
+  outline-offset: -1px;
+}
+
+.mono {
+  font-family: var(--kb-font-mono);
+  font-size: 12px;
+}
+
+.startError {
+  padding: 6px 8px;
+  border-left: 3px solid var(--kb-agent-remove);
+  font-size: 12px;
+  color: var(--kb-fg);
+  overflow-wrap: anywhere;
+}

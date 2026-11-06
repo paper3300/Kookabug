@@ -1,6 +1,7 @@
 // 상태 바 (M2 계획 2.8 "상태 바"): 대기 중이면 무채색, 실행 중이면 파랑(시안 Main "▶ 실행 중")이고 회차·경과
 // 시간을 쓴다. 디버거로 멈췄으면 파랑 그대로 "⏸ 멈춤 · <노드>"(M3 U2). 입력 임대권 소유자("입력: 실행 #…"), 연결 상태와 실행 환경(캡처·OCR·Python·플러그인 수).
 // 녹화(빨강)·Agent(보라) 상태는 해당 단계에서 붙인다
+import { pendingCount, useAgent } from "../agent/agentStore";
 import { pausedTitle } from "../debug/PauseBanner";
 import { statusBarItems, statusBarRecording } from "../recorder/labels";
 import { elapsedNow, useRecorder } from "../recorder/recorderStore";
@@ -10,6 +11,7 @@ import { openRun } from "../runs/open";
 import { useRunIndex } from "../runs/runIndexStore";
 import { retentionText, useRunList, videoPolicyText } from "../runs/runListStore";
 import { useTabs } from "../store/tabs";
+import { openAgentPanel } from "../store/ui";
 import { docLookup, loopLimitOf, useNow } from "../run/view";
 import { useDocuments } from "../store/documents";
 import { useRegistry } from "../store/registry";
@@ -139,6 +141,22 @@ function VideoPolicy() {
   );
 }
 
+/** "에이전트 N" (U6: MCP는 stdio라 포트가 없다 — 붙은 agent 연결 수). 누르면 에이전트 패널 */
+function Agents() {
+  const connections = useAgent((s) => s.connections);
+  const waiting = useAgent(pendingCount);
+  const title =
+    connections.length === 0
+      ? "붙은 에이전트가 없어요"
+      : connections.map((c) => `${c.name || "mcp"} · ${c.id}${c.attended ? "" : " (사람 없음)"}`).join(" / ");
+  return (
+    <button type="button" className={`${css.statusItem} ${css.statusLink}`} data-part="status-agents" title={title} onClick={openAgentPanel}>
+      에이전트 {connections.length}
+      {waiting > 0 && <span data-part="status-pending"> · 승인 대기 {waiting}</span>}
+    </button>
+  );
+}
+
 export function StatusBar() {
   const daemon = useWorkspace((s) => s.daemon);
   const info = useWorkspace((s) => s.info);
@@ -198,6 +216,7 @@ export function StatusBar() {
           <span className={css.statusItem}>플러그인 {info?.plugins.length ?? 0}</span>
         </>
       )}
+      {daemon.status === "connected" && !rec.recording && <Agents />}
     </footer>
   );
 }

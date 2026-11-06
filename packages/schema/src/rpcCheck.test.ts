@@ -48,6 +48,7 @@ test("test_method_table_tools_and_internal_methods", () => {
     "session.hello",
   ]);
   expect(Object.keys(NOTIFICATIONS).sort()).toEqual([
+    "agent.connections.changed",
     "approval.requested",
     "approval.resolved",
     "debug.breakpoints.changed",

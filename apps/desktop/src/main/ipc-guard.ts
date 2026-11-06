@@ -60,6 +60,17 @@ export const RENDERER_METHODS: ReadonlySet<string> = new Set([
   "secrets.list",
   "secrets.create",
   "target.read_text",
+  // M5 사람 확인·권한 설정 (계획 3.5·3.6): 답·설정은 사람(ui 연결)만 — daemon이 agent 연결을 거부한다
+  "approval.list",
+  "approval.respond",
+  "approval.preview",
+  "permissions.get",
+  "permissions.set",
+  // M5 B5 에이전트 패널: 에이전트 목록(사용자 설정)·감지·agent 연결 목록
+  "agents.get",
+  "agents.detect",
+  "agents.set",
+  "agent.connections",
 ]);
 
 // 주 프로세스 안에서만 쓰는 메서드. 렌더러 표면에서 뺀다. run.export는 dest(쓸 경로)를 주 프로세스의
@@ -80,6 +91,10 @@ export const RENDERER_EVENTS: ReadonlySet<string> = new Set([
   "lease.changed",
   "debug.breakpoints.changed",
   "recorder.changed",
+  // M5 사람 확인 카드·agent 연결 목록 (ui 연결에만 온다)
+  "approval.requested",
+  "approval.resolved",
+  "agent.connections.changed",
 ]);
 
 // 주 프로세스가 보내는 앱 알림 (daemon 알림이 아님): 연결 상태, 출력 패널 줄, 창 최대화 상태, 테마,
@@ -90,6 +105,8 @@ export const APP_EVENTS: ReadonlySet<string> = new Set([
   "window.state",
   "theme.state",
   "app.closeRequested",
+  // 에이전트 패널 세션 (M5 B5, acp/host.ts): 대화·도구 호출·권한 카드·끝남
+  "agent.session",
 ]);
 
 // 앱 API (preload `window.kookabug.app`). 인자 모양은 주 프로세스가 다시 검사한다
@@ -115,6 +132,12 @@ export const APP_ACTIONS: ReadonlySet<string> = new Set([
   // 녹화 단축키 등록·해제 (M4 T9, shortcuts.ts): 등록에 성공해야 recorder.start를 보낸다
   "recorderArm",
   "recorderDisarm",
+  // 에이전트 패널 (M5 B5, acp/host.ts): 띄울 명령은 daemon agents.get에서 ID로 찾는다 (렌더러가 주지 않는다)
+  "agentStart",
+  "agentPrompt",
+  "agentCancel",
+  "agentPermission",
+  "agentStop",
 ]);
 
 export class IpcGuardError extends Error {

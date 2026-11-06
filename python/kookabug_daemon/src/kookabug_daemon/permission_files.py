@@ -136,11 +136,67 @@ class PermissionFiles:
         with self._lock:
             return self._write(layer, None, change, check_revision=False)
 
+    # ---------------------------------------------------------------- 에이전트 목록 (M5 B5)
+
+    def read_agents(self) -> dict[str, Any]:
+        """`agents.get`: 사용자 설정의 `agents`·`default_agent`와 파일 revision."""
+        file = self._file("user")
+        raw = _read(file.path)
+        out: dict[str, Any] = {
+            "agents": [],
+            "default_agent": None,
+            "revision": revision_of(raw),
+            "source": None if file.path is None else str(file.path),
+            "problem": None,
+        }
+        if raw is None:
+            return out
+        data = _parse(raw, str(file.path))
+        problems = [] if data is None else check_shape(data, file.kind, file=str(file.path))
+        if data is None or problems:
+            out["problem"] = (
+                "JSON 객체가 아니다" if data is None else f"형식이 틀렸다: {problems[0].message}"
+            )
+            return out
+        out["agents"] = list(data.get("agents") or [])
+        default = data.get("default_agent")
+        out["default_agent"] = default if isinstance(default, str) else None
+        return out
+
+    def set_agents(
+        self, agents: list[Any], default_agent: str | None, base_revision: str | None
+    ) -> str:
+        """`agents.set`: 사용자 설정의 `agents`·`default_agent`만 바꾼다 (`permissions.set`과
+        같은 쓰기 규칙 — revision 비교, 다른 키·순서 보존, 형식이 틀린 파일은 그대로)."""
+
+        def mutate(data: dict[str, Any]) -> None:
+            data["agents"] = list(agents)
+            if default_agent is None:
+                data.pop("default_agent", None)
+            else:
+                data["default_agent"] = default_agent
+
+        with self._lock:
+            return self._write_data("user", base_revision, mutate)
+
     def _write(
         self,
         layer: EditableLayer,
         base_revision: str | None,
         change: Any,
+        *,
+        check_revision: bool = True,
+    ) -> str:
+        def mutate(data: dict[str, Any]) -> None:
+            data["permissions"] = change(data.get("permissions"))
+
+        return self._write_data(layer, base_revision, mutate, check_revision=check_revision)
+
+    def _write_data(
+        self,
+        layer: EditableLayer,
+        base_revision: str | None,
+        mutate: Any,
         *,
         check_revision: bool = True,
     ) -> str:
@@ -174,7 +230,7 @@ class PermissionFiles:
                     f"{shown}의 형식이 틀려 고치지 않는다 (먼저 손으로 고친다): "
                     f"{problems[0].message}",
                 )
-        data["permissions"] = change(data.get("permissions"))
+        mutate(data)
         problems = check_shape(data, file.kind, file=shown)
         if problems:
             raise RequestFailed(

@@ -11,9 +11,9 @@ import {
 import { runActive, stopActive, useRunAvailability } from "../run/Toolbar";
 import { canRedo, canUndo, redoEdit, saveDoc, undoEdit, useDocuments } from "../store/documents";
 import { requestCloseTab } from "../store/editing";
-import { useTabs } from "../store/tabs";
+import { openSettingsTab, useTabs } from "../store/tabs";
 import { useTheme, type ThemeMode } from "../store/theme";
-import { useUi } from "../store/ui";
+import { openAgentPanel, useUi } from "../store/ui";
 import { closeWorkspace, openFolder, useWorkspace } from "../store/workspace";
 import { LogoMark, SearchIcon } from "../theme/icons";
 import css from "./shell.module.css";
@@ -63,6 +63,9 @@ function useMenus(): [string, MenuEntry[]][] {
           run: () => void closeWorkspace(),
         },
         "separator",
+        // 기본 설정 › 에이전트 권한 (M5 B5, 시안 Permissions)
+        { label: "기본 설정: 에이전트 권한", disabled: !hasWorkspace, run: openSettingsTab },
+        "separator",
         { label: "끝내기", run: () => void window.kookabug.app.windowControl("close") },
       ],
     ],
@@ -81,6 +84,7 @@ function useMenus(): [string, MenuEntry[]][] {
         theme("dark", "다크"),
         "separator",
         { label: "속성 패널", checked: inspectorOpen, run: () => useUi.setState({ inspectorOpen: !inspectorOpen }) },
+        { label: "에이전트 패널", disabled: !hasWorkspace, run: openAgentPanel },
       ],
     ],
     [

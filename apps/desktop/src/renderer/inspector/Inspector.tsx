@@ -9,11 +9,11 @@ import { clearNodeValue, disconnect, replaceNodeObject, setNodeTitle, setNodeVal
 import { graphNodes, own, type Diagnostic, type GraphValue } from "../graph/model";
 import { openSubgraph } from "../graph/openSubgraph";
 import { GRAPH_CALL_TYPE } from "../graph/subgraphPlan";
+import { useAgent } from "../agent/agentStore";
 import { useEditsLocked } from "../store/dialog";
 import { applyEdit, useDocuments } from "../store/documents";
 import { useRegistry } from "../store/registry";
 import { useTabs } from "../store/tabs";
-import { useUi } from "../store/ui";
 import { ChevronDownIcon, ChevronRightIcon } from "../theme/icons";
 import {
   useEditKeys,
@@ -68,10 +68,42 @@ interface FieldProps {
   ctx: EditorContext;
   /** 선언에 없는 키 */
   extra?: boolean;
+  /** 판단 노드의 에이전트: 사용자 설정 목록에서 고른다 (M5 U11) */
+  agentPicker?: boolean;
+}
+
+const CLI_JUDGE_TYPE = "core.agent.cli_judge";
+
+/** `core.agent.cli_judge`의 agent 칸: 사용자 설정(agents.get) 목록. 빈 값 = 기본 에이전트 */
+function AgentPicker({ label, value, onCommit, ctx }: { label: string; value: unknown; onCommit(v: string): void; ctx: EditorContext }) {
+  const agents = useAgent((s) => s.agents);
+  const loaded = useAgent((s) => s.agentsLoaded);
+  const defaultAgent = useAgent((s) => s.defaultAgent);
+  const current = typeof value === "string" ? value : "";
+  const known = current === "" || agents.some((a) => a.id === current);
+  return (
+    <div className={css.box}>
+    <select
+      aria-label={label}
+      data-part="agent-picker"
+      value={current}
+      disabled={ctx.locked || !loaded}
+      onChange={(e) => onCommit(e.target.value)}
+    >
+      <option value="">기본 에이전트{defaultAgent !== null ? ` (${defaultAgent})` : ""}</option>
+      {agents.map((a) => (
+        <option key={a.id} value={a.id}>
+          {a.name} ({a.id})
+        </option>
+      ))}
+      {!known && <option value={current}>{current} (이 PC 설정에 없음)</option>}
+    </select>
+    </div>
+  );
 }
 
 /** 핀(또는 config 키) 하나: 이름·타입, 값/설정/비밀/대상 고르기, 입력, 기본값으로 되돌리기, 진단 */
-function Field({ spec, field, value, node, diagnostics, edit, ctx: outer, extra }: FieldProps) {
+function Field({ spec, field, value, node, diagnostics, edit, ctx: outer, extra, agentPicker }: FieldProps) {
   // 특수 값(연결·대상·설정·비밀·$literal)은 입력 핀 안에서만 해석한다. config는 선언 타입의 보통 값이다 (검수 2)
   const specials = field === "in";
   const ctx: EditorContext = specials ? outer : { ...outer, specials: false };
@@ -133,6 +165,8 @@ function Field({ spec, field, value, node, diagnostics, edit, ctx: outer, extra 
     const tag = shown === "setting" ? "$setting" : "$secret";
     const inner = mode === shown ? own(value, tag) : "";
     body = <KeyInput label={label} tag={tag} value={typeof inner === "string" ? inner : ""} onCommit={(k) => commit({ [tag]: k })} ctx={ctx} />;
+  } else if (agentPicker === true) {
+    body = <AgentPicker label={label} value={value} onCommit={commit} ctx={ctx} />;
   } else if (editor.kind === "link-only") {
     body =
       value === undefined ? (
@@ -210,6 +244,7 @@ function NodeFields({ path, view, ctx }: { path: string; view: NodeInspector; ct
       edit={edit}
       ctx={ctx}
       extra={extra}
+      agentPicker={f === "config" && spec.name === "agent" && node.type === CLI_JUDGE_TYPE}
     />
   );
   const extraSpec = (name: string): FieldSpec => ({ name, type: "any", required: false });
@@ -385,42 +420,13 @@ function Body({ path }: { path: string }) {
 }
 
 /** 지금 탭이 그래프면 그 경로 */
-function useActiveGraph(): string | null {
+export function useActiveGraph(): string | null {
   return useTabs((s) => (s.tabs.find((t) => t.path === s.active)?.kind === "graph" ? s.active : null));
 }
 
-export function Inspector() {
+/** 오른쪽 패널 "속성" 탭 내용 (M5 B5: 패널 틀은 app/RightPanel.tsx) */
+export function InspectorContent() {
   const path = useActiveGraph();
-  const open = useUi((s) => s.inspectorOpen);
-  if (path === null) return null;
-  if (!open) {
-    return (
-      <aside aria-label="속성" className={`${css.inspector} ${css.collapsed}`} data-part="inspector" data-open="false">
-        <button
-          type="button"
-          aria-label="속성 패널 펼치기"
-          className={css.collapsedButton}
-          onClick={() => useUi.setState({ inspectorOpen: true })}
-        >
-          <span className={css.vertical}>속성</span>
-        </button>
-      </aside>
-    );
-  }
-  return (
-    <aside aria-label="속성" className={css.inspector} data-part="inspector" data-open="true">
-      <div className={css.header}>
-        <span>속성</span>
-        <button
-          type="button"
-          aria-label="속성 패널 접기"
-          className={css.iconButton}
-          onClick={() => useUi.setState({ inspectorOpen: false })}
-        >
-          »
-        </button>
-      </div>
-      <Body path={path} />
-    </aside>
-  );
+  if (path === null) return <div className={css.empty}>그래프를 열고 노드를 고르면 속성이 보여요</div>;
+  return <Body path={path} />;
 }

@@ -29,7 +29,7 @@ import { client, toRpcError, type RpcError } from "../rpc/client";
 import type { DocHost, GraphOpenResult, OpenDocRef } from "../rpc/recovery";
 import { editsLocked } from "./dialog";
 import { sameStamp, stampOf } from "./generations";
-import { useTabs } from "./tabs";
+import { isPreviewPath, useTabs } from "./tabs";
 
 /** 충돌 띠의 디스크 revision 자리: 파일이 지워짐 */
 export const CONFLICT_DELETED = "deleted";
@@ -578,6 +578,27 @@ export function onGraphChanged(docId: string, revision: string | null): void {
   update(doc.path, () => ({ conflict: revision ?? CONFLICT_DELETED }), doc.instance);
 }
 
+/**
+ * 승인 미리보기 문서 (M5 U10 "캔버스에서 보기"): approval.preview가 준 값을 읽기 전용으로 넣는다. daemon 문서가
+ * 아니라 graph.close를 보내지 않고, 승인 전 실제 파일은 그대로다
+ */
+export function adoptPreview(path: string, value: GraphValue): void {
+  const doc = emptyDoc(path);
+  const nodes = graphNodes(value);
+  const placed = layoutPositions(value);
+  const auto = new Map([...autoLayout(nodes, placed)].filter(([id]) => !placed.has(id)));
+  useDocuments.setState((s) => ({
+    docs: new Map(s.docs).set(path, {
+      ...doc,
+      status: "ready",
+      readOnly: true,
+      value,
+      savedValue: value,
+      view: { ...doc.view, auto },
+    }),
+  }));
+}
+
 /** graph.create 결과를 문서 표에 넣는다 (그 연결의 참조 하나). 탭은 부르는 쪽이 연다 */
 export function adoptCreated(path: string, result: GraphOpenResult): void {
   const old = getDoc(path);
@@ -679,7 +700,8 @@ export function requestFocus(path: string, target: FocusTarget): void {
 
 export const documentsHost: DocHost = {
   docs(): OpenDocRef[] {
-    return [...useDocuments.getState().docs.values()].map((d) => ({
+    // 승인 미리보기는 파일이 아니라 다시 열 것이 없다
+    return [...useDocuments.getState().docs.values()].filter((d) => !isPreviewPath(d.path)).map((d) => ({
       path: d.path,
       baseRevision: d.baseRevision,
       dirty: d.dirty,
@@ -722,9 +744,9 @@ export const documentsHost: DocHost = {
   },
 };
 
-// 탭이 열리고 닫히는 것을 따라 문서를 열고 닫는다
+// 탭이 열리고 닫히는 것을 따라 문서를 열고 닫는다. 승인 미리보기 탭은 daemon에서 열지 않는다 (adoptPreview)
 useTabs.subscribe((state) => {
   const graphTabs = new Set(state.tabs.filter((t) => t.kind === "graph").map((t) => t.path));
-  for (const path of graphTabs) if (getDoc(path) === undefined) void openDoc(path);
+  for (const path of graphTabs) if (getDoc(path) === undefined && !isPreviewPath(path)) void openDoc(path);
   for (const path of useDocuments.getState().docs.keys()) if (!graphTabs.has(path)) closeDoc(path);
 });

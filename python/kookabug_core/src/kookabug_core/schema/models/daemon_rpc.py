@@ -5,6 +5,22 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 
+class AgentCandidate(BaseModel):
+    """
+    감지 표의 에이전트 하나 (kookabug_core.agents.detect). 경로에서 찾기만 하고 설치하지 않는다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    args: list[str]
+    command: str
+    id: str
+    installed: bool
+    name: str
+    path: Annotated[str | None, Field(description="찾은 실행 파일 (없으면 null)")]
+
+
 class AgentClientInfo(BaseModel):
     """
     에이전트 연결 → 그 에이전트 주체 (id 필수)
@@ -20,6 +36,54 @@ class AgentClientInfo(BaseModel):
     kind: Literal["agent"]
     name: str
     version: str
+
+
+class AgentConnectionsChangedParams(BaseModel):
+    """
+    agent 연결이 붙거나 끊기거나 툴셋을 켬 (ui 연결에만). 목록은 agent.connections로 다시 읽는다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+
+class AgentSecretRef(BaseModel):
+    """
+    비밀값 저장소의 키 (값은 실행 때 찾는다)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    field_secret: Annotated[str, Field(alias="$secret", min_length=1)]
+
+
+class AgentSpec(BaseModel):
+    """
+    판단 노드·에이전트 패널이 띄우는 ACP 에이전트 하나. env의 비밀값은 {"$secret": 키}로만 쓴다 (실행 때 찾음)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    args: list[str] | None = None
+    command: Annotated[str, Field(min_length=1)]
+    env: Annotated[
+        dict[str, str | AgentSecretRef] | None,
+        Field(
+            description="환경 변수 (이름 규칙은 사용자 설정 스키마가 쓰기 때 본다 — 틀리면 settings_invalid)"
+        ),
+    ] = None
+    id: Annotated[str, Field(pattern="^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$")]
+    name: Annotated[str, Field(min_length=1)]
+
+
+class AgentsDetectResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    candidates: list[AgentCandidate]
 
 
 class AppLaunchParams(BaseModel):
@@ -485,6 +549,16 @@ class MethodName(RootModel[str]):
     ]
 
 
+class AgentsDetect(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[True]
+    result: AgentsDetectResult
+    tool: Literal["ui_only"]
+
+
 class AppLaunch(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -554,6 +628,13 @@ class NodesListResult(BaseModel):
         extra="forbid",
     )
     schemas: list[dict[str, Any]]
+
+
+class AgentConnectionsChanged(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: AgentConnectionsChangedParams
 
 
 class ApprovalResolved(BaseModel):
@@ -1781,6 +1862,29 @@ class WorkspaceReadResult(BaseModel):
     truncated: Annotated[bool, Field(description="1 MiB를 넘어 뒤를 잘랐다")]
 
 
+class AgentConnection(BaseModel):
+    """
+    daemon에 붙은 agent 연결 하나 (kookabug mcp)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    attended: bool
+    connection: Annotated[int, Field(ge=0, le=9007199254740991)]
+    id: str
+    name: str
+    since: Timestamp
+    toolsets: list[Toolset]
+
+
+class AgentConnectionsResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    connections: list[AgentConnection]
+
+
 class AgentToolsetsEnableParams(BaseModel):
     """
     툴셋을 켠다 (끄기는 없다). 켜도 각 도구의 권한 판정은 그대로다
@@ -1812,6 +1916,50 @@ class AgentToolsetsResult(BaseModel):
     )
     available: list[Toolset]
     enabled: list[Toolset]
+
+
+class AgentsGetResult(BaseModel):
+    """
+    사용자 설정의 에이전트 목록 (M5 계획 3.12). 파일이 없으면 빈 목록·revision null
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    agents: list[AgentSpec]
+    default_agent: str | None
+    problem: Annotated[
+        str | None,
+        Field(
+            description="파일 형식이 틀려 목록을 읽지 못했으면 그 이유 (agents.set도 settings_invalid로 거부)"
+        ),
+    ]
+    revision: Annotated[
+        Revision | None, Field(description="사용자 설정 파일 revision (없으면 null)")
+    ]
+    source: Annotated[str | None, Field(description="사용자 설정 파일 경로 (정할 수 없으면 null)")]
+
+
+class AgentsSetParams(BaseModel):
+    """
+    사용자 설정의 agents·default_agent만 바꾼다. 다른 키·순서는 보존, revision이 다르면 revision_conflict, 형식이 틀린 파일은 settings_invalid (permissions.set과 같은 쓰기 규칙)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    agents: list[AgentSpec]
+    base_revision: Annotated[
+        Revision | None, Field(description="읽은 때의 파일 revision (파일이 없었으면 null)")
+    ]
+    default_agent: Annotated[str | None, Field(description="null이면 키를 지운다")]
+
+
+class AgentsSetResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    revision: Revision
 
 
 class ApprovalPreviewResult(BaseModel):
@@ -2166,6 +2314,16 @@ class MatchInfo(BaseModel):
     score: float
 
 
+class AgentConnections(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[True]
+    result: AgentConnectionsResult
+    tool: Literal["ui_only"]
+
+
 class AgentToolsetsEnable(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -2184,6 +2342,26 @@ class AgentToolsetsGet(BaseModel):
     renderer: Literal[False]
     result: AgentToolsetsResult
     tool: Literal["kb_toolset_enable"]
+
+
+class AgentsGet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[True]
+    result: AgentsGetResult
+    tool: Literal["ui_only"]
+
+
+class AgentsSet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: AgentsSetParams
+    renderer: Literal[True]
+    result: AgentsSetResult
+    tool: Literal["ui_only"]
 
 
 class ApprovalPreview(BaseModel):
@@ -3670,6 +3848,9 @@ class Notifications(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    agent_connections_changed: Annotated[
+        AgentConnectionsChanged, Field(alias="agent.connections.changed")
+    ]
     approval_requested: Annotated[ApprovalRequested, Field(alias="approval.requested")]
     approval_resolved: Annotated[ApprovalResolved, Field(alias="approval.resolved")]
     debug_breakpoints_changed: Annotated[
@@ -4085,8 +4266,12 @@ class Methods(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    agent_connections: Annotated[AgentConnections, Field(alias="agent.connections")]
     agent_toolsets_enable: Annotated[AgentToolsetsEnable, Field(alias="agent.toolsets.enable")]
     agent_toolsets_get: Annotated[AgentToolsetsGet, Field(alias="agent.toolsets.get")]
+    agents_detect: Annotated[AgentsDetect, Field(alias="agents.detect")]
+    agents_get: Annotated[AgentsGet, Field(alias="agents.get")]
+    agents_set: Annotated[AgentsSet, Field(alias="agents.set")]
     app_launch: Annotated[AppLaunch, Field(alias="app.launch")]
     approval_list: Annotated[ApprovalList, Field(alias="approval.list")]
     approval_preview: Annotated[ApprovalPreview, Field(alias="approval.preview")]

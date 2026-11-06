@@ -22,6 +22,7 @@ import logging
 from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import Any, Final, Literal, Protocol
 
@@ -183,6 +184,11 @@ class Outbox:
         await self._drained.wait()
 
 
+def _utc_stamp() -> str:
+    now = datetime.now(UTC)
+    return now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
+
+
 class Connection:
     """WebSocket 연결 하나와 그 주체."""
 
@@ -199,6 +205,8 @@ class Connection:
         """`session.hello`의 `client.name` (에이전트 연결 목록 표시용)."""
         self.toolsets: frozenset[str] = frozenset()
         """켜진 MCP 툴셋 (M5 계획 D3). agent 연결은 hello 때 daemon 기본값(core), ui는 전부."""
+        self.since = ""
+        """인증된 시각 (UTC, 밀리초 — `agent.connections` 표시용)."""
         self.mismatch = False
         self.tasks: set[asyncio.Task[None]] = set()
         self.lag_listeners: list[Callable[[str], None]] = []
@@ -480,6 +488,7 @@ class Transport:
         conn.principal = outcome.principal
         conn.client_kind = outcome.client_kind
         conn.client_name = outcome.client_name
+        conn.since = _utc_stamp()
         conn.toolsets = (
             self.host.agent_toolsets if outcome.principal.kind == "agent" else frozenset(TOOLSETS)
         )

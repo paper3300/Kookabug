@@ -94,6 +94,11 @@ TOOLS = {
     "control.key": "kb_input_key",
     "control.type": "kb_input_type",
     "app.launch": "kb_app_launch",
+    # M5 B5: 에이전트 패널·설정 (사람만)
+    "agent.connections": "ui_only",
+    "agents.get": "ui_only",
+    "agents.detect": "ui_only",
+    "agents.set": "ui_only",
 }
 AGENT_ONLY_B3 = {"control.click", "control.key", "control.type", "app.launch"}
 AGENT_ONLY_B2 = {
@@ -144,6 +149,7 @@ def test_method_table_matches_permission_table() -> None:
 def test_notification_table() -> None:
     table = DEFS["Notifications"]["properties"]
     assert sorted(table) == [
+        "agent.connections.changed",
         "approval.requested",
         "approval.resolved",
         "debug.breakpoints.changed",

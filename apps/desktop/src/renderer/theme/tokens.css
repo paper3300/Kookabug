@@ -200,6 +200,31 @@
   --kb-banner-error-fg: #f8a79b;
   --kb-close-hover-bg: #c42b1c; /* 창 닫기 버튼 강조 (Windows 기본) */
   --kb-close-hover-fg: #ffffff;
+  /* 에이전트 패널 (M5 B5, 시안 Main 오른쪽 "에이전트") */
+  --kb-agent-bg: #181818;
+  --kb-agent-text: #d4d4d4;
+  --kb-agent-strong: #ffffff;
+  --kb-agent-bubble-bg: #2a2a2a;
+  --kb-agent-bubble-fg: #e7e7e7;
+  --kb-agent-input-bg: #222222;
+  --kb-agent-input-border: #333333;
+  --kb-agent-send-bg: #e7e7e7;
+  --kb-agent-send-fg: #181818;
+  --kb-agent-chip-bg: #2a2a2a;
+  --kb-agent-chip-fg: #bbbbbb;
+  --kb-agent-card-bg: #202020;
+  --kb-agent-card-border: #3c3c3c;
+  --kb-agent-card-code-bg: #1a1a1a;
+  --kb-agent-secondary-bg: #313131;
+  --kb-agent-secondary-fg: #cccccc;
+  --kb-agent-warn: #cca700;
+  --kb-agent-online: #89d185;
+  --kb-agent-add: #89d185;
+  --kb-agent-remove: #f48771;
+  --kb-perm-allow: #89d185;
+  --kb-perm-ask: #e2c08d;
+  --kb-perm-deny: #f48771;
+  --kb-settings-modified: #0078d4;
 }
 
 :root[data-theme="light"] {
@@ -391,6 +416,30 @@
   --kb-banner-error-fg: #b42318;
   --kb-close-hover-bg: #c42b1c;
   --kb-close-hover-fg: #ffffff;
+  --kb-agent-bg: #f8f8f8;
+  --kb-agent-text: #3b3b3b;
+  --kb-agent-strong: #000000;
+  --kb-agent-bubble-bg: #ebebeb;
+  --kb-agent-bubble-fg: #1f1f1f;
+  --kb-agent-input-bg: #ffffff;
+  --kb-agent-input-border: #d6d6d6;
+  --kb-agent-send-bg: #1f1f1f;
+  --kb-agent-send-fg: #ffffff;
+  --kb-agent-chip-bg: #e8e8e8;
+  --kb-agent-chip-fg: #555555;
+  --kb-agent-card-bg: #ffffff;
+  --kb-agent-card-border: #d6d6d6;
+  --kb-agent-card-code-bg: #f5f5f5;
+  --kb-agent-secondary-bg: #ffffff;
+  --kb-agent-secondary-fg: #3b3b3b;
+  --kb-agent-warn: #8a6d00;
+  --kb-agent-online: #2e7d32;
+  --kb-agent-add: #2e7d32;
+  --kb-agent-remove: #c4314b;
+  --kb-perm-allow: #2e7d32;
+  --kb-perm-ask: #8a6d00;
+  --kb-perm-deny: #c4314b;
+  --kb-settings-modified: #005fb8;
 }
 
 /* 글꼴·치수 (시안 Main: 본문 13px, 작은 글자 11px, 고정폭 12px) */

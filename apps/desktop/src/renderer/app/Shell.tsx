@@ -1,7 +1,6 @@
 // 앱 틀 (M2 계획 2.11): 타이틀 바 · 연결 띠 · 액티비티 바 · 사이드바 · 에디터 · 하단 패널 · 상태 바.
-// 오른쪽 에이전트 패널 자리는 속성 편집기(T10)가 쓴다
+// 오른쪽 패널은 속성 | 에이전트 탭 (M5 B5, RightPanel.tsx)
 import { useEffect } from "react";
-import { Inspector } from "../inspector/Inspector";
 import { runDebugKey } from "../debug/commands";
 import { debugKey } from "../debug/keys";
 import { getTarget, saveBlocker, saveTarget, targetDirty } from "../target/targetStore";
@@ -16,6 +15,7 @@ import { Dialog } from "./Dialog";
 import { Editor } from "./Editor";
 import { Panel } from "./Panel";
 import { QuickOpen } from "./QuickOpen";
+import { RightPanel } from "./RightPanel";
 import css from "./shell.module.css";
 import { ActivityBar, Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
@@ -101,7 +101,7 @@ export function Shell() {
           <Editor />
           <Panel />
         </div>
-        <Inspector />
+        <RightPanel />
       </div>
       <StatusBar />
       <QuickOpen />

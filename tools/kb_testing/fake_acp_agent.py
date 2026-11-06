@@ -21,8 +21,13 @@
   - `{"do": "answer", "answer", "reason", "prefix"?}`: 답 JSON 한 줄을 say
   - `{"do": "sleep", "ms"}`: 느리게 (`session/cancel`이 오면 멈춤)
   - `{"do": "exit", "code"}`: 죽기
-  - `{"do": "mcp_call", "tool", "arguments"}`: `session/new`로 받은 첫 MCP 서버를 띄워 한 번 호출
-    (B5 패널 검사용 — B4에서는 쓰지 않는다)
+  - `{"do": "mcp_call", "tool", "arguments"}`: `session/new`로 받은 첫 MCP 서버(stdio)를 띄워
+    (세션 동안 유지 — 툴셋 켜기가 남는다) 호출. `tool_call`(in_progress) → `tool_call_update`
+    (completed·failed, 결과 글자를 content로) 알림을 보낸다. 인자 값 `"$prev:<키>"`는 앞 호출
+    `structuredContent`의 그 키 값 (예: `kb_graph_get`의 `revision`)
+- `prompts`: `session/prompt`마다 다른 `steps` 목록 (n번째 프롬프트 = `prompts[n]`, 넘으면 마지막)
+- `log_env`: 이름 목록 — 기록 파일 `start` 줄의 `logged_env`에 그 환경 변수 값을 그대로 남긴다
+  (에이전트가 비밀값 env를 받았는지 가짜 쪽에서 확인하는 검사용, 앱으로는 보내지 않는다)
 
 기록 파일(JSONL)의 줄: `start`(`pid`·`cwd`·`cwd_entries`·`env` — env는 `KOOKABUG_*`만),
 `request`(`method`·`params`, 이미지 data는 길이만), `response`(에이전트 → 클라이언트 요청의 답:
@@ -99,40 +104,22 @@ def _say(session: str, text: str) -> None:
     )
 
 
-def _mcp_call(server: dict[str, Any], tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    """session/new로 받은 MCP 서버(stdio)를 띄워 initialize → tools/call 한 번."""
-    env = dict(os.environ)
-    for item in server.get("env", []):
-        env[item["name"]] = item["value"]
-    proc = subprocess.Popen(
-        [server["command"], *server.get("args", [])],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        env=env,
-    )
-    assert proc.stdin is not None and proc.stdout is not None
+class _Mcp:
+    """세션 동안 유지하는 MCP 클라이언트 (첫 호출 때 띄운다)."""
 
-    def rpc(rid: int | None, method: str, params: dict[str, Any]) -> dict[str, Any] | None:
-        body: dict[str, Any] = {"jsonrpc": "2.0", "method": method, "params": params}
-        if rid is not None:
-            body["id"] = rid
-        assert proc.stdin is not None and proc.stdout is not None
-        proc.stdin.write((json.dumps(body) + "\n").encode("utf-8"))
-        proc.stdin.flush()
-        if rid is None:
-            return None
-        while True:
-            line = proc.stdout.readline()
-            if not line:
-                return {"error": "eof"}
-            msg = json.loads(line)
-            if msg.get("id") == rid:
-                return msg
-
-    try:
-        rpc(
-            1,
+    def __init__(self, server: dict[str, Any]) -> None:
+        env = dict(os.environ)
+        for item in server.get("env", []):
+            env[item["name"]] = item["value"]
+        self.proc = subprocess.Popen(
+            [server["command"], *server.get("args", [])],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            env=env,
+        )
+        self.next = 1
+        self.rpc(
             "initialize",
             {
                 "protocolVersion": "2025-06-18",
@@ -140,18 +127,96 @@ def _mcp_call(server: dict[str, Any], tool: str, arguments: dict[str, Any]) -> d
                 "clientInfo": {"name": "fake-acp", "version": "0"},
             },
         )
-        rpc(None, "notifications/initialized", {})
-        return rpc(2, "tools/call", {"name": tool, "arguments": arguments}) or {}
-    finally:
-        proc.stdin.close()
+        self.send({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
+
+    def send(self, body: dict[str, Any]) -> None:
+        assert self.proc.stdin is not None
+        line = json.dumps(body) + chr(10)
+        self.proc.stdin.write(line.encode("utf-8"))
+        self.proc.stdin.flush()
+
+    def rpc(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        rid = self.next
+        self.next += 1
+        self.send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
+        assert self.proc.stdout is not None
+        while True:
+            line = self.proc.stdout.readline()
+            if not line:
+                return {"error": "eof"}
+            msg = json.loads(line)
+            if msg.get("id") == rid:
+                return msg
+
+    def close(self) -> None:
+        if self.proc.stdin is not None:
+            self.proc.stdin.close()
         try:
-            proc.wait(10)
+            self.proc.wait(10)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            self.proc.kill()
+
+
+_mcp: list[_Mcp] = []
+_prev: dict[str, Any] = {}
+_prompt_count = [0]
+
+
+def _resolve(value: Any) -> Any:
+    if isinstance(value, str) and value.startswith("$prev:"):
+        return _prev.get(value[len("$prev:") :])
+    if isinstance(value, dict):
+        return {k: _resolve(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_resolve(v) for v in value]
+    return value
+
+
+def _mcp_tool(session: str, server: dict[str, Any], tool: str, arguments: dict[str, Any]) -> None:
+    """패널 검사용 MCP 호출 하나 (도구 호출 알림 포함)."""
+    if not _mcp:
+        _mcp.append(_Mcp(server))
+    call_id = f"m{time.monotonic_ns()}"
+    _update(
+        session,
+        {
+            "sessionUpdate": "tool_call",
+            "toolCallId": call_id,
+            "title": tool,
+            "kind": "other",
+            "status": "in_progress",
+        },
+    )
+    reply = _mcp[0].rpc("tools/call", {"name": tool, "arguments": _resolve(arguments)})
+    result = reply.get("result") or {}
+    structured = result.get("structuredContent")
+    if isinstance(structured, dict) and not result.get("isError"):
+        _prev.clear()
+        _prev.update(structured)
+    text = "".join(
+        c.get("text", "") for c in result.get("content", []) if isinstance(c, dict)
+    ) or json.dumps(reply.get("error"), ensure_ascii=False)
+    failed = bool(result.get("isError")) or "error" in reply
+    _update(
+        session,
+        {
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": call_id,
+            "status": "failed" if failed else "completed",
+            "content": [{"type": "content", "content": {"type": "text", "text": text[:4000]}}],
+        },
+    )
+    _log({"event": "mcp", "tool": tool, "reply": reply})
 
 
 def _prompt(script: dict[str, Any], session: str, servers: list[dict[str, Any]]) -> dict[str, Any]:
-    for step in script.get("steps", []):
+    steps = script.get("steps", [])
+    prompts = script.get("prompts")
+    if isinstance(prompts, list) and prompts:
+        steps = prompts[min(_prompt_count[0], len(prompts) - 1)]
+    _prompt_count[0] += 1
+    _cancelled.clear()
+    for step in steps:
         if _cancelled.is_set():
             return {"stopReason": "cancelled"}
         do = step.get("do")
@@ -215,8 +280,7 @@ def _prompt(script: dict[str, Any], session: str, servers: list[dict[str, Any]])
             if not servers:
                 _say(session, "no mcp server")
                 continue
-            reply = _mcp_call(servers[0], step["tool"], step.get("arguments", {}))
-            _log({"event": "mcp", "tool": step["tool"], "reply": reply})
+            _mcp_tool(session, servers[0], step["tool"], step.get("arguments", {}))
     return {"stopReason": script.get("stop_reason", "end_turn")}
 
 
@@ -236,6 +300,7 @@ def main() -> None:
             "cwd": cwd,
             "cwd_entries": sorted(os.listdir(cwd)),
             "env": {k: v for k, v in os.environ.items() if k.upper().startswith("KOOKABUG_")},
+            "logged_env": {k: os.environ.get(k) for k in script.get("log_env", [])},
         }
     )
     servers: list[dict[str, Any]] = []

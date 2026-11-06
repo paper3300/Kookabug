@@ -101,6 +101,10 @@ class DaemonContext(Protocol):
         """그 연결의 툴셋을 켜고 켠 뒤 전체를 돌려준다."""
         ...
 
+    def agent_connections(self) -> list[dict[str, Any]]:
+        """붙은 agent 연결 목록 (`agent.connections`, M5 B5)."""
+        ...
+
     def breakpoints_changed(self, connection: int, breakpoints: list[dict[str, str]]) -> None:
         """브레이크포인트 목록이 바뀌었다: 바꾼 연결(`connection`) 말고 UI 연결들에 알린다
         (`debug.breakpoints.changed`, 이벤트 루프 안)."""
@@ -157,6 +161,7 @@ def registry() -> dict[str, MethodSpec]:
     """이 daemon이 처리하는 메서드. 계약에 있지만 여기 없는 메서드는 `method_not_found`다."""
     from kookabug_daemon.methods import (
         agent,
+        agents,
         approval,
         control,
         debug,
@@ -176,6 +181,7 @@ def registry() -> dict[str, MethodSpec]:
 
     return {
         **agent.METHODS,
+        **agents.METHODS,
         **approval.METHODS,
         **control.METHODS,
         **permissions.METHODS,

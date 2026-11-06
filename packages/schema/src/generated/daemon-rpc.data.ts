@@ -2,6 +2,47 @@
 
 export const daemonRpcSchema: unknown = {
   "$defs": {
+    "AgentCandidate": {
+      "additionalProperties": false,
+      "description": "감지 표의 에이전트 하나 (kookabug_core.agents.detect). 경로에서 찾기만 하고 설치하지 않는다",
+      "properties": {
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "command": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "installed": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "description": "찾은 실행 파일 (없으면 null)",
+          "type": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "args",
+        "command",
+        "id",
+        "installed",
+        "name",
+        "path"
+      ],
+      "title": "AgentCandidate",
+      "type": "object"
+    },
     "AgentClientInfo": {
       "additionalProperties": false,
       "description": "에이전트 연결 → 그 에이전트 주체 (id 필수)",
@@ -32,6 +73,127 @@ export const daemonRpcSchema: unknown = {
         "version"
       ],
       "title": "AgentClientInfo",
+      "type": "object"
+    },
+    "AgentConnection": {
+      "additionalProperties": false,
+      "description": "daemon에 붙은 agent 연결 하나 (kookabug mcp)",
+      "properties": {
+        "attended": {
+          "type": "boolean"
+        },
+        "connection": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "since": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "toolsets": {
+          "items": {
+            "$ref": "#/$defs/Toolset"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "attended",
+        "connection",
+        "id",
+        "name",
+        "since",
+        "toolsets"
+      ],
+      "title": "AgentConnection",
+      "type": "object"
+    },
+    "AgentConnectionsChangedParams": {
+      "additionalProperties": false,
+      "description": "agent 연결이 붙거나 끊기거나 툴셋을 켬 (ui 연결에만). 목록은 agent.connections로 다시 읽는다",
+      "title": "AgentConnectionsChangedParams",
+      "type": "object"
+    },
+    "AgentConnectionsResult": {
+      "additionalProperties": false,
+      "properties": {
+        "connections": {
+          "items": {
+            "$ref": "#/$defs/AgentConnection"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "connections"
+      ],
+      "title": "AgentConnectionsResult",
+      "type": "object"
+    },
+    "AgentSecretRef": {
+      "additionalProperties": false,
+      "description": "비밀값 저장소의 키 (값은 실행 때 찾는다)",
+      "properties": {
+        "$secret": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "$secret"
+      ],
+      "title": "AgentSecretRef",
+      "type": "object"
+    },
+    "AgentSpec": {
+      "additionalProperties": false,
+      "description": "판단 노드·에이전트 패널이 띄우는 ACP 에이전트 하나. env의 비밀값은 {\"$secret\": 키}로만 쓴다 (실행 때 찾음)",
+      "properties": {
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "command": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "env": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/AgentSecretRef"
+              }
+            ]
+          },
+          "description": "환경 변수 (이름 규칙은 사용자 설정 스키마가 쓰기 때 본다 — 틀리면 settings_invalid)",
+          "type": "object"
+        },
+        "id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "command"
+      ],
+      "title": "AgentSpec",
       "type": "object"
     },
     "AgentToolsetsEnableParams": {
@@ -98,6 +260,124 @@ export const daemonRpcSchema: unknown = {
         "enabled"
       ],
       "title": "AgentToolsetsResult",
+      "type": "object"
+    },
+    "AgentsDetectResult": {
+      "additionalProperties": false,
+      "properties": {
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/AgentCandidate"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "candidates"
+      ],
+      "title": "AgentsDetectResult",
+      "type": "object"
+    },
+    "AgentsGetResult": {
+      "additionalProperties": false,
+      "description": "사용자 설정의 에이전트 목록 (M5 계획 3.12). 파일이 없으면 빈 목록·revision null",
+      "properties": {
+        "agents": {
+          "items": {
+            "$ref": "#/$defs/AgentSpec"
+          },
+          "type": "array"
+        },
+        "default_agent": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "problem": {
+          "description": "파일 형식이 틀려 목록을 읽지 못했으면 그 이유 (agents.set도 settings_invalid로 거부)",
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "사용자 설정 파일 revision (없으면 null)"
+        },
+        "source": {
+          "description": "사용자 설정 파일 경로 (정할 수 없으면 null)",
+          "type": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "agents",
+        "default_agent",
+        "problem",
+        "revision",
+        "source"
+      ],
+      "title": "AgentsGetResult",
+      "type": "object"
+    },
+    "AgentsSetParams": {
+      "additionalProperties": false,
+      "description": "사용자 설정의 agents·default_agent만 바꾼다. 다른 키·순서는 보존, revision이 다르면 revision_conflict, 형식이 틀린 파일은 settings_invalid (permissions.set과 같은 쓰기 규칙)",
+      "properties": {
+        "agents": {
+          "items": {
+            "$ref": "#/$defs/AgentSpec"
+          },
+          "type": "array"
+        },
+        "base_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "읽은 때의 파일 revision (파일이 없었으면 null)"
+        },
+        "default_agent": {
+          "description": "null이면 키를 지운다",
+          "type": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "agents",
+        "base_revision",
+        "default_agent"
+      ],
+      "title": "AgentsSetParams",
+      "type": "object"
+    },
+    "AgentsSetResult": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "title": "AgentsSetResult",
       "type": "object"
     },
     "AppLaunchParams": {
@@ -1744,6 +2024,30 @@ export const daemonRpcSchema: unknown = {
       "additionalProperties": false,
       "description": "메서드 표 (단일 출처). 메시지가 아니라 타입 표다: params·result 모양, 권한 도구, 렌더러 표면에 내놓는지(false = Electron 주 프로세스 내부용)",
       "properties": {
+        "agent.connections": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/AgentConnectionsResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
         "agent.toolsets.enable": {
           "additionalProperties": false,
           "properties": {
@@ -1782,6 +2086,78 @@ export const daemonRpcSchema: unknown = {
             },
             "tool": {
               "const": "kb_toolset_enable"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "agents.detect": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/AgentsDetectResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "agents.get": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/AgentsGetResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "agents.set": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/AgentsSetParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/AgentsSetResult"
+            },
+            "tool": {
+              "const": "ui_only"
             }
           },
           "required": [
@@ -3498,8 +3874,12 @@ export const daemonRpcSchema: unknown = {
         }
       },
       "required": [
+        "agent.connections",
         "agent.toolsets.enable",
         "agent.toolsets.get",
+        "agents.detect",
+        "agents.get",
+        "agents.set",
         "app.launch",
         "approval.list",
         "approval.preview",
@@ -3661,6 +4041,18 @@ export const daemonRpcSchema: unknown = {
       "additionalProperties": false,
       "description": "알림 표 (daemon → 클라이언트). 타입 표다",
       "properties": {
+        "agent.connections.changed": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/AgentConnectionsChangedParams"
+            }
+          },
+          "required": [
+            "params"
+          ],
+          "type": "object"
+        },
         "approval.requested": {
           "additionalProperties": false,
           "properties": {
@@ -3783,6 +4175,7 @@ export const daemonRpcSchema: unknown = {
         }
       },
       "required": [
+        "agent.connections.changed",
         "approval.requested",
         "approval.resolved",
         "debug.breakpoints.changed",

@@ -19,7 +19,10 @@
 .collapsedButton {
   flex: 1 1 auto;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
   padding-top: 12px;
   background: none;
   border: 0;
@@ -474,4 +477,44 @@
 .hint {
   color: var(--kb-fg-subtle);
   font-size: var(--kb-font-size-small);
+}
+
+/* 오른쪽 패널 탭 (M5 B5: 속성 | 에이전트) */
+.rightTabs {
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  height: 100%;
+}
+
+.rightTab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  color: var(--kb-fg-muted);
+  font-size: var(--kb-font-size-small);
+  letter-spacing: 0.04em;
+}
+
+.rightTab[aria-selected="true"] {
+  color: var(--kb-fg-strong);
+  border-bottom-color: var(--kb-accent);
+}
+
+.rightTabBadge {
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: var(--kb-badge-bg);
+  color: var(--kb-badge-fg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0;
 }

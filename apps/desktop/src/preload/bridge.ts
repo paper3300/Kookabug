@@ -1,5 +1,6 @@
 // window.kookabug 로 내놓는 좁은 API (M2 계획 2.10). ipcRenderer를 인자로 받아 vitest가
 // 가짜 ipc로 검사한다
+import type { AgentEvent, AgentSessionEvent, AgentStartResult } from "../main/acp/events";
 import type { DaemonState } from "../main/daemon-state";
 import type { ExportResult } from "../main/dialogs";
 import {
@@ -49,7 +50,7 @@ export interface WindowState {
   maximized: boolean;
 }
 
-export type { ArmResult, DaemonState, ExportResult, RpcErrorShape };
+export type { AgentEvent, AgentSessionEvent, AgentStartResult, ArmResult, DaemonState, ExportResult, RpcErrorShape };
 
 /** 앱 API. 주 프로세스가 동작 이름과 인자를 다시 검사한다 */
 export interface AppApi {
@@ -78,6 +79,16 @@ export interface AppApi {
   recorderArm(): Promise<ArmResult>;
   /** 녹화 단축키 해제 */
   recorderDisarm(): Promise<void>;
+  /** 에이전트 패널 세션 시작 (M5 B5): 사용자 설정의 그 에이전트를 띄우고 ACP 세션을 연다 */
+  agentStart(agentId: string): Promise<AgentStartResult>;
+  /** 글자 하나 보내기. 끝나면 stopReason (대화 갱신은 agent.session 알림) */
+  agentPrompt(session: string, text: string): Promise<{ stopReason: string }>;
+  /** 중지 (session/cancel) */
+  agentCancel(session: string): Promise<void>;
+  /** 에이전트 권한 카드의 답 (optionId null = 닫기·cancelled). 에이전트가 준 선택지만 받는다 */
+  agentPermission(session: string, id: string, optionId: string | null): Promise<boolean>;
+  /** 세션 끝 (프로세스 트리 종료, 열린 카드는 cancelled) */
+  agentStop(session: string): Promise<void>;
 }
 
 export interface KookabugBridge {
@@ -116,6 +127,11 @@ function appApi(ipc: IpcRendererLike): AppApi {
     exportRun: call("exportRun"),
     recorderArm: call("recorderArm"),
     recorderDisarm: call("recorderDisarm"),
+    agentStart: call("agentStart"),
+    agentPrompt: call("agentPrompt"),
+    agentCancel: call("agentCancel"),
+    agentPermission: call("agentPermission"),
+    agentStop: call("agentStop"),
   };
 }
 

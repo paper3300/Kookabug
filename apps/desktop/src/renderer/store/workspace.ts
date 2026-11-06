@@ -3,6 +3,7 @@ import type { ResultOf } from "@kookabug/schema";
 import { create } from "zustand";
 import type { DaemonState, OpenResult, OutputLine, RecentProject } from "../../preload/bridge";
 import type { TreeEntry } from "../explorer/tree";
+import { agentConnected, initAgent, resetAgent } from "../agent/agentStore";
 import { client, toRpcError } from "../rpc/client";
 import { SessionRecovery } from "../rpc/recovery";
 import { breakpointModel } from "../debug/breakpoints";
@@ -113,6 +114,7 @@ function switchProject(root: string | null): void {
   runListModel.reset();
   breakpointModel.reset();
   resetRecorder();
+  resetAgent();
   recovery.reset();
   useWorkspace.setState({
     root,
@@ -160,6 +162,7 @@ async function onDaemonState(state: DaemonState): Promise<void> {
     breakpointModel.load(),
     runListModel.reload(),
     refreshRecorderState(),
+    agentConnected(),
   ]);
 }
 
@@ -211,6 +214,8 @@ export async function initWorkspace(): Promise<void> {
   client().on("recorder.changed", (p) => onRecorderChanged(p));
   breakpointModel.setNote((message) => note("warn", message));
   client().on("debug.breakpoints.changed", (p) => breakpointModel.changed(p));
+  // 에이전트 패널 세션·확인 요청·agent 연결 목록 (M5 B5)
+  initAgent();
   recovery.addRuns(runModel.cursors);
   recovery.addDocs(documentsHost);
   recovery.addFrames(framesHost);

@@ -50,6 +50,8 @@ M4_DENIED = {
 }
 # M5 B3 사람 확인·권한 설정 (계획 3.6 엄격: 에이전트가 자기 요청을 승인하거나 권한을 바꾸지 못함)
 M5_DENIED = {"approval.list", "approval.respond", "approval.preview", "permissions.set"}
+# M5 B5 에이전트 패널·설정 (에이전트가 자기 실행 명령·다른 에이전트 연결을 보거나 바꾸지 못함)
+M5_DENIED |= {"agent.connections", "agents.get", "agents.detect", "agents.set"}
 
 
 def test_ui_only_methods_agent_denied_or_allowlisted() -> None:

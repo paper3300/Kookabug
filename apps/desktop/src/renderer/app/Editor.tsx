@@ -10,6 +10,7 @@ import { GraphCanvas } from "../graph/Canvas";
 import { RecTab } from "../recorder/RecTab";
 import { RunToolbar } from "../run/Toolbar";
 import { RunTab } from "../runs/RunTab";
+import { PermissionsView } from "../settings/PermissionsView";
 import { TargetEditor } from "../target/TargetEditor";
 import { targetDirty, useTargets } from "../target/targetStore";
 import { useRun } from "../run/runStore";
@@ -98,7 +99,11 @@ function Breadcrumb() {
         ? [name, "실행 기록", tab.title]
         : tab?.kind === "rec"
           ? [name, "녹화", tab.title]
-          : [name, ...active.split("/")];
+          : tab?.kind === "settings"
+            ? [name, "설정", "에이전트 권한"]
+            : tab?.preview === true
+              ? [name, "승인 미리보기", tab.title]
+              : [name, ...active.split("/")];
   return (
     <div aria-label="경로" className={css.breadcrumb} data-part="breadcrumb">
       {parts.map((p, i) => (
@@ -211,6 +216,8 @@ export function Editor({ children }: { children?: ReactNode }) {
           <FileView key={active} path={active} />
         ) : activeTab?.kind === "rec" ? (
           <RecTab />
+        ) : activeTab?.kind === "settings" ? (
+          <PermissionsView />
         ) : (
           <div className={css.canvas} data-part="canvas" data-path={active} />
         )}

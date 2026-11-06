@@ -117,6 +117,11 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     "control.key": "kb_input_key",
     "control.type": "kb_input_type",
     "app.launch": "kb_app_launch",
+    # M5 B5: 에이전트 패널·설정 — 사람만 (에이전트가 자기 실행 명령을 바꾸지 못하게)
+    "agent.connections": UI_ONLY,
+    "agents.get": UI_ONLY,
+    "agents.detect": UI_ONLY,
+    "agents.set": UI_ONLY,
 }
 
 AGENT_DENIED: Final = frozenset(
@@ -134,6 +139,10 @@ AGENT_DENIED: Final = frozenset(
         "approval.respond",
         "approval.preview",
         "permissions.set",
+        "agent.connections",
+        "agents.get",
+        "agents.detect",
+        "agents.set",
     }
 )
 """`ui_only`이지만 agent 연결에는 판정 전에 거부하는 메서드. `ui_only`는 판정을 건너뛰므로

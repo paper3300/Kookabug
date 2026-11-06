@@ -8,6 +8,8 @@
     kookabug doctor [--profile headless|desktop] [--json]                            (doctor_cmd)
     kookabug daemon [--workspace DIR] [--idle-timeout-s 600] [--json]                (daemon_cmd)
     kookabug mcp [--workspace DIR] [--agent-id ID] [--unattended] [--client 이름]   (kookabug_mcp)
+    kookabug agent-host --workspace DIR [--env 이름=값] [--secret-env 이름=키] -- 명령 ...
+                                                     (앱의 에이전트 패널 세션 도우미)
     kookabug --version
 
 이 프로세스가 감독자다: `WorkspaceService.start_run`(권한 판정 → 감독자 시작) → 진행 출력(`follow`로
@@ -39,6 +41,7 @@ from types import FrameType
 from typing import Any, Final, NoReturn, Protocol, TextIO
 
 from kookabug_cli import __version__, daemon_cmd
+from kookabug_core.agents import host as agent_host
 from kookabug_core.canonical import loads_strict
 from kookabug_core.permissions import Decision, Principal
 from kookabug_core.record import follow, read_run_json
@@ -233,6 +236,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     daemon_cmd.add_parser(commands)
     mcp_cli.add_parser(commands)
+    agent_host.add_parser(commands)
     return parser
 
 
@@ -618,6 +622,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return daemon_cmd.run(args, sys.stdout, sys.stderr, dpi_error=dpi_error)
     if args.command == "mcp":
         return mcp_cli.run(args)
+    if args.command == "agent-host":
+        return agent_host.run(args)
     # 비전 명령은 opencv를 불러오므로 쓸 때만 import한다 (`kookabug run` 시작을 가볍게)
     try:
         if args.command == "target":

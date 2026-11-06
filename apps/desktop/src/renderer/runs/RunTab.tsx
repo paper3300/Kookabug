@@ -1,11 +1,14 @@
 // 기록 뷰어 RUN 탭 (시안 RunViewer 에디터 영역, M3 계획 2.10).
 // - 머리: `#<id> <테스트>` · 결과·사유 · 시작 시각 · 경과(멈춘 시간이 있으면 "실제 a · 멈춤 제외 b") · 반복 · 스냅샷
 //   경로 · 해상도·DPI. 단추 "에디터에서 재현"(reproduce.ts)·"분석 번들 내보내기"(주 프로세스 저장 대화 상자),
-//   "에이전트에게 분석 요청"은 M5(숨김). 두 단추의 결과는 머리 아래 알림 줄
+//   "에이전트에게 분석 요청"(M5 B5: 에이전트 패널을 열고 @run 칩 + 기본 문장). 두 단추의 결과는 머리 아래 알림 줄
 // - 하위 탭: 스텝 타임라인 · 노드별 통계 · `#<기준> 과 비교` · run.json. "수집 데이터"는 숨김(U11)
 // - 처음 열면 실패 노드로 바로 이동한다(실패 사슬을 펼치고 실패 스텝을 고른 뒤 보이게 하고 그 증거를 보인다)
 // - 진행 중 실행은 실행 화면이 받은 이벤트를 따라 늘어난다 (runIndexStore, live.ts)
 import { useEffect } from "react";
+import { addChip, setDraft, useAgent } from "../agent/agentStore";
+import { runChip } from "../agent/chips";
+import { openAgentPanel } from "../store/ui";
 import { formatCount } from "../run/highlight";
 import { useRegistry } from "../store/registry";
 import { renameTab, runTabPath } from "../store/tabs";
@@ -136,8 +139,26 @@ function Head({ view, shortId, typeTitle }: { view: RunViewState; shortId: strin
       >
         분석 번들 내보내기
       </button>
+      <button
+        type="button"
+        className={css.headButton}
+        data-part="ask-agent"
+        title="에이전트 패널을 열고 이 실행을 첨부해요 (보내기 전에 고칠 수 있어요)"
+        onClick={() => askAgent(view.runId, shortId)}
+      >
+        에이전트에게 분석 요청
+      </button>
     </div>
   );
+}
+
+/** RUN 탭 "에이전트에게 분석 요청" (M3 U11 해제): 패널을 열고 @run 칩 + 기본 문장 (바로 보내지 않는다) */
+function askAgent(runId: string, shortId: string): void {
+  openAgentPanel();
+  addChip(runChip(runId));
+  if (useAgent.getState().draft.trim() === "") {
+    setDraft(`실행 #${shortId}이(가) 실패한 원인을 분석해 줘. 지난 성공 실행과 비교해서.`);
+  }
 }
 
 function Notice({ view }: { view: RunViewState }) {

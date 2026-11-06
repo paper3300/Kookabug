@@ -130,6 +130,11 @@ def test_every_method_has_tool_or_ui_only() -> None:
         "approval.respond",
         "approval.preview",
         "permissions.set",
+        # M5 B5 에이전트 패널·설정
+        "agent.connections",
+        "agents.get",
+        "agents.detect",
+        "agents.set",
     } | RECORDER_METHODS
 
 

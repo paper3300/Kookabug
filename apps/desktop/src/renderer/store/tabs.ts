@@ -29,13 +29,15 @@ export function fileBadgeText(path: string): string {
 export interface EditorTab {
   /** 파일 탭은 워크스페이스 기준 경로, RUN 탭은 `run:<run_id>` */
   path: string;
-  kind: "graph" | "target" | "run" | "file" | "rec";
+  kind: "graph" | "target" | "run" | "file" | "rec" | "settings";
   graphKind: TreeEntry["graph_kind"] | null;
   title: string;
   /** RUN 탭의 실행, 스냅샷 그래프 탭이면 그 그래프를 돈 실행 */
   runId?: string;
   /** 실행 폴더(runs/ 아래)의 스냅샷 그래프: 읽기 전용 */
   snapshot?: boolean;
+  /** 에이전트 확인 요청의 "캔버스에서 보기" (M5 U10): 승인하면 쓰일 그래프 값, 읽기 전용·파일 없음 */
+  preview?: boolean;
 }
 
 interface TabsState {
@@ -106,6 +108,33 @@ export function openSnapshotTab(path: string, runId: string, shortId: string): v
   });
 }
 
+/** 승인 미리보기 탭 자리 (`preview:<확인 요청 ID>`) */
+export const PREVIEW_PREFIX = "preview:";
+
+export function isPreviewPath(path: string): boolean {
+  return path.startsWith(PREVIEW_PREFIX);
+}
+
+/** 승인 미리보기 탭 (읽기 전용 그래프, 문서는 부르는 쪽이 adoptPreview로 먼저 넣는다) */
+export function openPreviewTab(path: string, title: string): void {
+  useTabs.setState((s) => {
+    if (s.tabs.some((t) => t.path === path)) return { active: path };
+    const tab: EditorTab = { path, kind: "graph", graphKind: null, title, preview: true };
+    return { tabs: [...s.tabs, tab], active: path };
+  });
+}
+
+/** 설정 탭 자리 (M5 B5 권한 설정 화면, 시안 Permissions) */
+export const SETTINGS_TAB_PATH = "settings:permissions";
+
+export function openSettingsTab(): void {
+  useTabs.setState((s) => {
+    if (s.tabs.some((t) => t.path === SETTINGS_TAB_PATH)) return { active: SETTINGS_TAB_PATH };
+    const tab: EditorTab = { path: SETTINGS_TAB_PATH, kind: "settings", graphKind: null, title: "설정" };
+    return { tabs: [...s.tabs, tab], active: SETTINGS_TAB_PATH };
+  });
+}
+
 /** 녹화 REC 탭 자리 (M4 T10, 녹화 세션 하나에 하나 — 세션이 끝나면 닫힌다) */
 export const REC_TAB_PATH = "rec:capture";
 
@@ -150,8 +179,10 @@ export function closeAllTabs(): void {
 
 /** 탭 왼쪽 종류 글자 (시안: TEST·SUB·TARGET·RUN, 스냅샷 그래프는 SNAPSHOT, 보기 탭은 fileBadgeText) */
 export function tabBadge(
-  tab: Pick<EditorTab, "kind" | "graphKind"> & { snapshot?: boolean; path?: string },
+  tab: Pick<EditorTab, "kind" | "graphKind"> & { snapshot?: boolean; preview?: boolean; path?: string },
 ): { text: string; tone: "test" | "target" | "run" | "file" | "rec" } {
+  if (tab.kind === "settings") return { text: "SETTINGS", tone: "file" };
+  if (tab.preview === true) return { text: "PREVIEW", tone: "run" };
   if (tab.kind === "target") return { text: "TARGET", tone: "target" };
   if (tab.kind === "rec") return { text: "REC", tone: "rec" };
   if (tab.kind === "run") return { text: "RUN", tone: "run" };

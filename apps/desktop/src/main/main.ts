@@ -4,11 +4,13 @@ import path from "node:path";
 import { wireStringify } from "@kookabug/schema";
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, nativeTheme, session, shell } from "electron";
 import type { OpenResult, OutputLine, ThemeMode, ThemeState } from "../preload/bridge";
+import { AgentHost, AgentHostError, parseAgentOverride, type AgentSpecLite } from "./acp/host";
+import { spawnAgent } from "./acp/spawn";
 import { locateCli } from "./cli-locate";
 import { CloseGuard } from "./close-guard";
 import { DaemonManager, nodeDeps, parseExtraArgs, sameWorkspacePath } from "./daemon";
 import { exportRun } from "./dialogs";
-import { installE2EHooks, ResponseDelays } from "./e2e-hooks";
+import { e2eHooksEnabled, installE2EHooks, ResponseDelays } from "./e2e-hooks";
 import { createNotificationForwarder, createRpcHandler, type DaemonCall } from "./ipc";
 import { APP_CHANNEL, checkAppAction, checkSender, EVENT_CHANNEL, IpcGuardError, RPC_CHANNEL } from "./ipc-guard";
 import { handleProtocols, registerSchemes } from "./protocols";
@@ -201,6 +203,36 @@ function start(): void {
   // 녹화 문지기는 맨 바깥: 렌더러 요청·정지 단축키가 모두 거친다
   daemonCall = guardRecorderCall(daemonCall, shortcuts, wireStringify);
 
+  // 에이전트 패널 세션 (M5 B5): 띄울 명령은 daemon agents.get(사용자 설정)에서 ID로 찾는다
+  const agentOverride =
+    __KOOKABUG_E2E_HOOKS__ && e2eHooksEnabled(app.isPackaged, process.env)
+      ? parseAgentOverride(process.env.KOOKABUG_E2E_AGENT)
+      : null;
+  const agentHost = new AgentHost({
+    async agents() {
+      const result = (await daemonCall("agents.get", {}, "{}")) as { agents: AgentSpecLite[] };
+      return result.agents;
+    },
+    cli: () => cliLocation().path,
+    root: () => manager.root,
+    baseEnv: process.env,
+    override: agentOverride,
+    spawn: spawnAgent,
+    emit: (event) => send("agent.session", event),
+  });
+  app.on("will-quit", () => agentHost.stopAll());
+  // 앱 동작의 오류는 code를 메시지 앞에 붙여 렌더러가 알아보게 한다 (IPC는 Error 추가 필드를 버린다)
+  const agentAction =
+    <A extends unknown[], R>(fn: (...args: A) => R) =>
+    async (...args: A): Promise<Awaited<R>> => {
+      try {
+        return await fn(...args);
+      } catch (err) {
+        if (err instanceof AgentHostError) throw new Error(`${err.code}: ${err.message}`);
+        throw err;
+      }
+    };
+
   handleProtocols(RENDERER_ROOT, () => manager.root);
 
   const rpc = createRpcHandler(daemonCall);
@@ -233,7 +265,10 @@ function start(): void {
       return openWorkspace(dir);
     },
     recent: () => settings.recent(),
-    closeWorkspace: () => manager.detach(),
+    closeWorkspace: () => {
+      agentHost.stopAll();
+      return manager.detach();
+    },
     themeGet: () => themeState(),
     themeSet(mode) {
       if (!isThemeMode(mode)) throw new IpcGuardError(`모르는 테마: ${String(mode)}`);
@@ -289,6 +324,16 @@ function start(): void {
     },
     recorderArm: () => shortcuts.arm(),
     recorderDisarm: () => shortcuts.disarm(),
+    agentStart: agentAction((agentId: unknown) => {
+      if (typeof agentId !== "string" || agentId === "") throw new IpcGuardError("agentStart 인자가 문자열이 아니다");
+      return agentHost.start(agentId);
+    }),
+    agentPrompt: agentAction((session: unknown, text: unknown) => agentHost.prompt(session, text)),
+    agentCancel: agentAction((session: unknown) => agentHost.cancel(session)),
+    agentPermission: agentAction((session: unknown, id: unknown, optionId: unknown) =>
+      agentHost.permission(session, id, optionId),
+    ),
+    agentStop: agentAction((session: unknown) => agentHost.stop(session)),
   };
   // 창 닫기 확인 (close-guard.ts): 저장 안 된 그래프가 있으면 렌더러가 저장·버림·취소를 묻는다
   const closeGuard = new CloseGuard({
@@ -331,6 +376,7 @@ function start(): void {
   win.webContents.on("render-process-gone", () => closeGuard.rendererGone());
   win.on("closed", () => {
     mainWindow = null;
+    agentHost.stopAll();
     // daemon은 남는다 (UI를 꺼도 daemon과 실행은 계속된다). 연결만 놓는다
     manager.detach();
   });

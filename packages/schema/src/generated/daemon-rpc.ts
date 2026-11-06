@@ -1,12 +1,26 @@
 /* 생성물 (packages/schema/*.schema.json → scripts/gen.mjs). 직접 고치지 않는다. */
 
 /**
+ * UTC 시각, 밀리초까지 (2026-10-29T06:02:11.104Z)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Timestamp".
+ */
+export type Timestamp = string;
+/**
  * MCP 툴셋 (구현 계획 7장). core는 늘 켜져 있다
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "Toolset".
  */
 export type Toolset = "control" | "core" | "graph_edit" | "observe" | "run" | "screens";
+/**
+ * 그래프 파일 revision: 디스크 바이트의 sha256 hex
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Revision".
+ */
+export type Revision = string;
 /**
  * 사람 확인 답 (M5 3.6). allow_always는 프로젝트 계층(.kookabug/local.json)에 그 도구·인자에만 맞는 allow 규칙을 더한 뒤 실행한다. control 도구에는 받지 않는다(always_not_allowed)
  *
@@ -21,13 +35,6 @@ export type ApprovalAnswer = "allow_always" | "allow_once" | "deny";
  * via the `definition` "ApprovalId".
  */
 export type ApprovalId = string;
-/**
- * UTC 시각, 밀리초까지 (2026-10-29T06:02:11.104Z)
- *
- * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
- * via the `definition` "Timestamp".
- */
-export type Timestamp = string;
 /**
  * 점으로 나눈 소문자 이름 (예: graph.open)
  *
@@ -75,13 +82,6 @@ export type ToolName =
  * via the `definition` "WorkspacePath".
  */
 export type WorkspacePath = string;
-/**
- * 그래프 파일 revision: 디스크 바이트의 sha256 hex
- *
- * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
- * via the `definition` "Revision".
- */
-export type Revision = string;
 /**
  * 그래프 파일 값 전체 (JSON 트리). 편집 중이라 형식이 틀릴 수 있다. JS에서 보낼 때는 반드시 wireStringify로 직렬화한다
  *
@@ -431,6 +431,23 @@ export type Seq = number;
  */
 export interface DaemonRpcMessageDefs {}
 /**
+ * 감지 표의 에이전트 하나 (kookabug_core.agents.detect). 경로에서 찾기만 하고 설치하지 않는다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "AgentCandidate".
+ */
+export interface AgentCandidate {
+  args: string[];
+  command: string;
+  id: string;
+  installed: boolean;
+  name: string;
+  /**
+   * 찾은 실행 파일 (없으면 null)
+   */
+  path: null | string;
+}
+/**
  * 에이전트 연결 → 그 에이전트 주체 (id 필수)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -448,6 +465,61 @@ export interface AgentClientInfo {
   kind: "agent";
   name: string;
   version: string;
+}
+/**
+ * daemon에 붙은 agent 연결 하나 (kookabug mcp)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "AgentConnection".
+ */
+export interface AgentConnection {
+  attended: boolean;
+  connection: number;
+  id: string;
+  name: string;
+  since: Timestamp;
+  toolsets: Toolset[];
+}
+/**
+ * agent 연결이 붙거나 끊기거나 툴셋을 켬 (ui 연결에만). 목록은 agent.connections로 다시 읽는다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "AgentConnectionsChangedParams".
+ */
+export interface AgentConnectionsChangedParams {}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "AgentConnectionsResult".
+ */
+export interface AgentConnectionsResult {
+  connections: AgentConnection[];
+}
+/**
+ * 비밀값 저장소의 키 (값은 실행 때 찾는다)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "AgentSecretRef".
+ */
+export interface AgentSecretRef {
+  $secret: string;
+}
+/**
+ * 판단 노드·에이전트 패널이 띄우는 ACP 에이전트 하나. env의 비밀값은 {"$secret": 키}로만 쓴다 (실행 때 찾음)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "AgentSpec".
+ */
+export interface AgentSpec {
+  args?: string[];
+  command: string;
+  /**
+   * 환경 변수 (이름 규칙은 사용자 설정 스키마가 쓰기 때 본다 — 틀리면 settings_invalid)
+   */
+  env?: {
+    [k: string]: string | AgentSecretRef | undefined;
+  };
+  id: string;
+  name: string;
 }
 /**
  * 툴셋을 켠다 (끄기는 없다). 켜도 각 도구의 권한 판정은 그대로다
@@ -481,6 +553,59 @@ export interface AgentToolsetsEnableResult {
 export interface AgentToolsetsResult {
   available: Toolset[];
   enabled: Toolset[];
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "AgentsDetectResult".
+ */
+export interface AgentsDetectResult {
+  candidates: AgentCandidate[];
+}
+/**
+ * 사용자 설정의 에이전트 목록 (M5 계획 3.12). 파일이 없으면 빈 목록·revision null
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "AgentsGetResult".
+ */
+export interface AgentsGetResult {
+  agents: AgentSpec[];
+  default_agent: null | string;
+  /**
+   * 파일 형식이 틀려 목록을 읽지 못했으면 그 이유 (agents.set도 settings_invalid로 거부)
+   */
+  problem: null | string;
+  /**
+   * 사용자 설정 파일 revision (없으면 null)
+   */
+  revision: Revision | null;
+  /**
+   * 사용자 설정 파일 경로 (정할 수 없으면 null)
+   */
+  source: null | string;
+}
+/**
+ * 사용자 설정의 agents·default_agent만 바꾼다. 다른 키·순서는 보존, revision이 다르면 revision_conflict, 형식이 틀린 파일은 settings_invalid (permissions.set과 같은 쓰기 규칙)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "AgentsSetParams".
+ */
+export interface AgentsSetParams {
+  agents: AgentSpec[];
+  /**
+   * 읽은 때의 파일 revision (파일이 없었으면 null)
+   */
+  base_revision: Revision | null;
+  /**
+   * null이면 키를 지운다
+   */
+  default_agent: null | string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "AgentsSetResult".
+ */
+export interface AgentsSetResult {
+  revision: Revision;
 }
 /**
  * 게임을 띄운다 (설정 game.executable·game.args·game.cwd, 프로필 계층 포함). 실행·녹화 중이면 거부. 실행 Job 밖
@@ -1272,6 +1397,12 @@ export interface MatchInfo {
  * via the `definition` "Methods".
  */
 export interface Methods {
+  "agent.connections": {
+    params: EmptyParams;
+    renderer: true;
+    result: AgentConnectionsResult;
+    tool: "ui_only";
+  };
   "agent.toolsets.enable": {
     params: AgentToolsetsEnableParams;
     renderer: false;
@@ -1283,6 +1414,24 @@ export interface Methods {
     renderer: false;
     result: AgentToolsetsResult;
     tool: "kb_toolset_enable";
+  };
+  "agents.detect": {
+    params: EmptyParams;
+    renderer: true;
+    result: AgentsDetectResult;
+    tool: "ui_only";
+  };
+  "agents.get": {
+    params: EmptyParams;
+    renderer: true;
+    result: AgentsGetResult;
+    tool: "ui_only";
+  };
+  "agents.set": {
+    params: AgentsSetParams;
+    renderer: true;
+    result: AgentsSetResult;
+    tool: "ui_only";
   };
   "app.launch": {
     params: AppLaunchParams;
@@ -3121,6 +3270,9 @@ export interface Params {
  * via the `definition` "Notifications".
  */
 export interface Notifications {
+  "agent.connections.changed": {
+    params: AgentConnectionsChangedParams;
+  };
   "approval.requested": {
     params: ApprovalRequest;
   };
