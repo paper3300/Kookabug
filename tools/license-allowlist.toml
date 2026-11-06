@@ -21,6 +21,9 @@ allowed = [
     # bzip2 (Python의 _bz2)
     "bzip2-1.0.6",
     "CC0-1.0",
+    # 동봉 uv의 webpki-root-certs (Mozilla 루트 인증서 데이터, M6 U10). 허용적 데이터 라이선스:
+    # 원문을 함께 주면 되고(uv-crates.txt) 결과물·코드에 조건을 걸지 않는다 (카피레프트 아님)
+    "CDLA-Permissive-2.0",
     # FreeType (Electron, FTL OR GPL-2.0-or-later에서 FTL을 고른다)
     "FTL",
     # libjpeg (opencv)

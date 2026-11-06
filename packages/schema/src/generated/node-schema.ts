@@ -110,6 +110,15 @@ export interface ConfigDecl {
   min_items?: number;
   minimum?: number;
   type: PinType;
+  /**
+   * 인스펙터 값 편집 위젯 (M6 3.10). 비밀값 타입에는 쓰지 않는다
+   */
+  ui?: {
+    /**
+     * <플러그인 ID>.<위젯 이름>
+     */
+    widget: string;
+  };
 }
 /**
  * This interface was referenced by `NodeSchemaFile`'s JSON-Schema

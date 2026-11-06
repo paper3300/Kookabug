@@ -1,0 +1,20 @@
+[project]
+name = "__DIST__"
+version = "0.1.0"
+description = "Kookabug 플러그인: __TITLE__"
+readme = "README.md"
+requires-python = ">=3.14"
+# 0.x 동안 SDK 소판이 호환 경계다 (앱은 SDK 하나를 동봉하고 플러그인 환경도 그 판을 쓴다)
+dependencies = ["kookabug-sdk__SDK_RANGE__"]
+
+[tool.kookabug]
+id = "__ID__"
+title = "__TITLE__"
+# 워커가 import할 모듈. 노드는 이 모듈에 있다
+modules = ["__PKG__.nodes"]
+# 노드 effects가 쓰는 권한: capture·input·process·filesystem·network·secrets
+permissions = []
+__UI_LINE__
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14"]
+build-backend = "uv_build"

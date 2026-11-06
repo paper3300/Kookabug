@@ -10,9 +10,12 @@ export const APP_HOST = "app";
 export const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 export const KBIMG_SCHEME = "kbimg";
 
+export const KBPLUGIN_SCHEME = "kbplugin";
+
+// frame-src: 플러그인 위젯 iframe (M6 3.10)만. 그 밖은 M2 2.10 그대로
 export const CSP =
   "default-src 'self'; img-src 'self' kbimg: data:; media-src kbimg:; " +
-  "style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'none'";
+  "style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'none'; frame-src kbplugin:";
 
 export function cspHeaderValue(): string {
   return CSP;
@@ -214,6 +217,154 @@ export function fileResponse(file: string, rangeHeader: string | null): Response
       ? null
       : (Readable.toWeb(fs.createReadStream(file, { start, end })) as ReadableStream<Uint8Array>);
   return new Response(body, { status: range === null ? 200 : 206, headers });
+}
+
+// ---------------------------------------------------------------- 플러그인 위젯 (M6 계획 3.10)
+
+/** 처리기가 만드는 위젯 껍데기 문서 이름 */
+export const WIDGET_SHELL = "__widget.html";
+export const PLUGIN_CONTENT_TYPES: Record<string, string> = {
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".woff2": "font/woff2",
+};
+// <플러그인 ID('_'는 '-')>-<환경 지문 12자>: CSP 호스트 문법에는 '_'가 없다 (있으면 그 소스를 무시해 모두 막힌다)
+const PLUGIN_HOST = /^[a-z][a-z0-9-]*-[0-9a-f]{12}$/;
+const WIDGET_QUERY = /^\?w=[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*&s=[0-9a-f]{32}$/;
+
+/** 위젯 호스트 하나: `kbplugin://<host>/`가 `dir`(환경 안 ui 폴더) 아래 파일만 준다 */
+export interface WidgetHost {
+  host: string;
+  /** ui 폴더 (절대 경로) */
+  dir: string;
+  /** 이 폴더가 들어 있어야 하는 곳: `<워크스페이스>/.kookabug/plugins/envs` */
+  envs: string;
+}
+
+/**
+ * 위젯 문서·자원의 CSP. 네트워크(connect-src 없음)·다른 플러그인 자원·하위 프레임·폼·base 없음,
+ * 앱 문서 안에서만 뜬다
+ */
+export function widgetCsp(host: string): string {
+  const self = `${KBPLUGIN_SCHEME}://${host}`;
+  return (
+    `default-src 'none'; script-src ${self}; style-src ${self} 'unsafe-inline'; ` +
+    `img-src ${self} data:; font-src ${self}; base-uri 'none'; form-action 'none'; frame-ancestors app:`
+  );
+}
+
+/** 처리기가 만드는 껍데기: 그 플러그인의 ui/index.js를 ES 모듈로 싣는다 */
+export function widgetShell(): string {
+  return (
+    '<!doctype html><html><head><meta charset="utf-8"><meta name="color-scheme" content="dark light">' +
+    '</head><body><script type="module" src="index.js"></script></body></html>'
+  );
+}
+
+/** 위젯 껍데기 주소: `kbplugin://<host>/__widget.html?w=<위젯>&s=<세션 nonce>` */
+export function widgetUrl(host: string, widget: string, session: string): string {
+  return `${KBPLUGIN_SCHEME}://${host}/${WIDGET_SHELL}?w=${widget}&s=${session}`;
+}
+
+export function isWidgetShellUrl(url: string): boolean {
+  const m = /^kbplugin:\/\/([^/?#]+)\/__widget\.html(\?[^#]*)$/.exec(url);
+  return m !== null && PLUGIN_HOST.test(m[1]) && WIDGET_QUERY.test(m[2]);
+}
+
+/**
+ * plugins.list의 위젯 호스트 경로(워크스페이스 기준 '/' 경로) → 절대 경로. `.kookabug/plugins/envs/` 아래가
+ * 아니거나 `..`·절대 경로·드라이브면 null
+ */
+export function widgetHostDir(workspaceRoot: string, rel: string): { dir: string; envs: string } | null {
+  const segments = decodeSegments(rel.split("/").map(encodeURIComponent).join("/"));
+  if (segments === null || segments.length < 5) return null;
+  if (segments.slice(0, 3).join("/").toLowerCase() !== ".kookabug/plugins/envs") return null;
+  return { dir: path.join(workspaceRoot, ...segments), envs: path.join(workspaceRoot, ".kookabug", "plugins", "envs") };
+}
+
+export type KbpluginResult =
+  | { ok: true; kind: "shell"; host: string }
+  | { ok: true; kind: "file"; host: string; file: string; contentType: string }
+  | { ok: false; reason: "bad_url" | "unknown_host" | "outside" | "link" | "not_allowed" | "not_found" };
+
+/**
+ * `kbplugin://<host>/<경로>` 판정. 호스트는 `lookup`(지금 잠금에 있고 환경이 준비된 플러그인)에 있어야
+ * 하고, 파일은 그 플러그인 ui 폴더 바로 그 아래만이다: `..`·절대 경로·구분자·드라이브·끝 점 거부, 경로의
+ * 어느 구간이든 심볼릭 링크·정션이면 거부(실제 경로 = 요청 경로), 확장자는 js·mjs·css·png·svg·woff2만.
+ * 다른 플러그인 위젯이 이 호스트 자원을 읽는 것은 그 위젯 문서의 CSP(자기 호스트만)가 막는다 — Electron 처리기
+ * 요청에는 referrer·Origin이 오지 않아 처리기에서 요청한 문서를 가릴 수 없다
+ */
+export function resolvePluginUrl(url: string, lookup: (host: string) => WidgetHost | null): KbpluginResult {
+  const m = /^kbplugin:\/\/([^/?#]+)\/([^?#]*)(\?[^#]*)?$/i.exec(url);
+  if (m === null) return { ok: false, reason: "bad_url" };
+  const host = m[1].toLowerCase();
+  if (!PLUGIN_HOST.test(host)) return { ok: false, reason: "bad_url" };
+  const entry = lookup(host);
+  if (entry === null) return { ok: false, reason: "unknown_host" };
+  if (m[2] === WIDGET_SHELL) {
+    if (m[3] === undefined || !WIDGET_QUERY.test(m[3])) return { ok: false, reason: "bad_url" };
+    return { ok: true, kind: "shell", host };
+  }
+  if (m[3] !== undefined) return { ok: false, reason: "bad_url" };
+  const segments = decodeSegments(m[2]);
+  if (segments === null) return { ok: false, reason: "outside" };
+  const contentType = PLUGIN_CONTENT_TYPES[path.extname(segments.at(-1)!).toLowerCase()];
+  if (contentType === undefined) return { ok: false, reason: "not_allowed" };
+  const realEnvs = realOrNull(entry.envs);
+  const realDir = realOrNull(entry.dir);
+  if (realEnvs === null || realDir === null) return { ok: false, reason: "not_found" };
+  // ui 폴더 자체도 환경 폴더 안 실제 자리여야 한다 (그 사이 정션이면 경계가 바뀐다)
+  if (!isInside(realEnvs, realDir) || !samePath(realDir, path.join(realEnvs, path.relative(entry.envs, entry.dir)))) {
+    return { ok: false, reason: "link" };
+  }
+  const expected = path.join(realDir, ...segments);
+  const realFile = realOrNull(path.join(entry.dir, ...segments));
+  if (realFile === null) return { ok: false, reason: "not_found" };
+  if (!samePath(realFile, expected) || !isInside(realDir, realFile)) return { ok: false, reason: "link" };
+  if (!fs.statSync(realFile).isFile()) return { ok: false, reason: "not_found" };
+  return { ok: true, kind: "file", host, file: realFile, contentType };
+}
+
+/** kbplugin 응답 머리: 그 호스트 CSP, 불투명 출처 iframe의 ES 모듈 로딩용 CORS(null)는 이 응답에만 */
+export function pluginHeaders(host: string, contentType: string): Headers {
+  return new Headers({
+    "Content-Type": contentType,
+    "Content-Security-Policy": widgetCsp(host),
+    "Access-Control-Allow-Origin": "null",
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "no-store",
+  });
+}
+
+export interface FrameNavigation {
+  isMainFrame: boolean;
+  url: string;
+  /** 이동하려는 프레임의 지금 주소 (새 iframe이면 "" 또는 about:blank, 알 수 없으면 null = 막음) */
+  frameUrl: string | null;
+  /** 그 프레임 부모의 주소 */
+  parentUrl: string | null;
+  /** 이동을 시작한 프레임의 주소 */
+  initiatorUrl: string | null;
+}
+
+/**
+ * 하위 프레임 이동 (`will-frame-navigate`): 앱 문서가 새 위젯 iframe에 껍데기를 처음 싣는 것만 허용한다.
+ * 위젯의 자기 재탐색·다른 주소·다른 하위 프레임, 렌더러가 시작한 주 프레임 이동은 막는다
+ */
+export function frameNavigationAllowed(nav: FrameNavigation): boolean {
+  if (nav.isMainFrame) return false;
+  const fresh = nav.frameUrl === "" || nav.frameUrl === "about:blank";
+  return (
+    fresh &&
+    isWidgetShellUrl(nav.url) &&
+    nav.parentUrl !== null &&
+    isAppUrl(nav.parentUrl) &&
+    nav.initiatorUrl !== null &&
+    isAppUrl(nav.initiatorUrl)
+  );
 }
 
 // 구간마다 퍼센트 해석 뒤 검사. 빈 구간·`.`·`..`·구분자·드라이브·NUL, Windows가 지우는

@@ -10,6 +10,7 @@
 | `conflict_b` | `kbfix-dep>=2` | A와 충돌 → 격리 |
 | `compatible_c` | `kbfix-dep>=1,<3` | 공유에 붙음 |
 | `build_marker` | SDK만 | 프로젝트 안 빌드 백엔드·모듈 import가 표식을 씀 → 신뢰 확인 전 코드 미실행 (git·폴더 원천) |
+| `widget_probe` | SDK만 | UI 확장 격리 (B6): 위젯이 fetch·다른 플러그인 모듈 import·자기 프레임 이동·문서 다시 쓰기를 시도하고 결과를 config 값으로 써 넣는다 (`e2e/plugin-widget.spec.ts`) |
 
 git 원천 검사는 `plugin_fixtures.git_repo()`가 이 폴더·예제를 레포 밖 임시 git 레포(`file://`)로
 만든다 (전역 git 설정을 쓰지 않음).

@@ -6,8 +6,26 @@ readme = "README.md"
 requires-python = ">=3.14"
 license = "MIT"
 license-files = ["LICENSE"]
+authors = [{ name = "Kookabug contributors" }]
+keywords = ["kookabug", "game", "test", "automation", "plugin"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Testing",
+    "Typing :: Typed",
+]
 # 런타임 의존성 없음: 플러그인 venv와 충돌할 여지를 없앤다
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/paper3300/Kookabug"
+Repository = "https://github.com/paper3300/Kookabug"
+Documentation = "https://github.com/paper3300/Kookabug/blob/main/Docs/Design/Python%20%EB%85%B8%EB%93%9C%20SDK%20v0.md"
+Changelog = "https://github.com/paper3300/Kookabug/blob/main/python/kookabug_sdk/RELEASING.md"
 
 [project.scripts]
 kookabug-sdk = "kookabug_sdk.cli:main"

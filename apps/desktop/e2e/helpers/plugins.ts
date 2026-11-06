@@ -74,6 +74,12 @@ export function preinstall(world: PluginWorld, ws: string, wheel: string, flags:
   execFileSync(PYTHON, ["-X", "utf8", SCRIPT, "install", world.file, ws, wheel, ...flags], { stdio: "pipe", timeout: 300_000 });
 }
 
+/** 실제 `PluginOps.verify()`를 앱 밖에서 돌린다 (환경 파일이 바뀌었으면 깨짐 기록). 결과 JSON */
+export function verifyPlugins(world: PluginWorld, ws: string): { ok: boolean; environments: Record<string, { status: string }> } {
+  const out = execFileSync(PYTHON, ["-X", "utf8", SCRIPT, "verify", world.file, ws], { encoding: "utf8", timeout: 300_000 });
+  return JSON.parse(out.trim().split("\n").at(-1)!);
+}
+
 export interface PluginSession {
   app: ElectronApplication;
   page: Page;

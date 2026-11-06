@@ -60,6 +60,26 @@ def requirement_name(requirement: str) -> str:
     return normalize_name(match.group(1)) if match else ""
 
 
+def widget_problems(plugin_id: str, node: dict[str, Any], *, has_ui: bool) -> list[str]:
+    """노드 config의 `ui.widget` 검사 (M6 3.10): 자기 플러그인 위젯만, 머리에 `ui` 폴더가 있어야
+    하고, 비밀값 타입 항목에는 위젯이 없다 (화면도 다시 거부한다)."""
+    out: list[str] = []
+    node_type = str(node.get("type"))
+    for name, decl in (node.get("config") or {}).items():
+        widget = (decl.get("ui") or {}).get("widget") if isinstance(decl, dict) else None
+        if widget is None:
+            continue
+        if not str(widget).startswith(plugin_id + "."):
+            out.append(
+                f"{node_type} config '{name}': 위젯 {widget}이(가) '{plugin_id}.'로 시작하지 않는다"
+            )
+        if not has_ui:
+            out.append(f"{node_type} config '{name}': 위젯을 쓰는데 머리에 ui 폴더가 없다")
+        if "secret" in re.split(r"[\[\]|,\s]+", str(decl.get("type", ""))):
+            out.append(f"{node_type} config '{name}': 비밀값 타입에는 위젯을 쓸 수 없다")
+    return out
+
+
 def min_core_satisfied(app_version: str, min_core: str) -> bool:
     """앱 판이 `min_core`(PEP 440 하한)를 만족하는가.
 
@@ -170,6 +190,7 @@ def read_wheel(path: Path, *, allow_direct: bool = False) -> Manifest:
             problems_.append(f"노드 타입 {node_type}이(가) '{plugin_id}.'로 시작하지 않는다")
         if missing := sorted(set(node.get("effects", [])) - permissions):
             problems_.append(f"{node_type}: effects {missing}이(가) permissions에 없다")
+        problems_ += widget_problems(plugin_id, node, has_ui=header.get("ui") is not None)
     if not schema["nodes"]:
         problems_.append("노드가 없다")
     if str(header["version"]) != metadata["version"]:

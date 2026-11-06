@@ -4740,6 +4740,10 @@ export const daemonRpcSchema: unknown = {
       "additionalProperties": false,
       "description": "잠금의 환경 하나의 상태 (M6 3.8). folder = runner가 고를 폴더 이름 (검증 없이 찾은 것)",
       "properties": {
+        "fingerprint": {
+          "description": "잠금의 환경 지문 (위젯 호스트 <id>-<지문 12자>)",
+          "type": "string"
+        },
         "folder": {
           "type": [
             "null",
@@ -4983,6 +4987,9 @@ export const daemonRpcSchema: unknown = {
           "description": "원천 출처 (git·wheel·path — 인증 정보 없음)",
           "type": "object"
         },
+        "ui": {
+          "$ref": "#/$defs/PluginWidgetHost"
+        },
         "version": {
           "type": "string"
         },
@@ -5019,6 +5026,13 @@ export const daemonRpcSchema: unknown = {
         },
         "type": {
           "type": "string"
+        },
+        "ui": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "config 이름 → 위젯 ID (<플러그인>.<이름>, M6 3.10)",
+          "type": "object"
         }
       },
       "required": [
@@ -5064,6 +5078,34 @@ export const daemonRpcSchema: unknown = {
         "version"
       ],
       "title": "PluginSummary",
+      "type": "object"
+    },
+    "PluginWidgetHost": {
+      "additionalProperties": false,
+      "description": "위젯 호스트 (M6 3.10): 머리에 ui가 있고 환경이 준비된 플러그인만. kbplugin://<host>/가 path(워크스페이스 기준, 환경 안 ui 폴더) 아래 파일만 준다",
+      "properties": {
+        "host": {
+          "description": "<플러그인 ID('_'는 '-')>-<환경 지문 12자> (CSP 호스트 문법에 '_'가 없다)",
+          "pattern": "^[a-z][a-z0-9-]*-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "path": {
+          "description": "워크스페이스 기준 '/' 경로 (.kookabug/plugins/envs/<폴더>/Lib/site-packages/<패키지>/<ui>)",
+          "type": "string"
+        },
+        "widgets": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "host",
+        "path",
+        "widgets"
+      ],
+      "title": "PluginWidgetHost",
       "type": "object"
     },
     "PluginsChangedParams": {

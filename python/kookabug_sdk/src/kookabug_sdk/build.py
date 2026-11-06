@@ -207,6 +207,11 @@ def schema_document(project: PluginProject, nodes: Sequence[NodeFunction]) -> di
             problems.append(
                 f"{spec.type}: effects {missing}을(를) [tool.kookabug].permissions에 선언해야 한다"
             )
+        widgets = [p.name for p in spec.config if p.widget is not None]
+        if widgets and project.ui is None:
+            problems.append(
+                f"{spec.type}: config {widgets}에 위젯을 쓰면 [tool.kookabug].ui 폴더가 있어야 한다"
+            )
     if problems:
         raise BuildError(problems)
 

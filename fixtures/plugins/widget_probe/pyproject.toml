@@ -1,0 +1,11 @@
+[project]
+name = "kbfix-plugin-widget-probe"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = ["kookabug-sdk>=0.1.0.dev0,<0.2"]
+
+[tool.kookabug]
+id = "widget_probe"
+title = "Widget Probe"
+modules = ["kbfix_widget_probe.nodes"]
+ui = "ui"

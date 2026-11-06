@@ -36,8 +36,9 @@ from typing import Any, Final, TextIO
 from kookabug_core.diagnostics import Diagnostic
 from kookabug_core.loader import Program
 from kookabug_core.permissions import TOOLSETS
-from kookabug_core.plugins import LOCK_FILE, PluginError
+from kookabug_core.plugins import LOCK_FILE, Layout, PluginError
 from kookabug_core.plugins import runtime as plugin_runtime
+from kookabug_core.plugins.envs import state_signature as env_state_signature
 from kookabug_core.plugins.lockfile import revision_of
 from kookabug_core.plugins.runtime import installed_schemas
 from kookabug_core.registry import Registry, RegistryError, default_registry
@@ -194,6 +195,15 @@ def _read_or_none(path: Path) -> bytes | None:
         return None
 
 
+def _env_state(root: Path, data: bytes | None) -> str:
+    """잠금 환경들의 지금 상태 표지 (깨짐·없음 알아채기). 잠금이 없거나 읽을 수 없으면 빈 것."""
+    try:
+        environments = json.loads(data or b"null")["environments"]
+        return env_state_signature(Layout(root).envs, environments)
+    except ValueError, TypeError, KeyError, AttributeError, OSError:
+        return ""
+
+
 def run_platform(config: DaemonConfig) -> PlatformSpec:
     """daemon이 띄우는 실행의 플랫폼: 실제 Windows, 숨은 `--platform-fake`면 가짜."""
     if config.platform_fake is None:
@@ -224,7 +234,9 @@ class Daemon:
         plugin_environ = os.environ if config.plugin_environ is None else config.plugin_environ
         self.plugin_jobs = PluginJobs(self.root, plugin_environ, self)
         """플러그인 작업 (M6 B4 `plugins.*`)."""
-        self._plugin_revision: str | None = revision_of(_read_or_none(self.root / LOCK_FILE))
+        lock_bytes = _read_or_none(self.root / LOCK_FILE)
+        self._plugin_revision: str | None = revision_of(lock_bytes)
+        self._plugin_env_state = _env_state(self.root, lock_bytes)
         self._plugin_revision_lock = threading.Lock()
         registry_factory = PluginRegistry(config.plugin_modules, self.root)
         self._checker = GraphChecker(
@@ -455,12 +467,17 @@ class Daemon:
 
     def plugins_lock_check(self) -> None:
         """`kookabug.lock`이 마지막으로 알린 것과 다르면 레지스트리를 다시 만들게 하고 모든 연결에
-        `plugins.changed {revision}` (잠금을 밖에서 바꿔도 — 감시가 부른다). 어느 스레드에서나."""
-        revision = revision_of(_read_or_none(self.root / LOCK_FILE))
+        `plugins.changed {revision}` (잠금을 밖에서 바꿔도 — 감시가 부른다). 잠금은 그대로인데 환경
+        상태(완성 표식·깨짐 기록)가 바뀌어도 같은 알림이다 (M6 B6: 검증에서 탈락한 환경의
+        위젯을 내린다). 어느 스레드에서나."""
+        lock_bytes = _read_or_none(self.root / LOCK_FILE)
+        revision = revision_of(lock_bytes)
+        env_state = _env_state(self.root, lock_bytes)
         with self._plugin_revision_lock:
-            if revision == self._plugin_revision:
+            if revision == self._plugin_revision and env_state == self._plugin_env_state:
                 return
             self._plugin_revision = revision
+            self._plugin_env_state = env_state
         self._checker.invalidate()
         self.post(lambda: self.transport.broadcast("plugins.changed", {"revision": revision}))
 
@@ -559,6 +576,7 @@ class Daemon:
                     self._documents,
                     self._publish_changes,
                     self.config.watch_interval_s,
+                    on_tick=self.plugins_lock_check,
                 )
                 tasks = [
                     asyncio.create_task(self._idle_watch()),

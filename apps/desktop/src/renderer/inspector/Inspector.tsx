@@ -16,6 +16,7 @@ import { useRegistry } from "../store/registry";
 import { openPluginTab, useTabs } from "../store/tabs";
 import { ENV_STATUS_TEXT, pluginTitle } from "../plugins/model";
 import { usePlugins } from "../plugins/pluginStore";
+import { useRun } from "../run/runStore";
 import { ChevronDownIcon, ChevronRightIcon } from "../theme/icons";
 import {
   useEditKeys,
@@ -30,6 +31,8 @@ import { TargetField } from "./TargetField";
 import { editorFor, formatJson, parseJsonObject, valueModeFor, type FieldSpec } from "./fields";
 import css from "./inspector.module.css";
 import { inspectNode, type NodeInspector } from "./model";
+import { PluginWidget } from "./PluginWidget";
+import { widgetBlock } from "./widgetSession";
 
 type Choice = "value" | "setting" | "secret" | "target";
 const CHOICE_LABEL: Record<Choice, string> = { value: "값", setting: "설정", secret: "비밀", target: "대상" };
@@ -72,6 +75,8 @@ interface FieldProps {
   extra?: boolean;
   /** 판단 노드의 에이전트: 사용자 설정 목록에서 고른다 (M5 U11) */
   agentPicker?: boolean;
+  /** 그 노드 타입의 플러그인 ID (위젯은 자기 플러그인 것만) */
+  nodePlugin?: string | null;
 }
 
 const CLI_JUDGE_TYPE = "core.agent.cli_judge";
@@ -105,7 +110,11 @@ function AgentPicker({ label, value, onCommit, ctx }: { label: string; value: un
 }
 
 /** 핀(또는 config 키) 하나: 이름·타입, 값/설정/비밀/대상 고르기, 입력, 기본값으로 되돌리기, 진단 */
-function Field({ spec, field, value, node, diagnostics, edit, ctx: outer, extra, agentPicker }: FieldProps) {
+function Field({ spec, field, value, node, diagnostics, edit, ctx: outer, extra, agentPicker, nodePlugin }: FieldProps) {
+  const widgetOwner = spec.widget?.split(".", 1)[0];
+  const widgetPlugin = usePlugins((s) =>
+    widgetOwner === undefined ? undefined : s.list?.plugins.find((p) => p.id === widgetOwner),
+  );
   // 특수 값(연결·대상·설정·비밀·$literal)은 입력 핀 안에서만 해석한다. config는 선언 타입의 보통 값이다 (검수 2)
   const specials = field === "in";
   const ctx: EditorContext = specials ? outer : { ...outer, specials: false };
@@ -179,7 +188,27 @@ function Field({ spec, field, value, node, diagnostics, edit, ctx: outer, extra,
   } else {
     // "값"을 고른 상수 입력. 설정·비밀·대상 값에서 "값"으로 바꾸면 빈 상자에서 새로 넣는다
     const constant = mode === "constant" ? value : undefined;
-    body = <ConstantEditor editor={editor} spec={spec} label={label} value={constant} onCommit={commit} ctx={ctx} />;
+    const plain = <ConstantEditor editor={editor} spec={spec} label={label} value={constant} onCommit={commit} ctx={ctx} />;
+    // 플러그인 위젯 (M6 3.10): 잠금에 있고 환경이 준비된 그 노드 플러그인의 위젯만. 비밀값 항목에는 절대 쓰지 않는다
+    const host = widgetPlugin !== undefined && widgetBlock(spec, field, value, widgetPlugin, nodePlugin ?? null) === null
+      ? widgetPlugin.ui
+      : undefined;
+    body =
+      host !== undefined && spec.widget !== undefined ? (
+        <PluginWidget
+          key={`${host.host}:${spec.widget}`}
+          host={host.host}
+          widget={spec.widget}
+          spec={spec}
+          label={label}
+          value={constant}
+          readOnly={ctx.locked || ctx.running === true}
+          onCommit={commit}
+          fallback={plain}
+        />
+      ) : (
+        plain
+      );
   }
 
   return (
@@ -247,6 +276,7 @@ function NodeFields({ path, view, ctx }: { path: string; view: NodeInspector; ct
       ctx={ctx}
       extra={extra}
       agentPicker={f === "config" && spec.name === "agent" && node.type === CLI_JUDGE_TYPE}
+      nodePlugin={view.info?.plugin ?? null}
     />
   );
   const extraSpec = (name: string): FieldSpec => ({ name, type: "any", required: false });
@@ -426,6 +456,7 @@ function Body({ path }: { path: string }) {
   const doc = useDocuments((s) => s.docs.get(path));
   const types = useRegistry((s) => s.types);
   const locked = useEditsLocked();
+  const running = useRun((s) => s.current?.phase === "running");
   if (doc === undefined || doc.status !== "ready" || doc.value === null) {
     return <div className={css.empty}>그래프를 여는 중이에요</div>;
   }
@@ -437,7 +468,7 @@ function Body({ path }: { path: string }) {
   if (node === undefined) return <div className={css.empty}>노드를 고르면 속성이 보여요</div>;
   const titles = new Map(nodes.map((n) => [n.id, n.title ?? types.get(n.type)?.title ?? n.id]));
   // 실행 스냅샷 그래프는 읽기 전용이다 (M3 2.10)
-  const ctx: EditorContext = { locked: locked || doc.readOnly, titleOf: (id) => titles.get(id) ?? id, graph: path };
+  const ctx: EditorContext = { locked: locked || doc.readOnly, titleOf: (id) => titles.get(id) ?? id, graph: path, running };
   const view = inspectNode(node, doc.shapes, types, doc.diagnostics, path);
   return (
     <div className={css.body} data-part="inspector-body" data-node={node.id}>

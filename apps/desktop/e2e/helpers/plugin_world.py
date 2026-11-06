@@ -7,6 +7,8 @@
         그 워크스페이스에 픽스처 wheel을 설치한다 (세계의 앱 SDK wheel·uv 캐시로).
         --drop-env면 만든 환경 폴더를 지워 "잠금은 있고 환경은 없음"을 만든다 (클론한 프로젝트).
         --untrust면 이 PC의 신뢰 기억을 지운다
+    python plugin_world.py verify <world.json> <워크스페이스>
+        실제 PluginOps.verify() (환경 파일이 바뀌었으면 깨짐 기록). 결과 JSON을 찍는다
 
 world.json: index_url · sdk_wheel(앱 SDK) · sdk_wheel_next(다른 판 — 조건 다름) ·
 appdata(uv 캐시가 드는 LOCALAPPDATA) · git_repo(예제 플러그인 git 레포 file:// 주소) ·
@@ -57,6 +59,8 @@ def serve(root: Path) -> None:
             root / "wheels" / "broken_import",
             overrides={"kbfix_conflict_a/nodes.py": _broken_import()},
         ),
+        # 위젯 격리 탐침 (B6): 네트워크·다른 플러그인 자원·프레임 이동을 시도한다
+        "widget_probe": plugin_wheel(PLUGINS / "widget_probe", root / "wheels" / "widget_probe"),
     }
     with IndexServer(files) as index:
         world = {
@@ -92,7 +96,22 @@ def install(world_path: Path, workspace: Path, name: str, *, drop_env: bool, unt
     print("INSTALLED", flush=True)
 
 
+def verify(world_path: Path, workspace: Path) -> None:
+    """실제 `PluginOps.verify()` (digest 재계산 — 바뀐 환경은 깨짐 기록). 결과 JSON을 찍는다."""
+    from kookabug_core.plugins import SDK_WHEEL_ENV, PluginOps
+
+    world = json.loads(world_path.read_text(encoding="utf-8"))
+    environ = {k: v for k, v in os.environ.items() if not k.upper().startswith("KOOKABUG_")}
+    environ.update({"LOCALAPPDATA": world["appdata"], SDK_WHEEL_ENV: world["sdk_wheel"]})
+    print(
+        json.dumps(PluginOps(workspace, environ=environ).verify(), ensure_ascii=False), flush=True
+    )
+
+
 def main(argv: list[str]) -> int:
+    if argv[:1] == ["verify"] and len(argv) == 3:
+        verify(Path(argv[1]), Path(argv[2]))
+        return 0
     if argv[:1] == ["serve"] and len(argv) == 2:
         serve(Path(argv[1]))
         return 0

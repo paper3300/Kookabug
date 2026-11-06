@@ -1,0 +1,31 @@
+// __TITLE__ 위젯. kookabug-ui.js는 @kookabug/ui-sdk 사본이다 (위젯은 이 폴더 파일만 읽을 수 있다)
+import { defineWidget } from "./kookabug-ui.js";
+
+const CHOICES = ["a", "b", "c"];
+const row = document.createElement("div");
+row.style.cssText = "display:flex;gap:4px;font:12px system-ui,sans-serif";
+const buttons = CHOICES.map((c) => {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.textContent = c;
+  b.style.cssText = "flex:1;height:24px;border-radius:4px;border:1px solid var(--kb-border,#444);" +
+    "background:var(--kb-input-bg,#2a2a2a);color:var(--kb-fg,#ccc)";
+  row.append(b);
+  return b;
+});
+document.body.style.margin = "0";
+document.body.append(row);
+
+function show(value, readOnly) {
+  for (const b of buttons) {
+    b.disabled = readOnly;
+    b.style.outline = b.textContent === value ? "2px solid var(--kb-accent,#3794ff)" : "none";
+  }
+}
+
+// 위젯 ID(`<플러그인>.<이름>`)로 나눠 그린다. 이 예제는 "choice" 하나뿐이다
+const widget = defineWidget({
+  onInit: ({ value, schema, readOnly }) => show(value ?? schema.default, readOnly),
+  onValue: (value, readOnly) => show(value, readOnly),
+});
+for (const b of buttons) b.addEventListener("click", () => widget.setValue(b.textContent));

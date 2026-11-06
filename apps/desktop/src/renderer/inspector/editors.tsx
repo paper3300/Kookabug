@@ -33,6 +33,8 @@ export interface EditorContext {
   specials?: boolean;
   /** 고치는 그래프 경로 ("새 대상 만들기"가 저장 뒤 그 핀을 채운다) */
   graph?: string;
+  /** 실행 중 (플러그인 위젯은 읽기 전용, M6 3.10) */
+  running?: boolean;
 }
 
 /** 고치는 중인 글자 (null이면 값에서 만든 글자를 보인다) */

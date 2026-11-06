@@ -2163,6 +2163,10 @@ export interface PluginJob {
  * via the `definition` "PluginEnvInfo".
  */
 export interface PluginEnvInfo {
+  /**
+   * 잠금의 환경 지문 (위젯 호스트 <id>-<지문 12자>)
+   */
+  fingerprint?: string;
   folder: null | string;
   plugins: string[];
   status: PluginEnvStatus;
@@ -2206,6 +2210,7 @@ export interface PluginListEntry {
   source: {
     [k: string]: unknown | undefined;
   };
+  ui?: PluginWidgetHost;
   version: string;
   wheel?: string;
   wheel_sha256?: string;
@@ -2218,6 +2223,29 @@ export interface PluginNodeInfo {
   effects: string[];
   title?: string;
   type: string;
+  /**
+   * config 이름 → 위젯 ID (<플러그인>.<이름>, M6 3.10)
+   */
+  ui?: {
+    [k: string]: string | undefined;
+  };
+}
+/**
+ * 위젯 호스트 (M6 3.10): 머리에 ui가 있고 환경이 준비된 플러그인만. kbplugin://<host>/가 path(워크스페이스 기준, 환경 안 ui 폴더) 아래 파일만 준다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginWidgetHost".
+ */
+export interface PluginWidgetHost {
+  /**
+   * <플러그인 ID('_'는 '-')>-<환경 지문 12자> (CSP 호스트 문법에 '_'가 없다)
+   */
+  host: string;
+  /**
+   * 워크스페이스 기준 '/' 경로 (.kookabug/plugins/envs/<폴더>/Lib/site-packages/<패키지>/<ui>)
+   */
+  path: string;
+  widgets: string[];
 }
 /**
  * 원천: git+<url>[@ref] · *.whl 경로·https URL(sha256 필수) · 폴더. 받고 정적으로 읽기만 한다 (코드 실행 없음)

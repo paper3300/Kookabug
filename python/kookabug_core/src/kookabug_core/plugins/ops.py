@@ -1081,6 +1081,7 @@ class PluginOps:
                 "status": status,
                 "folder": None if folder is None else folder.name,
                 "plugins": env["plugins"],
+                "fingerprint": fp,
             }
         plugins = [
             {**p, "env_status": environments.get(p["env"], {}).get("status", "missing")}

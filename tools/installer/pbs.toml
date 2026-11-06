@@ -11,9 +11,16 @@
 # [uv]  빌드에 쓰는 uv 판. 설치본의 콘솔 실행기(bin\kookabug.exe 등)는 이 uv에 든 실행기 스텁이고, 그
 #   구성요소 목록·원문(third_party_licenses/uv-trampoline-*)이 이 판 기준이다. 빌드는 `uv --version`이
 #   다르면 멈춘다. CI의 UV_VERSION과 같아야 한다
+#   file·url·sha256·size: 설치본에 동봉하는 uv(<앱>\tools\uv\uv.exe, PATH 밖 — M6 3.12) 릴리스 zip. PBS와 같이
+#   받은 파일의 크기·SHA256을 확인한 뒤에만 그 바이트에서 uv.exe를 꺼낸다. 전체 크레이트 감사(uv-sbom.json·
+#   uv-crates.txt·uv.txt, tools/uv_sbom.py)가 이 바이너리 기준이다
 
 [uv]
 version = "0.13.6"
+file = "uv-x86_64-pc-windows-msvc.zip"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.6/uv-x86_64-pc-windows-msvc.zip"
+sha256 = "a2a8820d5eea32f08ef467ef3b7f66883a9b076d5737a2fc2fbb5f458d1bb50f"
+size = 15239500
 
 [python]
 tag = "20261026"

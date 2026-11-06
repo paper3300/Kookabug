@@ -34,6 +34,7 @@ __all__ = [
     "NodeSpec",
     "Output",
     "Retry",
+    "Widget",
     "guard",
     "node",
 ]
@@ -43,6 +44,7 @@ MAX_SAFE_INTEGER: Final = 2**53 - 1
 _NODE_TYPE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
 _NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
 _ENGINE = re.compile(r"^[a-z][a-z0-9_]*$")
+_WIDGET = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 class _Missing:
@@ -100,8 +102,18 @@ class FromInterface:
 
 
 @dataclass(frozen=True, slots=True)
+class Widget:
+    """인스펙터 값 편집 위젯 (M6 3.10). 이름은 플러그인 안에서 고유하고, 스키마에는
+    `ui: {widget: "<플러그인 ID>.<이름>"}`로 들어간다. 위젯은 `[tool.kookabug].ui` 폴더의
+    `index.js`가 이름으로 나눠 그린다. 비밀값 타입 항목에는 쓸 수 없다."""
+
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
 class Config:
-    """연결할 수 없는 노드 설정. `default`가 없으면 필수."""
+    """연결할 수 없는 노드 설정. `default`가 없으면 필수. `ui=Widget("이름")`이면 인스펙터가
+    플러그인 위젯으로 고친다."""
 
     type: Any
     default: Any = MISSING
@@ -110,6 +122,7 @@ class Config:
     minimum: float | None = None
     maximum: float | None = None
     min_items: int | None = None
+    ui: Widget | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,6 +177,8 @@ class PinSpec:
     maximum: float | None = None
     min_items: int | None = None
     optional: bool = False
+    # 위젯 ID `<플러그인>.<이름>` (config만)
+    widget: str | None = None
 
     @property
     def required(self) -> bool:
@@ -185,6 +200,8 @@ class PinSpec:
             value = getattr(self, key)
             if value is not None:
                 out[key] = value
+        if self.widget is not None:
+            out["ui"] = {"widget": self.widget}
         return out
 
 
@@ -611,8 +628,20 @@ class _NodeDecl:
             )
             if pin.nullable:
                 self.fail(f"config '{name}'은(는) None을 받을 수 없다")
+            if decl.ui is not None:
+                pin = replace(pin, widget=self._widget(f"config '{name}'", decl.ui, pin.type))
             pins.append(pin)
         return tuple(pins)
+
+    def _widget(self, what: str, ui: object, pin_type: str) -> str:
+        if not isinstance(ui, Widget):
+            self.fail(f'{what}: ui는 Widget("이름")이다')
+        if not isinstance(ui.name, str) or not _WIDGET.match(ui.name):
+            self.fail(f"{what}: 위젯 이름은 소문자로 시작하는 소문자·숫자·밑줄이다 ({ui.name!r})")
+        # 비밀값은 위젯에 넘기지 않는다 (M6 3.10): 유니온·목록 안의 한 항이라도 secret이면 거부
+        if "secret" in re.split(r"[\[\]|,\s]+", pin_type):
+            self.fail(f"{what}: 비밀값 타입({pin_type})에는 위젯을 쓸 수 없다")
+        return f"{self.node_type.split('.', 1)[0]}.{ui.name}"
 
     def _pin(
         self,

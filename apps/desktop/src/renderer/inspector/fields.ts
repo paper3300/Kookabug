@@ -19,6 +19,8 @@ export interface FieldSpec {
   default?: unknown;
   description?: string;
   required: boolean;
+  /** 플러그인 위젯 ID `<플러그인>.<이름>` (config 선언의 ui.widget, M6 3.10) */
+  widget?: string;
 }
 
 export interface FieldEditor {

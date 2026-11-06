@@ -528,6 +528,21 @@
   border-bottom-color: var(--kb-accent);
 }
 
+/* 플러그인 위젯 (M6 3.10): 위젯 문서는 투명 배경이라 인스펙터 색이 비친다 */
+.widget {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.widgetFrame {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color-scheme: normal;
+}
+
 .rightTabBadge {
   min-width: 16px;
   height: 16px;

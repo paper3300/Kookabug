@@ -41,6 +41,7 @@ __all__ = [
     "read_marker",
     "select",
     "select_env",
+    "state_signature",
     "still_complete",
     "verify_env",
     "write_marker",
@@ -146,6 +147,19 @@ def broken_dir(envs: Path) -> Path:
 
 def is_broken(env_dir: Path) -> bool:
     return (broken_dir(env_dir.parent) / env_dir.name).is_file()
+
+
+def state_signature(envs: Path, environments: Mapping[str, Mapping[str, Any]]) -> str:
+    """잠금 환경들의 지금 상태 표지: 환경마다 runner가 고를 폴더(깨지지 않은 완성 환경)와 깨짐 기록.
+    잠금은 그대로인데 환경이 깨짐·없음으로 바뀐 것을 알아채는 데 쓴다 (daemon `plugins.changed`,
+    M6 B6). 잠금 밖 환경(설치 중 새 폴더 등)은 보지 않는다. 읽기만 한다."""
+    parts: list[str] = []
+    for name in sorted(environments):
+        fp = str(environments[name].get("fingerprint", ""))
+        folder = find_env(envs, name, fp)
+        broken = ",".join(broken_of(envs, name, fp))
+        parts.append(f"{name}:{folder.name if folder else '-'}:{broken}")
+    return "\n".join(parts)
 
 
 def mark_broken(env_dir: Path, reason: str) -> None:

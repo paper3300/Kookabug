@@ -463,6 +463,25 @@ expect = ["uv-trampoline 0.1.0의 Rust 크레이트 라이선스 원문", "Jorge
 
 [[native]]
 scope = "install"
+glob = "tools/uv/uv.exe"
+package = "uv"
+license = "Apache-2.0 OR MIT"
+components = "uv 0.13.6 (astral-sh/uv 릴리스 uv-x86_64-pc-windows-msvc.zip의 uv.exe): uv 워크스페이스 크레이트 (MIT OR Apache-2.0, third_party_licenses/uv.txt), 실행 시 crates.io 크레이트 전부와 안에 든 실행기 스텁의 크레이트 (SBOM uv-sbom.json — 크레이트마다 판정). MPL-2.0 크레이트(astral-pubgrub 0.7.1·astral-version-ranges 0.2.3·option-ext 0.2.0·priority-queue 2.7.0은 LGPL-3.0-or-later OR MPL-2.0에서 MPL-2.0)는 수정 없는 crates.io 그 판이고 소스는 https://crates.io/crates/<이름>/<판>에서 받을 수 있다"
+sbom_file = "third_party_licenses/uv-sbom.json"
+reason = "플러그인 의존성 설치용 uv를 PATH 밖에 동봉한다(M6 3.12). 빌드는 pbs.toml [uv]의 크기·SHA256을 확인한 zip에서 uv.exe만 꺼낸다. SBOM은 그 uv.exe에 든 cargo-auditable 목록(.dep-v0)의 실행 시 크레이트 전부(빌드 의존성·proc-macro 제외)이고 체크섬은 uv 0.13.6 Cargo.lock과 대조했다(tools/uv_sbom.py). 실행기(trampoline) 항목과 따로 감사한다. 조건부 MPL-2.0(파일 단위 약한 카피레프트)은 uv가 수정 없이 쓰는 크레이트이고 우리는 uv 배포본을 그대로 동봉할 뿐이라 원문(uv-crates.txt)과 소스 위치 고지로 조건을 채운다. CDLA-Permissive-2.0(webpki-root-certs, 루트 인증서 데이터)은 허용 목록에 근거와 함께 더했다(U10)"
+
+[[native.texts]]
+file = "third_party_licenses/uv.txt"
+covers = ["Apache-2.0", "MIT"]
+expect = ["uv 0.13.6 라이선스 원문", "uv-cli 0.0.98", "Apache License", "Permission is hereby granted"]
+
+[[native.texts]]
+file = "third_party_licenses/uv-crates.txt"
+covers = ["Apache-2.0", "MIT"]
+expect = ["uv 0.13.6의 Rust 크레이트 라이선스 원문"]
+
+[[native]]
+scope = "install"
 glob = "Uninstall *.exe"
 package = "nsis"
 license = "Zlib AND LicenseRef-NSIS-WinShell"

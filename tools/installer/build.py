@@ -58,6 +58,7 @@ import tarfile
 import time
 import tomllib
 import urllib.request
+import zipfile
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from ctypes import wintypes
@@ -92,6 +93,20 @@ OUT_MARKER: Final = ".kookabug-installer-build"
 PYTHON: Final = "python"
 BIN: Final = "bin"
 EXAMPLES: Final = "examples/sample-game"
+# 플러그인 (M6 3.12): 동봉 uv(PATH 밖), SDK wheel, 예제 플러그인 wheel·그래프
+TOOLS_UV: Final = "tools/uv/uv.exe"
+PLUGIN_SDK: Final = "plugin-sdk"
+EXAMPLE_PLUGINS: Final = "examples/plugins"
+SAMPLE_PLUGIN: Final = REPO_ROOT / "examples" / "plugins" / "kookabug-plugin-sample"
+# NOTICES 한 절 (M6 C9): 사용자가 설치하는 플러그인·의존성은 이 설치본의 고지 대상이 아니다
+PLUGIN_NOTICE: Final = (
+    "플러그인\n"
+    "사용자가 kookabug plugin add·앱 플러그인 화면으로 설치하는 플러그인과 그 의존성은\n"
+    "이 설치본에 들어 있지 않고 이 고지의 대상이 아니다 (각 플러그인의 라이선스를 따른다).\n"
+    "설치본의 플러그인 SDK(plugin-sdk, MIT)와 예제 플러그인(examples/plugins, MIT)은\n"
+    "Kookabug 코드다. 플러그인 의존성 설치에 쓰는 tools/uv/uv.exe의 고지는 위 네이티브 파일\n"
+    "절에 있다."
+)
 LICENSES: Final = "licenses"
 NOTICES: Final = "licenses/THIRD_PARTY_NOTICES.txt"
 VERSION_FILE: Final = "VERSION"
@@ -173,16 +188,31 @@ class VcRedist:
 
 
 @dataclass(frozen=True)
+class UvDist:
+    """동봉 uv 릴리스 zip (M6 3.12)."""
+
+    version: str
+    file: str
+    url: str
+    sha256: str
+    size: int
+
+
+@dataclass(frozen=True)
 class Inputs:
     python: PythonDist
     vc_redist: VcRedist
-    uv_version: str
+    uv: UvDist
+
+    @property
+    def uv_version(self) -> str:
+        return self.uv.version
 
 
 def load_inputs(path: Path = INPUTS) -> Inputs:
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
-        py, vc = data["python"], data["vc_redist"]
+        py, vc, uv = data["python"], data["vc_redist"], data["uv"]
         return Inputs(
             PythonDist(
                 tag=str(py["tag"]),
@@ -193,7 +223,13 @@ def load_inputs(path: Path = INPUTS) -> Inputs:
                 size=int(py["size"]),
             ),
             VcRedist(crt_folder=str(vc["crt_folder"]), files=tuple(map(str, vc["files"]))),
-            uv_version=str(data["uv"]["version"]),
+            UvDist(
+                version=str(uv["version"]),
+                file=str(uv["file"]),
+                url=str(uv["url"]),
+                sha256=str(uv["sha256"]).lower(),
+                size=int(uv["size"]),
+            ),
         )
     except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError, ValueError) as exc:
         raise BuildError(f"{path}: 빌드 입력 표를 읽을 수 없다 ({exc})") from exc
@@ -291,9 +327,13 @@ def _download(url: str, dest: Path) -> None:
 
 
 def fetch_python(
-    dist: PythonDist, cache: Path, *, download: Callable[[str, Path], None] = _download
+    dist: PythonDist | UvDist,
+    cache: Path,
+    *,
+    download: Callable[[str, Path], None] = _download,
 ) -> Path:
-    """캐시에 같은 파일(크기·SHA256)이 있으면 그것, 없으면 받아서 확인한 뒤 캐시에 둔다."""
+    """캐시에 같은 파일(크기·SHA256)이 있으면 그것, 없으면 받아서 확인한 뒤 캐시에 둔다
+    (PBS·동봉 uv)."""
     target = cache / dist.file
     if verified(target, dist.sha256, dist.size):
         return target
@@ -306,6 +346,70 @@ def fetch_python(
         raise BuildError(f"{dist.file}: 받은 파일의 크기·SHA256이 pbs.toml과 다르다")
     part.replace(target)
     return target
+
+
+fetch_uv = fetch_python
+
+
+def extract_uv(archive: Path, dist: UvDist, stage: Path) -> Path:
+    """크기·SHA256이 표와 같을 때만 그 바이트에서 `uv.exe` 하나를 `stage/tools/uv/`에
+    꺼낸다 (PATH 밖, M6 3.12). uvx·uvw는 넣지 않는다."""
+    data = archive.read_bytes()
+    if len(data) != dist.size or sha256_bytes(data) != dist.sha256:
+        raise BuildError(f"{archive.name}: 크기·SHA256이 pbs.toml [uv]와 다르다. 풀지 않는다")
+    dest = stage / TOOLS_UV
+    if dest.exists():
+        raise BuildError(f"{dest}가 이미 있다")
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        if "uv.exe" not in zf.namelist():
+            raise BuildError(f"{archive.name}에 uv.exe가 없다")
+        exe = zf.read("uv.exe")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(exe)
+    return dest
+
+
+def check_bundled_uv(exe: Path, version: str) -> None:
+    out = run([exe, "--version"], cwd=exe.parent, capture=True).split()
+    if (out[1] if len(out) > 1 else "") != version:
+        raise BuildError(f"동봉 uv가 {version}이 아니다: {' '.join(out)}")
+
+
+# ---------------------------------------------------------------- 플러그인 SDK·예제 (M6 3.12)
+
+
+def copy_plugin_sdk(wheels: Sequence[Path], stage: Path) -> Path:
+    """`<앱>\\plugin-sdk\\kookabug_sdk-<판>-py3-none-any.whl`: 플러그인 환경에 까는 SDK
+    (런타임과 같은 wheel)."""
+    sdk = [w for w in wheels if w.name.startswith("kookabug_sdk-")]
+    if len(sdk) != 1:
+        raise BuildError(f"SDK wheel이 하나가 아니다: {[w.name for w in sdk]}")
+    dest = stage / PLUGIN_SDK
+    dest.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(sdk[0], dest / sdk[0].name)
+    return dest / sdk[0].name
+
+
+def build_example_plugins(
+    uv: str, work: Path, stage: Path, source: Path = SAMPLE_PLUGIN
+) -> list[str]:
+    """`<앱>\\examples\\plugins\\`: 예제 플러그인 wheel(스키마 생성 뒤 `uv build`)과 예제
+    그래프. 설치 스모크의 `plugin` 단계가 이 wheel을 동봉 uv로 설치한다 (의존성이 SDK뿐 →
+    인덱스 불필요)."""
+    from kookabug_sdk.build import build as sdk_build
+
+    copy = work / "example-plugins" / source.name
+    shutil.copytree(
+        source, copy, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "kookabug.schema.json")
+    )
+    sdk_build(copy)
+    dest = stage / EXAMPLE_PLUGINS
+    dest.mkdir(parents=True, exist_ok=True)
+    run([uv, "build", "--wheel", "--out-dir", dest, "--quiet", copy], cwd=work)
+    (dest / ".gitignore").unlink(missing_ok=True)  # uv build가 출력 폴더에 쓰는 것
+    for graph in sorted((source / "graphs").glob("*.graph.json")):
+        shutil.copy2(graph, dest / graph.name)
+    return sorted(p.name for p in dest.iterdir())
 
 
 def extract_python(archive: Path, dist: PythonDist, stage: Path) -> Path:
@@ -797,7 +901,14 @@ def render_installer_notices(
             others[name] = pkg
         elif not la.judge_package(name, pkg.license, policy).ok:
             problems.append(f"[우리 패키지 라이선스] {pkg.display_name}: {pkg.license!r}")
-    result = la.audit(runtime, marker_env, others, js, policy, extra_notices=final.notice_sections)
+    result = la.audit(
+        runtime,
+        marker_env,
+        others,
+        js,
+        policy,
+        extra_notices=[*final.notice_sections, PLUGIN_NOTICE],
+    )
     return NoticesResult(
         notices=result.notices,
         problems=[*problems, *result.problems],
@@ -1197,6 +1308,9 @@ def check_layout(root: Path, app_exe: str = APP_EXE) -> list[str]:
     need = [
         f"{PYTHON}/python.exe",
         f"{BIN}/{LAUNCHER}",
+        TOOLS_UV,
+        PLUGIN_SDK,
+        EXAMPLE_PLUGINS,
         na.MODELS_IN_INSTALL,
         EXAMPLES,
         f"{LICENSES}/LICENSE.txt",
@@ -1436,6 +1550,8 @@ def build(
         archive = fetch_python(inputs.python, cache)
     python = extract_python(archive, inputs.python, stage) / "python.exe"
     check_python_version(python, inputs.python)
+    bundled_uv = extract_uv(fetch_uv(inputs.uv, cache), inputs.uv, stage)
+    check_bundled_uv(bundled_uv, inputs.uv.version)
     lap("python", t0)
 
     t0 = time.perf_counter()
@@ -1444,6 +1560,8 @@ def build(
     vc_files = copy_vc_runtime(crt, inputs.vc_redist, python.parent)
     copy_models(models_dir, models, stage / na.MODELS_IN_INSTALL)
     copy_examples(SAMPLE_GAME, stage / EXAMPLES)
+    plugin_sdk = copy_plugin_sdk(runtime.wheels, stage)
+    example_plugins = build_example_plugins(uv, work, stage)
     write_metadata(stage, version)
     lap("install", t0)
 
@@ -1519,6 +1637,9 @@ def build(
         "electron": pinned_electron(),
         "python": {"tag": inputs.python.tag, "version": inputs.python.version},
         "vc_redist": {"folder": str(crt), "files": vc_files},
+        "uv": {"version": inputs.uv.version, "path": TOOLS_UV},
+        "plugin_sdk": plugin_sdk.name,
+        "example_plugins": example_plugins,
         "launchers": launchers,
         "app_files": first.app_files,
         "stage": {"path": str(stage), "bytes": stage_bytes, "files": stage_files},

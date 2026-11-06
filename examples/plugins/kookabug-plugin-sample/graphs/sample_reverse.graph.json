@@ -1,0 +1,70 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "layout": {
+    "nodes": {
+      "n_cmp": {
+        "x": 280,
+        "y": 0
+      },
+      "n_entry": {
+        "x": 0,
+        "y": 0
+      },
+      "n_pass": {
+        "x": 560,
+        "y": 0
+      },
+      "n_rev": {
+        "x": 0,
+        "y": 160
+      }
+    }
+  },
+  "meta": {
+    "description": "예제 플러그인의 순수 노드(글자 뒤집기)를 읽어 비교한다. 설치본 스모크의 plugin 단계가 쓴다",
+    "title": "예제 플러그인: 글자 뒤집기"
+  },
+  "nodes": {
+    "n_cmp": {
+      "in": {
+        "a": {
+          "$link": "n_rev.text"
+        },
+        "b": "cba",
+        "op": "=="
+      },
+      "next": {
+        "ok": "n_pass"
+      },
+      "title": "뒤집은 글자 확인",
+      "type": "core.assert.compare",
+      "version": 1
+    },
+    "n_entry": {
+      "next": {
+        "start": "n_cmp"
+      },
+      "title": "시작",
+      "type": "core.graph.entry",
+      "version": 1
+    },
+    "n_pass": {
+      "title": "성공으로 끝냄",
+      "type": "core.test.pass",
+      "version": 1
+    },
+    "n_rev": {
+      "in": {
+        "text": "abc"
+      },
+      "title": "글자 뒤집기",
+      "type": "sample.text.reverse",
+      "version": 1
+    }
+  },
+  "plugins": {
+    "core": "0.1.0",
+    "sample": "0.1.0"
+  }
+}

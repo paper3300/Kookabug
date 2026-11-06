@@ -14,7 +14,8 @@ import { e2eHooksEnabled, installE2EHooks, ResponseDelays } from "./e2e-hooks";
 import { createNotificationForwarder, createRpcHandler, type DaemonCall } from "./ipc";
 import { APP_CHANNEL, checkAppAction, checkSender, EVENT_CHANNEL, IpcGuardError, RPC_CHANNEL } from "./ipc-guard";
 import { handleProtocols, registerSchemes } from "./protocols";
-import { APP_ORIGIN, isExternalOpenAllowed, lockedWebPreferences } from "./security";
+import { APP_ORIGIN, frameNavigationAllowed, isExternalOpenAllowed, lockedWebPreferences } from "./security";
+import { WidgetHosts } from "./widgets";
 import { checkWorkspaceFolder, isThemeMode, Settings } from "./settings";
 import { guardRecorderCall, RECORDER_HOTKEYS, RecorderShortcuts, type ShortcutHost } from "./shortcuts";
 import { parseSmokeArgs, runSmoke, type SmokeArgs, withDeadline } from "./smoke";
@@ -59,6 +60,25 @@ if (smokeArgs !== null) {
 function lockContents(contents: Electron.WebContents): void {
   contents.on("will-navigate", (event) => event.preventDefault());
   contents.on("will-redirect", (event) => event.preventDefault());
+  // 하위 프레임 (M6 3.10): 앱 문서가 새 위젯 iframe에 껍데기를 처음 싣는 것만. 위젯 자기 재탐색·다른 주소는 막는다
+  contents.on("will-frame-navigate", (event) => {
+    let frameUrl: string | null = null;
+    let parentUrl: string | null = null;
+    try {
+      frameUrl = event.frame?.url ?? null;
+      parentUrl = event.frame?.parent?.url ?? null;
+    } catch {
+      // 이미 사라진 프레임: 막는다
+    }
+    const allowed = frameNavigationAllowed({
+      isMainFrame: event.isMainFrame,
+      url: event.url,
+      frameUrl,
+      parentUrl,
+      initiatorUrl: event.initiator?.url ?? null,
+    });
+    if (!allowed) event.preventDefault();
+  });
   contents.on("will-attach-webview", (event) => event.preventDefault());
   contents.setWindowOpenHandler(({ url }) => {
     if (isExternalOpenAllowed(url)) void shell.openExternal(url);
@@ -142,6 +162,11 @@ function start(): void {
     shortcuts.disarm();
     globalShortcut.unregisterAll();
   });
+  // 위젯 호스트 확인: 주 프로세스가 daemon에서 직접 읽는다 (렌더러가 경로를 정하지 못한다). manager는 부를 때 쓴다
+  const widgetHosts = new WidgetHosts({
+    list: () => manager.call("plugins.list", {}, "{}"),
+    root: () => manager.root,
+  });
   const manager = new DaemonManager(
     nodeDeps({
       client: { kind: "ui", name: "Kookabug", version: app.getVersion() },
@@ -151,6 +176,8 @@ function start(): void {
     {
       state: (state) => {
         shortcuts.onConnection(state.status);
+        // 연결이 바뀌면 진행 중인 위젯 호스트 확인의 응답을 버린다 (다른 daemon·끊긴 연결)
+        widgetHosts.invalidate();
         send("daemon.state", state);
       },
       notification: (method, params) => {
@@ -158,6 +185,7 @@ function start(): void {
           const p = params as { state?: unknown; session?: unknown } | null;
           shortcuts.onRecorderState(p?.state, p?.session);
         }
+        if (method === "plugins.changed") widgetHosts.invalidate();
         forward(method, params);
       },
       log: (level, message) => {
@@ -236,7 +264,7 @@ function start(): void {
       }
     };
 
-  handleProtocols(RENDERER_ROOT, () => manager.root);
+  handleProtocols(RENDERER_ROOT, () => manager.root, widgetHosts);
 
   const rpc = createRpcHandler(daemonCall);
   ipcMain.handle(RPC_CHANNEL, (event, method: unknown, params: unknown) => {

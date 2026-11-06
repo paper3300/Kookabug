@@ -1,6 +1,6 @@
 """설정 값 노드와 창 노드."""
 
-from kookabug_sdk import Config, Context, Exit, Result, node
+from kookabug_sdk import Config, Context, Exit, Result, Widget, node
 from kookabug_sdk.types import WindowRef
 
 
@@ -9,7 +9,10 @@ from kookabug_sdk.types import WindowRef
     version=1,
     title="색 고르기",
     category="sample",
-    config={"color": Config(str, default="#3366ff", description="색 (#rrggbb)")},
+    # 인스펙터에서 색 위젯(ui/index.js의 "color")으로 고친다
+    config={
+        "color": Config(str, default="#3366ff", description="색 (#rrggbb)", ui=Widget("color"))
+    },
     exits=[Exit("done", "ok")],
     outputs={"color": str},
 )

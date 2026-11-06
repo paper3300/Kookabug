@@ -26,6 +26,19 @@
         },
         "type": {
           "$ref": "#/$defs/PinType"
+        },
+        "ui": {
+          "additionalProperties": false,
+          "description": "인스펙터 값 편집 위젯 (M6 3.10). 비밀값 타입에는 쓰지 않는다",
+          "properties": {
+            "widget": {
+              "description": "<플러그인 ID>.<위젯 이름>",
+              "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
+              "type": "string"
+            }
+          },
+          "required": ["widget"],
+          "type": "object"
         }
       },
       "required": ["type"],

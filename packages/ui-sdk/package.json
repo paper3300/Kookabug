@@ -1,0 +1,19 @@
+{
+  "name": "@kookabug/ui-sdk",
+  "version": "0.1.0",
+  "description": "Kookabug 인스펙터 값 편집 위젯 SDK (플러그인 UI 확장)",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "files": ["index.js", "index.d.ts", "README.md", "LICENSE"],
+  "sideEffects": false,
+  "keywords": ["kookabug", "plugin", "widget"],
+  "publishConfig": {
+    "access": "public"
+  }
+}

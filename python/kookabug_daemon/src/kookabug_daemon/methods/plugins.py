@@ -34,6 +34,16 @@ def _yes(_: Any) -> bool:
     return True  # 확인은 화면이 이미 받았다 (sync: lock_sha256, remove: base_revision)
 
 
+def _widgets(node: dict[str, Any]) -> dict[str, str]:
+    """config 이름 → 위젯 ID (노드 스키마 `config.<이름>.ui.widget`)."""
+    out: dict[str, str] = {}
+    for name, decl in (node.get("config") or {}).items():
+        widget = (decl.get("ui") or {}).get("widget") if isinstance(decl, dict) else None
+        if isinstance(widget, str):
+            out[str(name)] = widget
+    return out
+
+
 def _nodes(schema: dict[str, Any] | None) -> list[dict[str, Any]]:
     if schema is None:
         return []
@@ -42,8 +52,33 @@ def _nodes(schema: dict[str, Any] | None) -> list[dict[str, Any]]:
         item: dict[str, Any] = {"type": node["type"], "effects": list(node.get("effects", []))}
         if "title" in node:
             item["title"] = node["title"]
+        if widgets := _widgets(node):
+            item["ui"] = widgets
         out.append(item)
     return out
+
+
+def _widget_host(
+    entry: dict[str, Any], env: dict[str, Any] | None, nodes: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    """위젯 호스트 (M6 3.10): 머리에 `ui`가 있고 그 환경이 준비된 플러그인만. 경로는 워크스페이스
+    기준 — 앱 주 프로세스가 `kbplugin://<host>/`를 이 폴더 아래 파일로만 푼다."""
+    manifest = entry.get("manifest") or {}
+    ui, modules = manifest.get("ui"), manifest.get("modules") or []
+    if not ui or not modules or env is None or env.get("status") != "ready":
+        return None
+    folder, fingerprint = env.get("folder"), env.get("fingerprint")
+    if not isinstance(folder, str) or not isinstance(fingerprint, str):
+        return None
+    package = str(modules[0]).split(".", 1)[0]
+    widgets = sorted({w for n in nodes for w in (n.get("ui") or {}).values()})
+    # CSP 호스트 문법에는 '_'가 없다 → '-'로 (ID에는 '-'가 없어 겹치지 않는다)
+    host = str(entry["id"]).replace("_", "-")
+    return {
+        "host": f"{host}-{fingerprint[:12]}",
+        "path": f".kookabug/plugins/envs/{folder}/Lib/site-packages/{package}/{ui}",
+        "widgets": widgets,
+    }
 
 
 def plugins_list(jobs: PluginJobs, connection: int | None = None) -> dict[str, Any]:
@@ -55,7 +90,13 @@ def plugins_list(jobs: PluginJobs, connection: int | None = None) -> dict[str, A
     except PluginError as exc:
         raise plugin_failed(exc.to_json()) from exc
     schemas = installed_schemas(ops.root) if status["plugins"] else {}
-    plugins = [{**p, "nodes": _nodes(schemas.get(str(p["id"])))} for p in status["plugins"]]
+    plugins: list[dict[str, Any]] = []
+    for p in status["plugins"]:
+        item = {**p, "nodes": _nodes(schemas.get(str(p["id"])))}
+        host = _widget_host(item, status["environments"].get(p["env"]), item["nodes"])
+        if host is not None:
+            item["ui"] = host
+        plugins.append(item)
     return mask_value(
         {
             **status,

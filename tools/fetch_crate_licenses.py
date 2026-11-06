@@ -38,6 +38,13 @@ TOOLS_DIR = Path(__file__).resolve().parent
 OUT_DIR = TOOLS_DIR / "third_party_licenses"
 CRATE_URL = "https://static.crates.io/crates/{name}/{name}-{version}.crate"
 LICENSE_FILE = re.compile(r"^(licen[cs]e|copying|copyright|notice|unlicense)([-_.].*)?$", re.I)
+# SPDX ID 이름의 원문 파일 (예: priority-queue의 MPL-2.0.txt)
+SPDX_FILE = re.compile(
+    r"^(MPL|LGPL|GPL|MIT|Apache|BSD|ISC|Zlib|BSL|CC0)-[0-9A-Za-z.+-]*\.(txt|md)$"
+)
+# .crate에 라이선스 파일이 없는 크레이트의 원문: 업스트림 레포에서 가져와 둔 것
+# (crate-texts/<이름>-<판>/<파일>, 출처는 그 폴더 SOURCE.txt)
+SUPPLEMENTS = OUT_DIR / "crate-texts"
 APACHE_TITLE = "Apache License"
 APACHE_SECTION = "Apache-2.0 표준 원문"
 APACHE_CHOICE = f"Apache-2.0을 고른다. 원문은 이 파일 끝 '{APACHE_SECTION}' 절"
@@ -48,23 +55,34 @@ class FetchError(Exception):
 
 
 def crate_license_files(
-    name: str, version: str, sha256: str | None = None
+    name: str, version: str, sha256: str | None = None, cache: Path | None = None
 ) -> list[tuple[str, str]]:
     """`.crate` 맨 위 폴더의 라이선스 파일들. `sha256`(Cargo.lock 체크섬)을 주면 받은 파일과
-    대조한다."""
-    url = CRATE_URL.format(name=name, version=version)
-    try:
-        with urllib.request.urlopen(url, timeout=60) as resp:
-            data = resp.read()
-    except OSError as exc:
-        raise FetchError(f"{name} {version}: 받을 수 없다 ({exc})") from exc
+    대조한다. `cache`에 체크섬이 맞는 `<이름>-<판>.crate`가 있으면 받지 않고 그것을 쓴다."""
+    cached = None if cache is None else cache / f"{name}-{version}.crate"
+    data = b""
+    if cached is not None and sha256 is not None and cached.is_file():
+        data = cached.read_bytes()
+        if hashlib.sha256(data).hexdigest() != sha256.lower():
+            data = b""
+    if not data:
+        url = CRATE_URL.format(name=name, version=version)
+        try:
+            with urllib.request.urlopen(url, timeout=60) as resp:
+                data = resp.read()
+        except OSError as exc:
+            raise FetchError(f"{name} {version}: 받을 수 없다 ({exc})") from exc
     if sha256 is not None and hashlib.sha256(data).hexdigest() != sha256.lower():
         raise FetchError(f"{name} {version}: 받은 .crate의 SHA256이 SBOM과 다르다")
     files: list[tuple[str, str]] = []
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
         for member in tar.getmembers():
             parts = member.name.split("/")
-            if member.isfile() and len(parts) == 2 and LICENSE_FILE.match(parts[1]):
+            if (
+                member.isfile()
+                and len(parts) == 2
+                and (LICENSE_FILE.match(parts[1]) or SPDX_FILE.match(parts[1]))
+            ):
                 f = tar.extractfile(member)
                 assert f is not None
                 files.append((parts[1], f.read().decode("utf-8", errors="replace")))
@@ -100,6 +118,7 @@ def render(
     sbom_name: str,
     comps: Sequence[tuple[str, str, str]],
     checksums: Mapping[tuple[str, str], str] | None = None,
+    cache: Path | None = None,
 ) -> str:
     lines = [
         f"{dist} {version}의 Rust 크레이트 라이선스 원문",
@@ -114,10 +133,17 @@ def render(
     for name, ver, lic in comps:
         digest = (checksums or {}).get((name, ver))
         files = (
-            crate_license_files(name, ver, digest)
+            crate_license_files(name, ver, digest, cache)
             if digest is not None
             else crate_license_files(name, ver)
         )
+        supplement = SUPPLEMENTS / f"{name}-{ver}"
+        if not files and supplement.is_dir():
+            files = [
+                (f"{p.name} (업스트림, {SUPPLEMENTS.name}/{supplement.name})", p.read_text("utf-8"))
+                for p in sorted(supplement.iterdir())
+                if p.is_file()
+            ]
         lines += ["=" * 78, f"{name} {ver}", f"License: {lic}", "-" * 78]
         for fname, text in files:
             body = text.strip()
@@ -147,13 +173,13 @@ def render(
     return "\n".join(lines).rstrip() + "\n"
 
 
-def render_sbom_file(sbom_path: Path, out_dir: Path) -> Path:
-    """레포에 둔 SBOM(배포물에 SBOM이 없는 바이너리, 예: uv 실행기)의 원문 묶음
+def render_sbom_file(sbom_path: Path, out_dir: Path, cache: Path | None = None) -> Path:
+    """레포에 둔 SBOM(배포물에 SBOM이 없는 바이너리, 예: uv 실행기·동봉 uv)의 원문 묶음
     `<metadata.component.name>-crates.txt`. 구성요소 SHA-256을 받은 .crate와 대조한다."""
     sbom = json.loads(sbom_path.read_text(encoding="utf-8"))
     component = sbom["metadata"]["component"]
     name, version = str(component["name"]), str(component["version"])
-    text = render(name, version, sbom_path.name, sbom_components(sbom), sbom_checksums(sbom))
+    text = render(name, version, sbom_path.name, sbom_components(sbom), sbom_checksums(sbom), cache)
     out = out_dir / f"{canonicalize_name(name)}-crates.txt"
     out.write_text(text, encoding="utf-8", newline="\n")
     return out
@@ -165,12 +191,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     source.add_argument("--site-packages", type=Path, help="Rust 확장 wheel이 설치된 폴더")
     source.add_argument("--sbom", type=Path, help="레포에 둔 SBOM 파일 (배포물에 SBOM이 없을 때)")
     parser.add_argument("--out-dir", type=Path, default=OUT_DIR)
+    parser.add_argument("--cache", type=Path, help=".crate 캐시 (--sbom, 체크섬이 맞는 것만 쓴다)")
     parser.add_argument("dists", nargs="*", help="배포물 이름 (--site-packages, 예: pydantic-core)")
     args = parser.parse_args(argv)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     try:
         if args.sbom is not None:
-            print(render_sbom_file(args.sbom, args.out_dir))
+            print(render_sbom_file(args.sbom, args.out_dir, args.cache))
             return 0
         if not args.dists:
             parser.error("--site-packages에는 배포물 이름이 있어야 한다")

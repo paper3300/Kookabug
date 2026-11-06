@@ -5,6 +5,23 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, RootModel, StringConstraints
 
 
+class Ui(BaseModel):
+    """
+    인스펙터 값 편집 위젯 (M6 3.10). 비밀값 타입에는 쓰지 않는다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    widget: Annotated[
+        str,
+        Field(
+            description="<플러그인 ID>.<위젯 이름>",
+            pattern="^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
+        ),
+    ]
+
+
 class ExitName(RootModel[str]):
     root: Annotated[str, Field(pattern="^[a-z_][a-z0-9_]*$", title="ExitName")]
 
@@ -115,6 +132,9 @@ class ConfigDecl(BaseModel):
     min_items: Annotated[int | None, Field(ge=0)] = None
     minimum: float | None = None
     type: PinType
+    ui: Annotated[
+        Ui | None, Field(description="인스펙터 값 편집 위젯 (M6 3.10). 비밀값 타입에는 쓰지 않는다")
+    ] = None
 
 
 class ExitOutputs(RootModel[list[PinName]]):

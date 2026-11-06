@@ -226,12 +226,19 @@ class Watcher:
     """주기 폴링. `run()`은 이벤트 루프의 작업이고, 디스크 읽기는 스레드에서 한다."""
 
     def __init__(
-        self, root: Path, documents: DocumentTable, publish: Publish, interval_s: float = 1.0
+        self,
+        root: Path,
+        documents: DocumentTable,
+        publish: Publish,
+        interval_s: float = 1.0,
+        on_tick: Callable[[], None] | None = None,
     ) -> None:
         self.root = root
         self.documents = documents
         self.publish = publish
         self.interval_s = interval_s
+        # 주기마다 스레드에서 부르는 추가 확인 (플러그인 환경 상태, M6 B6)
+        self.on_tick = on_tick
         self._last: dict[str, Signature] | None = None
 
     def _tick(self) -> tuple[list[str], list[DocChange]]:
@@ -256,4 +263,9 @@ class Watcher:
                         self.publish(paths, changes)
                     except Exception:
                         log.exception("변경 알림을 보내지 못했다")
+            if self.on_tick is not None:
+                try:
+                    await asyncio.to_thread(self.on_tick)
+                except Exception:
+                    log.exception("주기 확인 중 오류")
             await asyncio.sleep(self.interval_s)

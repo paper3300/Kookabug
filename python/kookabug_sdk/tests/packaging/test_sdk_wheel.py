@@ -87,6 +87,23 @@ def test_sdk_wheel_and_sdist_build_and_license_file_included(tmp_path: Path) -> 
     assert "License-Expression: MIT" in meta
     assert "Requires-Dist" not in meta
     assert "kookabug-sdk = kookabug_sdk.cli:main" in entry_points
+    # 게시 메타데이터 (M6 D13, RELEASING.md): 저자·분류·주소, 회사·사내 내용 없음
+    assert "Author: Kookabug contributors" in meta
+    assert "Requires-Python: >=3.14" in meta
+    assert "Classifier: Programming Language :: Python :: 3.14" in meta
+    assert "Classifier: Operating System :: Microsoft :: Windows" in meta
+    assert "Project-URL: Repository, https://github.com/paper3300/Kookabug" in meta
+    assert "Description-Content-Type: text/markdown" in meta
+    # `kookabug-sdk new` 틀·타입 표식이 wheel에 든다
+    for rel in (
+        "py.typed",
+        "new.py",
+        "templates/plugin/pyproject.toml.tmpl",
+        "templates/plugin/nodes.py.tmpl",
+        "templates/plugin/ui/index.js.tmpl",
+        "templates/plugin/ui/kookabug-ui.js",
+    ):
+        assert f"kookabug_sdk/{rel}" in wheel_files, rel
 
     # 깨끗한 venv에 SDK만 설치 → 설치된 명령으로 플러그인 build → 플러그인 wheel에 스키마가 들어가고
     # 설치 후 load_installed로 읽힌다 (uv_build가 모듈 안 JSON을 wheel에 넣는다, G22)

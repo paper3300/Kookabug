@@ -26,10 +26,10 @@ test("test_web_preferences_locked", () => {
 });
 
 test("test_csp_header_value", () => {
-  // 계획 2.10 문자열 + M3 2.7 media-src. 렌더러는 소켓을 열지 않는다 (connect-src 'none')
+  // 계획 2.10 문자열 + M3 2.7 media-src + M6 3.10 frame-src kbplugin: (위젯 iframe). 렌더러는 소켓을 열지 않는다
   expect(cspHeaderValue()).toBe(
     "default-src 'self'; img-src 'self' kbimg: data:; media-src kbimg:; " +
-      "style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'none'",
+      "style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'none'; frame-src kbplugin:",
   );
   const directives = new Map(
     cspHeaderValue()
@@ -40,6 +40,17 @@ test("test_csp_header_value", () => {
   expect(directives.get("connect-src")).toEqual(["'none'"]);
   expect(directives.get("default-src")).toEqual(["'self'"]);
   expect(directives.has("script-src")).toBe(false); // default-src 'self' → 인라인 스크립트 없음
+  // M6에서 더한 것은 위젯 프레임 하나뿐이다 (다른 지시어 회귀 없음)
+  expect(directives.get("frame-src")).toEqual(["kbplugin:"]);
+  expect([...directives.keys()]).toEqual([
+    "default-src",
+    "img-src",
+    "media-src",
+    "style-src",
+    "font-src",
+    "connect-src",
+    "frame-src",
+  ]);
 });
 
 test("external links open only for https", () => {

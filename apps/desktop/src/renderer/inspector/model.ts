@@ -58,6 +58,8 @@ function specFrom(name: string, decl: unknown, shape?: Partial<FieldSpec> & { op
   if (shape !== undefined && Object.hasOwn(shape, "default")) spec.default = shape.default;
   else if (hasDefault) spec.default = (decl as { default: unknown }).default;
   if (typeof description === "string" && description !== "") spec.description = description;
+  const widget = own(own(decl, "ui"), "widget");
+  if (typeof widget === "string" && widget !== "") spec.widget = widget;
   return spec;
 }
 

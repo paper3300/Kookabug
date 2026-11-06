@@ -12,6 +12,7 @@ from kookabug_sdk.decorators import (
     NodeFunction,
     Output,
     Retry,
+    Widget,
     node,
 )
 from kookabug_sdk.errors import ObservationTimeout, RunnerError, StaleObservation
@@ -39,6 +40,7 @@ __all__ = [
     "Secret",
     "SecretMessage",
     "StaleObservation",
+    "Widget",
     "message_with_secrets",
     "node",
 ]

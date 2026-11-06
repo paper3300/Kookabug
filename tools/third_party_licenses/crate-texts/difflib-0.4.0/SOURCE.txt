@@ -1,0 +1,2 @@
+difflib 0.4.0의 .crate에는 라이선스 파일이 없다. Cargo.toml license = "MIT".
+LICENSE는 업스트림 https://github.com/DimaKudosh/difflib 의 LICENSE (master)다.

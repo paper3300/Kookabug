@@ -1,0 +1,17 @@
+"""__TITLE__ 노드."""
+
+from kookabug_sdk import __IMPORTS__
+
+
+@node(
+    type="__ID__.text.upper",
+    version=1,
+    title="대문자로",
+    category="__ID__",
+    pure=True,
+    outputs={"text": str},
+)
+def upper(ctx: Context, text: str) -> dict[str, str]:
+    """글자를 대문자로 바꾼다."""
+    return {"text": text.upper()}
+__UI_NODE__

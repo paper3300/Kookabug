@@ -17,6 +17,12 @@ function modulesOf(entry: PluginEntry): string[] {
   return Array.isArray(raw) ? raw.filter((m): m is string => typeof m === "string") : [];
 }
 
+/** 노드 config가 쓰는 위젯 ID (M6 3.10) */
+export function widgetsOf(entry: PluginEntry): string[] {
+  const ids = entry.nodes.flatMap((n) => Object.values(n.ui ?? {}));
+  return [...new Set(ids.filter((w): w is string => typeof w === "string"))].sort();
+}
+
 export function PluginDetail({ id }: { id: string }) {
   const entry = usePlugins((s) => s.list?.plugins.find((p) => p.id === id));
   const listed = usePlugins((s) => s.list !== null);
@@ -71,6 +77,19 @@ export function PluginDetailBody({ entry, busy }: { entry: PluginEntry; busy: bo
           </dd>
           <dt>모듈</dt>
           <dd className={css.mono}>{modulesOf(entry).join(", ")}</dd>
+          {widgetsOf(entry).length > 0 && (
+            <>
+              <dt>위젯</dt>
+              <dd data-part="plugin-widgets">
+                <span className={css.mono}>{widgetsOf(entry).join(", ")}</span>
+                <span className={css.muted}>
+                  {" "}
+                  — 인스펙터 설정 칸을 이 플러그인 화면으로 고쳐요.{" "}
+                  {entry.env_status === "ready" ? "네트워크·파일에는 접근하지 못해요." : "환경이 준비되면 보여요."}
+                </span>
+              </dd>
+            </>
+          )}
         </dl>
 
         <h3 className={css.h3}>권한</h3>

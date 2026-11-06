@@ -246,6 +246,56 @@ def test_plugin_methods_agent_denied(rig: Rig, daemon: ThreadDaemon) -> None:
         assert not seen & {"plugins.progress", "plugins.done"}
 
 
+def test_list_widget_host_only_when_ready(rig: Rig, daemon: ThreadDaemon) -> None:
+    """위젯 호스트 (M6 3.10): 머리에 ui가 있고 환경이 준비된 플러그인만 `ui {host, path, widgets}`.
+    호스트는 CSP 문법에 맞게 '_' 없음, 경로는 워크스페이스 기준 환경 안 ui 폴더.
+    노드에는 config → 위젯."""
+    rig.add("sample")
+    with daemon.client() as ui:
+        entry = ui.call("plugins.list")["plugins"][0]
+        fp = rig.lock()["environments"][entry["env"]]["fingerprint"]
+        assert entry["ui"]["host"] == f"sample-{fp[:12]}"
+        assert entry["ui"]["widgets"] == ["sample.color"]
+        path = entry["ui"]["path"]
+        assert path.startswith(".kookabug/plugins/envs/") and ":" not in path
+        assert (rig.root / path / "index.js").is_file()
+        assert (rig.root / path).resolve().is_relative_to(rig.env_dir(entry["env"]).resolve())
+        nodes = {n["type"]: n for n in entry["nodes"]}
+        assert nodes["sample.color.pick"]["ui"] == {"color": "sample.color"}
+        assert "ui" not in nodes["sample.text.reverse"]
+        # 환경이 없으면 위젯 호스트도 없다 (기본 편집기)
+        shutil.rmtree(rig.envs)
+        entry = ui.call("plugins.list")["plugins"][0]
+        assert entry["env_status"] == "missing"
+        assert "ui" not in entry
+
+
+def test_env_broken_without_lock_change_notifies(rig: Rig, daemon: ThreadDaemon) -> None:
+    """잠금은 그대로인데 환경이 깨짐이 되면(밖의 verify) `plugins.changed {같은 revision}` — 화면이
+    목록을 다시 읽어 위젯을 내린다 (M6 B6 검수 High). 잠금 밖 새 환경 폴더만으로는 알리지 않는다."""
+    rig.add("sample")
+    revision = revision_of(rig.lock_bytes())
+    with daemon.client() as ui:
+        # 설치(잠금 변경) 알림을 먼저 받는다
+        notification(ui, "plugins.changed", timeout=30, revision=revision)
+        assert ui.call("plugins.list")["plugins"][0]["env_status"] == "ready"
+        time.sleep(0.5)
+        drain(ui)
+        # 잠금이 가리키지 않는 폴더가 생겨도 알림 없음
+        (rig.envs / "shared-000000000000-deadbeef").mkdir()
+        time.sleep(1.0)
+        assert not [m for m in drain(ui) if m.get("method") == "plugins.changed"]
+        env = rig.env_dir("shared")
+        (env / "Lib" / "site-packages" / "kookabug_plugin_sample" / "ui" / "late.mjs").write_text(
+            "export const x = 1;", encoding="utf-8"
+        )
+        assert rig.ops().verify()["ok"] is False
+        assert notification(ui, "plugins.changed", timeout=30)["revision"] == revision
+        entry = ui.call("plugins.list")["plugins"][0]
+        assert entry["env_status"] == "broken"
+        assert "ui" not in entry
+
+
 def test_external_lock_change_notifies(rig: Rig, daemon: ThreadDaemon) -> None:
     """잠금을 밖(CLI 같은 다른 작업)에서 바꿔도 모든 연결에 `plugins.changed`, 레지스트리 재생성.
     환경이 없어지면 편집기 사전 검증에 `plugin_env_missing`."""
