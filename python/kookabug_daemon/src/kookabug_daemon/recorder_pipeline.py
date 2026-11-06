@@ -223,6 +223,9 @@ class Pipeline:
         self._last_text_box: Box | None = None
         self.final_frame: FrameRef | None = None
         self.finished = False
+        self.wiped = False
+        """세션이 끝나 메모리 글자를 지웠다 (`lock` 아래에서 바뀐다). 이 뒤로 스텝을 내보내지
+        않는다."""
         self.rev = 0
         self._on_store_frame = on_store_frame
 
@@ -860,6 +863,7 @@ class Pipeline:
         self.protect.require_clear(rect, t_ns, frame)
 
     def wipe(self) -> None:
+        self.wiped = True
         self.texts.wipe()
         self.converter.wipe()
         self.holds.clear()

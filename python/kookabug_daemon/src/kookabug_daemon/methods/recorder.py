@@ -36,14 +36,15 @@ async def _start(call: Call) -> dict[str, Any]:
 
 
 async def _state(call: Call) -> dict[str, Any]:
-    return _service(call).state(call.connection)
+    # 상태 직렬화(개수 세기)도 작업 스레드에서: 저장 중 파이프라인 잠금이 이벤트 루프를 막지 않게
+    return await _run(_service(call).state, call.connection)
 
 
 def _then_state(action: Callable[[RecorderSession], object]) -> Callable[[Call], Any]:
     async def handler(call: Call) -> dict[str, Any]:
         session = _owned(call)
         await _run(action, session)
-        return session.state_json(owned=True)
+        return await _run(lambda: session.state_json(owned=True))
 
     return handler
 

@@ -62,6 +62,16 @@ export class RecorderShortcuts {
     this.startPending = on && this.armed;
   }
 
+  /**
+   * 등록을 쥔 녹화 세션 (recorder.start 응답의 session). 알면 그 세션의 알림·결과만 해제를 정한다 —
+   * 지난 세션의 늦은 알림(임시 파일 정리 등)이 새 녹화 단축키를 풀지 않게 (SECFIX 3)
+   */
+  private session: string | null = null;
+
+  setSession(session: unknown): void {
+    this.session = typeof session === "string" ? session : null;
+  }
+
   arm(): ArmResult {
     if (this.armed) {
       this.startPending = true;
@@ -91,6 +101,7 @@ export class RecorderShortcuts {
 
   disarm(): void {
     this.startPending = false;
+    this.session = null;
     for (const accelerator of [...this.registered]) {
       try {
         this.host.unregister(accelerator);
@@ -101,9 +112,10 @@ export class RecorderShortcuts {
     }
   }
 
-  /** recorder.changed·recorder.* 결과의 state: 녹화가 끝났으면 푼다 */
-  onRecorderState(state: unknown): void {
+  /** recorder.changed·recorder.* 결과의 state(와 session): 쥔 녹화가 끝났으면 푼다. 쥔 세션을 알면 다른 세션 알림은 무시 */
+  onRecorderState(state: unknown, session?: unknown): void {
     if (this.startPending) return;
+    if (this.session !== null && session !== this.session) return;
     if (typeof state === "string" && !LIVE_STATES.has(state)) this.disarm();
   }
 
@@ -124,7 +136,8 @@ export function guardRecorderCall(call: RecorderCall, shortcuts: RecorderShortcu
     if (method !== "recorder.start") {
       const result = await call(method, params, paramsText);
       if (method.startsWith("recorder.") && typeof result === "object" && result !== null && "state" in result) {
-        shortcuts.onRecorderState((result as { state: unknown }).state);
+        const r = result as { state: unknown; session?: unknown };
+        shortcuts.onRecorderState(r.state, r.session);
       }
       return result;
     }
@@ -135,8 +148,10 @@ export function guardRecorderCall(call: RecorderCall, shortcuts: RecorderShortcu
     const sent = { ...base, hotkeys: shortcuts.hotkeys() };
     try {
       const result = await call(method, sent, stringify(sent));
+      const r = result as { state?: unknown; session?: unknown } | null;
       shortcuts.setStartPending(false);
-      shortcuts.onRecorderState((result as { state?: unknown } | null)?.state);
+      shortcuts.setSession(r?.session);
+      shortcuts.onRecorderState(r?.state, r?.session);
       return result;
     } catch (err) {
       shortcuts.disarm();

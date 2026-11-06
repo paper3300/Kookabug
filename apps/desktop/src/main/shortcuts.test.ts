@@ -145,6 +145,26 @@ describe("녹화 단축키", () => {
     expect(r.sent).toHaveLength(1);
   });
 
+  test("새 녹화 시작 응답 뒤 지난 세션의 늦은 끝 알림으로는 풀지 않는다 (SECFIX 3, 검수 재현)", async () => {
+    const r = rig();
+    r.setReply(() => ({ state: "recording", owned: true, session: "newsess1" }));
+    r.shortcuts.arm();
+    await r.call("recorder.start", { launch: {}, hotkeys: [] }, "{}");
+    expect(r.shortcuts.armed).toBe(true);
+    // 지난 세션(버린 녹화)의 임시 파일 정리 뒤 알림
+    r.shortcuts.onRecorderState("discarded", "oldsess1");
+    r.shortcuts.onRecorderState("idle");
+    expect(r.shortcuts.armed).toBe(true);
+    // 지금 세션의 끝 알림·결과는 푼다
+    r.shortcuts.onRecorderState("stopped", "newsess1");
+    expect(r.host.held.size).toBe(0);
+    r.shortcuts.arm();
+    await r.call("recorder.start", { launch: {}, hotkeys: [] }, "{}");
+    r.setReply(() => ({ state: "discarded", owned: true, session: "newsess1" }));
+    await r.call("recorder.discard", {}, "{}");
+    expect(r.host.held.size).toBe(0);
+  });
+
   test("연결 끊김·앱 종료(disarm)에 푼다", () => {
     const r = rig();
     r.shortcuts.arm();

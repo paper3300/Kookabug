@@ -263,6 +263,8 @@ export function recorderErrorText(kind: string | null, message: string): string 
       return "비밀번호 칸과 겹치는 영역은 쓸 수 없어요. 영역을 다시 고르세요";
     case "not_owner":
       return "다른 창에서 녹화 중이에요";
+    case "recorder_store_unclean":
+      return "바꾼 내용은 반영했지만 녹화 임시 파일을 정리하지 못했어요 — 다시 시도하는 중이에요";
     default:
       return message;
   }

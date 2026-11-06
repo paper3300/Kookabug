@@ -154,7 +154,10 @@ function start(): void {
         send("daemon.state", state);
       },
       notification: (method, params) => {
-        if (method === "recorder.changed") shortcuts.onRecorderState((params as { state?: unknown } | null)?.state);
+        if (method === "recorder.changed") {
+          const p = params as { state?: unknown; session?: unknown } | null;
+          shortcuts.onRecorderState(p?.state, p?.session);
+        }
         forward(method, params);
       },
       log: (level, message) => {

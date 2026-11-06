@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import { runAvailability } from "../run/commands";
 import {
   formatRecTime,
+  recorderErrorText,
   sidebarStateText,
   statusBarItems,
   statusBarRecording,
@@ -55,6 +56,13 @@ describe("사이드바 상태 줄", () => {
     expect(warningText({ code: "injected_ignored", count: 3 })).toBe("다른 프로그램이 보낸 입력 3개는 녹화하지 않았어요");
     expect(warningText({ code: "not_foreground" })).toBe("게임 창이 앞에 없어요 — 입력을 녹화하지 않는 중");
     expect(warningText({ code: "x", message: "그대로" })).toBe("그대로");
+  });
+
+  test("녹화 임시 파일 정리 실패 (SECFIX): 오류 문구와 알림 띠", () => {
+    expect(recorderErrorText("recorder_store_unclean", "daemon 문구")).toBe(
+      "바꾼 내용은 반영했지만 녹화 임시 파일을 정리하지 못했어요 — 다시 시도하는 중이에요",
+    );
+    expect(warningText({ code: "store_unclean", message: "녹화 임시 파일을 정리하지 못했어요 — 다시 시도하는 중이에요" })).toContain("정리하지 못했어요");
   });
 });
 

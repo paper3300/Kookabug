@@ -145,9 +145,12 @@ export async function refreshSteps(): Promise<void> {
 }
 
 /** recorder.changed: 묶어서 상태·스텝을 다시 읽는다 */
-export function onRecorderChanged(p: { state: string; rev?: number }): void {
+export function onRecorderChanged(p: { state: string; rev?: number; session?: string }): void {
   const cur = useRecorder.getState().state;
-  if (cur !== null && cur.state !== p.state) useRecorder.setState({ state: { ...cur, state: p.state as RecorderStateResult["state"] } });
+  // 알림의 state를 바로 비추는 것은 같은 세션일 때만 — 지난 세션의 늦은 알림이 지금 녹화 상태를 덮지 않게 (SECFIX 3).
+  // 다른 세션이면 아래 recorder.state로 daemon의 지금 상태를 다시 읽는다
+  const sameSession = cur !== null && (p.session === undefined || cur.session === undefined || p.session === cur.session);
+  if (cur !== null && sameSession && cur.state !== p.state) useRecorder.setState({ state: { ...cur, state: p.state as RecorderStateResult["state"] } });
   if (refreshTimer !== null) clearTimeout(refreshTimer);
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
@@ -266,6 +269,8 @@ export async function updateStep(step: string, patch: daemonRpc.RecorderStepPatc
     return r.step;
   } catch (err) {
     fail(err);
+    // 바꾼 내용은 daemon 메모리에 반영됐다(임시 파일 정리만 실패) — 화면도 맞춘다
+    if (toRpcError(err).kind === "recorder_store_unclean") await refreshSteps();
     return false;
   }
 }
@@ -307,6 +312,12 @@ export async function createSecret(step: string, key: string): Promise<boolean> 
     await Promise.all([refreshSteps(), loadSecrets()]);
     return true;
   } catch (err) {
+    if (toRpcError(err).kind === "recorder_store_unclean") {
+      // 비밀값은 만들어졌고 스텝도 바뀌었다 — 임시 파일 정리만 실패 (띠에 알리고 화면을 맞춘다)
+      fail(err);
+      await Promise.all([refreshSteps(), loadSecrets()]);
+      return true;
+    }
     fail(err, "비밀값을 만들지 못했어요: ");
     return false;
   }

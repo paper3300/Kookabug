@@ -87,6 +87,10 @@ TICK_S: Final = 0.1
 CLASSIFY_WAIT_S: Final = 5.0
 _LIVE: Final = frozenset({"starting", "recording", "paused"})
 _ENDED: Final = frozenset({"committed", "discarded"})
+_COUNT_KEYS: Final = ("steps", "targets", "ignored_injected", "ignored_outside", "ignored_popup")
+STORE_RETRY_S: Final = 1.0
+"""저장소를 정리하지 못했을 때 다시 해 보는 간격 (정지·종료 뒤에도)."""
+STORE_RETRY_TRIES: Final = 600
 _ID_CHARS: Final = string.ascii_lowercase + string.digits
 
 _OCR_LOCK = threading.Lock()
@@ -155,6 +159,7 @@ class _Session:
     cancelled: bool = False
     shots: dict[str, _EditorShot] = field(default_factory=dict[str, _EditorShot])
     written: dict[str, tuple[str, str]] = field(default_factory=dict[str, tuple[str, str]])
+    """써진 초안 ID → (경로, revision). `written`·`materialized`는 파이프라인 잠금이 지킨다."""
     materialized: dict[str, str] = field(default_factory=dict[str, str])
     """`recorder.target.materialize`로 미리 쓴 target 경로 → 그 초안 ID."""
     commit: _Commit | None = None
@@ -197,6 +202,12 @@ class RecorderSession:
         self._worker: threading.Thread | None = None
         self._stopping = threading.Lock()
         self._published_rev = -1
+        self._counts: dict[str, int] = dict.fromkeys(_COUNT_KEYS, 0)
+        self.store_unclean = False
+        """`steps.json`을 새 내용으로 바꾸지도 지우지도 못했다 (지난 원문이 남았을 수 있다)."""
+        self._retry_lock = threading.Lock()
+        self._retrying = False
+        self._retry_tries = 0
 
     # ------------------------------------------------------------ 읽기
 
@@ -212,12 +223,19 @@ class RecorderSession:
         return int((time.monotonic() - self.s.started_mono) * 1000)
 
     def counts(self) -> dict[str, int]:
-        if self.pipeline is None:
-            return dict.fromkeys(
-                ("steps", "targets", "ignored_injected", "ignored_outside", "ignored_popup"), 0
-            )
-        with self.pipeline.lock:
-            counts = self.pipeline.counts()
+        pipeline = self.pipeline
+        if pipeline is None:
+            return dict.fromkeys(_COUNT_KEYS, 0)
+        # 이벤트 루프(`recorder.state`)에서도 부른다: 파이프라인 잠금(저장 재시도 동안 쥘 수
+        # 있다)을 기다리지 않고, 못 쥐면 마지막으로 센 값을 쓴다 (SECFIX M1)
+        if pipeline.lock.acquire(blocking=False):
+            try:
+                counts = pipeline.counts()
+                self._counts = dict(counts)
+            finally:
+                pipeline.lock.release()
+        else:
+            counts = dict(self._counts)
         if self.recording is not None:
             counts["ignored_injected"] = self.recording.ignored_injected
         return counts
@@ -242,6 +260,13 @@ class RecorderSession:
                     "code": "popup_ignored",
                     "count": counts["ignored_popup"],
                     "message": "게임의 팝업 창 입력은 녹화하지 않아요",
+                }
+            )
+        if self.store_unclean:
+            out.append(
+                {
+                    "code": "store_unclean",
+                    "message": "녹화 임시 파일을 정리하지 못했어요 — 다시 시도하는 중이에요",
                 }
             )
         if self.s.state in ("recording", "paused") and not self.foreground():
@@ -349,10 +374,11 @@ class RecorderSession:
             finally:
                 recording.close()
         self._end_worker()
-        if self.store is not None:
-            self.store.remove()
         if self.pipeline is not None:
-            self.pipeline.wipe()
+            with self.pipeline.lock:
+                # 먼저: 저장소 재시도가 글자를 다시 내보내지 않고 지우기만 하게
+                self.pipeline.wipe()
+        self._remove_store()
         if self.lease is not None:
             self.lease.release()
         self.reservation.release()
@@ -437,16 +463,94 @@ class RecorderSession:
                 worker.join(10)
 
     def changed(self) -> None:
-        """스텝·상태가 바뀌었으면 저장소에 쓰고 알린다."""
-        pipeline = self.pipeline
-        if pipeline is not None and pipeline.rev != self._published_rev and self.store is not None:
+        """스텝·상태가 바뀌었으면 저장소에 쓰고 알린다.
+
+        스냅숏·쓰기·쓴 rev 기록을 한 파이프라인 잠금 안에서 한다 (SECFIX): 잠금 밖에서 쓰면
+        비밀값으로 바꾸기 전 스냅숏(원문이 든 이름·제목)이 늦게 써져 바꾼 뒤 파일을 덮거나, 쓰기
+        전에 rev를 기록해 둔 탓에 다른 `changed()`가 아직 안 써진 파일을 그대로 둔다. 쓰기가
+        실패하면 rev를 기록하지 않아 다음에 다시 쓴다. 여기서 쥐는 잠금 순서는 파이프라인(RLock) →
+        저장소 → 재시도 표시뿐이다 (알림 `publish`는 이벤트 루프로 넘긴다).
+
+        새 내용으로 바꾸지도 지우지도 못하면(`StoreUnclean`) `store_unclean`을 켜고 정지·종료
+        뒤에도 다시 해 본다 (SECFIX H1).
+
+        끝난 세션(파이프라인 글자를 지움 — 버림·커밋·시작 되돌리기·daemon 종료)이면 같은 잠금
+        안에서 그것을 보고 스텝을 다시 내보내지 않고 폴더만 지운다. 상태 알림도 보내지 않는다 —
+        끝낸 쪽이 이미 보냈고, 늦은 알림이 새 녹화의 상태처럼 보이면 안 된다 (SECFIX 3 H1·H2)."""
+        pipeline, store = self.pipeline, self.store
+        if pipeline is not None and store is not None:
             with pipeline.lock:
-                self._published_rev = pipeline.rev
-                steps = [
-                    pipeline.step_json(s, reveal=False) for s in pipeline.steps if not s.deleted
-                ]
-            self.store.write_steps(steps, session=self.s.session_id, rev=self._published_rev)
+                if pipeline.wiped:
+                    removed = store.remove()
+                    self.store_unclean = not removed
+                    if not removed:
+                        self._retry_store_later()
+                    return
+                self._counts = pipeline.counts()
+                if pipeline.rev != self._published_rev:
+                    steps = [
+                        pipeline.step_json(s, reveal=False) for s in pipeline.steps if not s.deleted
+                    ]
+                    rev = pipeline.rev  # step_json의 기댓값 가리기가 rev를 올릴 수 있다
+                    try:
+                        outcome = store.write_steps(steps, session=self.s.session_id, rev=rev)
+                    except OSError as exc:
+                        self.store_unclean = True
+                        log.warning("녹화 임시 파일을 정리하지 못했다 (%s)", _error_kind(exc))
+                        self._retry_store_later()
+                    else:
+                        self.store_unclean = False
+                        if outcome == "deleted":
+                            # 지난 내용은 지웠지만 새 내용은 못 썼다: 나중에 다시 쓴다
+                            self._retry_store_later()
+                        else:
+                            self._published_rev = rev
         self.service.publish(self)
+
+    def _remove_store(self) -> None:
+        """세션 끝: 저장소 폴더째 지운다. 잠긴 파일이 남으면 나중에 다시 지운다."""
+        if self.store is not None and not self.store.remove():
+            self.store_unclean = True
+            log.warning("녹화 임시 폴더를 다 지우지 못했다 — 다시 시도한다")
+            self._retry_store_later()
+
+    def _retry_store_later(self) -> None:
+        """저장소 정리를 나중에 다시 한다 (녹화 처리 스레드·RPC가 없는 정지·종료 뒤에도)."""
+        with self._retry_lock:
+            if self._retrying:
+                return
+            self._retrying = True
+        threading.Thread(target=self._retry_store, name="recorder-store-retry", daemon=True).start()
+
+    def _store_settled(self) -> bool:
+        """더 다시 할 것이 없다: 끝난 세션은 폴더가 없고, 아니면 깨끗하고 최신 rev를 썼다."""
+        store, pipeline = self.store, self.pipeline
+        if store is None or pipeline is None:
+            return True
+        if pipeline.wiped:
+            return not store.folder.exists()
+        return not self.store_unclean and pipeline.rev == self._published_rev
+
+    def _retry_store(self) -> None:
+        """재시도 한 번. 저장할지 지울지는 `changed()`가 파이프라인 잠금 안에서 정한다(끝난 세션이면
+        지우기만). 예외가 나도 종류만 남기고, 어떻게 끝나든 예약 표시를 풀며, 다 못 끝냈으면 다음
+        한 번을 다시 예약한다 (최대 `STORE_RETRY_TRIES`번)."""
+        again = give_up = False
+        try:
+            time.sleep(STORE_RETRY_S)
+            self.changed()
+        except Exception as exc:
+            log.warning("녹화 임시 파일 정리 재시도 오류 (%s)", _error_kind(exc))
+        finally:
+            with self._retry_lock:
+                self._retrying = False
+                again = not self._store_settled()
+                self._retry_tries = self._retry_tries + 1 if again else 0
+                give_up = self._retry_tries >= STORE_RETRY_TRIES
+            if again and not give_up:
+                self._retry_store_later()
+            elif again:
+                log.warning("녹화 임시 파일 정리를 그만 다시 한다 (daemon 다음 시작 때 지운다)")
 
     def rev(self) -> int:
         return 0 if self.pipeline is None else self.pipeline.rev
@@ -553,8 +657,7 @@ class RecorderSession:
         if self.pipeline is not None:
             with self.pipeline.lock:
                 self.pipeline.wipe()
-        if self.store is not None:
-            self.store.remove()
+        self._remove_store()
         for frame_id, shot in list(self.s.shots.items()):
             self.daemon.frames.discard(frame_id)
             self.daemon.image_cache.remove(shot.cache)
@@ -601,6 +704,7 @@ class RecorderSession:
                     pipeline.rev += 1
                     result: dict[str, Any] = {"rev": pipeline.rev, "step": None}
                     self._after_update()
+                    self._require_store_clean()
                     return result
                 state = patch.get("text_state")
                 if state is not None and span is None:
@@ -664,6 +768,7 @@ class RecorderSession:
             pipeline.rev += 1
             result = {"rev": pipeline.rev, "step": pipeline.step_json(step, reveal=True)}
         self._after_update()
+        self._require_store_clean()
         return result
 
     def _revalidate(self, pipeline: Pipeline) -> None:
@@ -707,7 +812,19 @@ class RecorderSession:
                 )
 
     def _after_update(self) -> None:
-        threading.Thread(target=self.changed, daemon=True).start()
+        """응답 전에 저장소까지 쓴다: 비밀값으로 바꾼 RPC가 끝난 뒤 지난 스텝 파일이 남지 않게
+        (SECFIX). 부르는 곳은 모두 작업 스레드(`asyncio.to_thread`)라 이벤트 루프는 막지 않는다."""
+        self.changed()
+
+    def _require_store_clean(self) -> None:
+        """보호 상태를 바꿀 수 있는 RPC(스텝 고치기·비밀값 만들기)의 응답 직전: 저장소를 정리하지
+        못했으면 메모리 스텝은 바뀐 채로 두고 `recorder_store_unclean`으로 응답한다 (경로·글자는
+        싣지 않는다. daemon이 다시 정리하고 알림 경고로 보인다)."""
+        if self.store_unclean:
+            raise RequestFailed(
+                "recorder_store_unclean",
+                "녹화 임시 파일을 정리하지 못했다 — 스텝은 바뀌었고 daemon이 다시 정리한다",
+            )
 
     def _retarget(self, pipeline: Pipeline, step: Step, patch: Mapping[str, Any]) -> None:
         """REC 탭에서 고른 영역·프레임으로 초안을 다시 만든다 (보호 영역 검사)."""
@@ -828,8 +945,9 @@ class RecorderSession:
             if draft_id is None or draft_id not in pipeline.targets.drafts:
                 raise RequestFailed("target_missing", "파일로 쓸 녹화 초안이 없다", steps=[step_id])
             rel, revision = self._write_target(pipeline, draft_id, self.s.session_id)
-            with self.lock:
-                self.s.materialized[rel] = draft_id
+            # 세션 잠금(`self.lock`)을 여기서 쥐지 않는다: 잠금 순서는 세션 → 파이프라인 한 방향
+            # (`pause`·`resume`이 세션 잠금 안에서 파이프라인 잠금을 쥔다)
+            self.s.materialized[rel] = draft_id
             step.target, step.reused = rel, False
             pipeline.rev += 1
         self._after_update()
@@ -893,6 +1011,7 @@ class RecorderSession:
             self._revalidate(pipeline)
             pipeline.rev += 1
         self._after_update()
+        self._require_store_clean()
 
     # ------------------------------------------------------------ 커밋
 
@@ -1111,8 +1230,7 @@ class RecorderSession:
                     text = f"녹화 초안 {draft_id}의 target을 쓰지 못했다 ({exc.code})"
                     extra = {"message": text} if exc.code in ("io_error", "shutting_down") else {}
                     raise RequestFailed(exc.code, text, **extra) from None
-                with self.lock:
-                    self.s.written[draft_id] = (rel, outcome.revision)
+                self.s.written[draft_id] = (rel, outcome.revision)  # 파이프라인 잠금 안
                 return rel, outcome.revision
         finally:
             self.daemon.frames.discard(frame_id)
@@ -1349,13 +1467,21 @@ class RecorderService:
     # ------------------------------------------------------------ 알림
 
     def publish(self, session: RecorderSession) -> None:
+        """그 세션이 **지금 세션**일 때만 알린다. 확인과 보내기 예약을 서비스 잠금 안에서 해서, 새
+        세션을 연 뒤(그 시작 응답 뒤)에 지난 세션의 늦은 알림(재시도 정리 등)이 나가지 않는다
+        (SECFIX 3 H1). 받는 쪽도 `session`으로 지난 세션 알림을 거른다."""
+        sid = session.s.session_id
         owner_params: dict[str, Any] = {
             "state": session.state,
+            "session": sid,
             "rev": session.rev(),
             "counts": session.counts(),
             "warnings": session.warnings(),
         }
-        self._send(session.owner, owner_params, {"state": session.state})
+        with self._lock:
+            if self.session is not session:
+                return
+            self._send(session.owner, owner_params, {"state": session.state, "session": sid})
 
     def publish_idle(self) -> None:
         self._send(None, {"state": "idle"}, {"state": "idle"})
