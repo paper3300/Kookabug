@@ -1,6 +1,6 @@
 // 판단 노드 스크린샷 (M5 계획 B4): 캔버스의 Agent 판단 노드 — 선택지 출구·unsure·비결정 배지, 팔레트 Agent 분류
 //   agent-judge-dark  1440×900 (시안 Main의 "Agent 판단 · CLI" 노드 대비)
-// 결과 build/ui-shots/agent-judge-dark.png
+// 결과 build/ui-shots/agent-judge-dark.png → node tools/design-ref/compare.mjs agent-judge
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test, type ElectronApplication, type Page } from "@playwright/test";

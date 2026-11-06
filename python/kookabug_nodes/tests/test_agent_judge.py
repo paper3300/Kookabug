@@ -366,6 +366,24 @@ def test_cli_judge_agent_has_no_control_tools(rig: Rig) -> None:
     assert ran.record("n_judge")["permission_requests"] == 2
 
 
+@pytest.mark.parametrize("fail", ["create", "assign"])
+def test_job_failure_is_error_and_agent_never_runs(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch, fail: str
+) -> None:
+    """에이전트는 멈춘 채 띄워 Job에 넣은 뒤에야 돈다. Job을 만들거나 넣지 못하면 판단 `error`
+    (`agent_start_failed`)이고 에이전트는 한 줄도 실행하지 않는다 (BACKLOG M5 B5)."""
+    rig.steps({"do": "answer", "answer": "loading"})
+
+    def broken(*args: Any, **kwargs: Any) -> Any:
+        raise OSError("job 실패 (검사)")
+
+    monkeypatch.setattr(acp.Job, fail, broken)
+    ran = rig.run(judge_graph())
+    assert (ran.result.verdict, ran.result.code) == ("error", "agent_start_failed")
+    assert "Job" in ran.end("n_judge")["error"]["message"]
+    assert ran.agent_log() == []
+
+
 def test_agent_without_image_support_is_protocol_error(rig: Rig) -> None:
     rig.steps({"do": "answer", "answer": "loading"}, image=False)
     assert rig.run(judge_graph()).result.code == "agent_protocol_error"

@@ -23,12 +23,19 @@ __all__ = [
     "current",
     "identify",
     "is_alive",
+    "resume_suspended",
     "spawn",
 ]
 
 PROCESS_TERMINATE: Final = 0x0001
 PROCESS_SET_QUOTA: Final = 0x0100
+PROCESS_SUSPEND_RESUME: Final = 0x0800
 PROCESS_QUERY_LIMITED_INFORMATION: Final = 0x1000
+
+_ntdll: Final = ctypes.WinDLL("ntdll")
+_NtResumeProcess: Final = _ntdll.NtResumeProcess
+_NtResumeProcess.argtypes = (wintypes.HANDLE,)
+_NtResumeProcess.restype = ctypes.c_long
 
 _QUERY: Final = PROCESS_QUERY_LIMITED_INFORMATION | k.SYNCHRONIZE
 _ERROR_ACCESS_DENIED: Final = 5
@@ -155,6 +162,15 @@ def is_alive(ident: ProcessId) -> bool:
             return proc.alive()
     except ProcessLookupError:
         return False
+
+
+def resume_suspended(pid: int) -> None:
+    """`CREATE_SUSPENDED`로 띄운 프로세스를 이어 돌린다 (`NtResumeProcess`). Job에 먼저 넣고
+    이어 돌리면 그 프로세스가 띄우는 자손은 처음부터 Job 안이다."""
+    with Process.open(pid, extra_access=PROCESS_SUSPEND_RESUME) as proc:
+        status = _NtResumeProcess(proc.handle)
+    if status < 0:
+        raise OSError(f"NtResumeProcess({pid}) 실패: NTSTATUS 0x{status & 0xFFFFFFFF:08X}")
 
 
 def spawn(

@@ -3,9 +3,10 @@
 //   panel-chat            대화 (내 말풍선·도구 호출 줄·답 본문·바닥 줄)
 //   panel-approval        그래프 편집 승인 카드 (한 번 허용·항상 허용·캔버스에서 보기·거부)
 //   panel-acp-permission  에이전트 자기 도구의 권한 요청 카드 (에이전트 선택지 그대로)
-//   permissions           권한 설정 화면 (다크) / permissions-light (라이트)
+//   permissions           권한 설정 화면 (다크·라이트)
 //   runviewer-analyze     RUN 탭 "에이전트에게 분석 요청" → 패널 @run 칩
-// 결과 build/ui-shots/<이름>.png
+// 권한 설정은 시안 Permissions를 렌더러(render.mjs)가 아직 못 그려(sc-for 빈 목록) 비교 PNG 없이 사람이 시안 원본과 본다
+// 결과 build/ui-shots/<이름>-<테마>.png → node tools/design-ref/compare.mjs panel-empty panel-chat panel-approval panel-acp-permission runviewer-analyze
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -28,10 +29,11 @@ test.afterEach(async () => {
   s = null;
 });
 
-async function shot(page: Page, name: string): Promise<void> {
+/** `<이름>-<테마>.png` (compare.mjs 규칙). 테마를 주지 않으면 다크 */
+async function shot(page: Page, name: string, theme: "dark" | "light" = "dark"): Promise<void> {
   await settle(page);
   await page.mouse.move(2, 600);
-  await page.screenshot({ path: path.join(OUT, `${name}.png`) });
+  await page.screenshot({ path: path.join(OUT, `${name}-${theme}.png`) });
 }
 
 const ANALYSIS = [
@@ -123,7 +125,7 @@ test("permissions shots", async () => {
     await page.getByRole("menuitem", { name: "기본 설정: 에이전트 권한" }).click();
     const view = page.locator('[data-part="permissions-view"]');
     await expect(view.locator('[data-part="rule-row"]')).toHaveCount(2);
-    await shot(page, theme === "dark" ? "permissions" : "permissions-light");
+    await shot(page, "permissions", theme);
   }
 });
 

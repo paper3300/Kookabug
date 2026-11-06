@@ -43,6 +43,7 @@ STEPS = [
     "cli.smoke_graph",
     "cli.video",
     "recorder.hook",
+    "cli.mcp",
     "app.smoke",
     "dll.check",
     "uninstall",
@@ -122,6 +123,7 @@ def test_silent_install_test_edition_doctor_headless_and_app_smoke(run: Run) -> 
         "cli.smoke_graph",
         "cli.video",
         "recorder.hook",
+        "cli.mcp",
         "app.smoke",
         "dll.check",
     )

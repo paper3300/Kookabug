@@ -53,6 +53,14 @@ export const SCREENS = {
   "runviewer-compare": { dark: "RunViewer", light: "RunViewer" },
   "runviewer-stats": { dark: "RunViewer", light: "RunViewer" },
   "runviewer-comparetab": { dark: "RunViewer", light: "RunViewer" },
+  // 에이전트 패널(오른쪽 속성 | 에이전트 탭, 연결 화면·대화·승인 카드·ACP 권한 카드), 판단 노드, RUN 탭 분석 단추, M5 B4·B5.
+  // 시안 Main 오른쪽 에이전트 패널·"Agent 판단 · CLI" 노드와 나란히 본다. 권한 설정(시안 Permissions)은 렌더러가 아직 못 그린다
+  "panel-empty": { dark: "Main" },
+  "panel-chat": { dark: "Main" },
+  "panel-approval": { dark: "Main" },
+  "panel-acp-permission": { dark: "Main" },
+  "agent-judge": { dark: "Main" },
+  "runviewer-analyze": { dark: "RunViewer" },
 };
 
 function pngSize(file) {

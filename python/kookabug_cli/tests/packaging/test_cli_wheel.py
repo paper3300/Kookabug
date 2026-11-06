@@ -1,6 +1,6 @@
 """CLI wheel을 레포 밖 깨끗한 venv에 설치해 그래프를 실행한다 (구현 계획 M0b T11).
 
-sdk·nodes·core·cli wheel만 설치하고(서드파티 의존성은 인덱스), 워크스페이스도 레포 밖에 만든다.
+sdk·nodes·core·daemon·mcp·cli wheel만(서드파티 의존성은 인덱스), 워크스페이스도 레포 밖에 만든다.
 플랫폼 `none`의 순수 그래프라 입력·캡처·플러그인이 필요 없다.
 """
 
@@ -41,6 +41,7 @@ def test_cli_installed_runs_graph_outside_repo(tmp_path: Path) -> None:
             "kookabug_nodes",
             "kookabug_core",
             "kookabug_daemon",
+            "kookabug_mcp",  # M5: CLI가 `kookabug mcp`를 품는다
             "kookabug_cli",
         )
     ]

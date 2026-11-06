@@ -17,7 +17,9 @@
    설치본 Python·설치 폴더 VC++ 런타임), 예제 헤드리스 스모크 그래프 `kookabug run`(통과),
    영상(M3: 예제 사본을 영상 `on`으로 돌려 OS Media Foundation H.264 조각이 남음. 인코더가 없는
    PC면 `unavailable`과 이유 — 실행은 그대로 통과), 녹화기(M4: 훅 프로세스가 설치 트리 Python으로
-   떠 `hook.hello`까지, 입력 없이)
+   떠 `hook.hello`까지, 입력 없이), MCP(M5: 예제 사본에 설치본 daemon을 띄우고 `kookabug mcp
+   --unattended --agent-id <ID>` → initialize·tools/list(기본 core만)·`kb_project_info`가 그 주체를
+   사람 없음으로 돌려줌, `kookabug agent-host --help`)
 5. 앱 스모크: 예제 워크스페이스 사본으로 `Kookabug.exe --smoke` (daemon 띄우기·session.hello·
    graph.open·graph.save 무수정 wrote: false·daemon.shutdown, 종료 코드 0). 끝난 뒤 설치 폴더에서
    돌던 프로세스(daemon)가 남지 않는다
@@ -39,6 +41,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import winreg
 from collections.abc import Callable, Mapping, Sequence
@@ -933,6 +936,136 @@ def recorder_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
     )
 
 
+MCP_AGENT_ID: Final = "smoke-mcp"
+MCP_IDLE_TIMEOUT_S: Final = 20
+
+
+class _McpPipe:
+    """설치본 `kookabug mcp`와 줄 단위 JSON-RPC (요청 하나에 응답 한 줄)."""
+
+    def __init__(self, proc: subprocess.Popen[bytes]) -> None:
+        self.proc = proc
+        self.ids = 0
+
+    def send(
+        self, method: str, params: Mapping[str, Any] | None = None, *, notify: bool = False
+    ) -> None:
+        message: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
+        if params is not None:
+            message["params"] = dict(params)
+        if not notify:
+            self.ids += 1
+            message["id"] = self.ids
+        assert self.proc.stdin is not None
+        self.proc.stdin.write(json.dumps(message, ensure_ascii=False).encode("utf-8") + b"\n")
+        self.proc.stdin.flush()
+
+    def request(self, method: str, params: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        self.send(method, params)
+        assert self.proc.stdout is not None
+        while True:
+            line = self.proc.stdout.readline()
+            if not line:
+                raise RuntimeError(
+                    f"{method}: 응답 전에 stdout이 닫혔다 (종료 코드 {self.proc.poll()})"
+                )
+            reply = json.loads(line.decode("utf-8"))
+            if reply.get("id") == self.ids:
+                if "error" in reply:
+                    raise RuntimeError(f"{method}: {reply['error']}")
+                return reply["result"]
+
+
+def mcp_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
+    """설치본 MCP (M5): 예제 워크스페이스 사본에 설치본 daemon(짧은 유휴 종료)을 띄우고, 설치본
+    `kookabug mcp --unattended --agent-id`로 붙어 initialize·tools/list·`kb_project_info`.
+    daemon이 본 주체가 그 ID·사람 없음이어야 한다. `agent-host`는 도움말만 본다(에이전트를 띄우지
+    않음). 끝난 뒤 설치 폴더에서 돌던 프로세스가 남지 않아야 한다."""
+    exe = shutil.which("kookabug", path=env["PATH"])
+    if exe is None:
+        return False, "PATH에서 kookabug를 찾을 수 없다"
+    base = Path(tempfile.mkdtemp(prefix="kb-mcp-"))
+    daemon: subprocess.Popen[bytes] | None = None
+    mcp: subprocess.Popen[bytes] | None = None
+    try:
+        workspace = base / "ws"
+        shutil.copytree(
+            root / WORKSPACE, workspace, ignore=shutil.ignore_patterns(".kookabug", "runs")
+        )
+        user = {**env, "KOOKABUG_USER_CONFIG_DIR": str(base / "user")}
+        with (base / "daemon.out").open("wb") as out, (base / "daemon.err").open("wb") as err:
+            daemon = subprocess.Popen(
+                [exe, "daemon", "--workspace", str(workspace), "--json",
+                 "--idle-timeout-s", str(MCP_IDLE_TIMEOUT_S)],
+                cwd=base, env=user, stdout=out, stderr=err,
+            )  # fmt: skip
+        deadline = time.monotonic() + RUN_TIMEOUT_S
+        while not (base / "daemon.out").read_bytes().strip():
+            if daemon.poll() is not None or time.monotonic() > deadline:
+                text = (base / "daemon.err").read_text("utf-8", errors="replace")[-1500:]
+                return False, f"daemon이 시작하지 못했다 (종료 코드 {daemon.poll()}): {text}"
+            time.sleep(0.2)
+        started = json.loads((base / "daemon.out").read_text("utf-8").splitlines()[0])
+        with (base / "mcp.err").open("wb") as err:
+            mcp = subprocess.Popen(
+                [exe, "mcp", "--workspace", str(workspace), "--unattended",
+                 "--agent-id", MCP_AGENT_ID],
+                cwd=base, env=user, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err,
+            )  # fmt: skip
+        killer = threading.Timer(RUN_TIMEOUT_S, mcp.kill)
+        killer.start()
+        try:
+            pipe = _McpPipe(mcp)
+            init = pipe.request(
+                "initialize",
+                {"protocolVersion": "2025-06-18", "capabilities": {},
+                 "clientInfo": {"name": "kb-smoke", "version": "0"}},
+            )  # fmt: skip
+            pipe.send("notifications/initialized", notify=True)
+            tools = sorted(t["name"] for t in pipe.request("tools/list")["tools"])
+            info = pipe.request("tools/call", {"name": "kb_project_info", "arguments": {}})
+            assert mcp.stdin is not None
+            mcp.stdin.close()
+            code = mcp.wait(30)
+        finally:
+            killer.cancel()
+        principal = (info.get("structuredContent") or {}).get("principal")
+        host = run_cli(root, env, ["agent-host", "--help"], cwd=base)
+        daemon.wait(MCP_IDLE_TIMEOUT_S + 30)
+        left = wait_no_processes(root)
+        expected = {"kind": "agent", "id": MCP_AGENT_ID, "attended": False}
+        ok = (
+            started.get("status") in ("started", "already_running")
+            and init.get("protocolVersion") == "2025-06-18"
+            and "kb_project_info" in tools
+            and "kb_graph_patch" not in tools  # 기본 툴셋은 core만
+            and info.get("isError") is False
+            and principal == expected
+            and code == 0
+            and host.returncode == 0
+            and "agent-host" in host.stdout
+            and not left
+        )
+        detail = (
+            f"daemon {started.get('status')}, 판 {init.get('protocolVersion')}, "
+            f"도구 {len(tools)}개, "
+            f"주체 {principal}, mcp 종료 코드 {code}, agent-host --help {host.returncode}, "
+            f"남은 프로세스 {left or '없음'}"
+        )
+        if not ok:
+            for name in ("daemon.err", "mcp.err"):
+                text = (base / name).read_text("utf-8", errors="replace")[-1200:]
+                detail += f"; {name} {text!r}"
+        return ok, detail
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        return False, f"MCP 스모크 실패: {exc!r}"
+    finally:
+        for proc in (mcp, daemon):
+            if proc is not None and proc.poll() is None:
+                proc.kill()
+        shutil.rmtree(base, ignore_errors=True)
+
+
 def dll_step(root: Path) -> tuple[bool, str]:
     report = dllcheck.check_tree(root)
     if report.problems:
@@ -960,6 +1093,7 @@ def smoke_installed(report: SmokeReport) -> None:
     report.step("cli.smoke_graph", lambda: graph_step(root, env))
     report.step("cli.video", lambda: video_step(root, env))
     report.step("recorder.hook", lambda: recorder_step(root, env))
+    report.step("cli.mcp", lambda: mcp_step(root, env))
     report.step("app.smoke", lambda: app_step(root, env))
     report.step("dll.check", lambda: dll_step(root))
 

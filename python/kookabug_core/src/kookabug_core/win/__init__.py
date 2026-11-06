@@ -11,6 +11,7 @@ from kookabug_core.win.process import (
     current,
     identify,
     is_alive,
+    resume_suspended,
     spawn,
 )
 
@@ -26,6 +27,7 @@ __all__ = [
     "current",
     "identify",
     "is_alive",
+    "resume_suspended",
     "run_job_name",
     "spawn",
     "terminate_current",

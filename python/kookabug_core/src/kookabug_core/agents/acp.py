@@ -8,7 +8,8 @@ stdio 줄 단위 JSON-RPC 2.0. 쓰는 메서드는 `initialize` → `session/new
   `cancelled`). 그 밖의 에이전트 → 클라이언트 요청(`fs/*`·`terminal/*` 등)은 "메서드 없음" 오류
 - 보내기는 쓰기 스레드(큐)가 한다: 에이전트가 입력을 읽지 않아 쓰기가 막혀도 주 루프는 기한·취소를
   보고 Job을 끝낸다
-- 에이전트 프로세스는 자기 Job에 넣는다: 끝나면(답·시간 초과·취소·오류 모두) Job을 끝내 손자
+- 에이전트 프로세스는 생성 시점부터 자기 Job 안이다(멈춘 채 띄워 넣고 이어 돌림). Job을 준비하지
+  못하면 띄우지 않고 `agent_start_failed`. 끝나면(답·시간 초과·취소·오류 모두) Job을 끝내 손자
   프로세스까지 정리한다. runner가 죽으면 Job 핸들이 닫혀 같이 끝난다(`kill_on_close`)
 """
 
@@ -27,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, cast
 
-from kookabug_core.win import CHILD_FLAGS, Job
+from kookabug_core.win import CHILD_FLAGS, Job, resume_suspended
 
 __all__ = [
     "CLIENT_CAPABILITIES",
@@ -50,6 +51,7 @@ _TEXT_LIMIT: Final = 1024 * 1024
 _EXIT_WAIT_S: Final = 5.0
 _CANCEL_GRACE_S: Final = 0.2
 """`session/cancel` 알림을 보내려고 기다리는 시간 (막힌 쓰기가 종료를 늦추지 않게)."""
+_CREATE_SUSPENDED: Final = 0x00000004
 _METHOD_NOT_FOUND: Final = -32601
 _REJECT_KINDS: Final = ("reject_once", "reject_always")
 _EOF: Final = object()
@@ -123,6 +125,14 @@ class _Session:
             raise AgentFailure(
                 "agent_start_failed", f"에이전트 명령 '{command.command}'을(를) 찾지 못했다"
             )
+        # 자손 정리를 보장하지 못하면 띄우지 않는다: Job을 먼저 만들고, 멈춘 채 띄워 Job에 넣은 뒤
+        # 이어 돌린다 (띄운 뒤 넣으면 그 사이 생긴 손자가 Job 밖에 남는다)
+        try:
+            job = Job.create()
+        except OSError as exc:
+            raise AgentFailure(
+                "agent_start_failed", f"에이전트를 묶을 Job을 만들지 못했다: {exc}"
+            ) from exc
         try:
             self._proc = subprocess.Popen(
                 [exe, *command.args],
@@ -131,22 +141,22 @@ class _Session:
                 stderr=subprocess.DEVNULL,
                 cwd=command.cwd,
                 env=dict(command.env),
-                creationflags=CHILD_FLAGS,
+                creationflags=CHILD_FLAGS | _CREATE_SUSPENDED,
             )
         except OSError as exc:
+            job.close()
             raise AgentFailure(
                 "agent_start_failed", f"에이전트 '{command.command}'을(를) 띄우지 못했다: {exc}"
             ) from exc
         try:
-            job = Job.create()
-        except OSError:
-            job = None
-        if job is not None:
-            try:
-                job.assign(self._proc.pid)
-                self._job = job
-            except OSError:
-                job.close()  # 이미 끝난 프로세스 — 닫을 때 `kill`로 정리한다
+            job.assign(self._proc.pid)
+            resume_suspended(self._proc.pid)
+        except OSError as exc:
+            _discard(self._proc, job)
+            raise AgentFailure(
+                "agent_start_failed", f"에이전트를 Job에 넣어 시작하지 못했다: {exc}"
+            ) from exc
+        self._job = job
         self._reader = threading.Thread(target=self._read, name="acp-judge", daemon=True)
         self._reader.start()
         self._writer = threading.Thread(target=self._write, name="acp-judge-write", daemon=True)
@@ -352,6 +362,19 @@ class _Session:
                 job.close()
             if self._reader is not None:
                 self._reader.join(timeout=_EXIT_WAIT_S)
+
+
+def _discard(proc: subprocess.Popen[bytes], job: Job) -> None:
+    """시작하지 못한(멈춘 채인) 에이전트를 끝내고 파이프·Job을 닫는다."""
+    with contextlib.suppress(OSError):
+        proc.kill()
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        proc.wait(timeout=_EXIT_WAIT_S)
+    for pipe in (proc.stdin, proc.stdout):
+        if pipe is not None:
+            with contextlib.suppress(OSError):
+                pipe.close()
+    job.close()
 
 
 def _resolve(command: str, env: Mapping[str, str]) -> str | None:
