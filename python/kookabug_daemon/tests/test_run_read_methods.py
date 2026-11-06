@@ -403,8 +403,8 @@ def test_run_export_agent_denied_creates_nothing_at_dest(tmp_path: Path) -> None
     body = {"format": "kookabug.local/0", "permissions": {"toolsets": {"run": "allow"}}}
     path.write_text(json.dumps(body), encoding="utf-8")
     with rig.daemon() as d, d.client(AGENT) as agent:
-        # 읽기 메서드는 에이전트도 쓴다 (kb_run_events)
-        assert agent.call("run.index", {"run_id": run_id})["run_id"] == run_id
+        # 에이전트의 기록 읽기는 가린 결과를 주는 메서드로만 (M5 3.5: run.index 등은 거부)
+        assert agent.call("run.events", {"run_id": run_id})["events"]
         with pytest.raises(DaemonError) as caught:
             agent.call("run.export", {"run_id": run_id, "dest": str(dest)})
         assert caught.value.kind == "permission_denied"

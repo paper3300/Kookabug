@@ -32,7 +32,15 @@ test("test_method_table_tools_and_internal_methods", () => {
     "graph.check",
     "graph.list",
     "graph.patch",
+    "run.artifact",
+    "run.diff",
+    "run.events",
     "run.export",
+    "run.failure",
+    "run.search",
+    "screen.read_text",
+    "screens.get",
+    "screens.list",
     "session.hello",
   ]);
   expect(Object.keys(NOTIFICATIONS).sort()).toEqual([

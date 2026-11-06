@@ -215,7 +215,10 @@ PRESET_TABLE: list[tuple[list[str], tuple[Verdict, Verdict, Verdict, Verdict]]] 
     (CORE, ("allow", "allow", "allow", "allow")),
     (["kb_graph_create", "kb_graph_patch", "kb_target_create"], ("deny", "ask", "ask", "allow")),
     (["kb_run_start", "kb_run_cancel"], ("deny", "deny", "allow", "allow")),
-    (["kb_run_events", "kb_run_artifact_get"], ("allow", "allow", "allow", "allow")),
+    (
+        ["kb_run_events", "kb_run_artifact_get", "kb_run_compare"],
+        ("allow", "allow", "allow", "allow"),
+    ),
     (["kb_screen_capture", "kb_image_find", "kb_ocr_read"], ("allow", "allow", "allow", "allow")),
     (
         ["kb_input_click", "kb_input_key", "kb_input_type", "kb_app_launch"],

@@ -3,6 +3,9 @@
 
 실행 관리는 `runs.RunManager`가, 기록 읽기는 `run_index.RunRecords`가 한다. 기록 읽기의 대표 인자는
 실행 ID다. `run.export`는 `ui_only`이고 `AGENT_DENIED`라 에이전트 연결은 전송이 판정 전에 거부한다.
+M5: 기록 원문 읽기(`run.index/children/step/file/compare/subscribe`)는 에이전트 연결이면 판정 전에
+`agent_use_safe_api`(에이전트는 `methods.run_agent`의 가린 결과로만). `run.list`의 판정 사유는
+에이전트에게 분류대로 가린다(3.8).
 
 - `run.start`는 판정을 전송이 아니라 시작 잠금 안의 ② 단계에서 한다 (`MethodSpec.self_authorized`).
   대표 인자는 링크를 해석한 그래프 경로다
@@ -15,8 +18,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Final
 
+from kookabug_daemon.agent_view import mask_run_summary
 from kookabug_daemon.documents import resolve_path
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.methods.graph import request_int
@@ -64,17 +69,26 @@ async def _status(call: Call) -> dict[str, Any]:
     return await asyncio.to_thread(call.daemon.run_manager.status, _run_id(call))
 
 
-async def _list(call: Call) -> dict[str, Any]:
+def _list_sync(call: Call) -> dict[str, Any]:
     params = call.params
     limit = params.get("limit")
     before, graph, verdict = params.get("before"), params.get("graph"), params.get("verdict")
-    return await asyncio.to_thread(
-        call.daemon.run_manager.list_runs,
+    result = call.daemon.run_manager.list_runs(
         None if limit is None else request_int(limit),
         before=None if before is None else str(before),
         graph=None if graph is None else str(graph),
         verdict=None if verdict is None else str(verdict),
     )
+    if call.principal.kind == "agent":
+        # 판정 사유는 비밀값을 담을 수 있다: 에이전트에게는 분류대로 가린다 (M5 3.8)
+        result["runs"] = [
+            mask_run_summary(s, Path(str(s["run_dir"]))) for s in result.get("runs", [])
+        ]
+    return result
+
+
+async def _list(call: Call) -> dict[str, Any]:
+    return await asyncio.to_thread(_list_sync, call)
 
 
 # ---------------------------------------------------------------- 기록 읽기 (M3 2.7)

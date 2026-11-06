@@ -40,6 +40,10 @@ export interface Run {
    * 멈춘 시간을 뺀 경과 (M3)
    */
   active_duration_ms?: number;
+  /**
+   * 에이전트용 비밀값 분류(이벤트 secret_paths·스텝 secret·agent_withhold)를 남긴 기록 (M5 3.8). 없으면 daemon은 에이전트에게 안전 필드(판정·스텝·노드·출구·상태·오류 코드·시각·기간)만 준다
+   */
+  agent_mask?: 1;
   code?: string;
   conditions?: Conditions;
   /**
@@ -82,6 +86,12 @@ export interface Run {
   run_json_repaired?: true;
   runner?: RunnerInfo;
   runner_exit_code?: number;
+  /**
+   * run.end.secret_paths 그대로 (reason에 비밀값이 있으면 ["/reason"], M5 3.8)
+   *
+   * @minItems 1
+   */
+  secret_paths?: [string, ...string[]];
   started_at: Timestamp;
   status: "finished" | "running";
   verdict?: Verdict;

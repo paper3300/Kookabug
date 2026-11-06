@@ -151,6 +151,21 @@ class RunOmitted(BaseModel):
     reason: Literal["encoder_stuck"]
 
 
+class SecretPaths(RootModel[list[str]]):
+    """
+    이 이벤트 안에서 비밀값(Secret·SecretMessage)을 담았던 필드의 JSON pointer (이벤트 기준). record.redact_secrets가 꺼진 실행이면 그 자리에 원문이 있다 — daemon이 에이전트에게 줄 때 ***로 바꾼다 (M5 3.8)
+    """
+
+    root: Annotated[
+        list[str],
+        Field(
+            description="이 이벤트 안에서 비밀값(Secret·SecretMessage)을 담았던 필드의 JSON pointer (이벤트 기준). record.redact_secrets가 꺼진 실행이면 그 자리에 원문이 있다 — daemon이 에이전트에게 줄 때 ***로 바꾼다 (M5 3.8)",
+            min_length=1,
+            title="SecretPaths",
+        ),
+    ]
+
+
 class Seq(RootModel[int]):
     root: Annotated[int, Field(description="저널 안 순번. 1부터 빈틈 없이", ge=1, title="Seq")]
 
@@ -279,6 +294,7 @@ class AttemptEndEvent(BaseModel):
     message: str | None = None
     outputs: dict[str, Any]
     run: RunId
+    secret_paths: SecretPaths | None = None
     seq: Seq
     status: Literal["fail"]
     step: StepId
@@ -451,6 +467,7 @@ class LogEvent(BaseModel):
     message: str
     node: str | None
     run: RunId
+    secret_paths: SecretPaths | None = None
     seq: Seq
     step: StepId | None
     t: Timestamp
@@ -486,6 +503,7 @@ class RunEndEvent(BaseModel):
     reason: str
     run: RunId
     runner_exit_code: int | None = None
+    secret_paths: SecretPaths | None = None
     seq: Seq
     t: Timestamp
     truncated_bytes: Annotated[
@@ -526,6 +544,12 @@ class StepEndEvent(BaseModel):
             ge=0,
         ),
     ] = None
+    agent_withhold: Annotated[
+        list[str] | None,
+        Field(
+            description="record.redact_secrets가 켜져 있었다면 남기지 않았을 증거(스크린샷·썸네일·OCR 글자·비밀값이 든 텍스트 artifact)의 실행 폴더 기준 경로. 파일은 그대로 남고 에이전트에게만 주지 않는다 (M5 3.8)"
+        ),
+    ] = None
     artifacts: list[str] | None = None
     attempt: Annotated[int, Field(ge=1)]
     duration_ms: Annotated[int, Field(ge=0)]
@@ -542,6 +566,13 @@ class StepEndEvent(BaseModel):
     outputs: dict[str, Any]
     retried: Literal[True] | None = None
     run: RunId
+    secret: Annotated[
+        Literal[True] | None,
+        Field(
+            description="입력이나 출력에 비밀값이 있던 스텝 ($secret·$link·변수·호출 인자 모두, 값 형식으로 판정). 에이전트에게는 이 스텝과 안쪽 스텝의 이미지·OCR 글자를 주지 않는다 (M5 3.8)"
+        ),
+    ] = None
+    secret_paths: SecretPaths | None = None
     seq: Seq
     status: Literal["cancelled", "error", "fail", "success"]
     step: StepId

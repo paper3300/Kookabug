@@ -261,6 +261,10 @@
       "minimum": 0,
       "type": "integer"
     },
+    "agent_mask": {
+      "const": 1,
+      "description": "에이전트용 비밀값 분류(이벤트 secret_paths·스텝 secret·agent_withhold)를 남긴 기록 (M5 3.8). 없으면 daemon은 에이전트에게 안전 필드(판정·스텝·노드·출구·상태·오류 코드·시각·기간)만 준다"
+    },
     "code": {
       "type": "string"
     },
@@ -355,6 +359,14 @@
     },
     "runner_exit_code": {
       "type": "integer"
+    },
+    "secret_paths": {
+      "description": "run.end.secret_paths 그대로 (reason에 비밀값이 있으면 [\"/reason\"], M5 3.8)",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
     },
     "started_at": {
       "$ref": "#/$defs/Timestamp"

@@ -37,6 +37,9 @@ export const eventsSchema: unknown = {
         "run": {
           "$ref": "#/$defs/RunId"
         },
+        "secret_paths": {
+          "$ref": "#/$defs/SecretPaths"
+        },
         "seq": {
           "$ref": "#/$defs/Seq"
         },
@@ -575,6 +578,9 @@ export const eventsSchema: unknown = {
         "run": {
           "$ref": "#/$defs/RunId"
         },
+        "secret_paths": {
+          "$ref": "#/$defs/SecretPaths"
+        },
         "seq": {
           "$ref": "#/$defs/Seq"
         },
@@ -753,6 +759,9 @@ export const eventsSchema: unknown = {
         "runner_exit_code": {
           "type": "integer"
         },
+        "secret_paths": {
+          "$ref": "#/$defs/SecretPaths"
+        },
         "seq": {
           "$ref": "#/$defs/Seq"
         },
@@ -852,6 +861,15 @@ export const eventsSchema: unknown = {
       "title": "RunStartEvent",
       "type": "object"
     },
+    "SecretPaths": {
+      "description": "이 이벤트 안에서 비밀값(Secret·SecretMessage)을 담았던 필드의 JSON pointer (이벤트 기준). record.redact_secrets가 꺼진 실행이면 그 자리에 원문이 있다 — daemon이 에이전트에게 줄 때 ***로 바꾼다 (M5 3.8)",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "SecretPaths",
+      "type": "array"
+    },
     "Seq": {
       "description": "저널 안 순번. 1부터 빈틈 없이",
       "minimum": 1,
@@ -866,6 +884,13 @@ export const eventsSchema: unknown = {
           "description": "멈춘 시간을 뺀 경과. 그 스텝 구간에 멈춤이 있었을 때만 쓴다 (duration_ms는 실제 경과)",
           "minimum": 0,
           "type": "integer"
+        },
+        "agent_withhold": {
+          "description": "record.redact_secrets가 켜져 있었다면 남기지 않았을 증거(스크린샷·썸네일·OCR 글자·비밀값이 든 텍스트 artifact)의 실행 폴더 기준 경로. 파일은 그대로 남고 에이전트에게만 주지 않는다 (M5 3.8)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "artifacts": {
           "items": {
@@ -935,6 +960,13 @@ export const eventsSchema: unknown = {
         },
         "run": {
           "$ref": "#/$defs/RunId"
+        },
+        "secret": {
+          "const": true,
+          "description": "입력이나 출력에 비밀값이 있던 스텝 ($secret·$link·변수·호출 인자 모두, 값 형식으로 판정). 에이전트에게는 이 스텝과 안쪽 스텝의 이미지·OCR 글자를 주지 않는다 (M5 3.8)"
+        },
+        "secret_paths": {
+          "$ref": "#/$defs/SecretPaths"
         },
         "seq": {
           "$ref": "#/$defs/Seq"

@@ -19,11 +19,13 @@ from kookabug_daemon.protocol import UI_ONLY, RequestFailed
 
 __all__ = [
     "AGENT_DENIED",
+    "AGENT_RAW",
     "METHOD_TOOLS",
     "RECORDER_METHODS",
     "UI_ONLY_AGENT_ALLOWED",
     "Authorizer",
     "ServiceLike",
+    "agent_use_safe_api",
 ]
 
 # M4 녹화·비밀값 (계획 2.3·2.8·2.9): 키 입력 전체를 읽는 기능이라 사람만 쓴다. 처리기는 T7·T8·T11이
@@ -69,6 +71,15 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     # M5 B1 검수: MCP 도구 이름 그대로 판정하는 진입점
     "graph.list": "kb_graph_list",
     "graph.check": "kb_graph_validate",
+    # M5 B2: 에이전트용 기록 읽기(가린 결과)·관측·화면 지도 (계획 3.5)
+    "run.failure": "kb_run_status",
+    "run.events": "kb_run_events",
+    "run.search": "kb_log_search",
+    "run.artifact": "kb_run_artifact_get",
+    "run.diff": "kb_run_compare",
+    "screen.read_text": "kb_ocr_read",
+    "screens.list": "kb_screen_list",
+    "screens.get": "kb_screen_get",
     "run.start": "kb_run_start",
     "run.cancel": "kb_run_cancel",
     "run.status": "kb_run_status",
@@ -115,9 +126,26 @@ AGENT_DENIED: Final = frozenset(
 녹화·비밀값 메서드(M4 C20)를 여기에 넣는다. `target.read_text`는 녹화 프레임(비밀번호가 찍힐 수
 있는 임시 화면)도 읽으므로 M4에서는 사람만 쓴다."""
 
+AGENT_RAW: Final = frozenset(
+    {"run.index", "run.children", "run.step", "run.file", "run.compare", "run.subscribe"}
+)
+"""사람 화면용 기록 원문 메서드 (M5 계획 3.5 H2). agent 연결은 판정 전에 `agent_use_safe_api`로
+거부한다 — 에이전트는 가린 결과를 주는 `run.events/artifact/diff/failure/search`로만 읽는다.
+`target.load_image`의 `runs/` 경로·`workspace.tree/read`의 `screens/`는 인자에 따라 처리기가
+거부한다."""
+
 UI_ONLY_AGENT_ALLOWED: Final = frozenset({"session.hello", "graph.close", "run.unsubscribe"})
 """`ui_only`인데 agent 연결에도 허용하는 기존 메서드 (자기 연결의 문서·구독만 닫는다). 새 `ui_only`
 메서드는 여기나 `AGENT_DENIED` 중 한 곳에 넣어야 한다 (표 검사가 빠짐을 잡는다)."""
+
+
+def agent_use_safe_api(what: str) -> RequestFailed:
+    """에이전트 연결이 기록 원문 경로를 부를 때 (M5 3.5)."""
+    return RequestFailed(
+        "agent_use_safe_api",
+        f"에이전트 연결은 {what}를 쓸 수 없다 (원문 기록 경로). 실행 기록은 kb_run_events·"
+        "kb_run_artifact_get·kb_run_compare·kb_run_status로 읽는다 (비밀값을 가린 결과)",
+    )
 
 
 class ServiceLike(Protocol):
@@ -140,6 +168,8 @@ class Authorizer:
         부른다."""
         if principal.kind != "agent":
             return
+        if method in AGENT_RAW:
+            raise agent_use_safe_api(method)
         tool = METHOD_TOOLS[method]
         if tool == UI_ONLY:
             if method in AGENT_DENIED:

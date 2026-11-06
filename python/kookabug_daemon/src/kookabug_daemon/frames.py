@@ -35,6 +35,16 @@ class EditorFrame:
     dpi: int
     cache: str
     """편집기 캐시의 PNG 이름."""
+    origin: str = "editor"
+    """정지 화면을 만든 곳: `editor`(창 캡처·PNG 열기), `recorder`(녹화 세션 — 비밀번호가 찍힐 수
+    있는 임시 화면, 에이전트 관측 도구는 거부), `run`(에이전트가 실행 증거에서 연 것)."""
+    owner: int | None = None
+    """만든 연결 번호 (녹화 세션 등 연결 밖에서 만든 것은 None). 에이전트 연결은 자기 연결이 만든
+    정지 화면만 쓴다 — UI가 연 원문 화면(비밀값 실행 증거 등)을 frame_id로 다시 읽지 못하게 (M5
+    B2 검수 H2)."""
+    source: tuple[str, str] | None = None
+    """실행 증거에서 연 것이면 (실행 ID, 실행 폴더 기준 경로) — 에이전트가 쓸 때 분류를 다시
+    본다."""
 
     @property
     def width(self) -> int:

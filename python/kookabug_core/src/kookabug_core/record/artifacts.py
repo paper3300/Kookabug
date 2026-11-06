@@ -20,6 +20,10 @@
   당시 표시로 막히므로 안쪽 스텝 각각이 남길 수 있는 것보다 넓게 남기지 않는다 (M1 T12)
 - 비밀값 가림(`redact_secrets`, 워크스페이스 `record.redact_secrets`)이 꺼져 있으면(기본, D3) 비밀값
   입력·민감 target으로는 막지 않는다. 아래 `secret_input`·`sensitive_target`은 켜져 있을 때만이다
+- 에이전트용 분류 (M5 3.8): 꺼져 있어도 "켜져 있었다면 막혔을" 스크린샷·썸네일·OCR 글자·비밀값이
+  든 텍스트 artifact의 경로를 스텝마다 모아 `step.end.agent_withhold`로, 입력·출력에 비밀값이 있던
+  스텝은 `step.end.secret`으로 남긴다(`agent_marks`). 파일은 그대로 남고(D3) daemon이 에이전트에게만
+  주지 않는다
 - OCR 글자: 스텝 안에서 마지막으로 읽은 글자를 스텝을 닫을 때 `steps/<스텝>_ocr.txt`로 남긴다.
   `sensitive` target으로 읽은 적이 있으면 남기지 않고 `sensitive_target`, 그 밖에는 스크린샷과
   같은 정책(구간 끄기·비밀값 입력·획득 당시 표시)을 따른다 — 화면에서 읽은 글자도 화면이다
@@ -419,6 +423,14 @@ class _StepRecord:
     """이 스텝의 마지막 찾기 (매칭 후보)."""
     evidence: dict[str, Any] | None = None
     """`step.end.evidence` (실패·예외 증거를 남길 때 정한다)."""
+    secret_input: str | None = None
+    """입력 안 첫 비밀값의 위치 (가림 여부와 상관없이, 에이전트용 분류)."""
+    secret: bool = False
+    """입력이나 출력에 비밀값이 있었다 (`step.end.secret`)."""
+    ocr_sensitive_any: bool = False
+    """가림 여부와 상관없이 `sensitive` target으로 읽은 적이 있다."""
+    withhold: list[str] = field(default_factory=list[str])
+    """가림이 켜져 있었다면 남기지 않았을 증거 경로 (`step.end.agent_withhold`)."""
 
 
 class Recorder:
@@ -442,6 +454,8 @@ class Recorder:
         self._captures = 0
         self._blocked: dict[int, _CaptureMark] = {}
         """막힌 캡처만 (`capture_id` → 표시). 없으면 얻을 때 허용된 것이다."""
+        self._would_block: set[int] = set()
+        """가림이 꺼진 실행에서 비밀값 입력 스텝이 얻은 캡처 (켜져 있었다면 `_blocked`였을 것)."""
         self._thumbs: dict[LoopKey, list[tuple[tuple[LoopKey, ...], str]]] = {}
         """반복 회차 → 그 회차 안에서 남긴 썸네일 (회차 사슬, 경로)."""
         self.redact_secrets = False
@@ -473,12 +487,14 @@ class Recorder:
 
         `where`는 노드 입력의 위치(`<그래프>#/nodes/<노드>/in`)로, 생략 이유의 `source` 앞에 붙는다.
         """
-        if not self.redact_secrets:
-            return
         found = find_secret(inputs)
         if found is None:
             return
         record = self._open[step]
+        record.secret_input = where + found
+        record.secret = True
+        if not self.redact_secrets:
+            return
         record.policy = StepPolicy(record.policy.policy, where + found)
         self._policies[step] = record.policy
 
@@ -522,6 +538,27 @@ class Recorder:
     def policy(self, step: str) -> StepPolicy:
         return self._policies[step]
 
+    def mark_secret(self, step: str) -> None:
+        """그 열린 스텝의 출력에 비밀값이 있었다 (`step.end.secret`)."""
+        record = self._open.get(step)
+        if record is not None:
+            record.secret = True
+
+    def agent_marks(self, step: str) -> tuple[bool, list[str]]:
+        """스텝을 닫기 전에: (`step.end.secret`, `step.end.agent_withhold`) — 에이전트용 분류."""
+        record = self._open.get(step)
+        if record is None:
+            return False, []
+        return record.secret, list(record.withhold)
+
+    def _withheld(self, record: _StepRecord, image: Image | None, *, secret: bool = True) -> bool:
+        """가림이 켜져 있었다면 이 증거를 막았을까 (꺼진 실행만 — 켜져 있으면 이미 막았다)."""
+        if self.redact_secrets:
+            return False
+        if secret and record.secret_input is not None:
+            return True
+        return image is not None and image.capture_id in self._would_block
+
     # ------------------------------------------------------------ 캡처·저장
 
     def captured(self, step: str, image: Image, staged: StagedFrame | None = None) -> Image:
@@ -546,6 +583,8 @@ class Recorder:
         block = record.policy.screenshot_block()
         if block is not None:
             self._blocked[self._captures] = _CaptureMark(step, block)
+        if not self.redact_secrets and record.secret_input is not None:
+            self._would_block.add(self._captures)
         return tagged
 
     def screenshot(
@@ -554,7 +593,8 @@ class Recorder:
         """정책을 통과하면 저장하고 경로를, 막히면 `omitted`에 남기고 None을 준다. `evidence`는
         실행기가 남기는 실패·예외 증거다(호출 스텝이면 비밀값 입력을 보지 않는다)."""
         record = self._open[step]
-        block = self._block(record, image, secret=not (evidence and record.call))
+        secret = not (evidence and record.call)
+        block = self._block(record, image, secret=secret)
         if block is not None:
             reason, source = block
             entry: dict[str, Any] = {"kind": "screenshot", "name": name, "reason": reason}
@@ -567,8 +607,11 @@ class Recorder:
             image = replace(image, data=self.frames.encode_png(image.capture_id))
             if not name.lower().endswith(".png"):
                 name += ".png"
+        withheld = self._withheld(record, image, secret=secret)
         path = self.store.save(step, image, name)
         record.artifacts.append(path)
+        if withheld:
+            record.withhold.append(path)
         return path
 
     def error_screenshot(self, step: str) -> str | None:
@@ -702,6 +745,8 @@ class Recorder:
             return None
         assert image.capture_id is not None
         rel = store.save_thumbnail(step, frames.encode_jpeg(image.capture_id, THUMB_LONG_SIDE))
+        if self._withheld(record, image):
+            record.withhold.append(rel)
         entry_key = (record.loops, rel)
         for key in record.loops:
             self._thumbs.setdefault(key, []).append(entry_key)
@@ -734,6 +779,7 @@ class Recorder:
         record = self._open.get(step)
         if record is None:
             return
+        record.ocr_sensitive_any = record.ocr_sensitive_any or sensitive
         sensitive = sensitive and self.redact_secrets
         record.ocr = _OcrRead(text, image, sensitive)
         record.ocr_sensitive = record.ocr_sensitive or sensitive
@@ -749,7 +795,12 @@ class Recorder:
             ("sensitive_target", None) if record.ocr_sensitive else self._block(record, read.image)
         )
         if block is None:
-            record.artifacts.append(self.store.save_text(step, OCR_TEXT, read.text))
+            path = self.store.save_text(step, OCR_TEXT, read.text)
+            record.artifacts.append(path)
+            if self._withheld(record, read.image) or (
+                record.ocr_sensitive_any and not self.redact_secrets
+            ):
+                record.withhold.append(path)
             return
         entry: dict[str, Any] = {"kind": "text", "name": "ocr", "reason": block[0]}
         if block[1] is not None:
@@ -762,6 +813,9 @@ class Recorder:
         record = self._open[step]
         path = self.store.save_text(step, name, _masked_text(value, redact=self.redact_secrets))
         record.artifacts.append(path)
+        # 비밀값이 든 텍스트·JSON은 에이전트에게 통째로 주지 않는다 (가림이 꺼진 실행만 원문이 있다)
+        if not self.redact_secrets and _has_secret(value):
+            record.withhold.append(path)
         return path
 
     def _block(
@@ -810,6 +864,13 @@ def _capture_ids(value: Any) -> list[int]:
         elif isinstance(item, list | tuple):
             stack.extend(cast(Sequence[Any], item))
     return found
+
+
+def _has_secret(value: Any) -> bool:
+    # engine 패키지가 이 모듈을 import한다 (_masked_text와 같은 이유로 늦게)
+    from kookabug_core.engine.events import classified_value
+
+    return bool(classified_value(value, redact=True, pointer="")[1])
 
 
 def _masked_text(value: Any, *, redact: bool) -> str:

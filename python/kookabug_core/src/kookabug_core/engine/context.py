@@ -463,15 +463,17 @@ class StepLog:
             text = message.masked if redact else message.raw
         else:
             text = str(message)
-        self._runtime.emit(
-            {
-                "event": "log",
-                "level": level,
-                "message": text,
-                "node": self._node,
-                "step": self._step,
-            }
-        )
+        event: dict[str, Any] = {
+            "event": "log",
+            "level": level,
+            "message": text,
+            "node": self._node,
+            "step": self._step,
+        }
+        if isinstance(message, Secret | SecretMessage):
+            # 에이전트용 분류 (M5 3.8): 가림이 꺼진 실행이면 이 메시지가 비밀값 원문을 담는다
+            event["secret_paths"] = ["/message"]
+        self._runtime.emit(event)
 
     def debug(self, message: object) -> None:
         self._emit("debug", message)

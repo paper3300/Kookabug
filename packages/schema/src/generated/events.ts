@@ -39,6 +39,12 @@ export type StepId = string;
  */
 export type CallPath = [string, ...string[]];
 /**
+ * 이 이벤트 안에서 비밀값(Secret·SecretMessage)을 담았던 필드의 JSON pointer (이벤트 기준). record.redact_secrets가 꺼진 실행이면 그 자리에 원문이 있다 — daemon이 에이전트에게 줄 때 ***로 바꾼다 (M5 3.8)
+ *
+ * @minItems 1
+ */
+export type SecretPaths = [string, ...string[]];
+/**
  * 입력 임대권 소유자 종류: 실행(runner), 감독자 복구(supervisor), 녹화 세션을 연 daemon(recorder, M4)
  */
 export type LeaseOwnerKind = "recorder" | "runner" | "supervisor";
@@ -119,6 +125,7 @@ export interface AttemptEndEvent {
     [k: string]: unknown | undefined;
   };
   run: RunId;
+  secret_paths?: SecretPaths;
   seq: Seq;
   status: "fail";
   step: StepId;
@@ -132,6 +139,10 @@ export interface StepEndEvent {
    * 멈춘 시간을 뺀 경과. 그 스텝 구간에 멈춤이 있었을 때만 쓴다 (duration_ms는 실제 경과)
    */
   active_duration_ms?: number;
+  /**
+   * record.redact_secrets가 켜져 있었다면 남기지 않았을 증거(스크린샷·썸네일·OCR 글자·비밀값이 든 텍스트 artifact)의 실행 폴더 기준 경로. 파일은 그대로 남고 에이전트에게만 주지 않는다 (M5 3.8)
+   */
+  agent_withhold?: string[];
   artifacts?: string[];
   attempt: number;
   duration_ms: number;
@@ -157,6 +168,11 @@ export interface StepEndEvent {
   };
   retried?: true;
   run: RunId;
+  /**
+   * 입력이나 출력에 비밀값이 있던 스텝 ($secret·$link·변수·호출 인자 모두, 값 형식으로 판정). 에이전트에게는 이 스텝과 안쪽 스텝의 이미지·OCR 글자를 주지 않는다 (M5 3.8)
+   */
+  secret?: true;
+  secret_paths?: SecretPaths;
   seq: Seq;
   status: "cancelled" | "error" | "fail" | "success";
   step: StepId;
@@ -247,6 +263,7 @@ export interface LogEvent {
   message: string;
   node: null | string;
   run: RunId;
+  secret_paths?: SecretPaths;
   seq: Seq;
   step: StepId | null;
   t: Timestamp;
@@ -427,6 +444,7 @@ export interface RunEndEvent {
   reason: string;
   run: RunId;
   runner_exit_code?: number;
+  secret_paths?: SecretPaths;
   seq: Seq;
   t: Timestamp;
   /**

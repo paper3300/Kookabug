@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import re
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -276,7 +277,20 @@ def _run_status(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
         time.sleep(WAIT_STEP_S)
     outcome = status.get("outcome") or {}
     verdict = outcome.get("verdict", "진행 중") if isinstance(outcome, dict) else "진행 중"
-    return ok_result(f"실행 {run}: {status['state']} ({verdict})", status)
+    data = dict(status)
+    summary = f"실행 {run}: {status['state']} ({verdict})"
+    if status["state"] == "ended" and verdict != "pass":
+        # 실패 요약: 실패 위치·오류·증거 파일·지난 성공 (비밀값은 daemon이 가린다)
+        failure = _daemon(link, "run.failure", {"run_id": str(run)})
+        data["failure"] = failure
+        where = failure.get("failure")
+        if isinstance(where, dict):
+            error = where.get("error")
+            code = error.get("code") if isinstance(error, dict) else None
+            summary += (
+                f" · 실패 {where.get('node')} ({where.get('step')}, {code or where.get('exit')})"
+            )
+    return ok_result(summary, data)
 
 
 # ---------------------------------------------------------------- 처리기 (graph_edit)
@@ -315,17 +329,190 @@ def _graph_patch(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
 
 def _target_create(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     source = args["source"]
-    if "frame_id" not in source:
-        raise ToolError("not_available", "실행 기록 이미지 출처({run, file})는 아직 없다")
+    rect = list(args["rect"])
+    # 실행 증거 출처도 target.save 하나로 (kb_target_create로만 판정, daemon이 비밀값 분류를 본다)
+    crop: dict[str, Any] = (
+        {"frame_id": source["frame_id"], "rect": rect}
+        if "frame_id" in source
+        else {"run_id": source["run"], "file": source["file"], "rect": rect}
+    )
     params = {
         "path": args["path"],
         "base_revision": args.get("base_revision"),
         "spec": dict(args.get("spec") or {}),
-        "crop": {"frame_id": source["frame_id"], "rect": list(args["rect"])},
+        "crop": crop,
     }
     saved = _daemon(link, "target.save", params)
     data = {"path": args["path"], **saved}
     return ok_result(f"{args['path']}를 저장했다 (revision {saved['revision'][:12]})", data)
+
+
+# ---------------------------------------------------------------- 처리기 (run·기록)
+
+
+def _log_search(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params: dict[str, Any] = {"query": str(args["query"])}
+    for key in ("runs", "limit"):
+        if key in args:
+            params[key] = args[key]
+    found = _daemon(link, "run.search", params)
+    note = f" · 분류 없는 기록 {len(found['skipped'])}개는 건너뜀" if found["skipped"] else ""
+    return ok_result(f"일치 {len(found['matches'])}건{note}", found)
+
+
+def _run_start(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params: dict[str, Any] = {"path": args["path"], "idempotency_key": args["idempotency_key"]}
+    for key in ("profile", "deadline_ms", "settings"):
+        if key in args:
+            params[key] = args[key]
+    started = _daemon(link, "run.start", params)
+    data = {"run": started["run_id"], **started}
+    return ok_result(
+        f"실행 {started['run_id']} 시작 ({started['graph']}). kb_run_status의 wait_ms로 기다린다",
+        data,
+    )
+
+
+def _run_cancel(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    _daemon(link, "run.cancel", {"run_id": str(args["run"])})
+    return ok_result(f"실행 {args['run']} 취소를 요청했다", {"run": args["run"]})
+
+
+def _run_events(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params: dict[str, Any] = {"run_id": str(args["run"])}
+    for key in ("after_seq", "step", "kinds", "limit"):
+        if key in args:
+            params[key] = args[key]
+    found = _daemon(link, "run.events", params)
+    more = " (더 있음 — after_seq로 이어 받는다)" if found["truncated"] else ""
+    shown = "" if found["classified"] else " · 분류 없는 옛 기록이라 안전 필드만"
+    return ok_result(f"이벤트 {len(found['events'])}개{more}{shown}", found)
+
+
+def _cache_file(link: DaemonLink, name: str) -> bytes:
+    """daemon이 쓴 에이전트용 축소 이미지 (`.kookabug/cache/agent/<name>`) — 읽고 지운다."""
+    if not re.fullmatch(r"c\d+/[0-9a-f]{16}\.png", name):
+        raise ToolError("internal_error", f"daemon이 준 캐시 이름이 틀렸다: {name!r}")
+    path = link.root.joinpath(".kookabug", "cache", "agent", *name.split("/"))
+    try:
+        return path.read_bytes()
+    finally:
+        with contextlib.suppress(OSError):
+            path.unlink()
+
+
+def _run_artifact(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    rel = str(args["path"])
+    got = _daemon(link, "run.artifact", {"run_id": str(args["run"]), "path": rel})
+    if got["kind"] == "image":
+        data = _cache_file(link, str(got["cache"]))
+        meta = {k: got[k] for k in ("path", "width", "height", "bytes")}
+        return ok_result(f"{rel} ({got['width']}x{got['height']})", meta, [(data, "image/png")])
+    cut = " (잘림)" if got.get("truncated") else ""
+    return ok_result(f"{rel}{cut}", got)
+
+
+def _run_compare(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params: dict[str, Any] = {"run_id": str(args["run"])}
+    if "base" in args:
+        params["baseline"] = args["base"]
+    diff = _daemon(link, "run.diff", params)
+    base = diff.get("baseline")
+    head = f"실행 {args['run']} ↔ {base}" if base else f"실행 {args['run']}: 비교할 성공 실행 없음"
+    return ok_result(head, diff)
+
+
+# ---------------------------------------------------------------- 처리기 (observe)
+
+
+def _window(link: DaemonLink, title: str) -> dict[str, Any]:
+    """창 제목 → 창 하나 (정확히 같은 제목, 없으면 제목에 포함 — 둘 이상이면 오류)."""
+    windows = _daemon(link, "windows.list")["windows"]
+    exact = [w for w in windows if w["title"] == title]
+    found = exact or [w for w in windows if title.casefold() in str(w["title"]).casefold()]
+    if not found:
+        raise ToolError("window_not_found", f"제목이 {title!r}인 창이 없다")
+    if len(found) > 1:
+        names = ", ".join(repr(w["title"]) for w in found[:5])
+        raise ToolError("window_ambiguous", f"제목 {title!r}에 맞는 창이 여럿이다: {names}")
+    return found[0]
+
+
+def _screen_capture(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    title = args.get("window")
+    if title is None:
+        windows = _daemon(link, "windows.list")["windows"]
+        listed = [
+            {k: w[k] for k in ("title", "process", "pid", "client_size", "dpi")} for w in windows
+        ]
+        return ok_result(f"창 {len(listed)}개", {"windows": listed})
+    window = _window(link, str(title))
+    frame = _daemon(link, "target.capture", {"window": window["handle"]})
+    data = {k: frame[k] for k in ("frame_id", "width", "height", "dpi", "client_size")}
+    data["window"] = window["title"]
+    # 이미지 축소는 daemon이 한다 (agent 연결이면 agent_image — 에이전트 캐시, 편집기 캐시와 나눔)
+    shown = frame.get("agent_image")
+    images = [] if shown is None else [(_cache_file(link, str(shown["cache"])), "image/png")]
+    return ok_result(f"{window['title']} 캡처 (frame_id {frame['frame_id']})", data, images)
+
+
+def _image_find(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    target = str(args["target"])
+    opened = _daemon(link, "target.open", {"path": target})
+    spec = dict(opened["spec"])
+    image = spec.get("image")
+    if not isinstance(image, str):
+        raise ToolError("target_invalid", f"{target}에 image가 없다")
+    if "threshold" in args:
+        # target 사양의 임계값 자리는 match.threshold (나머지 match 설정은 그대로)
+        match = spec.get("match")
+        spec["match"] = {
+            **(match if isinstance(match, dict) else {}),
+            "threshold": args["threshold"],
+        }
+    result = _daemon(
+        link,
+        "target.preview",
+        {
+            "frame_id": str(args["frame_id"]),
+            "spec": spec,
+            "template": {"image": image},
+            "base_path": target,
+            "seq": 1,
+        },
+    )
+    data = {k: result[k] for k in ("found", "match", "best", "threshold", "peaks") if k in result}
+    match = result.get("match")
+    if result.get("found") and isinstance(match, dict):
+        head = f"{target}: 찾음 (점수 {match.get('score')}, rect {match.get('rect')})"
+    else:
+        best = result.get("best")
+        score = best.get("score") if isinstance(best, dict) else None
+        head = f"{target}: 못 찾음 (최고 점수 {score}, 임계값 {result.get('threshold')})"
+    return ok_result(head, data)
+
+
+def _ocr_read(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params: dict[str, Any] = {"frame_id": str(args["frame_id"])}
+    if "rect" in args:
+        params["rect"] = list(args["rect"])
+    read = _daemon(link, "screen.read_text", params)
+    return ok_result(f"글자 {len(read['lines'])}줄", read)
+
+
+# ---------------------------------------------------------------- 처리기 (screens)
+
+
+def _screen_list(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params = {"under": args["under"]} if "under" in args else {}
+    screens = _daemon(link, "screens.list", params)["screens"]
+    return ok_result(f"화면 지도 {len(screens)}개", {"screens": screens})
+
+
+def _screen_get(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    got = _daemon(link, "screens.get", {"path": str(args["path"])})
+    note = f" (문제: {got['problem']})" if "problem" in got else ""
+    return ok_result(f"{got['path']}{note}", got)
 
 
 # ---------------------------------------------------------------- 정의
@@ -389,14 +576,15 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_run_status",
         "실행 상태",
-        "run을 주면 그 실행의 상태(wait_ms 동안 끝나기를 기다림), 없으면 최근 실행 목록",
+        "run을 주면 그 실행의 상태(wait_ms 동안 끝나기를 기다림)와, 실패했으면 실패 요약(실패 "
+        "노드·오류·증거 파일·지난 성공). 없으면 최근 실행 목록. 실패 분석은 여기서 시작한다",
         _schema({"run": RUN, "wait_ms": {"type": "integer", "minimum": 0, "maximum": MAX_WAIT_MS}}),
         _run_status,
     ),
     ToolDef(
         "kb_log_search",
         "기록 찾기",
-        "최근 실행 기록의 이벤트 메시지·오류에서 글자를 찾는다",
+        "최근 실행 기록의 이벤트 메시지·오류·판정 사유에서 글자를 찾는다 (비밀값은 가려져 있다)",
         _schema(
             {
                 "query": {"type": "string", "minLength": 1},
@@ -405,6 +593,7 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
             },
             ("query",),
         ),
+        _log_search,
     ),
     # graph_edit
     ToolDef(
@@ -436,8 +625,9 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_target_create",
         "찾기 대상 만들기",
-        "정지 화면(kb_screen_capture의 frame_id)의 rect를 잘라 *.target.json을 저장한다. 새 "
-        "파일이면 base_revision 없음(있으면 exists), 고치기는 base_revision 필수",
+        "정지 화면(kb_screen_capture의 frame_id) 또는 실행 증거 이미지({run, file} — "
+        "kb_run_status의 evidence)의 rect를 잘라 *.target.json을 저장한다. 새 파일이면 "
+        "base_revision 없음(있으면 exists), 고치기는 base_revision 필수",
         _schema(
             {
                 "path": PATH,
@@ -474,12 +664,20 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
             },
             ("path", "idempotency_key"),
         ),
+        _run_start,
     ),
-    ToolDef("kb_run_cancel", "실행 취소", "실행을 취소한다", _schema({"run": RUN}, ("run",))),
+    ToolDef(
+        "kb_run_cancel",
+        "실행 취소",
+        "실행을 취소한다",
+        _schema({"run": RUN}, ("run",)),
+        _run_cancel,
+    ),
     ToolDef(
         "kb_run_events",
         "실행 이벤트",
-        "실행 이벤트 (비밀값은 가려짐)",
+        "실행 이벤트 (seq 순). 비밀값이 든 필드는 ***, 분류 없는 옛 기록은 판정·노드·출구·"
+        "오류 코드·시각만. step·kinds(예: step.end, log)로 거른다",
         _schema(
             {
                 "run": RUN,
@@ -490,19 +688,33 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
             },
             ("run",),
         ),
+        _run_events,
     ),
     ToolDef(
         "kb_run_artifact_get",
         "실행 증거",
-        "실행 폴더의 이미지·글자 파일",
-        _schema({"run": RUN, "path": PATH}, ("run", "path")),
+        "실행 폴더의 증거 파일(steps/·thumbs/ 이미지·글자, video/index.json). 이미지는 image "
+        "내용으로 준다. 비밀값을 다룬 스텝의 증거와 영상 조각은 주지 않는다",
+        _schema(
+            {"run": RUN, "path": {**PATH, "description": "실행 폴더 기준 경로 ('/')"}},
+            ("run", "path"),
+        ),
+        _run_artifact,
+    ),
+    ToolDef(
+        "kb_run_compare",
+        "지난 성공과 비교",
+        "실행을 지난 성공(또는 base)과 비교: 그래프·환경·시간·실패 화면 차이",
+        _schema({"run": RUN, "base": RUN}, ("run",)),
+        _run_compare,
     ),
     # observe
     ToolDef(
         "kb_screen_capture",
         "화면 캡처",
-        "window를 주면 그 창을 캡처(frame_id·이미지), 없으면 창 목록",
+        "window(창 제목)를 주면 그 창을 캡처(frame_id·이미지), 없으면 창 목록",
         _schema({"window": WINDOW}),
+        _screen_capture,
     ),
     ToolDef(
         "kb_image_find",
@@ -516,12 +728,14 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
             },
             ("frame_id", "target"),
         ),
+        _image_find,
     ),
     ToolDef(
         "kb_ocr_read",
         "글자 읽기",
-        "정지 화면의 글자 (sensitive target 영역은 거부)",
+        "정지 화면의 글자 (sensitive target이 보이는 영역은 거부)",
         _schema({"frame_id": {"type": "string", "minLength": 1}, "rect": RECT}, ("frame_id",)),
+        _ocr_read,
     ),
     # control
     ToolDef(
@@ -564,10 +778,17 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_screen_list",
         "화면 지도 목록",
-        "*.screen.json 목록",
+        "screens/ 아래 *.screen.json 목록",
         _schema({"under": {"type": "string"}}),
+        _screen_list,
     ),
-    ToolDef("kb_screen_get", "화면 지도", "*.screen.json 내용", _schema({"path": PATH}, ("path",))),
+    ToolDef(
+        "kb_screen_get",
+        "화면 지도",
+        "*.screen.json 내용",
+        _schema({"path": PATH}, ("path",)),
+        _screen_get,
+    ),
 )
 
 

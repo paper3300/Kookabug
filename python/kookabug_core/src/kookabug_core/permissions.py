@@ -92,7 +92,8 @@ TOOLS: Final[Mapping[str, ToolInfo]] = {
     ),
     **_tools("graph_edit", True, "kb_graph_create", "kb_graph_patch", "kb_target_create"),
     **_tools("run", True, "kb_run_start", "kb_run_cancel"),
-    **_tools("run", False, "kb_run_events", "kb_run_artifact_get"),
+    # kb_run_compare: 지난 성공과 비교 (M5 계획 3.3 — 설계 7장에 더함)
+    **_tools("run", False, "kb_run_events", "kb_run_artifact_get", "kb_run_compare"),
     **_tools("observe", False, "kb_screen_capture", "kb_image_find", "kb_ocr_read"),
     **_tools("control", True, "kb_input_click", "kb_input_key", "kb_input_type", "kb_app_launch"),
     **_tools("screens", False, "kb_screen_list", "kb_screen_get"),

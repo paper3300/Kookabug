@@ -144,6 +144,8 @@ def registry() -> dict[str, MethodSpec]:
         nodes,
         recorder,
         run,
+        run_agent,
+        screens,
         secrets,
         session,
         target,
@@ -161,6 +163,8 @@ def registry() -> dict[str, MethodSpec]:
         **nodes.METHODS,
         **graph.METHODS,
         **run.METHODS,
+        **run_agent.METHODS,
+        **screens.METHODS,
         **windows.METHODS,
         **target.METHODS,
     }

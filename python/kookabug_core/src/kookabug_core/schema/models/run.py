@@ -170,6 +170,12 @@ class Run(BaseModel):
     active_duration_ms: Annotated[
         int | None, Field(description="멈춘 시간을 뺀 경과 (M3)", ge=0)
     ] = None
+    agent_mask: Annotated[
+        Literal[1] | None,
+        Field(
+            description="에이전트용 비밀값 분류(이벤트 secret_paths·스텝 secret·agent_withhold)를 남긴 기록 (M5 3.8). 없으면 daemon은 에이전트에게 안전 필드(판정·스텝·노드·출구·상태·오류 코드·시각·기간)만 준다"
+        ),
+    ] = None
     code: str | None = None
     conditions: Conditions | None = None
     debug_intervened: Annotated[bool | None, Field(description="디버거가 개입한 실행")] = None
@@ -202,6 +208,13 @@ class Run(BaseModel):
     ] = None
     runner: RunnerInfo | None = None
     runner_exit_code: int | None = None
+    secret_paths: Annotated[
+        list[str] | None,
+        Field(
+            description='run.end.secret_paths 그대로 (reason에 비밀값이 있으면 ["/reason"], M5 3.8)',
+            min_length=1,
+        ),
+    ] = None
     started_at: Timestamp
     status: Literal["finished", "running"]
     verdict: Verdict | None = None

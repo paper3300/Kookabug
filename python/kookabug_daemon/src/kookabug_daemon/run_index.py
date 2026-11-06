@@ -232,9 +232,13 @@ class RunRecords:
 
     # ---------------------------------------------------------------- 비교 (M3 2.8)
 
-    def compare(self, run_id: str, baseline: str | None, step: str | None) -> dict[str, Any]:
+    def compare(
+        self, run_id: str, baseline: str | None, step: str | None, *, cache_result: bool = True
+    ) -> dict[str, Any]:
         """`run.compare`: 지난 성공(또는 고른 실행)과의 차이. 두 실행이 다 끝났으면 결과를
-        `.kookabug/cache/runs/<run_id>.compare.json`에 두고 다시 쓴다."""
+        `.kookabug/cache/runs/<run_id>.compare.json`에 두고 다시 쓴다. `cache_result=False`
+        (에이전트용 `run.diff`)면 그 결과 캐시를 읽지도 쓰지도 않는다 (UI 결과와 나눈다, M5
+        3.5)."""
         where, entry = self._index(run_id)
         run_json = read_run_json(where.folder / RUN_JSON_FILE) or {}
         picked: Picked
@@ -256,7 +260,7 @@ class RunRecords:
         base_id = None if base_where is None else base_where.run_id
         base_folder = None if base_where is None else base_where.folder
         cache = compare_cache_file(self.root, run_id)
-        cacheable = where.state == "ended"
+        cacheable = where.state == "ended" and cache_result
         if cacheable:
             hit = read_compare_cache(cache, where.folder, base_folder, base_id, step, picked)
             if hit is not None:

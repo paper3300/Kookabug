@@ -25,6 +25,7 @@ from kookabug_core.supervisor import DEFAULT_DEADLINE_MS
 from kookabug_core.workspace import Workspace, WorkspaceError
 from kookabug_daemon.documents import GRAPH_SUFFIX, resolve_path
 from kookabug_daemon.methods import Call, MethodSpec
+from kookabug_daemon.methods.screens import in_screens
 from kookabug_daemon.protocol import InvalidParams, RequestFailed
 from kookabug_daemon.watch import NAME_ONLY_DIRS, ROOT_FILES, TREE_DIRS, walk
 
@@ -200,7 +201,11 @@ async def _info(call: Call) -> dict[str, Any]:
 
 
 async def _tree(call: Call) -> dict[str, Any]:
-    return {"entries": await asyncio.to_thread(tree_entries, call.daemon.root)}
+    entries = await asyncio.to_thread(tree_entries, call.daemon.root)
+    if call.principal.kind == "agent":
+        # 화면 지도는 screens 툴셋 도구(`screens.*`)로만 (M5 3.5 H4)
+        entries = [e for e in entries if not in_screens(e["path"])]
+    return {"entries": entries}
 
 
 def _read_arg(call: Call) -> str:
@@ -208,7 +213,16 @@ def _read_arg(call: Call) -> str:
 
 
 async def _read(call: Call) -> dict[str, Any]:
-    return await asyncio.to_thread(read_file, call.daemon.root, str(call.params["path"]))
+    given = str(call.params["path"])
+    if call.principal.kind == "agent":
+        where = resolve_path(call.daemon.root, given)
+        if in_screens(where.given) or in_screens(where.rel):
+            raise RequestFailed(
+                "permission_denied",
+                "에이전트 연결은 화면 지도(screens/)를 kb_screen_list·kb_screen_get으로만 읽는다",
+                path=given,
+            )
+    return await asyncio.to_thread(read_file, call.daemon.root, given)
 
 
 METHODS: Final = {

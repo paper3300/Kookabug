@@ -75,6 +75,25 @@ TOOLS = {
     # B1 검수: MCP 도구 이름 그대로 판정하는 진입점
     "graph.list": "kb_graph_list",
     "graph.check": "kb_graph_validate",
+    # M5 계획 3.5 (B2): 에이전트용 기록 읽기(가린 결과)·관측·화면 지도
+    "run.failure": "kb_run_status",
+    "run.events": "kb_run_events",
+    "run.search": "kb_log_search",
+    "run.artifact": "kb_run_artifact_get",
+    "run.diff": "kb_run_compare",
+    "screen.read_text": "kb_ocr_read",
+    "screens.list": "kb_screen_list",
+    "screens.get": "kb_screen_get",
+}
+AGENT_ONLY_B2 = {
+    "run.failure",
+    "run.events",
+    "run.search",
+    "run.artifact",
+    "run.diff",
+    "screen.read_text",
+    "screens.list",
+    "screens.get",
 }
 
 
@@ -101,6 +120,7 @@ def test_method_table_matches_permission_table() -> None:
         "graph.patch",
         "graph.list",
         "graph.check",
+        *AGENT_ONLY_B2,
     }
     for row in table.values():
         for part in ("params", "result"):

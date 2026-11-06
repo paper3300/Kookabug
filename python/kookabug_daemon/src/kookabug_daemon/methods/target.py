@@ -12,10 +12,12 @@ import asyncio
 from collections.abc import Mapping
 from typing import Any, Final
 
-from kookabug_daemon.documents import WsPath, resolve_path
+from kookabug_core.workspace import Workspace
+from kookabug_daemon.documents import RUNS_NAME, WsPath, resolve_path
 from kookabug_daemon.frames import EditorFrame, FrameCache
 from kookabug_daemon.methods import Call, Handler, MethodSpec
 from kookabug_daemon.methods.graph import request_int
+from kookabug_daemon.methods.tools import agent_use_safe_api
 from kookabug_daemon.methods.windows import capture_window
 from kookabug_daemon.protocol import InvalidParams, RequestFailed
 from kookabug_daemon.targets import read_bytes, require_platform, target_path
@@ -43,7 +45,9 @@ def new_frame(call: Call, pixels: Any, client_size: tuple[int, int], dpi: int) -
 
     pixels.setflags(write=False)
     frame_id = FrameCache.new_id()
-    frame = EditorFrame(frame_id, pixels, client_size, max(1, dpi), f"{frame_id}.png")
+    frame = EditorFrame(
+        frame_id, pixels, client_size, max(1, dpi), f"{frame_id}.png", owner=call.connection
+    )
     call.daemon.image_cache.put(frame.cache, encode_png(pixels))
     call.daemon.frames.add(frame)
     return frame
@@ -55,7 +59,17 @@ def _capture(call: Call) -> dict[str, Any]:
     captured = capture_window(request_int(call.params["window"]))
     pixels = np.ascontiguousarray(captured.pixels)
     info = captured.info
-    return new_frame(call, pixels, info.client_size, info.dpi).to_json()
+    frame = new_frame(call, pixels, info.client_size, info.dpi)
+    result = frame.to_json()
+    if call.principal.kind == "agent":
+        # MCP 이미지 내용: 긴 변 1568·1 MiB 이하로 줄여 에이전트 캐시에 (M5 3.2, 편집기 캐시와 나눔)
+        from kookabug_daemon.agent_cache import AgentCache, shrink_png
+        from kookabug_platform.frames import encode_png
+
+        png, width, height = shrink_png(encode_png(pixels))
+        name = AgentCache(call.daemon.root).put(call.connection, png)
+        result["agent_image"] = {"cache": name, "width": width, "height": height}
+    return result
 
 
 def _load_image(call: Call, where: WsPath) -> dict[str, Any]:
@@ -79,8 +93,20 @@ async def _capture_handler(call: Call) -> dict[str, Any]:
     return await asyncio.to_thread(_capture, call)
 
 
+def _deny_agent_runs(call: Call, where: WsPath) -> None:
+    """에이전트 연결은 `runs/` 아래 이미지를 정지 화면으로 열지 못한다 — 실행 증거는 비밀값 분류를
+    지나는 `run.artifact{as_frame}`로만 (M5 3.5 H2)."""
+    if call.principal.kind != "agent":
+        return
+    for rel in (where.given, where.rel):
+        first = rel.replace("\\", "/").split("/", 1)[0].casefold()
+        if first == RUNS_NAME.casefold():
+            raise agent_use_safe_api(f"{call.method}의 runs/ 경로")
+
+
 async def _load_image_handler(call: Call) -> dict[str, Any]:
     where = image_path(call)
+    _deny_agent_runs(call, where)
     return await asyncio.to_thread(_load_image, call, where)
 
 
@@ -96,6 +122,16 @@ def _preview_base(call: Call) -> WsPath | None:
 
 async def _preview(call: Call) -> dict[str, Any]:
     params: Mapping[str, Any] = call.params
+    _agent_frame(call, str(params["frame_id"]))
+    template: Any = params["template"]
+    crop: Any = template.get("crop")
+    if crop is not None:
+        _agent_frame(call, str(crop["frame_id"]))
+    elif call.principal.kind == "agent":
+        base = _preview_base(call)
+        rel = Workspace.resolve_from(base.rel if base is not None else "", str(template["image"]))
+        if rel is not None:
+            _deny_agent_runs(call, resolve_path(call.daemon.root, rel))
     return await asyncio.to_thread(
         call.daemon.targets.preview,
         str(params["frame_id"]),
@@ -126,15 +162,82 @@ async def _read_text_handler(call: Call) -> dict[str, Any]:
     return await asyncio.to_thread(_read_text, call)
 
 
+def _agent_frame(call: Call, frame_id: str) -> EditorFrame:
+    """정지 화면. 에이전트 연결이면 (M5 3.8, B2 검수 H2):
+    녹화 세션 프레임(비밀번호가 찍힐 수 있는 임시 화면)은 `recorder_frame`, 다른 연결(UI 등)이
+    만든 프레임은 `frame_not_owned`, 실행 증거에서 연 프레임은 그 파일의 분류를 다시 본다."""
+    from kookabug_daemon.methods.run_agent import recheck_source
+
+    frame = call.daemon.frames.get(frame_id)
+    if call.principal.kind != "agent":
+        return frame
+    if frame.origin == "recorder":
+        raise RequestFailed("recorder_frame", "녹화 세션의 화면은 에이전트가 쓸 수 없다")
+    if frame.owner != call.connection:
+        raise RequestFailed(
+            "frame_not_owned",
+            f"정지 화면 {frame_id}은(는) 이 연결이 만든 것이 아니다 "
+            "(kb_screen_capture로 다시 얻는다)",
+        )
+    recheck_source(call, frame)
+    return frame
+
+
+def _screen_read_text(call: Call) -> dict[str, Any]:
+    """`screen.read_text` (`kb_ocr_read`, M5 3.3·3.8): 지금 정지 화면의 글자. 녹화 프레임은 받지
+    않고(사람용 `target.read_text`와 다름), `sensitive: true` target이 그 화면 어디에든 보이면
+    `sensitive_region`으로 거부한다(B2 검수 H3 — 영역과 상관없이). 민감 target을 확인하지
+    못해도(읽기·판정 실패) 거부한다(H5, fail closed). 에이전트는 자기 연결이 만든
+    정지 화면만 쓴다(H2). 지금 화면은 기록이 아니라 가리지 않는다."""
+    params: Mapping[str, Any] = call.params
+    frame_id = str(params["frame_id"])
+    frame = _agent_frame(call, frame_id)
+    if frame.origin == "recorder":
+        raise RequestFailed("recorder_frame", "녹화 세션의 화면은 이 메서드로 읽지 않는다")
+    given = params.get("rect")
+    rect = (
+        [request_int(v) for v in given] if given is not None else [0, 0, frame.width, frame.height]
+    )
+    hit = call.daemon.targets.sensitive_visible(frame)
+    if hit is not None:
+        text = (
+            f"민감 target을 확인하지 못함 ('{hit.path}'을(를) 읽거나 판정할 수 없다) — 읽지 않는다"
+            if hit.failed
+            else f"민감 target '{hit.path}'이(가) 보이는 화면이라 읽지 않는다"
+        )
+        raise RequestFailed("sensitive_region", text, path=hit.path)
+    return call.daemon.targets.read_text(frame_id, rect)
+
+
+async def _screen_read_text_handler(call: Call) -> dict[str, Any]:
+    return await asyncio.to_thread(_screen_read_text, call)
+
+
+def _save_crop(call: Call) -> Mapping[str, Any] | None:
+    """`crop`의 정지 화면. 실행 증거 출처(`{run_id, file, rect}`)면 에이전트용 분류를 지난 이미지만
+    정지 화면으로 열어 `{frame_id, rect}`로 바꾼다 (`kb_target_create{run, file}`, M5 3.3)."""
+    from kookabug_daemon.methods.run_agent import artifact_frame
+
+    crop: Any = call.params.get("crop")
+    if crop is None:
+        return None
+    if "run_id" in crop:
+        frame = artifact_frame(call, str(crop["run_id"]), str(crop["file"]))
+        return {"frame_id": frame.frame_id, "rect": list(crop["rect"])}
+    _agent_frame(call, str(crop["frame_id"]))
+    return crop
+
+
 async def _save(call: Call) -> dict[str, Any]:
     params: Mapping[str, Any] = call.params
     where = target_path(call.daemon.root, str(params["path"]), save=True)
     base: Any = params["base_revision"]
+    crop = await asyncio.to_thread(_save_crop, call)
     outcome = await asyncio.to_thread(
         call.daemon.targets.save,
         where,
         params["spec"],
-        params.get("crop"),
+        crop,
         None if base is None else str(base),
     )
     return {
@@ -179,4 +282,5 @@ METHODS: Final = {
     "target.preview": MethodSpec(_needs_platform(_preview), _preview_arg),
     "target.read_text": MethodSpec(_needs_platform(_read_text_handler)),
     "target.save": MethodSpec(_needs_platform(_save), _save_arg),
+    "screen.read_text": MethodSpec(_needs_platform(_screen_read_text_handler)),
 }

@@ -36,11 +36,13 @@ from kookabug_core.registry import Registry, default_registry
 from kookabug_core.runner.spec import PlatformSpec
 from kookabug_core.service import WorkspaceService
 from kookabug_core.workspace import WorkspaceError
+from kookabug_daemon.agent_cache import AgentCache
 from kookabug_daemon.documents import DocumentTable, GraphChecker
 from kookabug_daemon.frames import FrameCache
 from kookabug_daemon.image_cache import EditorCache
 from kookabug_daemon.lease_watch import LeaseWatcher, lease_dir
 from kookabug_daemon.methods import MethodSpec, RunsLike, registry
+from kookabug_daemon.methods.screens import in_screens
 from kookabug_daemon.methods.secrets import RecorderSecretSource
 from kookabug_daemon.methods.tools import Authorizer
 from kookabug_daemon.options import DEFAULT_IDLE_TIMEOUT_S, SESSION_WAIT_S, add_arguments
@@ -325,7 +327,13 @@ class Daemon:
     def _publish_changes(self, paths: list[str], changes: list[DocChange]) -> None:
         """감시 결과를 알린다 (이벤트 루프 안). 문서 변경은 감시가 정한 연결에만 보낸다."""
         if paths:
-            self.transport.broadcast("workspace.changed", {"paths": paths})
+            # agent 연결에는 screens/ 경로를 알리지 않는다 (화면 지도는 screens.*로만, M5 3.5 H4)
+            hidden = [p for p in paths if not in_screens(p)]
+            for conn in list(self.transport.connections):
+                agent = conn.principal is not None and conn.principal.kind == "agent"
+                shown = hidden if agent else paths
+                if shown:
+                    self.transport.notify(conn, "workspace.changed", {"paths": shown})
         for change in changes:
             conn = self.transport.find(change.connection)
             if conn is not None:
@@ -379,6 +387,7 @@ class Daemon:
             # 편집기 캐시는 시작 때 비운다 (옛 daemon의 frame_id는 모두 만료다). 녹화 세션 저장소도
             # (지난 daemon이 남긴 세션 — 원문이 찍힌 화면 PNG가 있을 수 있다)
             await asyncio.to_thread(self._image_cache.reset)
+            await asyncio.to_thread(AgentCache(self.root).reset)
             await asyncio.to_thread(RecorderStore.clear_all, self.root)
             async with self.transport.serve() as server:
                 port = self.transport.bound(server)

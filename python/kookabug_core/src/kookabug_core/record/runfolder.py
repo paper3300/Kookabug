@@ -83,6 +83,8 @@ RUN_END_OPTIONAL_FIELDS: Final = (
     "active_duration_ms",
     "paused_ms",
     "debug_intervened",
+    # M5 3.8: `reason`에 비밀값이 있으면 `["/reason"]` (에이전트에게 가림)
+    "secret_paths",
 )
 _END_ONLY: Final = (
     *RUN_END_FIELDS,

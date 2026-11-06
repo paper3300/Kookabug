@@ -326,6 +326,8 @@ class _End:
     failure_step: str | None = None
     failure_path: list[str] | None = None
     diagnostics: list[Diagnostic] = field(default_factory=list[Diagnostic])
+    secret: bool = False
+    """`reason`에 비밀값이 들어 있다 (`run.end.secret_paths`, 에이전트용 분류 M5)."""
 
     @classmethod
     def error(cls, code: str, reason: str, **extra: Any) -> _End:
@@ -339,6 +341,7 @@ class _End:
             result.reason,
             result.failure_step,
             list(result.failure_path) if result.failure_path else None,
+            secret=result.reason_secret,
         )
 
     @classmethod
@@ -501,6 +504,9 @@ class Runner:
                 "platform": spec.platform.kind,
             },
             "game_build": None,
+            # 에이전트용 비밀값 분류(이벤트 secret_paths·스텝 secret·agent_withhold)를 남기는
+            # 기록이다 (M5 3.8). 없으면 daemon은 에이전트에게 안전 필드만 준다
+            "agent_mask": 1,
         }
         write_run_json(self.folder.run_json, self._run_json)
         self.controller.journal_ready(self._emit_quiet)
@@ -1125,6 +1131,8 @@ class Runner:
             "debug_intervened": self.pause.intervened,
             "finalized_by": "runner",
         }
+        if end.secret:
+            event["secret_paths"] = ["/reason"]
         assert self.controller is not None
         reason = self.controller.cancel_reason
         if reason is not None:

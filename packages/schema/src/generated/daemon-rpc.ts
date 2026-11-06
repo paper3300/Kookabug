@@ -37,7 +37,7 @@ export type DaemonErrorCode = -32700 | -32600 | -32601 | -32602 | -32603 | -3210
  */
 export type DaemonErrorObject = DaemonStandardError | DaemonRequestFailedError;
 /**
- * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림)
+ * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RequestFailedCode".
@@ -99,7 +99,15 @@ export type RequestFailedCode =
   | "window_not_found"
   | "toolset_disabled"
   | "force_not_allowed"
-  | "patch_invalid";
+  | "patch_invalid"
+  | "agent_use_safe_api"
+  | "secret_step"
+  | "unclassified_run"
+  | "not_evidence"
+  | "video_not_served"
+  | "recorder_frame"
+  | "sensitive_region"
+  | "frame_not_owned";
 /**
  * 실행 ID: 소문자·숫자 8자
  *
@@ -372,13 +380,19 @@ export type ToolName =
   | "kb_graph_patch"
   | "kb_graph_validate"
   | "kb_image_find"
+  | "kb_log_search"
   | "kb_node_search"
+  | "kb_ocr_read"
   | "kb_project_info"
+  | "kb_run_artifact_get"
   | "kb_run_cancel"
+  | "kb_run_compare"
   | "kb_run_events"
   | "kb_run_start"
   | "kb_run_status"
   | "kb_screen_capture"
+  | "kb_screen_get"
+  | "kb_screen_list"
   | "kb_target_create"
   | "kb_toolset_enable"
   | "ui_only";
@@ -632,6 +646,14 @@ export interface ExitShape {
  * via the `definition` "Frame".
  */
 export interface Frame {
+  /**
+   * agent 연결의 target.capture만 (M5 kb_screen_capture): 긴 변 1568·1 MiB 이하 PNG를 .kookabug/cache/agent/<cache>에 썼다 (읽은 쪽이 지운다)
+   */
+  agent_image?: {
+    cache: string;
+    height: number;
+    width: number;
+  };
   client_size: Size;
   dpi: number;
   frame_id: string;
@@ -1217,6 +1239,12 @@ export interface Methods {
     result: RecorderWrittenTarget;
     tool: "ui_only";
   };
+  "run.artifact": {
+    params: RunArtifactParams;
+    renderer: false;
+    result: RunArtifactResult;
+    tool: "kb_run_artifact_get";
+  };
   "run.cancel": {
     params: RunIdParams;
     renderer: true;
@@ -1235,11 +1263,29 @@ export interface Methods {
     result: RunCompareResult;
     tool: "kb_run_events";
   };
+  "run.diff": {
+    params: RunDiffParams;
+    renderer: false;
+    result: RunDiffResult;
+    tool: "kb_run_compare";
+  };
+  "run.events": {
+    params: RunEventsParams;
+    renderer: false;
+    result: RunEventsResult;
+    tool: "kb_run_events";
+  };
   "run.export": {
     params: RunExportParams;
     renderer: false;
     result: RunExportResult;
     tool: "ui_only";
+  };
+  "run.failure": {
+    params: RunIdParams;
+    renderer: false;
+    result: RunFailureResult;
+    tool: "kb_run_status";
   };
   "run.file": {
     params: RunFileParams;
@@ -1277,6 +1323,12 @@ export interface Methods {
     result: RunControlResult;
     tool: "ui_only";
   };
+  "run.search": {
+    params: RunSearchParams;
+    renderer: false;
+    result: RunSearchResult;
+    tool: "kb_log_search";
+  };
   "run.start": {
     params: RunStartParams;
     renderer: true;
@@ -1306,6 +1358,24 @@ export interface Methods {
     renderer: true;
     result: EmptyResult;
     tool: "ui_only";
+  };
+  "screen.read_text": {
+    params: ScreenReadTextParams;
+    renderer: false;
+    result: TargetReadTextResult;
+    tool: "kb_ocr_read";
+  };
+  "screens.get": {
+    params: ScreensGetParams;
+    renderer: false;
+    result: ScreensGetResult;
+    tool: "kb_screen_get";
+  };
+  "screens.list": {
+    params: ScreensListParams;
+    renderer: false;
+    result: ScreensListResult;
+    tool: "kb_screen_list";
   };
   "secrets.create": {
     params: SecretsCreateParams;
@@ -1813,6 +1883,35 @@ export interface RecorderMaterializeParams {
   step: RecorderStepId;
 }
 /**
+ * run.artifact (kb_run_artifact_get, M5 3.8): 실행 폴더의 증거 파일 하나 (steps/·thumbs/ 아래 그 스텝의 증거, video/index.json). 비밀값 스텝(안쪽 포함)·agent_withhold 증거는 secret_step, 분류 없는 기록은 unclassified_run, 영상 조각은 video_not_served. max_side는 이미지 긴 변 상한(≤1568), as_frame이면 정지 화면으로
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunArtifactParams".
+ */
+export interface RunArtifactParams {
+  as_frame?: boolean;
+  max_side?: number;
+  path: string;
+  run_id: RunId;
+}
+/**
+ * kind image: 줄인 PNG를 .kookabug/cache/agent/<cache>에 썼다 (긴 변 ≤1568, ≤1 MiB — 읽은 쪽이 지운다). kind text: 글자 (256 KiB에서 자름). kind frame: 정지 화면 frame_id
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunArtifactResult".
+ */
+export interface RunArtifactResult {
+  bytes?: number;
+  cache?: string;
+  frame_id?: string;
+  height?: number;
+  kind: "frame" | "image" | "text";
+  path: string;
+  text?: string;
+  truncated?: boolean;
+  width?: number;
+}
+/**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RunIdParams".
  */
@@ -1856,6 +1955,50 @@ export interface RunCompareParams {
   step?: StepId;
 }
 /**
+ * run.diff (kb_run_compare, M5): run.compare와 같은 비교를 두 실행에 3.8(비밀값 분류)을 적용해 준다. baseline을 빼면 지난 성공
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunDiffParams".
+ */
+export interface RunDiffParams {
+  baseline?: RunId;
+  run_id: RunId;
+}
+/**
+ * run.compare 결과(CompareResult)와 같은 모양 + classified. 비밀값 스텝·분류 없는 기록의 화면 파일은 null이고 reason이 secret_step·agent_withheld
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunDiffResult".
+ */
+export interface RunDiffResult {
+  [k: string]: unknown | undefined;
+}
+/**
+ * run.events (kb_run_events, M5 3.8): after_seq 뒤 이벤트 (secret_paths 자리는 ***, 분류 없는 기록은 안전 필드만). step·kinds로 거른다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunEventsParams".
+ */
+export interface RunEventsParams {
+  after_seq?: number;
+  kinds?: string[];
+  limit?: number;
+  run_id: RunId;
+  step?: StepId;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunEventsResult".
+ */
+export interface RunEventsResult {
+  classified: boolean;
+  events: {
+    [k: string]: unknown | undefined;
+  }[];
+  next_seq: number;
+  truncated: boolean;
+}
+/**
  * 실행 폴더를 zip으로 내보낸다 (Electron 주 프로세스 내부용: dest는 저장 대화 상자가 고른 절대 경로). dest 옆 임시 파일에 쓰고 끝나면 replace. 진행 중 실행은 run_active
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -1872,6 +2015,33 @@ export interface RunExportParams {
 export interface RunExportResult {
   bytes: number;
   path: string;
+}
+/**
+ * run.failure (kb_run_status, M5): 실패 요약 — 판정·실패 위치(스텝·노드·출구·오류)·증거 파일(에이전트에게 줄 수 있는 것만)·영상 요약·지난 성공. 사유·메시지는 3.8대로 가린다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunFailureResult".
+ */
+export interface RunFailureResult {
+  chain: {
+    [k: string]: unknown | undefined;
+  }[];
+  classified: boolean;
+  code?: null | string;
+  evidence: string[];
+  failure: null | {
+    [k: string]: unknown | undefined;
+  };
+  failure_path?: string[] | null;
+  failure_step?: null | string;
+  last_success: RunId | null;
+  reason?: string;
+  run_id: RunId;
+  state: "ended" | "running";
+  verdict?: null | string;
+  video?: null | {
+    [k: string]: unknown | undefined;
+  };
 }
 /**
  * run.json 원문, 또는 events.jsonl 끝부분 (1 MiB까지)
@@ -2003,6 +2173,32 @@ export interface RunResumeIdParams {
   run_id: RunId;
 }
 /**
+ * run.search (kb_log_search, M5): 가린 뒤의 메시지·오류·사유에서 글자 찾기 (대소문자 무시). runs를 빼면 최근 20개, 분류 없는 기록은 건너뛴다(skipped)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunSearchParams".
+ */
+export interface RunSearchParams {
+  limit?: number;
+  query: string;
+  runs?: RunId[];
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunSearchResult".
+ */
+export interface RunSearchResult {
+  matches: {
+    kind: null | string;
+    run: RunId;
+    seq: number | null;
+    step: null | string;
+    text: string;
+  }[];
+  skipped: string[];
+  truncated: boolean;
+}
+/**
  * 디스크 파일로 실행 (M2 계획 2.8 시작 순서). 진행 중인 실행이 있으면 run_busy. 이 daemon의 녹화 세션이 starting·recording·paused면 runner를 띄우기 전에 recording_active (M4, 같은 시작 잠금 안에서 판정)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -2090,6 +2286,70 @@ export interface RunStepResult {
 export interface RunSubscribeParams {
   after_seq: number;
   run_id: RunId;
+}
+/**
+ * screen.read_text (kb_ocr_read, M5): 정지 화면(창 캡처) 영역의 글자. rect를 빼면 전체. 녹화 세션 프레임은 recorder_frame, sensitive target이 보이는 영역과 겹치면 sensitive_region
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreenReadTextParams".
+ */
+export interface ScreenReadTextParams {
+  frame_id: string;
+  rect?: Rect;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "TargetReadTextResult".
+ */
+export interface TargetReadTextResult {
+  lines: {
+    rect: Rect;
+    score: number;
+    text: string;
+  }[];
+  text: string;
+}
+/**
+ * screens.get (kb_screen_get, M5): screens/ 아래 *.screen.json 하나
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensGetParams".
+ */
+export interface ScreensGetParams {
+  path: WorkspacePath;
+}
+/**
+ * 읽을 수 없거나 형식이 틀리면 problem
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensGetResult".
+ */
+export interface ScreensGetResult {
+  path: WorkspacePath;
+  problem?: string;
+  value?: unknown;
+}
+/**
+ * screens.list (kb_screen_list, M5): under(screens/ 기준 또는 워크스페이스 기준 폴더) 아래 화면 지도
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensListParams".
+ */
+export interface ScreensListParams {
+  under?: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensListResult".
+ */
+export interface ScreensListResult {
+  screens: {
+    explored?: true;
+    id: string;
+    path: WorkspacePath;
+    problem?: string;
+    title?: string;
+  }[];
 }
 /**
  * secrets.create: 녹화 스텝(from_step, 비밀값·확인 필요 글자 구간)의 메모리 원문을 자격 증명 관리자에 그 키로 쓴다. 값을 RPC로 받지 않는다. 키가 이미 있으면 exists
@@ -2332,18 +2592,6 @@ export interface TargetReadTextParams {
   rect: Rect;
 }
 /**
- * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
- * via the `definition` "TargetReadTextResult".
- */
-export interface TargetReadTextResult {
-  lines: {
-    rect: Rect;
-    score: number;
-    text: string;
-  }[];
-  text: string;
-}
-/**
  * 새 파일이면 base_revision null(파일이 있으면 exists), 기존 파일이면 target.open의 revision (M2 계획 2.9 저장 단계). crop이 없으면 이미지를 새로 만들지 않고 지금 image·recorded를 그대로 둔 채 JSON만 저장한다(기존 파일만, 검색 범위는 recorded.client_size 기준)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -2351,11 +2599,25 @@ export interface TargetReadTextResult {
  */
 export interface TargetSaveParams {
   base_revision: TargetRevision | null;
-  crop?: CropRef;
+  crop?: CropRef | RunCropRef;
   path: WorkspacePath;
   spec: {
     [k: string]: unknown | undefined;
   };
+}
+/**
+ * 실행 증거 이미지에서 자른 영역 (kb_target_create의 {run, file} 출처, M5). 에이전트용 비밀값 분류를 지난 이미지만 (아니면 secret_step·unclassified_run·not_evidence)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunCropRef".
+ */
+export interface RunCropRef {
+  /**
+   * 실행 폴더 기준 경로 ('/')
+   */
+  file: string;
+  rect: Rect;
+  run_id: RunId;
 }
 /**
  * preview = 저장한 파일을 다시 읽어 crop의 정지 화면에서 찾은 결과 (바로 매칭). crop 없이 저장했으면 찾을 정지 화면이 없어 null

@@ -62,7 +62,7 @@ from kookabug_core.engine.context import (
 )
 from kookabug_core.engine.debug import PausePoint, StepPoint
 from kookabug_core.engine.errors import EngineError, error_code
-from kookabug_core.engine.events import EventSink, event_value
+from kookabug_core.engine.events import EventSink, classified_value, mark_secret
 from kookabug_core.engine.frame import Frame, FrameExit
 from kookabug_core.engine.invoker import InProcessInvoker, NodeInvoker
 from kookabug_core.engine.loops import (
@@ -169,6 +169,8 @@ class RunResult:
     diagnostics: list[Diagnostic] = field(default_factory=list[Diagnostic])
     recorder: Recorder | None = None
     """스텝별 기록 정책 (실행 뒤 영상 정리 `video_allowed` 등에 쓴다)."""
+    reason_secret: bool = False
+    """`reason`에 비밀값이 들어 있다 (`run.end.secret_paths`, 에이전트용 분류 M5)."""
 
 
 class GraphInvalid(Exception):
@@ -299,6 +301,7 @@ class Executor:
             events=events,
             diagnostics=diagnostics,
             recorder=recorder,
+            reason_secret=judgement.secret,
         )
 
 
@@ -337,6 +340,8 @@ class _Terminal(_Halt):
 class _TerminalEnd:
     kind: Terminal
     reason: str | None
+    secret: bool = False
+    """`reason`이 비밀값이었다."""
 
 
 type _Outcome = Result | FrameExit | _TerminalEnd
@@ -386,13 +391,23 @@ class _Run:
         self.assertions = 0
         self.scopes = LoopScopes(runtime.program, runtime.registry)
 
-    def _value(self, value: Any) -> Any:
-        """이벤트에 남길 값 (비밀값은 `record.redact_secrets`가 켜진 실행만 가린다, D3)."""
-        return event_value(value, redact=self.rt.recorder.redact_secrets)
+    def _value(self, value: Any, event: dict[str, Any], field: str) -> Any:
+        """이벤트 `event`의 `field`(pointer)에 남길 값 (비밀값은 `record.redact_secrets`가 켜진
+        실행만 가린다, D3). 비밀값이 있던 자리는 `secret_paths`로 표시한다 (M5 3.8)."""
+        value, paths = classified_value(
+            value, redact=self.rt.recorder.redact_secrets, pointer=field
+        )
+        mark_secret(event, paths)
+        return value
 
-    def _message(self, message: str | SecretMessage | None) -> str | None:
-        """노드 메시지 (비밀값 메시지는 가림이 켜진 실행만 가린 글, D3)."""
+    def _message(
+        self, message: str | SecretMessage | None, event: dict[str, Any] | None = None
+    ) -> str | None:
+        """노드 메시지 (비밀값 메시지는 가림이 켜진 실행만 가린 글, D3). `event`를 주면 비밀값
+        메시지일 때 그 이벤트의 `/message`를 표시한다."""
         if isinstance(message, SecretMessage):
+            if event is not None:
+                mark_secret(event, ["/message"])
             return message.masked if self.rt.recorder.redact_secrets else message.raw
         return message
 
@@ -560,11 +575,15 @@ class _Run:
             end.update(status=halt.status, exit=None, outputs={})
             if isinstance(halt, _Error):
                 end["error"] = {"code": halt.cause.code, "message": halt.cause.message}
+                if halt.cause.secret:
+                    mark_secret(end, ["/error/message"])
                 if halt.status == "error" and halt.cause.step == step:
                     # 이 스텝의 오류만. 서브그래프 안쪽 오류는 안쪽 스텝이 이미 처리했다
                     self._evidence(node, step, "예외 스크린샷", self.rt.recorder.error_screenshot)
             elif isinstance(halt, _Unhandled):
                 end["message"] = halt.cause.message
+                if halt.cause.secret:
+                    mark_secret(end, ["/message"])
                 if halt.cause.step == step:
                     # 이 스텝에서 확정된 것만. 안쪽에서 올라오는 것은 안쪽 스텝이 이미 남겼다
                     if halt.cause.code == STALE_OBSERVATION:
@@ -581,11 +600,17 @@ class _Run:
                 "fail": "core.test.fail에 도달했다",
                 "skip": "core.test.skip에 도달했다",
             }[outcome.kind]
-            raise _Terminal(
-                outcome.kind, Cause(step, path, f"test_{outcome.kind}", outcome.reason or default)
+            cause = Cause(
+                step,
+                path,
+                f"test_{outcome.kind}",
+                outcome.reason or default,
+                secret=outcome.secret and bool(outcome.reason),
             )
+            raise _Terminal(outcome.kind, cause)
         if isinstance(outcome, FrameExit):
-            end.update(status="success", exit=None, outputs=self._value(outcome.outputs))
+            end.update(status="success", exit=None)
+            end["outputs"] = self._value(outcome.outputs, end, "/outputs")
             self._finish(end, began, frame, node)
             return outcome
 
@@ -597,14 +622,14 @@ class _Run:
         if outcome.kind == "ok" and end["attempt"] > 1:
             # 마지막 확인까지 통과해 성공이 확정된 뒤에만 표시한다 (중단된 스텝에는 없다)
             end["retried"] = True
-        end.update(
-            status="success" if outcome.kind == "ok" else "fail",
-            exit=outcome.exit,
-            outputs=self._value(outcome.outputs),
-        )
+        end.update(status="success" if outcome.kind == "ok" else "fail", exit=outcome.exit)
+        end["outputs"] = self._value(outcome.outputs, end, "/outputs")
+        secret_message = isinstance(outcome.message, SecretMessage)
         message = self._message(outcome.message)
         if outcome.kind == "fail" and message:
             end["message"] = message
+            if secret_message:
+                mark_secret(end, ["/message"])
         if outcome.kind == "fail":
             # fail 출구로 나간 스텝은 연결과 상관없이 자기(와 안쪽) 프레임으로 증거를 남긴다 —
             # 연결된 분기가 경로 끝에서 처리되지 않은 fail이 되면 이 스텝이 실패 위치다 (M1 2.15).
@@ -623,6 +648,7 @@ class _Run:
                 path,
                 "fail",
                 message or f"'{node.id}'이(가) fail 출구 '{outcome.exit}'로 나갔다",
+                secret=secret_message and bool(message),
             )
             if target is None:
                 raise _Unhandled(cause)
@@ -674,6 +700,14 @@ class _Run:
         self._evidence(node, step, "썸네일", recorder.thumbnail)
         self._evidence(node, step, "OCR 글자 기록", recorder.ocr_artifact)
         evidence = recorder.evidence(step)
+        # 에이전트용 분류 (M5 3.8): 입력·출력에 비밀값이 있던 스텝, 가림이 켜져 있었다면 빠졌을 증거
+        if any(p.startswith("/outputs") for p in end.get("secret_paths", ())):
+            recorder.mark_secret(step)
+        secret, withhold = recorder.agent_marks(step)
+        if secret:
+            end["secret"] = True
+        if withhold:
+            end["agent_withhold"] = withhold
         # 서브그래프 안 스텝의 마지막 캡처는 부른 스텝의 증거로 넘어간다 (실패 증거, M1 2.15)
         artifacts, omitted = recorder.close_step(step, parent=frame.parent)
         if artifacts:
@@ -727,10 +761,13 @@ class _Run:
             return self._graph_call(frame, node, step, inputs, end, trace, window)
         if engine in _TERMINALS:
             reason = inputs.get("reason")
+            secret = isinstance(reason, Secret)
             if isinstance(reason, Secret):
                 # 비밀값 가림이 켜진 실행만 판정 사유·기록에 가린 값 (P12, D3)
                 reason = str(reason) if self.rt.recorder.redact_secrets else reason.reveal()
-            return _TerminalEnd(_TERMINALS[engine], reason if isinstance(reason, str) else None)
+            return _TerminalEnd(
+                _TERMINALS[engine], reason if isinstance(reason, str) else None, secret
+            )
         if engine in _LOOPS:
             trace.outputs = {}  # 회차 번호(`index`)는 관측과 무관하다
             return self._loop(frame, node, nodedef, step, inputs)
@@ -783,14 +820,16 @@ class _Run:
                 "duration_ms": rt.wall_clock.now_ms() - began,
                 "event": "attempt.end",
                 "exit": result.exit,
-                "outputs": self._value(result.outputs),
                 "status": "fail",
                 "step": step,
             }
+            record["outputs"] = self._value(result.outputs, record, "/outputs")
+            if "secret_paths" in record:
+                rt.recorder.mark_secret(step)
             if "iteration" in end:
                 record["iteration"] = end["iteration"]
             if result.message:
-                record["message"] = self._message(result.message)
+                record["message"] = self._message(result.message, record)
             rt.emit(record)
             attempt += 1
         return result

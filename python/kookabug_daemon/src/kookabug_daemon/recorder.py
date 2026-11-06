@@ -798,7 +798,9 @@ class RecorderSession:
 
         frame_id = FrameCache.new_id()
         size = (int(pixels.shape[1]), int(pixels.shape[0]))
-        frame = EditorFrame(frame_id, pixels, size, max(1, dpi), f"{frame_id}.png")
+        frame = EditorFrame(
+            frame_id, pixels, size, max(1, dpi), f"{frame_id}.png", origin="recorder"
+        )
         self.daemon.image_cache.put(frame.cache, encode_png(pixels))
         self.daemon.frames.add(frame)
         with self.lock:
@@ -1087,7 +1089,9 @@ class RecorderSession:
         dpi = source.dpi if isinstance(source, FrameRef) else 96
         size = (int(pixels.shape[1]), int(pixels.shape[0]))
         frame_id = FrameCache.new_id()
-        self.daemon.frames.add(EditorFrame(frame_id, pixels, size, max(1, dpi), f"{frame_id}.png"))
+        self.daemon.frames.add(
+            EditorFrame(frame_id, pixels, size, max(1, dpi), f"{frame_id}.png", origin="recorder")
+        )
         spec = {k: v for k, v in draft.spec.items() if k not in ("image", "recorded")}
         number = int(draft_id.removeprefix("d"))
         base = f"{number:02d}_{draft.name}"

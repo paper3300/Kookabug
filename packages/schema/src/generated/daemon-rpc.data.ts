@@ -367,6 +367,30 @@ export const daemonRpcSchema: unknown = {
       "additionalProperties": false,
       "description": "편집기 정지 화면 (daemon 프레임 캐시, 최대 16장. 사라지면 frame_expired)",
       "properties": {
+        "agent_image": {
+          "additionalProperties": false,
+          "description": "agent 연결의 target.capture만 (M5 kb_screen_capture): 긴 변 1568·1 MiB 이하 PNG를 .kookabug/cache/agent/<cache>에 썼다 (읽은 쪽이 지운다)",
+          "properties": {
+            "cache": {
+              "pattern": "^c\\d+/[0-9a-f]{16}\\.png$",
+              "type": "string"
+            },
+            "height": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "width": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "cache",
+            "height",
+            "width"
+          ],
+          "type": "object"
+        },
         "client_size": {
           "$ref": "#/$defs/Size"
         },
@@ -2047,6 +2071,30 @@ export const daemonRpcSchema: unknown = {
           ],
           "type": "object"
         },
+        "run.artifact": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/RunArtifactParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/RunArtifactResult"
+            },
+            "tool": {
+              "const": "kb_run_artifact_get"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
         "run.cancel": {
           "additionalProperties": false,
           "properties": {
@@ -2119,6 +2167,54 @@ export const daemonRpcSchema: unknown = {
           ],
           "type": "object"
         },
+        "run.diff": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/RunDiffParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/RunDiffResult"
+            },
+            "tool": {
+              "const": "kb_run_compare"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "run.events": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/RunEventsParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/RunEventsResult"
+            },
+            "tool": {
+              "const": "kb_run_events"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
         "run.export": {
           "additionalProperties": false,
           "properties": {
@@ -2133,6 +2229,30 @@ export const daemonRpcSchema: unknown = {
             },
             "tool": {
               "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "run.failure": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/RunIdParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/RunFailureResult"
+            },
+            "tool": {
+              "const": "kb_run_status"
             }
           },
           "required": [
@@ -2287,6 +2407,30 @@ export const daemonRpcSchema: unknown = {
           ],
           "type": "object"
         },
+        "run.search": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/RunSearchParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/RunSearchResult"
+            },
+            "tool": {
+              "const": "kb_log_search"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
         "run.start": {
           "additionalProperties": false,
           "properties": {
@@ -2397,6 +2541,78 @@ export const daemonRpcSchema: unknown = {
             },
             "tool": {
               "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "screen.read_text": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ScreenReadTextParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/TargetReadTextResult"
+            },
+            "tool": {
+              "const": "kb_ocr_read"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "screens.get": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ScreensGetParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/ScreensGetResult"
+            },
+            "tool": {
+              "const": "kb_screen_get"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "screens.list": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ScreensListParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/ScreensListResult"
+            },
+            "tool": {
+              "const": "kb_screen_list"
             }
           },
           "required": [
@@ -2749,21 +2965,29 @@ export const daemonRpcSchema: unknown = {
         "recorder.steps",
         "recorder.stop",
         "recorder.target.materialize",
+        "run.artifact",
         "run.cancel",
         "run.children",
         "run.compare",
+        "run.diff",
+        "run.events",
         "run.export",
+        "run.failure",
         "run.file",
         "run.index",
         "run.list",
         "run.pause",
         "run.restart",
         "run.resume",
+        "run.search",
         "run.start",
         "run.status",
         "run.step",
         "run.subscribe",
         "run.unsubscribe",
+        "screen.read_text",
+        "screens.get",
+        "screens.list",
         "secrets.create",
         "secrets.list",
         "session.hello",
@@ -4551,7 +4775,7 @@ export const daemonRpcSchema: unknown = {
       "type": "object"
     },
     "RequestFailedCode": {
-      "description": "-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림)",
+      "description": "-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀)",
       "enum": [
         "approval_required",
         "classification_pending",
@@ -4609,7 +4833,15 @@ export const daemonRpcSchema: unknown = {
         "window_not_found",
         "toolset_disabled",
         "force_not_allowed",
-        "patch_invalid"
+        "patch_invalid",
+        "agent_use_safe_api",
+        "secret_step",
+        "unclassified_run",
+        "not_evidence",
+        "video_not_served",
+        "recorder_frame",
+        "sensitive_region",
+        "frame_not_owned"
       ],
       "title": "RequestFailedCode",
       "type": "string"
@@ -4722,6 +4954,81 @@ export const daemonRpcSchema: unknown = {
       "title": "Revision",
       "type": "string"
     },
+    "RunArtifactParams": {
+      "additionalProperties": false,
+      "description": "run.artifact (kb_run_artifact_get, M5 3.8): 실행 폴더의 증거 파일 하나 (steps/·thumbs/ 아래 그 스텝의 증거, video/index.json). 비밀값 스텝(안쪽 포함)·agent_withhold 증거는 secret_step, 분류 없는 기록은 unclassified_run, 영상 조각은 video_not_served. max_side는 이미지 긴 변 상한(≤1568), as_frame이면 정지 화면으로",
+      "properties": {
+        "as_frame": {
+          "type": "boolean"
+        },
+        "max_side": {
+          "maximum": 1568,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "run_id": {
+          "$ref": "#/$defs/RunId"
+        }
+      },
+      "required": [
+        "path",
+        "run_id"
+      ],
+      "title": "RunArtifactParams",
+      "type": "object"
+    },
+    "RunArtifactResult": {
+      "additionalProperties": false,
+      "description": "kind image: 줄인 PNG를 .kookabug/cache/agent/<cache>에 썼다 (긴 변 ≤1568, ≤1 MiB — 읽은 쪽이 지운다). kind text: 글자 (256 KiB에서 자름). kind frame: 정지 화면 frame_id",
+      "properties": {
+        "bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cache": {
+          "pattern": "^c\\d+/[0-9a-f]{16}\\.png$",
+          "type": "string"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "height": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "frame",
+            "image",
+            "text"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "width": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "path"
+      ],
+      "title": "RunArtifactResult",
+      "type": "object"
+    },
     "RunChildrenParams": {
       "additionalProperties": false,
       "description": "그 스텝 바로 아래 스텝을 쪽으로 읽는다. 반복 스텝이면 iteration으로 회차를 고른다",
@@ -4830,6 +5137,52 @@ export const daemonRpcSchema: unknown = {
       "title": "RunControlResult",
       "type": "object"
     },
+    "RunCropRef": {
+      "additionalProperties": false,
+      "description": "실행 증거 이미지에서 자른 영역 (kb_target_create의 {run, file} 출처, M5). 에이전트용 비밀값 분류를 지난 이미지만 (아니면 secret_step·unclassified_run·not_evidence)",
+      "properties": {
+        "file": {
+          "description": "실행 폴더 기준 경로 ('/')",
+          "minLength": 1,
+          "type": "string"
+        },
+        "rect": {
+          "$ref": "#/$defs/Rect"
+        },
+        "run_id": {
+          "$ref": "#/$defs/RunId"
+        }
+      },
+      "required": [
+        "file",
+        "rect",
+        "run_id"
+      ],
+      "title": "RunCropRef",
+      "type": "object"
+    },
+    "RunDiffParams": {
+      "additionalProperties": false,
+      "description": "run.diff (kb_run_compare, M5): run.compare와 같은 비교를 두 실행에 3.8(비밀값 분류)을 적용해 준다. baseline을 빼면 지난 성공",
+      "properties": {
+        "baseline": {
+          "$ref": "#/$defs/RunId"
+        },
+        "run_id": {
+          "$ref": "#/$defs/RunId"
+        }
+      },
+      "required": [
+        "run_id"
+      ],
+      "title": "RunDiffParams",
+      "type": "object"
+    },
+    "RunDiffResult": {
+      "description": "run.compare 결과(CompareResult)와 같은 모양 + classified. 비밀값 스텝·분류 없는 기록의 화면 파일은 null이고 reason이 secret_step·agent_withheld",
+      "title": "RunDiffResult",
+      "type": "object"
+    },
     "RunEndedParams": {
       "additionalProperties": false,
       "description": "감독자 마무리와 파일 끝까지 보낸 뒤",
@@ -4876,6 +5229,67 @@ export const daemonRpcSchema: unknown = {
       "title": "RunEventParams",
       "type": "object"
     },
+    "RunEventsParams": {
+      "additionalProperties": false,
+      "description": "run.events (kb_run_events, M5 3.8): after_seq 뒤 이벤트 (secret_paths 자리는 ***, 분류 없는 기록은 안전 필드만). step·kinds로 거른다",
+      "properties": {
+        "after_seq": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kinds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "limit": {
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "run_id": {
+          "$ref": "#/$defs/RunId"
+        },
+        "step": {
+          "$ref": "#/$defs/StepId"
+        }
+      },
+      "required": [
+        "run_id"
+      ],
+      "title": "RunEventsParams",
+      "type": "object"
+    },
+    "RunEventsResult": {
+      "additionalProperties": false,
+      "properties": {
+        "classified": {
+          "type": "boolean"
+        },
+        "events": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "next_seq": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "classified",
+        "events",
+        "next_seq",
+        "truncated"
+      ],
+      "title": "RunEventsResult",
+      "type": "object"
+    },
     "RunExportParams": {
       "additionalProperties": false,
       "description": "실행 폴더를 zip으로 내보낸다 (Electron 주 프로세스 내부용: dest는 저장 대화 상자가 고른 절대 경로). dest 옆 임시 파일에 쓰고 끝나면 replace. 진행 중 실행은 run_active",
@@ -4912,6 +5326,103 @@ export const daemonRpcSchema: unknown = {
         "path"
       ],
       "title": "RunExportResult",
+      "type": "object"
+    },
+    "RunFailureResult": {
+      "additionalProperties": false,
+      "description": "run.failure (kb_run_status, M5): 실패 요약 — 판정·실패 위치(스텝·노드·출구·오류)·증거 파일(에이전트에게 줄 수 있는 것만)·영상 요약·지난 성공. 사유·메시지는 3.8대로 가린다",
+      "properties": {
+        "chain": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "classified": {
+          "type": "boolean"
+        },
+        "code": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "failure": {
+          "type": [
+            "null",
+            "object"
+          ]
+        },
+        "failure_path": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "failure_step": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "last_success": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": "string"
+        },
+        "run_id": {
+          "$ref": "#/$defs/RunId"
+        },
+        "state": {
+          "enum": [
+            "ended",
+            "running"
+          ]
+        },
+        "verdict": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "video": {
+          "type": [
+            "null",
+            "object"
+          ]
+        }
+      },
+      "required": [
+        "chain",
+        "classified",
+        "evidence",
+        "failure",
+        "last_success",
+        "run_id",
+        "state"
+      ],
+      "title": "RunFailureResult",
       "type": "object"
     },
     "RunFileParams": {
@@ -5098,6 +5609,93 @@ export const daemonRpcSchema: unknown = {
         "run_id"
       ],
       "title": "RunResumeIdParams",
+      "type": "object"
+    },
+    "RunSearchParams": {
+      "additionalProperties": false,
+      "description": "run.search (kb_log_search, M5): 가린 뒤의 메시지·오류·사유에서 글자 찾기 (대소문자 무시). runs를 빼면 최근 20개, 분류 없는 기록은 건너뛴다(skipped)",
+      "properties": {
+        "limit": {
+          "maximum": 500,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "query": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "runs": {
+          "items": {
+            "$ref": "#/$defs/RunId"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "RunSearchParams",
+      "type": "object"
+    },
+    "RunSearchResult": {
+      "additionalProperties": false,
+      "properties": {
+        "matches": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "run": {
+                "$ref": "#/$defs/RunId"
+              },
+              "seq": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "step": {
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "run",
+              "seq",
+              "step",
+              "text"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "skipped": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "matches",
+        "skipped",
+        "truncated"
+      ],
+      "title": "RunSearchResult",
       "type": "object"
     },
     "RunStartParams": {
@@ -5408,6 +6006,105 @@ export const daemonRpcSchema: unknown = {
         "state"
       ],
       "title": "RunSummary",
+      "type": "object"
+    },
+    "ScreenReadTextParams": {
+      "additionalProperties": false,
+      "description": "screen.read_text (kb_ocr_read, M5): 정지 화면(창 캡처) 영역의 글자. rect를 빼면 전체. 녹화 세션 프레임은 recorder_frame, sensitive target이 보이는 영역과 겹치면 sensitive_region",
+      "properties": {
+        "frame_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "rect": {
+          "$ref": "#/$defs/Rect"
+        }
+      },
+      "required": [
+        "frame_id"
+      ],
+      "title": "ScreenReadTextParams",
+      "type": "object"
+    },
+    "ScreensGetParams": {
+      "additionalProperties": false,
+      "description": "screens.get (kb_screen_get, M5): screens/ 아래 *.screen.json 하나",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/WorkspacePath"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "ScreensGetParams",
+      "type": "object"
+    },
+    "ScreensGetResult": {
+      "additionalProperties": false,
+      "description": "읽을 수 없거나 형식이 틀리면 problem",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/WorkspacePath"
+        },
+        "problem": {
+          "type": "string"
+        },
+        "value": {}
+      },
+      "required": [
+        "path"
+      ],
+      "title": "ScreensGetResult",
+      "type": "object"
+    },
+    "ScreensListParams": {
+      "additionalProperties": false,
+      "description": "screens.list (kb_screen_list, M5): under(screens/ 기준 또는 워크스페이스 기준 폴더) 아래 화면 지도",
+      "properties": {
+        "under": {
+          "type": "string"
+        }
+      },
+      "title": "ScreensListParams",
+      "type": "object"
+    },
+    "ScreensListResult": {
+      "additionalProperties": false,
+      "properties": {
+        "screens": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "explored": {
+                "const": true
+              },
+              "id": {
+                "type": "string"
+              },
+              "path": {
+                "$ref": "#/$defs/WorkspacePath"
+              },
+              "problem": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "path"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "screens"
+      ],
+      "title": "ScreensListResult",
       "type": "object"
     },
     "SecretKey": {
@@ -5773,7 +6470,14 @@ export const daemonRpcSchema: unknown = {
           ]
         },
         "crop": {
-          "$ref": "#/$defs/CropRef"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CropRef"
+            },
+            {
+              "$ref": "#/$defs/RunCropRef"
+            }
+          ]
         },
         "path": {
           "$ref": "#/$defs/WorkspacePath"
@@ -5841,13 +6545,19 @@ export const daemonRpcSchema: unknown = {
         "kb_graph_patch",
         "kb_graph_validate",
         "kb_image_find",
+        "kb_log_search",
         "kb_node_search",
+        "kb_ocr_read",
         "kb_project_info",
+        "kb_run_artifact_get",
         "kb_run_cancel",
+        "kb_run_compare",
         "kb_run_events",
         "kb_run_start",
         "kb_run_status",
         "kb_screen_capture",
+        "kb_screen_get",
+        "kb_screen_list",
         "kb_target_create",
         "kb_toolset_enable",
         "ui_only"

@@ -8,8 +8,9 @@
 
 from __future__ import annotations
 
+import base64
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
 from kookabug_daemon.client import DaemonError
@@ -40,18 +41,27 @@ def _cut(text: str) -> tuple[str, bool]:
     return data[: MAX_TEXT - 64].decode("utf-8", errors="ignore") + "\n…(잘림)", True
 
 
-def ok_result(summary: str, data: Mapping[str, Any]) -> dict[str, Any]:
+def ok_result(
+    summary: str, data: Mapping[str, Any], images: Sequence[tuple[bytes, str]] = ()
+) -> dict[str, Any]:
+    """`images`는 (바이트, mimeType) — 글자 뒤에 image 내용으로 덧붙인다 (긴 변·크기는 daemon이
+    이미 줄였다)."""
     body = _dumps(data)
     text, truncated = _cut(f"{summary}\n{body}")
     structured: dict[str, Any] = dict(data)
     if truncated:
         # 같은 JSON을 다 실을 수 없다: 요약과 표시만 남긴다
         structured = {"truncated": True, "summary": summary}
-    return {
-        "content": [{"type": "text", "text": text}],
-        "structuredContent": structured,
-        "isError": False,
-    }
+    content: list[dict[str, Any]] = [{"type": "text", "text": text}]
+    for data_bytes, mime in images:
+        content.append(
+            {
+                "type": "image",
+                "data": base64.b64encode(data_bytes).decode("ascii"),
+                "mimeType": mime,
+            }
+        )
+    return {"content": content, "structuredContent": structured, "isError": False}
 
 
 def error_result(code: str, message: str, **data: Any) -> dict[str, Any]:
@@ -73,7 +83,11 @@ def from_daemon_error(exc: DaemonError) -> dict[str, Any]:
         -32603: "internal_error",
     }.get(exc.code, f"daemon_error_{exc.code}")
     data.pop("code", None)
-    extra = {k: data[k] for k in ("decision", "revision", "toolset", "index", "path") if k in data}
+    extra = {
+        k: data[k]
+        for k in ("decision", "revision", "toolset", "index", "path", "run_id")
+        if k in data
+    }
     if "diagnostics" in data:
         extra["diagnostics"] = data["diagnostics"]
     return error_result(code, exc.message, **extra)

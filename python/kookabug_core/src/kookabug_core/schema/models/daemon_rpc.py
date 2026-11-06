@@ -137,6 +137,19 @@ class ExitShape(BaseModel):
     outputs: list[str]
 
 
+class AgentImage(BaseModel):
+    """
+    agent 연결의 target.capture만 (M5 kb_screen_capture): 긴 변 1568·1 MiB 이하 PNG를 .kookabug/cache/agent/<cache>에 썼다 (읽은 쪽이 지운다)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    cache: Annotated[str, Field(pattern="^c\\d+/[0-9a-f]{16}\\.png$")]
+    height: Annotated[int, Field(ge=1)]
+    width: Annotated[int, Field(ge=1)]
+
+
 class GraphCheckResult(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -918,6 +931,14 @@ class RequestFailedCode(
             "toolset_disabled",
             "force_not_allowed",
             "patch_invalid",
+            "agent_use_safe_api",
+            "secret_step",
+            "unclassified_run",
+            "not_evidence",
+            "video_not_served",
+            "recorder_frame",
+            "sensitive_region",
+            "frame_not_owned",
         ]
     ]
 ):
@@ -980,9 +1001,17 @@ class RequestFailedCode(
             "toolset_disabled",
             "force_not_allowed",
             "patch_invalid",
+            "agent_use_safe_api",
+            "secret_step",
+            "unclassified_run",
+            "not_evidence",
+            "video_not_served",
+            "recorder_frame",
+            "sensitive_region",
+            "frame_not_owned",
         ],
         Field(
-            description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림)",
+            description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀)",
             title="RequestFailedCode",
         ),
     ]
@@ -1023,6 +1052,25 @@ class Revision(RootModel[str]):
     ]
 
 
+class RunArtifactResult(BaseModel):
+    """
+    kind image: 줄인 PNG를 .kookabug/cache/agent/<cache>에 썼다 (긴 변 ≤1568, ≤1 MiB — 읽은 쪽이 지운다). kind text: 글자 (256 KiB에서 자름). kind frame: 정지 화면 frame_id
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    bytes: Annotated[int | None, Field(ge=0)] = None
+    cache: Annotated[str | None, Field(pattern="^c\\d+/[0-9a-f]{16}\\.png$")] = None
+    frame_id: Annotated[str | None, Field(min_length=1)] = None
+    height: Annotated[int | None, Field(ge=1)] = None
+    kind: Literal["frame", "image", "text"]
+    path: str
+    text: str | None = None
+    truncated: bool | None = None
+    width: Annotated[int | None, Field(ge=1)] = None
+
+
 class RunChildrenResult(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1053,6 +1101,22 @@ class RunControlResult(BaseModel):
         extra="forbid",
     )
     state: Literal["cancelling", "paused", "pausing", "running"]
+
+
+class RunDiffResult(BaseModel):
+    """
+    run.compare 결과(CompareResult)와 같은 모양 + classified. 비밀값 스텝·분류 없는 기록의 화면 파일은 null이고 reason이 secret_step·agent_withheld
+    """
+
+
+class RunEventsResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    classified: bool
+    events: list[dict[str, Any]]
+    next_seq: Annotated[int, Field(ge=0)]
+    truncated: bool
 
 
 class RunExportResult(BaseModel):
@@ -1134,6 +1198,39 @@ class RunResumeIdParams(BaseModel):
     run_id: RunId
 
 
+class RunSearchParams(BaseModel):
+    """
+    run.search (kb_log_search, M5): 가린 뒤의 메시지·오류·사유에서 글자 찾기 (대소문자 무시). runs를 빼면 최근 20개, 분류 없는 기록은 건너뛴다(skipped)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    limit: Annotated[int | None, Field(ge=1, le=500)] = None
+    query: Annotated[str, Field(min_length=1)]
+    runs: list[RunId] | None = None
+
+
+class Match(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: str | None
+    run: RunId
+    seq: int | None
+    step: str | None
+    text: str
+
+
+class RunSearchResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    matches: list[Match]
+    skipped: list[str]
+    truncated: bool
+
+
 class RunStepResult(BaseModel):
     """
     스텝 하나의 자세한 기록. 파일 경로는 실행 폴더 기준 ('/' 구분, kbimg://ws/<run_dir>/<경로>로 연다)
@@ -1168,6 +1265,29 @@ class RunSubscribeParams(BaseModel):
 
 class FailurePath(RootModel[list[str]]):
     root: Annotated[list[str], Field(description="실패 위치 호출 경로 (노드 ID)", min_length=1)]
+
+
+class ScreenReadTextParams(BaseModel):
+    """
+    screen.read_text (kb_ocr_read, M5): 정지 화면(창 캡처) 영역의 글자. rect를 빼면 전체. 녹화 세션 프레임은 recorder_frame, sensitive target이 보이는 영역과 겹치면 sensitive_region
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    frame_id: Annotated[str, Field(min_length=1)]
+    rect: Rect | None = None
+
+
+class ScreensListParams(BaseModel):
+    """
+    screens.list (kb_screen_list, M5): under(screens/ 기준 또는 워크스페이스 기준 폴더) 아래 화면 지도
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    under: str | None = None
 
 
 class SecretKey(RootModel[str]):
@@ -1331,13 +1451,19 @@ class ToolName(
             "kb_graph_patch",
             "kb_graph_validate",
             "kb_image_find",
+            "kb_log_search",
             "kb_node_search",
+            "kb_ocr_read",
             "kb_project_info",
+            "kb_run_artifact_get",
             "kb_run_cancel",
+            "kb_run_compare",
             "kb_run_events",
             "kb_run_start",
             "kb_run_status",
             "kb_screen_capture",
+            "kb_screen_get",
+            "kb_screen_list",
             "kb_target_create",
             "kb_toolset_enable",
             "ui_only",
@@ -1352,13 +1478,19 @@ class ToolName(
             "kb_graph_patch",
             "kb_graph_validate",
             "kb_image_find",
+            "kb_log_search",
             "kb_node_search",
+            "kb_ocr_read",
             "kb_project_info",
+            "kb_run_artifact_get",
             "kb_run_cancel",
+            "kb_run_compare",
             "kb_run_events",
             "kb_run_start",
             "kb_run_status",
             "kb_screen_capture",
+            "kb_screen_get",
+            "kb_screen_list",
             "kb_target_create",
             "kb_toolset_enable",
             "ui_only",
@@ -1911,6 +2043,16 @@ class RunResume(BaseModel):
     tool: Literal["ui_only"]
 
 
+class RunSearch(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: RunSearchParams
+    renderer: Literal[False]
+    result: RunSearchResult
+    tool: Literal["kb_log_search"]
+
+
 class RunSubscribe(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1929,6 +2071,16 @@ class RunUnsubscribe(BaseModel):
     renderer: Literal[True]
     result: EmptyResult
     tool: Literal["ui_only"]
+
+
+class ScreenReadText(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: ScreenReadTextParams
+    renderer: Literal[False]
+    result: TargetReadTextResult
+    tool: Literal["kb_ocr_read"]
 
 
 class SecretsCreate(BaseModel):
@@ -2312,6 +2464,20 @@ class RequestFailedData(BaseModel):
     toolset: Toolset | None = None
 
 
+class RunArtifactParams(BaseModel):
+    """
+    run.artifact (kb_run_artifact_get, M5 3.8): 실행 폴더의 증거 파일 하나 (steps/·thumbs/ 아래 그 스텝의 증거, video/index.json). 비밀값 스텝(안쪽 포함)·agent_withhold 증거는 secret_step, 분류 없는 기록은 unclassified_run, 영상 조각은 video_not_served. max_side는 이미지 긴 변 상한(≤1568), as_frame이면 정지 화면으로
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    as_frame: bool | None = None
+    max_side: Annotated[int | None, Field(ge=1, le=1568)] = None
+    path: Annotated[str, Field(min_length=1)]
+    run_id: RunId
+
+
 class RunChildrenParams(BaseModel):
     """
     그 스텝 바로 아래 스텝을 쪽으로 읽는다. 반복 스텝이면 iteration으로 회차를 고른다
@@ -2340,6 +2506,31 @@ class RunCompareParams(BaseModel):
     step: StepId | None = None
 
 
+class RunCropRef(BaseModel):
+    """
+    실행 증거 이미지에서 자른 영역 (kb_target_create의 {run, file} 출처, M5). 에이전트용 비밀값 분류를 지난 이미지만 (아니면 secret_step·unclassified_run·not_evidence)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    file: Annotated[str, Field(description="실행 폴더 기준 경로 ('/')", min_length=1)]
+    rect: Rect
+    run_id: RunId
+
+
+class RunDiffParams(BaseModel):
+    """
+    run.diff (kb_run_compare, M5): run.compare와 같은 비교를 두 실행에 3.8(비밀값 분류)을 적용해 준다. baseline을 빼면 지난 성공
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    baseline: RunId | None = None
+    run_id: RunId
+
+
 class RunEndedParams(BaseModel):
     """
     감독자 마무리와 파일 끝까지 보낸 뒤
@@ -2362,6 +2553,21 @@ class RunEventParams(BaseModel):
     seq: Seq
 
 
+class RunEventsParams(BaseModel):
+    """
+    run.events (kb_run_events, M5 3.8): after_seq 뒤 이벤트 (secret_paths 자리는 ***, 분류 없는 기록은 안전 필드만). step·kinds로 거른다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    after_seq: Annotated[int | None, Field(ge=0)] = None
+    kinds: list[str] | None = None
+    limit: Annotated[int | None, Field(ge=1, le=500)] = None
+    run_id: RunId
+    step: StepId | None = None
+
+
 class RunExportParams(BaseModel):
     """
     실행 폴더를 zip으로 내보낸다 (Electron 주 프로세스 내부용: dest는 저장 대화 상자가 고른 절대 경로). dest 옆 임시 파일에 쓰고 끝나면 replace. 진행 중 실행은 run_active
@@ -2372,6 +2578,29 @@ class RunExportParams(BaseModel):
     )
     dest: Annotated[str, Field(min_length=1)]
     run_id: RunId
+
+
+class RunFailureResult(BaseModel):
+    """
+    run.failure (kb_run_status, M5): 실패 요약 — 판정·실패 위치(스텝·노드·출구·오류)·증거 파일(에이전트에게 줄 수 있는 것만)·영상 요약·지난 성공. 사유·메시지는 3.8대로 가린다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    chain: list[dict[str, Any]]
+    classified: bool
+    code: str | None = None
+    evidence: list[str]
+    failure: dict[str, Any] | None
+    failure_path: list[str] | None = None
+    failure_step: str | None = None
+    last_success: RunId | None
+    reason: str | None = None
+    run_id: RunId
+    state: Literal["ended", "running"]
+    verdict: str | None = None
+    video: dict[str, Any] | None = None
 
 
 class RunFileParams(BaseModel):
@@ -2496,6 +2725,48 @@ class RunSummary(BaseModel):
     state: Literal["ended", "running"]
 
 
+class ScreensGetParams(BaseModel):
+    """
+    screens.get (kb_screen_get, M5): screens/ 아래 *.screen.json 하나
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    path: WorkspacePath
+
+
+class ScreensGetResult(BaseModel):
+    """
+    읽을 수 없거나 형식이 틀리면 problem
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    path: WorkspacePath
+    problem: str | None = None
+    value: Any | None = None
+
+
+class Screen(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    explored: Literal[True] | None = None
+    id: str
+    path: WorkspacePath
+    problem: str | None = None
+    title: str | None = None
+
+
+class ScreensListResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    screens: list[Screen]
+
+
 class SessionHelloParams(BaseModel):
     """
     연결의 첫 메시지 (5초 안). 토큰은 session.json의 token
@@ -2568,7 +2839,7 @@ class TargetSaveParams(BaseModel):
         extra="forbid",
     )
     base_revision: TargetRevision | None
-    crop: CropRef | None = None
+    crop: CropRef | RunCropRef | None = None
     path: WorkspacePath
     spec: dict[str, Any]
 
@@ -2645,6 +2916,12 @@ class Frame(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    agent_image: Annotated[
+        AgentImage | None,
+        Field(
+            description="agent 연결의 target.capture만 (M5 kb_screen_capture): 긴 변 1568·1 MiB 이하 PNG를 .kookabug/cache/agent/<cache>에 썼다 (읽은 쪽이 지운다)"
+        ),
+    ] = None
     client_size: Size
     dpi: Annotated[int, Field(ge=1, le=9007199254740991)]
     frame_id: Annotated[str, Field(min_length=1)]
@@ -2758,6 +3035,16 @@ class RecorderTargetMaterialize(BaseModel):
     tool: Literal["ui_only"]
 
 
+class RunArtifact(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: RunArtifactParams
+    renderer: Literal[False]
+    result: RunArtifactResult
+    tool: Literal["kb_run_artifact_get"]
+
+
 class RunChildren(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -2778,6 +3065,26 @@ class RunCompare(BaseModel):
     tool: Literal["kb_run_events"]
 
 
+class RunDiff(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: RunDiffParams
+    renderer: Literal[False]
+    result: RunDiffResult
+    tool: Literal["kb_run_compare"]
+
+
+class RunEvents(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: RunEventsParams
+    renderer: Literal[False]
+    result: RunEventsResult
+    tool: Literal["kb_run_events"]
+
+
 class RunExport(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -2786,6 +3093,16 @@ class RunExport(BaseModel):
     renderer: Literal[False]
     result: RunExportResult
     tool: Literal["ui_only"]
+
+
+class RunFailure(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: RunIdParams
+    renderer: Literal[False]
+    result: RunFailureResult
+    tool: Literal["kb_run_status"]
 
 
 class RunFile(BaseModel):
@@ -2836,6 +3153,26 @@ class RunStep(BaseModel):
     renderer: Literal[True]
     result: RunStepResult
     tool: Literal["kb_run_events"]
+
+
+class ScreensGet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: ScreensGetParams
+    renderer: Literal[False]
+    result: ScreensGetResult
+    tool: Literal["kb_screen_get"]
+
+
+class ScreensList(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: ScreensListParams
+    renderer: Literal[False]
+    result: ScreensListResult
+    tool: Literal["kb_screen_list"]
 
 
 class SessionHello(BaseModel):
@@ -3362,21 +3699,29 @@ class Methods(BaseModel):
     recorder_target_materialize: Annotated[
         RecorderTargetMaterialize, Field(alias="recorder.target.materialize")
     ]
+    run_artifact: Annotated[RunArtifact, Field(alias="run.artifact")]
     run_cancel: Annotated[RunCancel, Field(alias="run.cancel")]
     run_children: Annotated[RunChildren, Field(alias="run.children")]
     run_compare: Annotated[RunCompare, Field(alias="run.compare")]
+    run_diff: Annotated[RunDiff, Field(alias="run.diff")]
+    run_events: Annotated[RunEvents, Field(alias="run.events")]
     run_export: Annotated[RunExport, Field(alias="run.export")]
+    run_failure: Annotated[RunFailure, Field(alias="run.failure")]
     run_file: Annotated[RunFile, Field(alias="run.file")]
     run_index: Annotated[RunIndex, Field(alias="run.index")]
     run_list: Annotated[RunList, Field(alias="run.list")]
     run_pause: Annotated[RunPause, Field(alias="run.pause")]
     run_restart: Annotated[RunRestart, Field(alias="run.restart")]
     run_resume: Annotated[RunResume, Field(alias="run.resume")]
+    run_search: Annotated[RunSearch, Field(alias="run.search")]
     run_start: Annotated[RunStart, Field(alias="run.start")]
     run_status: Annotated[RunStatus, Field(alias="run.status")]
     run_step: Annotated[RunStep, Field(alias="run.step")]
     run_subscribe: Annotated[RunSubscribe, Field(alias="run.subscribe")]
     run_unsubscribe: Annotated[RunUnsubscribe, Field(alias="run.unsubscribe")]
+    screen_read_text: Annotated[ScreenReadText, Field(alias="screen.read_text")]
+    screens_get: Annotated[ScreensGet, Field(alias="screens.get")]
+    screens_list: Annotated[ScreensList, Field(alias="screens.list")]
     secrets_create: Annotated[SecretsCreate, Field(alias="secrets.create")]
     secrets_list: Annotated[SecretsList, Field(alias="secrets.list")]
     session_hello: Annotated[SessionHello, Field(alias="session.hello")]

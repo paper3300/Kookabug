@@ -81,6 +81,7 @@ __all__ = [
     "TARGET_SUFFIX",
     "Ownership",
     "SaveOutcome",
+    "SensitiveCheck",
     "TargetStore",
     "combined_revision",
     "image_path_of",
@@ -528,6 +529,15 @@ def platform_failed(exc: PlatformError) -> RequestFailed:
 
 
 @dataclass(frozen=True, slots=True)
+class SensitiveCheck:
+    """민감 target 확인 결과: `path`가 보였다(`failed=False`), 또는 `path`를 확인하지 못했다
+    (`failed=True` — 보호를 확인하지 못한 것이라 OCR을 거부한다)."""
+
+    path: str
+    failed: bool
+
+
+@dataclass(frozen=True, slots=True)
 class SaveOutcome:
     image: str
     """`image` 파일의 워크스페이스 기준 경로 (crop이 없으면 지금 이미지)."""
@@ -690,6 +700,39 @@ class TargetStore:
         except PlatformError as exc:
             raise platform_failed(exc) from exc
         return body
+
+    def sensitive_visible(self, frame: EditorFrame) -> SensitiveCheck | None:
+        """`screen.read_text`(에이전트 OCR, M5 3.8): 워크스페이스의 `sensitive: true` target 중 이
+        정지 화면에 보이는 것 (`failed=False`), 또는 확인하지 못한 것(`failed=True`). 모두 확인했고
+        보이는 것이 없으면 None.
+
+        보이면 그 프레임의 OCR을 영역과 상관없이 거부한다(B2 검수 H3): 찾기는 가장 좋은 한 곳만,
+        같은 모양 여러 곳(`peaks`)은 한 배율·개수 상한이라 매칭을 빠짐없이 셀 수 없다.
+        확인하지 못하면 거부한다(B2 검수 H5, fail closed): `sensitive: true`인데 이미지가 없거나
+        깨졌거나 사양·매칭이 틀린 target, `sensitive`인지조차 읽지 못한 target 파일(JSON 깨짐 등),
+        열지 못한 폴더, 민감 여부와 상관없이 target 스키마가 틀린 파일."""
+        failures: list[str] = []
+        for rel, path in _walk_targets(self.root, failures):
+            try:
+                value = loads_strict(path.read_text(encoding="utf-8-sig"))
+            except OSError, UnicodeDecodeError, ValueError:
+                return SensitiveCheck(rel, failed=True)
+            # 사양이 틀린 target은 민감 여부와 상관없이 "확인 못 함" — 예외 없이 미검출로 끝나는
+            # 틀린 사양(범위 밖 임계값·검색 범위, `sensitive: "true"` 등)을 판정 전에 가른다
+            # (B2 재검수 3라운드 H5 잔여)
+            if not isinstance(value, dict) or check_shape(value, "target", file=rel):
+                return SensitiveCheck(rel, failed=True)
+            if value.get("sensitive") is not True:
+                continue
+            try:
+                result = _find(frame, Target(name=rel, path=path, spec=value), None)
+            except Exception:  # 판정 실패는 어떤 예외든 "보호를 확인하지 못함"
+                return SensitiveCheck(rel, failed=True)
+            if result.match is not None:
+                return SensitiveCheck(rel, failed=False)
+        if failures:
+            return SensitiveCheck(TARGETS_DIR, failed=True)
+        return None
 
     def read_text(self, frame_id: str, rect: Sequence[int]) -> dict[str, Any]:
         """`target.read_text`: 정지 화면 영역의 글자 (M4 T11 "글자 읽기"). 녹화 프레임 보호 영역

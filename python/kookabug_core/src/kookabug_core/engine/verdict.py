@@ -34,6 +34,9 @@ class Cause:
     path: tuple[str, ...]
     code: str
     message: str
+    secret: bool = False
+    """`message`에 비밀값(종료 노드의 `reason`·`SecretMessage`)이 들어 있다 (에이전트용 분류,
+    M5)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,26 +55,31 @@ class Judgement:
     code: str
     reason: str
     cause: Cause | None = None
+    secret: bool = False
+    """`reason`에 비밀값이 들어 있다 (원인의 `secret`)."""
 
 
 def judge(facts: Facts) -> Judgement:
     if facts.error is not None:
-        return Judgement("error", facts.error.code, facts.error.message, facts.error)
+        error = facts.error
+        return Judgement("error", error.code, error.message, error, error.secret)
     if facts.unhandled_fail is not None:
         cause = facts.unhandled_fail
-        return Judgement("fail", "unhandled_fail", f"처리되지 않은 fail: {cause.message}", cause)
+        reason = f"처리되지 않은 fail: {cause.message}"
+        return Judgement("fail", "unhandled_fail", reason, cause, cause.secret)
     if facts.terminal == "fail":
         cause = facts.terminal_cause
         reason = cause.message if cause is not None else "core.test.fail에 도달했다"
-        return Judgement("fail", "test_fail", reason, cause)
+        return Judgement("fail", "test_fail", reason, cause, cause is not None and cause.secret)
     if facts.terminal == "skip":
         cause = facts.terminal_cause
         reason = cause.message if cause is not None else "core.test.skip에 도달했다"
-        return Judgement("skipped", "test_skip", reason, cause)
+        secret = cause is not None and cause.secret
+        return Judgement("skipped", "test_skip", reason, cause, secret)
     if facts.terminal == "pass":
         cause = facts.terminal_cause
         reason = cause.message if cause is not None else "core.test.pass에 도달했다"
-        return Judgement("pass", "test_pass", reason)
+        return Judgement("pass", "test_pass", reason, secret=cause is not None and cause.secret)
     if facts.assertions_passed > 0:
         return Judgement("pass", "assertion_passed", f"검증 {facts.assertions_passed}개 성공")
     return Judgement(

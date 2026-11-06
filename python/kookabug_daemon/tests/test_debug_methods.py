@@ -72,10 +72,15 @@ def breakpoints_file(rig: RunRig) -> Any:
     return json.loads((rig.root / BREAKPOINTS_FILE).read_text(encoding="utf-8"))
 
 
-def start(client: DaemonClient, **params: Any) -> tuple[dict[str, Any], EventLog]:
+def start(
+    client: DaemonClient, watcher: DaemonClient | None = None, **params: Any
+) -> tuple[dict[str, Any], EventLog]:
+    """`client`가 시작하고 `watcher`(없으면 같은 연결)가 구독한다. 에이전트 연결은 기록 원문
+    구독(`run.subscribe`)을 쓰지 못하므로(M5 3.5) 에이전트가 시작한 실행은 UI가 지켜본다."""
     started = client.call("run.start", {"path": TEST, **params})
-    client.call("run.subscribe", {"run_id": started["run_id"], "after_seq": 0})
-    return started, EventLog(client, started["run_id"])
+    seer = watcher or client
+    seer.call("run.subscribe", {"run_id": started["run_id"], "after_seq": 0})
+    return started, EventLog(seer, started["run_id"])
 
 
 def is_pause(node: str, nth: int = 1) -> Any:
@@ -227,7 +232,7 @@ def test_agent_run_ignores_breakpoints(tmp_path: Path) -> None:
     allow_agent_runs(rig)
     with rig.daemon() as d, d.client() as ui, d.client(AGENT) as agent:
         ui.call("debug.breakpoints.set", {"breakpoints": [bp("n_d1"), bp("n_d2")]})
-        started, log = start(agent)
+        started, log = start(agent, ui)
         log.until_ended()
         assert log.ended is not None and log.ended["outcome"]["verdict"] == "pass"
         assert pauses(log) == []
@@ -258,7 +263,7 @@ def test_ui_run_detected_by_connection_kind_not_principal_kind(tmp_path: Path) -
         log.pump(is_pause("n_d2"))
         ui.call("run.resume", {"run_id": one["run_id"]})
         log.until_ended()
-        two, log2 = start(agent)
+        two, log2 = start(agent, ui)
         log2.until_ended()
         assert pauses(log2) == []
         manager = d.daemon.run_manager
@@ -538,7 +543,7 @@ def test_restart_agent_run_not_debuggable(tmp_path: Path) -> None:
     rig = RunRig.make(tmp_path, delay_graph())
     allow_agent_runs(rig)
     with rig.daemon() as d, d.client() as ui, d.client(AGENT) as agent:
-        started, log = start(agent)
+        started, log = start(agent, ui)
         log.until_ended()
         with pytest.raises(DaemonError) as caught:
             ui.call("run.restart", {"run_id": started["run_id"]})
