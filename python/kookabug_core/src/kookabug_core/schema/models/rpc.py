@@ -406,12 +406,13 @@ class WorkerHelloParams(BaseModel):
 
 class WorkerPlugin(BaseModel):
     """
-    워커가 읽은 플러그인 하나. schema는 노드 스키마 문서(node-schema.schema.json)
+    워커가 읽은 플러그인 하나. schema는 노드 스키마 문서(node-schema.schema.json). M6: digest = schema_digest(schema) — 머리는 설치된 스키마 파일, 노드는 코드 선언
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
+    digest: Annotated[str | None, Field(pattern="^[0-9a-f]{64}$")] = None
     id: Annotated[str, Field(pattern="^[a-z][a-z0-9_]*$")]
     schema_: Annotated[dict[str, Any], Field(alias="schema")]
     version: Annotated[str, Field(min_length=1)]
@@ -923,6 +924,14 @@ class WorkerHelloResult(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    pid: Annotated[
+        int | None,
+        Field(
+            description="M6: 워커의 실제 인터프리터 PID (기록용 — venv 런처를 거쳐 띄웠어도)",
+            ge=0,
+            le=4294967295,
+        ),
+    ] = None
     plugins: list[WorkerPlugin]
     protocol: int
 

@@ -2994,7 +2994,10 @@ class RequestFailedData(BaseModel):
     path: str | None = None
     protocol: Annotated[int | None, Field(ge=1, le=9007199254740991)] = None
     reason: Annotated[
-        str | None, Field(description="approval_required: no_approver(사람 연결 없음)")
+        str | None,
+        Field(
+            description="approval_required: no_approver(사람 연결 없음). M6: permission_denied: dev_modules_agent(개발 모듈 daemon의 에이전트 실행)"
+        ),
     ] = None
     revision: str | None = None
     run_id: RunId | None = None

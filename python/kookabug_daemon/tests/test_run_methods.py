@@ -566,17 +566,23 @@ def test_concurrent_starts_one_run_folder_one_runner(tmp_path: Path) -> None:
 
 
 def test_idempotency_same_principal_same_args_same_run(tmp_path: Path) -> None:
-    signal = tmp_path / "open"
-    rig = RunRig.make(tmp_path, gate_graph(signal))
+    # 에이전트 실행이라 개발 모듈(testkit gate) 없이 코어 delay로 실행 중을 만들고 취소로 끝낸다
+    long = (
+        GraphBuilder()
+        .entry("n_wait")
+        .node("n_wait", "core.flow.delay", inputs={"ms": 60_000}, next={"done": "n_pass"})
+        .node("n_pass", "core.test.pass")
+    )
+    rig = RunRig.make(tmp_path, long)
     allow_agent_runs(rig)
-    with rig.daemon() as d, d.client(AGENT) as first, d.client(AGENT) as second:
+    with rig.daemon(modules=()) as d, d.client(AGENT) as first, d.client(AGENT) as second:
         params = {"path": TEST, "idempotency_key": "k1", "settings": {"a": 1}}
         one = first.call("run.start", params)
         # 같은 주체(다른 연결)·같은 키·같은 인자: 실행 중이어도 run_busy가 아니라 같은 실행
         again = second.call("run.start", dict(params))
         assert again == one
         assert len(run_folders(rig)) == 1
-        signal.touch()
+        first.call("run.cancel", {"run_id": one["run_id"]})
         wait_ended(first, one["run_id"])
         # 끝난 뒤에도 기한(10분) 안에서는 같은 실행을 돌려준다
         assert first.call("run.start", dict(params)) == one
@@ -598,7 +604,7 @@ def test_idempotency_same_key_different_args_conflict(tmp_path: Path) -> None:
 def test_idempotency_not_shared_across_principals(tmp_path: Path) -> None:
     rig = RunRig.make(tmp_path, pass_graph())
     allow_agent_runs(rig)
-    with rig.daemon() as d, d.client() as ui, d.client(AGENT) as agent:
+    with rig.daemon(modules=()) as d, d.client() as ui, d.client(AGENT) as agent:
         one = ui.call("run.start", {"path": TEST, "idempotency_key": "k1"})
         wait_ended(ui, one["run_id"])
         # 다른 주체의 같은 키는 앞 실행을 공유하지 않는다: 새 실행
@@ -616,7 +622,7 @@ def test_idempotency_not_shared_across_principals(tmp_path: Path) -> None:
 def test_idempotency_reuse_rechecks_permission_after_policy_change(tmp_path: Path) -> None:
     rig = RunRig.make(tmp_path, pass_graph())
     allow_agent_runs(rig)
-    with rig.daemon() as d, d.client(AGENT) as agent:
+    with rig.daemon(modules=()) as d, d.client(AGENT) as agent:
         params = {"path": TEST, "idempotency_key": "k1"}
         one = agent.call("run.start", params)
         wait_ended(agent, one["run_id"])

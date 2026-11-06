@@ -189,11 +189,32 @@ export interface RetryDecl {
   on?: [ExitName, ...ExitName[]];
 }
 /**
+ * 스키마 머리 (M6: modules·permissions·min_core·isolation·ui 추가 — 설치는 이 머리만 읽고 modules로 워커를 띄운다)
+ *
  * This interface was referenced by `NodeSchemaFile`'s JSON-Schema
  * via the `definition` "PluginInfo".
  */
 export interface PluginInfo {
   id: PluginId;
+  /**
+   * 공유/격리 환경 선택 (생략 = auto)
+   */
+  isolation?: "auto" | "shared" | "isolated";
+  /**
+   * 앱 판 하한 (PEP 440)
+   */
+  min_core?: string;
+  /**
+   * 워커가 import할 모듈 (첫 항목의 최상위 패키지에 스키마 파일이 있다)
+   *
+   * @minItems 1
+   */
+  modules?: [string, ...string[]];
+  permissions?: ("capture" | "input" | "process" | "filesystem" | "network" | "secrets")[];
   title?: string;
+  /**
+   * UI 확장 폴더 (패키지 안 상대 경로, 진입 index.js)
+   */
+  ui?: string;
   version: string;
 }

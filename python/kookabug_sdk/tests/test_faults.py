@@ -233,6 +233,9 @@ def test_points_table_matches_plan() -> None:
         "target.before_commit",
         # M2 Sandbox 확인: OCR 모델 확인·세션 만들기 직전 (느린 첫 OCR 준비)
         "ocr.before_load",
+        # M6: 플러그인 설치 거래 단계 (이벤트 = 단계 이름, 역할 plugin)
+        "plugins.stage",
     }
+    assert _faults.POINTS["plugins.stage"] == frozenset({"plugin"})
     assert _faults.POINTS["journal.partial_line"] == frozenset(_faults.ROLES)
     assert _faults.POINTS["daemon.after_lock"] == frozenset({"supervisor"})

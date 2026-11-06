@@ -752,16 +752,21 @@ export interface WorkerHelloParams {
  * via the `definition` "WorkerHelloResult".
  */
 export interface WorkerHelloResult {
+  /**
+   * M6: 워커의 실제 인터프리터 PID (기록용 — venv 런처를 거쳐 띄웠어도)
+   */
+  pid?: number;
   plugins: WorkerPlugin[];
   protocol: number;
 }
 /**
- * 워커가 읽은 플러그인 하나. schema는 노드 스키마 문서(node-schema.schema.json)
+ * 워커가 읽은 플러그인 하나. schema는 노드 스키마 문서(node-schema.schema.json). M6: digest = schema_digest(schema) — 머리는 설치된 스키마 파일, 노드는 코드 선언
  *
  * This interface was referenced by `RpcMessageDefs`'s JSON-Schema
  * via the `definition` "WorkerPlugin".
  */
 export interface WorkerPlugin {
+  digest?: string;
   id: string;
   schema: {
     [k: string]: unknown | undefined;

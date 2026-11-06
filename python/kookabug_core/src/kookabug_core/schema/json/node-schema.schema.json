@@ -315,11 +315,43 @@
     },
     "PluginInfo": {
       "additionalProperties": false,
+      "description": "스키마 머리 (M6: modules·permissions·min_core·isolation·ui 추가 — 설치는 이 머리만 읽고 modules로 워커를 띄운다)",
       "properties": {
         "id": {
           "$ref": "#/$defs/PluginId"
         },
+        "isolation": {
+          "description": "공유/격리 환경 선택 (생략 = auto)",
+          "enum": ["auto", "shared", "isolated"],
+          "type": "string"
+        },
+        "min_core": {
+          "description": "앱 판 하한 (PEP 440)",
+          "minLength": 1,
+          "type": "string"
+        },
+        "modules": {
+          "description": "워커가 import할 모듈 (첫 항목의 최상위 패키지에 스키마 파일이 있다)",
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "permissions": {
+          "items": {
+            "enum": ["capture", "input", "process", "filesystem", "network", "secrets"]
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
         "title": {
+          "type": "string"
+        },
+        "ui": {
+          "description": "UI 확장 폴더 (패키지 안 상대 경로, 진입 index.js)",
+          "minLength": 1,
           "type": "string"
         },
         "version": {

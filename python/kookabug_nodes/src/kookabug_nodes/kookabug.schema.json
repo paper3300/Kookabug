@@ -1574,6 +1574,26 @@
   ],
   "plugin": {
     "id": "core",
+    "modules": [
+      "kookabug_nodes.graph",
+      "kookabug_nodes.test",
+      "kookabug_nodes.flow",
+      "kookabug_nodes.values",
+      "kookabug_nodes.log",
+      "kookabug_nodes.app",
+      "kookabug_nodes.window",
+      "kookabug_nodes.input",
+      "kookabug_nodes.image",
+      "kookabug_nodes.screen",
+      "kookabug_nodes.assert_",
+      "kookabug_nodes.ocr",
+      "kookabug_nodes.agent"
+    ],
+    "permissions": [
+      "capture",
+      "input",
+      "process"
+    ],
     "title": "Kookabug 코어",
     "version": "0.1.0.dev0"
   }

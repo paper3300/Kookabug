@@ -31,11 +31,14 @@ from kookabug_core.workspace import WORKSPACE_FILE, RunConditions, WorkspaceErro
 
 __all__ = [
     "AGENT_ENV",
+    "DEV_MODULES_AGENT",
     "RUN_START_TOOL",
     "ApprovalRequired",
+    "DevModulesRefused",
     "PermissionDenied",
     "WorkspaceService",
     "cli_principal",
+    "refuse_dev_modules",
     "start_options",
 ]
 
@@ -50,6 +53,32 @@ class PermissionDenied(Exception):
         super().__init__(decision.describe(tool))
         self.tool = tool
         self.decision = decision
+
+
+DEV_MODULES_AGENT: Final = "dev_modules_agent"
+"""개발 모듈 거부 이유 (M6 계획 3.7): 에이전트 주체는 `--plugin-module` 실행을 쓸 수 없다."""
+
+
+class DevModulesRefused(Exception):
+    """에이전트 주체가 개발 모듈(`--plugin-module`)로 실행하려 했다. 아무것도 시작하지 않았다.
+
+    개발 모듈은 설치·신뢰 확인 없이 임의 모듈을 import하므로 사람 전용이다 (M6 계획 D11)."""
+
+    code: Final = "permission_denied"
+    reason: Final = DEV_MODULES_AGENT
+
+    def __init__(self, modules: tuple[str, ...]) -> None:
+        super().__init__(
+            f"permission_denied ({DEV_MODULES_AGENT}): 에이전트는 개발 모듈 "
+            f"{', '.join(modules)}로 실행할 수 없다. 플러그인을 설치한 뒤 실행한다"
+        )
+        self.modules = modules
+
+
+def refuse_dev_modules(principal: Principal, modules: tuple[str, ...]) -> None:
+    """에이전트 주체 + 개발 모듈이면 `DevModulesRefused` (실행을 시작하기 전에 부른다)."""
+    if modules and principal.kind == "agent":
+        raise DevModulesRefused(tuple(modules))
 
 
 class ApprovalRequired(Exception):
@@ -129,6 +158,8 @@ class WorkspaceService:
 
         판정은 한 번만 한다. 집행한 그 판정을 핸들(`handle.decision`)이나 예외(`exc.decision`)로
         돌려주므로, 호출자는 따로 `authorize()`를 부르지 않고 이것을 보고한다."""
+        if options is not None:
+            refuse_dev_modules(principal, options.plugin_modules)
         decision = self.require(principal, RUN_START_TOOL, graph, approved=approved)
         return self.start_decided(decision, graph, options, approved=approved)
 

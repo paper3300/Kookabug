@@ -6099,7 +6099,7 @@ export const daemonRpcSchema: unknown = {
           "type": "integer"
         },
         "reason": {
-          "description": "approval_required: no_approver(사람 연결 없음)",
+          "description": "approval_required: no_approver(사람 연결 없음). M6: permission_denied: dev_modules_agent(개발 모듈 daemon의 에이전트 실행)",
           "type": "string"
         },
         "revision": {

@@ -138,7 +138,14 @@ def test_build_output_validates_against_node_schema_metaschema(tmp_path: Path) -
     out = build(project)
     assert check_shape(out.document, "node-schema") == []
     assert check_shape(json.loads(out.path.read_text(encoding="utf-8")), "node-schema") == []
-    assert out.document["plugin"] == {"id": "sample", "title": "샘플", "version": "0.3.0"}
+    # M6: 머리에 modules·permissions (선언하지 않은 선택 키는 없음)
+    assert out.document["plugin"] == {
+        "id": "sample",
+        "title": "샘플",
+        "version": "0.3.0",
+        "modules": ["kbt_valid.nodes"],
+        "permissions": ["capture", "input"],
+    }
 
     core = make_project(tmp_path, "kbt_core", "core", ENGINE_NODES, permissions="[]")
     assert check_shape(build(core).document, "node-schema") == []

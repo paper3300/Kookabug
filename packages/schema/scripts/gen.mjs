@@ -25,6 +25,7 @@ const kinds = [
   "recorder-hook",
   "recorder-script",
   "recorder-fragment",
+  "plugin-lock",
 ];
 
 const banner =

@@ -22,6 +22,7 @@ export interface Workspace {
   id?: string;
   ocr?: OcrSettings;
   permissions?: Permissions;
+  plugin_index?: PluginIndex;
   profiles?: {
     [k: string]: Profile | undefined;
   };
@@ -86,6 +87,16 @@ export interface Permissions {
 export interface PermissionRule {
   rule: string;
   verdict: PermissionVerdict;
+}
+/**
+ * M6: 플러그인 의존성 인덱스. kookabug.json은 팀 공용, .kookabug/local.json의 같은 키가 개인 덮어쓰기. URL의 사용자 정보는 잠금·로그·화면에 남기지 않는다
+ *
+ * This interface was referenced by `Workspace`'s JSON-Schema
+ * via the `definition` "PluginIndex".
+ */
+export interface PluginIndex {
+  find_links?: string[];
+  url?: string;
 }
 /**
  * This interface was referenced by `Workspace`'s JSON-Schema

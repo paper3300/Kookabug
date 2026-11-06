@@ -5,6 +5,7 @@ export * as events from "./generated/events.js";
 export * as graph from "./generated/graph.js";
 export * as local from "./generated/local.js";
 export * as nodeSchema from "./generated/node-schema.js";
+export * as pluginLock from "./generated/plugin-lock.js";
 export * as recorderFragment from "./generated/recorder-fragment.js";
 export * as recorderHook from "./generated/recorder-hook.js";
 export * as recorderScript from "./generated/recorder-script.js";

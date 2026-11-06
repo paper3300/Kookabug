@@ -2,11 +2,12 @@
 
     kookabug run <그래프 경로> [--workspace DIR] [--profile 이름] [--set 키=JSON값]...
                  [--deadline-ms N] [--capture-timeout-ms N] [--json] [--quiet]
-                 [--plugin-module 모듈]...
+                 [--plugin-module 모듈]...   (개발용, 사람만: KOOKABUG_AGENT면 종료 5)
     kookabug target test <target.json> (--window 제목 | --hwnd N | --image PNG) ...  (target_cmd)
     kookabug screen test <ID|파일> (--window 제목 | --hwnd N | --image PNG) ...       (screen_cmd)
     kookabug doctor [--profile headless|desktop] [--json]                            (doctor_cmd)
     kookabug daemon [--workspace DIR] [--idle-timeout-s 600] [--json]                (daemon_cmd)
+    kookabug plugin add|remove|list|verify|gc ...                                    (plugin_cmd)
     kookabug mcp [--workspace DIR] [--agent-id ID] [--unattended] [--client 이름]   (kookabug_mcp)
     kookabug agent-host --workspace DIR [--env 이름=값] [--secret-env 이름=키] -- 명령 ...
                                                      (앱의 에이전트 패널 세션 도우미)
@@ -40,7 +41,7 @@ from pathlib import Path
 from types import FrameType
 from typing import Any, Final, NoReturn, Protocol, TextIO
 
-from kookabug_cli import __version__, daemon_cmd
+from kookabug_cli import __version__, daemon_cmd, plugin_cmd
 from kookabug_core.agents import host as agent_host
 from kookabug_core.canonical import loads_strict
 from kookabug_core.permissions import Decision, Principal
@@ -50,6 +51,7 @@ from kookabug_core.runner.spec import DEFAULT_CAPTURE_TIMEOUT_MS, PlatformSpec
 from kookabug_core.service import (
     RUN_START_TOOL,
     ApprovalRequired,
+    DevModulesRefused,
     PermissionDenied,
     WorkspaceService,
     cli_principal,
@@ -235,6 +237,7 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--json", action="store_true", help="결과 JSON 한 개만 출력한다")
 
     daemon_cmd.add_parser(commands)
+    plugin_cmd.add_parser(commands)
     mcp_cli.add_parser(commands)
     agent_host.add_parser(commands)
     return parser
@@ -580,6 +583,9 @@ def run_command(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     # 판정은 start_run 안에서 한 번만 한다. 보고하는 판정 = 집행한 판정 (핸들·예외가 돌려준다)
     try:
         handle = service.start_run(principal, rel, options)
+    except DevModulesRefused as exc:  # 에이전트 + 개발 모듈: 판정 전에 거부 (M6 3.7)
+        report.error = str(exc)
+        return finish(EXIT_DENIED)
     except (PermissionDenied, ApprovalRequired) as exc:
         report.decision = exc.decision
         report.error = str(exc)
@@ -620,6 +626,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         dpi_error = dpi.enable_at_startup()
         return daemon_cmd.run(args, sys.stdout, sys.stderr, dpi_error=dpi_error)
+    if args.command == "plugin":
+        return plugin_cmd.run(args, sys.stdout, sys.stderr)
     if args.command == "mcp":
         return mcp_cli.run(args)
     if args.command == "agent-host":

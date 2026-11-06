@@ -244,6 +244,7 @@ dependencies = [
     { name = "jsonschema" },
     { name = "kookabug-nodes" },
     { name = "kookabug-sdk" },
+    { name = "packaging" },
     { name = "pydantic" },
     { name = "referencing" },
 ]
@@ -253,6 +254,7 @@ requires-dist = [
     { name = "jsonschema", specifier = ">=4.25" },
     { name = "kookabug-nodes", editable = "python/kookabug_nodes" },
     { name = "kookabug-sdk", editable = "python/kookabug_sdk" },
+    { name = "packaging", specifier = ">=25" },
     { name = "pydantic", specifier = ">=2.12" },
     { name = "referencing", specifier = ">=0.36" },
 ]

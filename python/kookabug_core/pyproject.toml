@@ -9,6 +9,8 @@ dependencies = [
     "jsonschema>=4.25",
     "kookabug-nodes",
     "kookabug-sdk",
+    # 플러그인 min_core·판 비교 (PEP 440). 설치본에는 onnxruntime 의존으로 이미 들어 있다
+    "packaging>=25",
     "pydantic>=2.12",
     "referencing>=0.36",
 ]

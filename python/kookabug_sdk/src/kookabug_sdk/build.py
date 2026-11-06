@@ -21,11 +21,26 @@ from typing import Any, Final
 from kookabug_sdk.decorators import NodeDeclarationError, NodeFunction
 from kookabug_sdk.schema import FORMAT, SCHEMA_FILE
 
-__all__ = ["BuildError", "BuildOutput", "PluginProject", "build", "dumps", "read_project"]
+__all__ = [
+    "ISOLATIONS",
+    "PERMISSIONS",
+    "BuildError",
+    "BuildOutput",
+    "PluginProject",
+    "build",
+    "dumps",
+    "plugin_header",
+    "read_project",
+]
 
 PERMISSIONS: Final = frozenset({"capture", "input", "process", "filesystem", "network", "secrets"})
+ISOLATIONS: Final = ("auto", "shared", "isolated")
 _PLUGIN_ID = re.compile(r"^[a-z][a-z0-9_]*$")
 _MODULE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
+# PEP 440 공개 판 (느슨하게: 숫자 판 + 선택 접미사). SDK는 의존성이 없어 packaging을 쓰지 않는다
+_VERSION = re.compile(r"^\d+(\.\d+)*((a|b|rc)\d+)?(\.post\d+)?(\.dev\d+)?$")
+# 패키지 안 상대 폴더: '/' 구분, `.`·`..`·빈 조각·절대 경로 없음
+_UI_DIR = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$")
 
 
 class BuildError(Exception):
@@ -42,6 +57,9 @@ class PluginProject:
     version: str
     modules: tuple[str, ...]
     permissions: frozenset[str]
+    min_core: str | None = None
+    isolation: str | None = None
+    ui: str | None = None
 
     @property
     def package(self) -> str:
@@ -103,6 +121,15 @@ def read_project(root: str | Path) -> PluginProject:
         permissions = []
     elif unknown := sorted(set(permissions) - PERMISSIONS):
         problems.append(f"모르는 permissions {unknown}. 가능한 값: {sorted(PERMISSIONS)}")
+    min_core = tool.get("min_core")
+    if min_core is not None and not (isinstance(min_core, str) and _VERSION.match(min_core)):
+        problems.append('[tool.kookabug].min_core는 판 문자열이다 (예: "0.1.0")')
+    isolation = tool.get("isolation")
+    if isolation is not None and isolation not in ISOLATIONS:
+        problems.append(f"[tool.kookabug].isolation은 {', '.join(ISOLATIONS)} 중 하나다")
+    ui = tool.get("ui")
+    if ui is not None and not (isinstance(ui, str) and _UI_DIR.match(ui) and ".." not in ui):
+        problems.append('[tool.kookabug].ui는 패키지 안 상대 폴더다 (예: "ui")')
     if problems:
         raise BuildError(problems)
 
@@ -113,9 +140,14 @@ def read_project(root: str | Path) -> PluginProject:
         version=str(version),
         modules=tuple(modules),
         permissions=frozenset(permissions),
+        min_core=min_core,
+        isolation=isolation,
+        ui=ui,
     )
     if not (out.src / out.package).is_dir():
         raise BuildError([f"패키지 폴더 {out.src / out.package}가 없다 (src 레이아웃)"])
+    if ui is not None and not (out.src / out.package / ui / "index.js").is_file():
+        raise BuildError([f"ui 진입 파일 {out.src / out.package / ui / 'index.js'}이(가) 없다"])
     return out
 
 
@@ -178,14 +210,29 @@ def schema_document(project: PluginProject, nodes: Sequence[NodeFunction]) -> di
     if problems:
         raise BuildError(problems)
 
-    plugin: dict[str, Any] = {"id": project.id, "version": project.version}
-    if project.title:
-        plugin["title"] = project.title
     return {
         "format": FORMAT,
         "nodes": [n.schema() for n in sorted(nodes, key=lambda n: n.spec.type)],
-        "plugin": plugin,
+        "plugin": plugin_header(project),
     }
+
+
+def plugin_header(project: PluginProject) -> dict[str, Any]:
+    """스키마 머리 `plugin` (M6 3.1): 설치는 이 머리만 읽고 `modules`로 워커를 띄운다. 선언하지
+    않은 선택 키는 넣지 않는다 (같은 매니페스트면 같은 바이트)."""
+    plugin: dict[str, Any] = {
+        "id": project.id,
+        "version": project.version,
+        "modules": list(project.modules),
+        "permissions": sorted(project.permissions),
+    }
+    if project.title:
+        plugin["title"] = project.title
+    for key in ("min_core", "isolation", "ui"):
+        value = getattr(project, key)
+        if value is not None:
+            plugin[key] = value
+    return plugin
 
 
 def dumps(document: dict[str, Any]) -> str:

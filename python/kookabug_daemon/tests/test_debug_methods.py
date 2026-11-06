@@ -230,7 +230,7 @@ def test_breakpoints_set_rejects_unnormalized_graph_path(tmp_path: Path, graph: 
 def test_agent_run_ignores_breakpoints(tmp_path: Path) -> None:
     rig = RunRig.make(tmp_path, delay_graph())
     allow_agent_runs(rig)
-    with rig.daemon() as d, d.client() as ui, d.client(AGENT) as agent:
+    with rig.daemon(modules=()) as d, d.client() as ui, d.client(AGENT) as agent:
         ui.call("debug.breakpoints.set", {"breakpoints": [bp("n_d1"), bp("n_d2")]})
         started, log = start(agent, ui)
         log.until_ended()
@@ -249,7 +249,7 @@ def test_ui_run_detected_by_connection_kind_not_principal_kind(tmp_path: Path) -
     # 사람이 지켜보는(attended) 에이전트 연결도 UI가 아니다
     rig = RunRig.make(tmp_path, delay_graph())
     allow_agent_runs(rig)
-    with rig.daemon() as d, d.client() as ui, d.client(ATTENDED_AGENT) as agent:
+    with rig.daemon(modules=()) as d, d.client() as ui, d.client(ATTENDED_AGENT) as agent:
         assert ui.hello_result is not None and agent.hello_result is not None
         principal = ui.hello_result["principal"]
         assert principal["kind"] == "user" and principal["id"].startswith("ui:")
@@ -542,7 +542,7 @@ def test_restart_ended_run_allowed_only_if_tracked(tmp_path: Path) -> None:
 def test_restart_agent_run_not_debuggable(tmp_path: Path) -> None:
     rig = RunRig.make(tmp_path, delay_graph())
     allow_agent_runs(rig)
-    with rig.daemon() as d, d.client() as ui, d.client(AGENT) as agent:
+    with rig.daemon(modules=()) as d, d.client() as ui, d.client(AGENT) as agent:
         started, log = start(agent, ui)
         log.until_ended()
         with pytest.raises(DaemonError) as caught:

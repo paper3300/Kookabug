@@ -71,7 +71,7 @@ from kookabug_sdk.rpc import (
     RpcError,
     RpcPeer,
 )
-from kookabug_sdk.schema import FORMAT
+from kookabug_sdk.schema import FORMAT, load_installed, schema_digest
 from kookabug_sdk.types import (
     Image,
     Match,
@@ -125,11 +125,14 @@ class RunDeadline(Cancelled):
 def collect_plugins(modules: Sequence[str]) -> list[dict[str, Any]]:
     """`modules`를 import해 `@node` 노드를 플러그인 ID별 노드 스키마 문서로 모은다.
 
-    결과: `[{id, version, schema}]` (ID 순). 버전은 모듈의 최상위 패키지를 설치한 배포판의 버전,
-    없으면 `DEV_VERSION`.
+    결과: `[{id, version, schema, digest}]` (ID 순). 스키마 머리(`plugin`)는 설치된 스키마 파일
+    (`load_installed`, 노드를 처음 찾은 모듈의 최상위 패키지)의 머리 전체이고, 파일이 없는 개발
+    모듈은 `{id, version}`이다 — 버전은 배포판의 버전, 없으면 `DEV_VERSION`. 노드는 코드의 선언이라
+    파일과 코드가 다르면 `digest`(`schema_digest`)가 설치 때 값과 달라진다 (M6 계획 3.1).
     """
     found: dict[int, NodeFunction] = {}
     versions: dict[str, str] = {}
+    headers: dict[str, dict[str, Any]] = {}
     distributions: Mapping[str, list[str]] | None = None
     for name in modules:
         _faults.fault_point("worker.in_import")
@@ -137,10 +140,16 @@ def collect_plugins(modules: Sequence[str]) -> list[dict[str, Any]]:
         for value in vars(module).values():
             if isinstance(value, NodeFunction):
                 found.setdefault(id(value), value)
-                if value.spec.plugin not in versions:
+                plugin_id = value.spec.plugin
+                if plugin_id not in versions:
+                    installed = _installed_header(name, plugin_id)
+                    if installed is not None:
+                        headers[plugin_id] = installed
+                        versions[plugin_id] = str(installed["version"])
+                        continue
                     if distributions is None:
                         distributions = metadata.packages_distributions()  # 느리다: 한 번만
-                    versions[value.spec.plugin] = _version_of(name, distributions)
+                    versions[plugin_id] = _version_of(name, distributions)
     by_plugin: dict[str, list[NodeFunction]] = defaultdict(list)
     for fn in found.values():
         by_plugin[fn.spec.plugin].append(fn)
@@ -148,18 +157,28 @@ def collect_plugins(modules: Sequence[str]) -> list[dict[str, Any]]:
     for plugin in sorted(by_plugin):
         nodes = sorted(by_plugin[plugin], key=lambda f: f.spec.type)
         version = versions[plugin]
+        schema = {
+            "format": FORMAT,
+            "nodes": [f.schema() for f in nodes],
+            "plugin": headers.get(plugin) or {"id": plugin, "version": version},
+        }
         plugins.append(
-            {
-                "id": plugin,
-                "version": version,
-                "schema": {
-                    "format": FORMAT,
-                    "nodes": [f.schema() for f in nodes],
-                    "plugin": {"id": plugin, "version": version},
-                },
-            }
+            {"id": plugin, "version": version, "schema": schema, "digest": schema_digest(schema)}
         )
     return plugins
+
+
+def _installed_header(module: str, plugin_id: str) -> dict[str, Any] | None:
+    """그 모듈의 최상위 패키지에 설치된 스키마 파일 머리 (그 플러그인 것일 때만). 파일이 없으면
+    None (개발 모듈). 파일이 깨졌으면 예외 — hello가 실패한다."""
+    try:
+        document = load_installed(module.split(".", 1)[0])
+    except FileNotFoundError:
+        return None
+    header = document.get("plugin")
+    if not isinstance(header, dict) or header.get("id") != plugin_id:  # pyright: ignore[reportUnknownMemberType]
+        return None
+    return dict(header)  # pyright: ignore[reportUnknownArgumentType]
 
 
 def _version_of(module: str, distributions: Mapping[str, list[str]]) -> str:
@@ -682,7 +701,8 @@ class WorkerHost:
         self._functions = functions_of(names)
         self._files_root = Path(str(params.get("files_root", ".")))
         _faults.fault_point("worker.before_hello_reply")
-        self.peer.respond(job, {"protocol": PROTOCOL, "plugins": plugins})
+        # pid는 기록용: venv 런처를 거쳐 띄웠어도 실제 인터프리터 (M6 D8)
+        self.peer.respond(job, {"protocol": PROTOCOL, "plugins": plugins, "pid": os.getpid()})
 
     def _invoke(self, job: Incoming) -> None:
         params = job.params

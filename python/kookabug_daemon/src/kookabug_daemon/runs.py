@@ -103,7 +103,12 @@ from kookabug_core.runner.control import ControlState
 from kookabug_core.runner.run import unix_micros
 from kookabug_core.runner.spec import PlatformSpec
 from kookabug_core.schema import check_shape
-from kookabug_core.service import WorkspaceService, start_options
+from kookabug_core.service import (
+    DevModulesRefused,
+    WorkspaceService,
+    refuse_dev_modules,
+    start_options,
+)
 from kookabug_core.supervisor import (
     ControlError,
     ResumeRefused,
@@ -494,8 +499,18 @@ class RunManager:
 
     # ---------------------------------------------------------------- 시작
 
+    def refuse_dev_modules(self, principal: Principal) -> None:
+        """이 daemon이 개발 모듈(`--plugin-module`)로 떠 있으면 에이전트 주체의 실행은
+        `permission_denied`(이유 `dev_modules_agent`) — runner를 띄우기 전, 사람 확인도 묻기 전에
+        (M6 3.7). 사람(ui) 연결만 개발 모듈 실행을 쓴다."""
+        try:
+            refuse_dev_modules(principal, self.plugin_modules)
+        except DevModulesRefused as exc:
+            raise RequestFailed(exc.code, str(exc), reason=exc.reason) from exc
+
     def start(self, request: StartRequest) -> dict[str, Any]:
         """시작 순서 ①~⑥ (막히는 호출: 스레드에서 부른다)."""
+        self.refuse_dev_modules(request.principal)
         where = resolve_path(self.root, request.path, graph=True)
         settings = dict(request.settings)
         args = canonical_dumps(
@@ -571,6 +586,7 @@ class RunManager:
         만들지 않고 `ValueError`(호출자의 버그)."""
         if not (decision.final == "allow" or (decision.final == "ask" and approved)):
             raise ValueError(f"허용되지 않은 판정으로는 시작할 수 없다: {decision.final}")
+        self.refuse_dev_modules(principal)
         request = StartRequest(principal=principal, path=CONTROL_GRAPH)
         with self._start_lock:
             reserved = self._reserve()

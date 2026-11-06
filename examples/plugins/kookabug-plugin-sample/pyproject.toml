@@ -1,0 +1,23 @@
+[project]
+name = "kookabug-plugin-sample"
+version = "0.1.0"
+description = "Kookabug 예제 플러그인 (글자 뒤집기·색 고르기·창 제목)"
+readme = "README.md"
+requires-python = ">=3.14"
+license = "MIT"
+license-files = ["LICENSE"]
+# 노드 SDK만 쓴다. 0.x 동안 SDK 소판이 호환 경계다
+dependencies = ["kookabug-sdk>=0.1.0.dev0,<0.2"]
+
+[tool.kookabug]
+id = "sample"
+title = "Sample"
+# 진입 모듈은 최상위 패키지와 다르다 (설치는 이 목록으로 워커를 띄운다)
+modules = ["kookabug_plugin_sample.nodes.text", "kookabug_plugin_sample.nodes.widgets"]
+permissions = ["capture"]
+min_core = "0.1.0"
+ui = "ui"
+
+[build-system]
+requires = ["uv_build>=0.13.6,<0.14"]
+build-backend = "uv_build"

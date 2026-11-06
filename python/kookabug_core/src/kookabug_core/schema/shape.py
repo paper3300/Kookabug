@@ -47,12 +47,14 @@ SchemaKind = Literal[
     "recorder-hook",
     "recorder-script",
     "recorder-fragment",
+    "plugin-lock",
 ]
 KINDS: tuple[SchemaKind, ...] = get_args(SchemaKind)
 FORMAT_TO_KIND: dict[str, SchemaKind] = {
     "kookabug.breakpoints/0": "breakpoints",
     "kookabug.graph/0": "graph",
     "kookabug.local/0": "local",
+    "kookabug.lock/0": "plugin-lock",
     "kookabug.nodes/0": "node-schema",
     "kookabug.run/0": "run",
     "kookabug.screen/0": "screen",

@@ -89,6 +89,25 @@
       "title": "Permissions",
       "type": "object"
     },
+    "PluginIndex": {
+      "additionalProperties": false,
+      "description": "M6: 플러그인 의존성 인덱스. kookabug.json은 팀 공용, .kookabug/local.json의 같은 키가 개인 덮어쓰기. URL의 사용자 정보는 잠금·로그·화면에 남기지 않는다",
+      "properties": {
+        "find_links": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "url": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "title": "PluginIndex",
+      "type": "object"
+    },
     "Profile": {
       "additionalProperties": false,
       "properties": {
@@ -212,6 +231,9 @@
     },
     "permissions": {
       "$ref": "#/$defs/Permissions"
+    },
+    "plugin_index": {
+      "$ref": "#/$defs/PluginIndex"
     },
     "profiles": {
       "additionalProperties": {

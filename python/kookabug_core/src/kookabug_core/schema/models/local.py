@@ -9,6 +9,22 @@ class PermissionVerdict(RootModel[Literal["allow", "ask", "deny"]]):
     root: Annotated[Literal["allow", "ask", "deny"], Field(title="PermissionVerdict")]
 
 
+class FindLink(RootModel[str]):
+    root: Annotated[str, Field(min_length=1)]
+
+
+class PluginIndex(BaseModel):
+    """
+    M6: 플러그인 의존성 인덱스. kookabug.json은 팀 공용, .kookabug/local.json의 같은 키가 개인 덮어쓰기. URL의 사용자 정보는 잠금·로그·화면에 남기지 않는다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    find_links: list[FindLink] | None = None
+    url: Annotated[str | None, Field(min_length=1)] = None
+
+
 class SettingKey(RootModel[str]):
     root: Annotated[str, Field(pattern="^[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)*$", title="SettingKey")]
 
@@ -67,4 +83,5 @@ class Local(BaseModel):
     )
     format: Literal["kookabug.local/0"]
     permissions: Permissions | None = None
+    plugin_index: PluginIndex | None = None
     settings: Settings | None = None

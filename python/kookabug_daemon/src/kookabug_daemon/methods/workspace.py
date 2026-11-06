@@ -191,7 +191,11 @@ def _info_sync(call: Call) -> dict[str, Any]:
         "deadline_ms": workspace.run_conditions().deadline_ms or DEFAULT_DEADLINE_MS,
         "retention": workspace.retention(),
         "diagnostics": [d.to_dict() for d in workspace.diagnostics],
-        "plugins": [registry.plugin_info(p) for p in sorted(registry.plugins)],
+        # 요약만 (M6에서 스키마 머리에 modules·permissions 등이 늘었다. 자세한 것은 plugins.list)
+        "plugins": [
+            {k: v for k, v in registry.plugin_info(p).items() if k in ("id", "title", "version")}
+            for p in sorted(registry.plugins)
+        ],
         "runtime": runtime_info(call.daemon.platform_fake),
         "agents_md": agents_md_section(root),
     }

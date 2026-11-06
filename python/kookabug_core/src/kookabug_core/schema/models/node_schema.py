@@ -50,12 +50,39 @@ class PluginId(RootModel[str]):
     root: Annotated[str, Field(pattern="^[a-z][a-z0-9_]*$", title="PluginId")]
 
 
+class Module(RootModel[str]):
+    root: Annotated[str, Field(min_length=1)]
+
+
 class PluginInfo(BaseModel):
+    """
+    스키마 머리 (M6: modules·permissions·min_core·isolation·ui 추가 — 설치는 이 머리만 읽고 modules로 워커를 띄운다)
+    """
+
     model_config = ConfigDict(
         extra="forbid",
     )
     id: PluginId
+    isolation: Annotated[
+        Literal["auto", "shared", "isolated"] | None,
+        Field(description="공유/격리 환경 선택 (생략 = auto)"),
+    ] = None
+    min_core: Annotated[str | None, Field(description="앱 판 하한 (PEP 440)", min_length=1)] = None
+    modules: Annotated[
+        list[Module] | None,
+        Field(
+            description="워커가 import할 모듈 (첫 항목의 최상위 패키지에 스키마 파일이 있다)",
+            min_length=1,
+        ),
+    ] = None
+    permissions: (
+        list[Literal["capture", "input", "process", "filesystem", "network", "secrets"]] | None
+    ) = None
     title: str | None = None
+    ui: Annotated[
+        str | None,
+        Field(description="UI 확장 폴더 (패키지 안 상대 경로, 진입 index.js)", min_length=1),
+    ] = None
     version: Annotated[str, Field(min_length=1)]
 
 

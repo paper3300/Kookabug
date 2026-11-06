@@ -866,7 +866,7 @@ export interface RequestFailedData {
   path?: string;
   protocol?: number;
   /**
-   * approval_required: no_approver(사람 연결 없음)
+   * approval_required: no_approver(사람 연결 없음). M6: permission_denied: dev_modules_agent(개발 모듈 daemon의 에이전트 실행)
    */
   reason?: string;
   revision?: string | null;

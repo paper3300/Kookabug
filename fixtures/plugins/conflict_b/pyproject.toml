@@ -1,0 +1,10 @@
+[project]
+name = "kbfix-plugin-conflict-b"
+version = "0.2.0"
+requires-python = ">=3.14"
+dependencies = ["kookabug-sdk>=0.1.0.dev0,<0.2", "kbfix-dep>=2"]
+
+[tool.kookabug]
+id = "conflict_b"
+title = "Conflict B"
+modules = ["kbfix_conflict_b.nodes"]

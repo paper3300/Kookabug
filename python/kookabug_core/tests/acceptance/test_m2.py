@@ -377,7 +377,8 @@ def test_run_start_same_decision_real_cli_daemon_service(
 
     # ② daemon agent 연결. daemon이 집행한 판정은 서비스 `require`가 돌려준(또는 예외에 실은) 값이다
     observed: list[dict[str, Any]] = []
-    with rig.daemon() as d, d.client(agent()) as client:
+    # 에이전트 실행: 개발 모듈 없는 daemon (개발 모듈 daemon의 에이전트 실행은 거부, M6 3.7)
+    with rig.daemon(modules=()) as d, d.client(agent()) as client:
         original = d.daemon.service.require
 
         def observe(who: Principal, tool: str, arg: str = "", **kwargs: Any) -> Any:

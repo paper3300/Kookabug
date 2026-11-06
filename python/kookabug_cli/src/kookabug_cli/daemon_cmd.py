@@ -2,6 +2,7 @@
 
     kookabug daemon [--workspace DIR] [--idle-timeout-s 600] [--json] [--log-level info]
 
+`--plugin-module`(개발 모듈)은 사람만: `KOOKABUG_AGENT`가 있으면 시작하지 않고 종료 5 (M6 3.7).
 이미 그 워크스페이스의 daemon이 돌고 있으면 그 세션을 확인하고 종료 코드 0으로 끝난다.
 인자와 수명은 `kookabug_daemon`이 정한다. 여기는 CLI 하위 명령으로 잇기만 한다.
 """
@@ -13,7 +14,7 @@ from typing import Any, TextIO
 
 from kookabug_daemon import options
 
-__all__ = ["add_parser", "run"]
+__all__ = ["EXIT_DENIED", "add_parser", "run"]
 
 
 def add_parser(commands: Any) -> None:
@@ -27,7 +28,18 @@ def add_parser(commands: Any) -> None:
     options.add_arguments(daemon)
 
 
+EXIT_DENIED = 5
+
+
 def run(args: argparse.Namespace, out: TextIO, err: TextIO, *, dpi_error: str | None) -> int:
+    from kookabug_core.service import DevModulesRefused, cli_principal, refuse_dev_modules
+
+    # 개발 모듈 daemon은 사람만 띄운다 (M6 3.7): 에이전트면 아무것도 시작하지 않고 종료 5
+    try:
+        refuse_dev_modules(cli_principal(), tuple(args.plugin_modules))
+    except DevModulesRefused as exc:
+        print(f"오류: {exc}", file=err)
+        return EXIT_DENIED
     # daemon(websockets·asyncio)은 쓸 때만 불러온다 (`kookabug run` 시작을 가볍게)
     from kookabug_daemon import app
 

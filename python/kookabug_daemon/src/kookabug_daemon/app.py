@@ -35,7 +35,12 @@ from typing import Any, Final, TextIO
 from kookabug_core.permissions import TOOLSETS
 from kookabug_core.registry import Registry, default_registry
 from kookabug_core.runner.spec import PlatformSpec
-from kookabug_core.service import WorkspaceService
+from kookabug_core.service import (
+    DevModulesRefused,
+    WorkspaceService,
+    cli_principal,
+    refuse_dev_modules,
+)
 from kookabug_core.workspace import WorkspaceError
 from kookabug_daemon.agent_cache import AgentCache
 from kookabug_daemon.approvals import APPROVAL_TIMEOUT_S, ApprovalBroker
@@ -72,6 +77,7 @@ from kookabug_sdk import _faults
 
 __all__ = [
     "DEFAULT_IDLE_TIMEOUT_S",
+    "EXIT_DENIED",
     "EXIT_OK",
     "EXIT_USAGE",
     "Daemon",
@@ -89,6 +95,8 @@ log = logging.getLogger("kookabug_daemon")
 EXIT_OK: Final = 0
 EXIT_USAGE: Final = 6
 """사용법·환경 오류 (CLI와 같은 값)."""
+EXIT_DENIED: Final = 5
+"""권한 거부 (CLI와 같은 값): 에이전트 주체의 개발 모듈 daemon (M6 3.7)."""
 LOG_KEEP: Final = 20
 WATCH_INTERVAL_S: Final = 1.0
 """파일 변경 폴링 간격 (M2 계획 Q10)."""
@@ -649,6 +657,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="kookabug-daemon", description="Kookabug daemon")
     add_arguments(parser)
     args = parser.parse_args(argv)
+    try:
+        # 개발 모듈 daemon은 사람만 띄운다 (M6 3.7, CLI `kookabug daemon`과 같다)
+        refuse_dev_modules(cli_principal(), tuple(args.plugin_modules))
+    except DevModulesRefused as exc:
+        print(f"오류: {exc}", file=sys.stderr)
+        return EXIT_DENIED
     try:
         config = config_from_args(args)
     except UsageError as exc:

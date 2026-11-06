@@ -142,7 +142,7 @@ def test_run_start_same_decision_real_cli_daemon_service(
 
     # ② daemon agent 연결. daemon이 집행한 판정은 서비스 `require`가 실제로 돌려준(또는 예외에
     # 실은) 값을 관찰한다 (허용은 결과에 판정을 싣지 않는다)
-    with rig.daemon() as d, d.client(agent(attended=False)) as client:
+    with rig.daemon(modules=()) as d, d.client(agent(attended=False)) as client:
         observed: list[dict[str, Any]] = []
         original = d.daemon.service.require
 
@@ -186,7 +186,7 @@ def test_run_start_same_decision_real_cli_daemon_service(
 def test_denied_enforced_no_run_folder_via_daemon(tmp_path: Path) -> None:
     rig = RunRig.make(tmp_path, GraphBuilder().entry("n").node("n", "core.test.pass"))
     write_team(rig, {"preset": "read_only"})
-    with rig.daemon() as d, d.client(agent()) as client:
+    with rig.daemon(modules=()) as d, d.client(agent()) as client:
         for params in ({"path": TEST}, {"path": TEST, "idempotency_key": "k"}):
             with pytest.raises(DaemonError) as caught:
                 client.call("run.start", params)
@@ -199,7 +199,7 @@ def test_denied_enforced_no_run_folder_via_daemon(tmp_path: Path) -> None:
 def test_attended_agent_ask_is_approval_required_not_started(tmp_path: Path) -> None:
     rig = RunRig.make(tmp_path, GraphBuilder().entry("n").node("n", "core.test.pass"))
     write_local(rig, {"toolsets": {"run": "ask"}})
-    with rig.daemon() as d, d.client(agent(attended=True)) as client:
+    with rig.daemon(modules=()) as d, d.client(agent(attended=True)) as client:
         with pytest.raises(DaemonError) as caught:
             client.call("run.start", {"path": TEST})
         assert caught.value.kind == "approval_required"

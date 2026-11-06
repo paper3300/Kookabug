@@ -140,6 +140,8 @@ def _result(run_id: str, outcome: Any) -> dict[str, Any]:
 
 async def _control(call: Call) -> dict[str, Any]:
     value = control_graph(call)  # 인자가 틀리면 판정 전에 거부 (아무것도 묻지 않음)
+    # 개발 모듈 daemon의 에이전트 제어 실행은 사람 확인을 묻기 전에 거부 (M6 3.7)
+    call.daemon.run_manager.refuse_dev_modules(call.principal)
     authorized = await call.daemon.approvals.authorize(call, _window_arg(call))
     decision = authorized.decision
     assert isinstance(decision, Decision)  # control.*은 ui_only가 아니다

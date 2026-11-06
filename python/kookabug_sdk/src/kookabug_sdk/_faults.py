@@ -43,8 +43,9 @@ __all__ = [
 
 ENV: Final = "KOOKABUG_FAULTS"
 
-type Role = Literal["runner", "worker", "supervisor"]
-ROLES: Final[tuple[Role, ...]] = ("runner", "worker", "supervisor")
+type Role = Literal["runner", "worker", "supervisor", "plugin"]
+# plugin: 플러그인 설치 거래를 하는 프로세스 (CLI `kookabug plugin …`, M6)
+ROLES: Final[tuple[Role, ...]] = ("runner", "worker", "supervisor", "plugin")
 
 _ALL: Final[frozenset[Role]] = frozenset(ROLES)
 _RUNNER: Final[frozenset[Role]] = frozenset({"runner"})
@@ -83,6 +84,8 @@ POINTS: Final[dict[str, frozenset[Role]]] = {
     # target 저장 (M2 계획 2.9: 새 이미지를 쓴 뒤 소유 기록 전, 기록 뒤 JSON 커밋 전)
     "target.before_record": _SUPERVISOR,
     "target.before_commit": _SUPERVISOR,
+    # 플러그인 설치 거래의 단계 (M6 계획 3.5, 이벤트 = 단계 이름: `kookabug_core.plugins.STAGES`)
+    "plugins.stage": frozenset({"plugin"}),
 }
 
 _POLL_S: Final = 0.01

@@ -1,0 +1,292 @@
+{
+  "$defs": {
+    "LockEnvironment": {
+      "additionalProperties": false,
+      "description": "실행 환경 하나. fingerprint = sha256(정규 JSON {python, platform, sdk, packages, 그 환경 플러그인 wheel_sha256 목록}) — 환경 찾기의 근거. digest = 환경 Lib/site-packages 실제 파일 바이트 해시 (재현 판정)",
+      "properties": {
+        "digest": {
+          "$ref": "#/$defs/LockSha256"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/LockSha256"
+        },
+        "packages": {
+          "items": {
+            "$ref": "#/$defs/LockPackage"
+          },
+          "type": "array"
+        },
+        "plugins": {
+          "items": {
+            "$ref": "#/$defs/PluginId"
+          },
+          "type": "array"
+        }
+      },
+      "required": ["digest", "fingerprint", "packages", "plugins"],
+      "title": "LockEnvironment",
+      "type": "object"
+    },
+    "LockManifest": {
+      "additionalProperties": false,
+      "description": "설치한 플러그인의 스키마 머리 (id·version 뺀 나머지). modules로 워커를 띄운다",
+      "properties": {
+        "isolation": {
+          "enum": ["auto", "shared", "isolated"],
+          "type": "string"
+        },
+        "min_core": {
+          "type": "string"
+        },
+        "modules": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "permissions": {
+          "items": {
+            "enum": ["capture", "input", "process", "filesystem", "network", "secrets"]
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "ui": {
+          "type": "string"
+        }
+      },
+      "required": ["modules", "permissions"],
+      "title": "LockManifest",
+      "type": "object"
+    },
+    "LockPackage": {
+      "additionalProperties": false,
+      "description": "환경의 의존성 하나 (wheel만, uv pip compile --generate-hashes 결과)",
+      "properties": {
+        "hashes": {
+          "items": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["hashes", "name", "version"],
+      "title": "LockPackage",
+      "type": "object"
+    },
+    "LockPlugin": {
+      "additionalProperties": false,
+      "properties": {
+        "conflicts": {
+          "description": "isolated_because = conflict일 때 공유 환경과 판이 맞지 않는 패키지 이름",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "dist": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "env": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/PluginId"
+        },
+        "isolated_because": {
+          "enum": ["declared", "conflict", null],
+          "type": ["string", "null"]
+        },
+        "manifest": {
+          "$ref": "#/$defs/LockManifest"
+        },
+        "requires": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "schema_sha256": {
+          "$ref": "#/$defs/LockSha256"
+        },
+        "source": {
+          "$ref": "#/$defs/LockSource"
+        },
+        "version": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "wheel": {
+          "description": "plugins/wheels/<wheel_sha256>/<원래 wheel 파일명> (워크스페이스 기준, 커밋)",
+          "pattern": "^plugins/wheels/[0-9a-f]{64}/[^/\\\\]+\\.whl$",
+          "type": "string"
+        },
+        "wheel_sha256": {
+          "$ref": "#/$defs/LockSha256"
+        }
+      },
+      "required": [
+        "dist",
+        "env",
+        "id",
+        "isolated_because",
+        "manifest",
+        "requires",
+        "schema_sha256",
+        "source",
+        "version",
+        "wheel",
+        "wheel_sha256"
+      ],
+      "title": "LockPlugin",
+      "type": "object"
+    },
+    "LockSha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "LockSha256",
+      "type": "string"
+    },
+    "LockSource": {
+      "description": "원천 출처 (재설치·upgrade용, sync는 쓰지 않는다). 사용자 정보(인증)는 지운다",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "commit": {
+              "pattern": "^[0-9a-f]{40}$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "git"
+            },
+            "ref": {
+              "type": ["string", "null"]
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": ["commit", "kind", "ref", "url"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "wheel"
+            },
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "$ref": "#/$defs/LockSha256"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "sha256"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "path"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": ["kind", "path"],
+          "type": "object"
+        }
+      ],
+      "title": "LockSource"
+    },
+    "PluginId": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "title": "PluginId",
+      "type": "string"
+    }
+  },
+  "$id": "urn:kookabug:plugin-lock:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "kookabug.lock (M6 계획 3.3): 설치한 플러그인과 해결된 의존성 환경. 커밋한다. 다른 PC는 잠금과 커밋된 plugins/wheels/만으로 같은 환경을 다시 만든다",
+  "properties": {
+    "environments": {
+      "additionalProperties": {
+        "$ref": "#/$defs/LockEnvironment"
+      },
+      "type": "object"
+    },
+    "format": {
+      "const": "kookabug.lock/0"
+    },
+    "index": {
+      "description": "의존성 인덱스 URL (사용자 정보 없음)",
+      "type": "string"
+    },
+    "platform": {
+      "type": "string"
+    },
+    "plugins": {
+      "description": "id 순",
+      "items": {
+        "$ref": "#/$defs/LockPlugin"
+      },
+      "type": "array"
+    },
+    "python": {
+      "description": "Python 소판 (예: 3.14)",
+      "pattern": "^\\d+\\.\\d+$",
+      "type": "string"
+    },
+    "python_full": {
+      "type": "string"
+    },
+    "sdk": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "wheel_sha256": {
+          "$ref": "#/$defs/LockSha256"
+        }
+      },
+      "required": ["version", "wheel_sha256"],
+      "type": "object"
+    }
+  },
+  "required": [
+    "environments",
+    "format",
+    "index",
+    "platform",
+    "plugins",
+    "python",
+    "python_full",
+    "sdk"
+  ],
+  "title": "PluginLock",
+  "type": "object"
+}

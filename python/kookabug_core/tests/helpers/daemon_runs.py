@@ -72,11 +72,13 @@ class RunRig:
         supervisor = Supervisor(runner_cmd=RUNNER_CMD, env=self.env)
         return WorkspaceService(self.root, environ=self.env, supervisor=supervisor)
 
-    def daemon(self, **kwargs: Any) -> ThreadDaemon:
+    def daemon(self, *, modules: tuple[str, ...] = PLUGIN_MODULES, **kwargs: Any) -> ThreadDaemon:
+        """`modules`: 개발 모듈. 에이전트 연결이 실행하는 검사는 `()`를 준다 — 개발 모듈 daemon의
+        에이전트 실행은 거부된다 (M6 3.7)."""
         return ThreadDaemon(
             self.root,
             service=self.service(),
-            plugin_modules=PLUGIN_MODULES,
+            plugin_modules=modules,
             platform_fake=self.platform,
             **kwargs,
         )
