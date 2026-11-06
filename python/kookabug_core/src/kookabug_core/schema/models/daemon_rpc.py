@@ -703,7 +703,7 @@ class PluginEnvStatus(RootModel[Literal["ready", "missing", "stale", "broken"]])
 
 class PluginGcCandidates(BaseModel):
     """
-    gc가 지울 후보 이름 (표시용 — 실제 gc는 검증한 선택으로 다시 판정한다)
+    gc가 지울 후보 이름 (확인 카드용 — 실제 gc는 검증한 선택으로 다시 판정하고, plugins.gc candidates로 받은 것 안에서만 지운다)
     """
 
     model_config = ConfigDict(
@@ -768,6 +768,18 @@ class PluginSummary(BaseModel):
     id: str
     title: str | None = None
     version: str
+
+
+class PluginsGcParams(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    candidates: Annotated[
+        PluginGcCandidates,
+        Field(
+            description="사람이 확인 카드에서 본 후보 (plugins.list gc_candidates). 그 안의 것만 지운다 — 그 사이 생긴 후보는 남는다"
+        ),
+    ]
 
 
 class PluginsOpIdParams(BaseModel):
@@ -2604,7 +2616,7 @@ class PluginsGc(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    params: EmptyParams
+    params: PluginsGcParams
     renderer: Literal[True]
     result: PluginsOpResult
     tool: Literal["ui_only"]
@@ -2627,16 +2639,6 @@ class PluginsPreview(BaseModel):
     params: PluginsPreviewParams
     renderer: Literal[True]
     result: PluginsPreviewResult
-    tool: Literal["ui_only"]
-
-
-class PluginsRelock(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    params: EmptyParams
-    renderer: Literal[True]
-    result: PluginsOpResult
     tool: Literal["ui_only"]
 
 
@@ -3065,6 +3067,18 @@ class PluginsListResult(BaseModel):
     ]
     stale_reason: str | None
     trusted: bool
+
+
+class PluginsRelockParams(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    lock_sha256: Annotated[
+        Revision,
+        Field(
+            description="사람이 확인 카드에서 본 잠금의 정규 해시 (plugins.list lock_sha256). 거래 안에서 읽은 잠금과 다르면 revision_conflict (카드에 없던 플러그인을 확인 실행하지 않는다)"
+        ),
+    ]
 
 
 class PluginsRemoveParams(BaseModel):
@@ -3966,6 +3980,16 @@ class PluginsList(BaseModel):
     renderer: Literal[True]
     result: PluginsListResult
     tool: Literal["kb_project_info"]
+
+
+class PluginsRelock(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: PluginsRelockParams
+    renderer: Literal[True]
+    result: PluginsOpResult
+    tool: Literal["ui_only"]
 
 
 class PluginsRemove(BaseModel):

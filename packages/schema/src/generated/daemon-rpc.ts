@@ -350,6 +350,10 @@ export type PluginIsolation = "auto" | "shared" | "isolated";
  */
 export type Revision1 = string;
 /**
+ * 그래프 파일 revision: 디스크 바이트의 sha256 hex
+ */
+export type Revision2 = string;
+/**
  * 커밋 토큰 (commit_prepare가 주고 commit_finish·commit_abort가 받는다)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -1616,7 +1620,7 @@ export interface Methods {
     tool: "ui_only";
   };
   "plugins.gc": {
-    params: EmptyParams;
+    params: PluginsGcParams;
     renderer: true;
     result: PluginsOpResult;
     tool: "ui_only";
@@ -1640,7 +1644,7 @@ export interface Methods {
     tool: "ui_only";
   };
   "plugins.relock": {
-    params: EmptyParams;
+    params: PluginsRelockParams;
     renderer: true;
     result: PluginsOpResult;
     tool: "ui_only";
@@ -2096,6 +2100,21 @@ export interface PluginsOpIdParams {
   op_id: PluginOpId;
 }
 /**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginsGcParams".
+ */
+export interface PluginsGcParams {
+  candidates: PluginGcCandidates;
+}
+/**
+ * 사람이 확인 카드에서 본 후보 (plugins.list gc_candidates). 그 안의 것만 지운다 — 그 사이 생긴 후보는 남는다
+ */
+export interface PluginGcCandidates {
+  envs: string[];
+  staging: string[];
+  wheels: string[];
+}
+/**
  * 작업을 시작했다. 진행은 plugins.progress, 끝은 plugins.done
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -2115,7 +2134,7 @@ export interface PluginsListResult {
   environments: {
     [k: string]: PluginEnvInfo | undefined;
   };
-  gc_candidates: PluginGcCandidates;
+  gc_candidates: PluginGcCandidates1;
   lock_sha256: Revision | null;
   plugins: PluginListEntry[];
   /**
@@ -2149,12 +2168,12 @@ export interface PluginEnvInfo {
   status: PluginEnvStatus;
 }
 /**
- * gc가 지울 후보 이름 (표시용 — 실제 gc는 검증한 선택으로 다시 판정한다)
+ * gc가 지울 후보 이름 (확인 카드용 — 실제 gc는 검증한 선택으로 다시 판정하고, plugins.gc candidates로 받은 것 안에서만 지운다)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "PluginGcCandidates".
  */
-export interface PluginGcCandidates {
+export interface PluginGcCandidates1 {
   envs: string[];
   staging: string[];
   wheels: string[];
@@ -2242,6 +2261,13 @@ export interface PluginsPreviewResult {
 }
 /**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PluginsRelockParams".
+ */
+export interface PluginsRelockParams {
+  lock_sha256: Revision1;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "PluginsRemoveParams".
  */
 export interface PluginsRemoveParams {
@@ -2256,7 +2282,7 @@ export interface PluginsRemoveParams {
  * via the `definition` "PluginsSyncParams".
  */
 export interface PluginsSyncParams {
-  lock_sha256: Revision1;
+  lock_sha256: Revision2;
 }
 /**
  * 잠금의 원천을 다시 받아 미리보기 (plugins.preview와 같은 흐름 — plugins.install {op_id}로 승인)

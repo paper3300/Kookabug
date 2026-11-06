@@ -1146,11 +1146,17 @@ class PluginOps:
 
     # ------------------------------------------------------------ gc
 
-    def gc(self, *, confirm: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
+    def gc(
+        self,
+        *,
+        confirm: Callable[[dict[str, Any]], bool],
+        only: Mapping[str, Sequence[str]] | None = None,
+    ) -> dict[str, Any]:
+        """`only`: 사람이 미리 본 후보 이름 (화면 카드). 주면 그 안의 것만 지운다."""
         from kookabug_core.plugins.gc import collect
 
         with self.layout.busy():
-            return collect(self.layout, confirm)
+            return collect(self.layout, confirm, only)
 
     # ------------------------------------------------------------ sync·relock
 
@@ -1166,11 +1172,17 @@ class PluginOps:
 
         return sync(self, confirm=confirm, expected_sha256=lock_sha256)
 
-    def relock(self, *, confirm: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
-        """앱 Python·SDK로 다시 잠근다 (`relock.py`)."""
+    def relock(
+        self,
+        *,
+        confirm: Callable[[dict[str, Any]], bool],
+        lock_sha256: str | Unchecked | None = UNCHECKED,
+    ) -> dict[str, Any]:
+        """앱 Python·SDK로 다시 잠근다 (`relock.py`). `lock_sha256`: 사람이 확인한 정규 잠금
+        해시(잠금이 없었으면 명시적 None) — sync와 같은 규칙, 생략만 비교하지 않는다."""
         from kookabug_core.plugins.relock import relock
 
-        return relock(self, confirm=confirm)
+        return relock(self, confirm=confirm, expected_sha256=lock_sha256)
 
 
 def _project(fetched: sources.Fetched) -> Path:

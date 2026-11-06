@@ -25,7 +25,8 @@ import {
   useDocuments,
 } from "../store/documents";
 import { ask } from "../store/dialog";
-import { activateTab, tabBadge, useTabs } from "../store/tabs";
+import { PluginDetail } from "../plugins/PluginDetail";
+import { activateTab, PLUGIN_TAB_PREFIX, tabBadge, useTabs } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
 import { LogoMark } from "../theme/icons";
 import css from "./shell.module.css";
@@ -101,6 +102,8 @@ function Breadcrumb() {
           ? [name, "녹화", tab.title]
           : tab?.kind === "settings"
             ? [name, "설정", "에이전트 권한"]
+            : tab?.kind === "plugin"
+              ? [name, "플러그인", tab.title]
             : tab?.preview === true
               ? [name, "승인 미리보기", tab.title]
               : [name, ...active.split("/")];
@@ -218,6 +221,8 @@ export function Editor({ children }: { children?: ReactNode }) {
           <RecTab />
         ) : activeTab?.kind === "settings" ? (
           <PermissionsView />
+        ) : activeTab?.kind === "plugin" ? (
+          <PluginDetail key={active} id={active.slice(PLUGIN_TAB_PREFIX.length)} />
         ) : (
           <div className={css.canvas} data-part="canvas" data-path={active} />
         )}

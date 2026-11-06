@@ -15,6 +15,8 @@ export interface PaletteGroup {
   dot: DotTone;
   /** 묶음 줄 오른쪽 칸 (코어 묶음의 고정 글, 예: Agent "CLI · API 키") */
   src?: string;
+  /** 플러그인 묶음이면 그 플러그인 ID (M6 B5: 묶음 이름이 플러그인 title이다) */
+  plugin?: string;
   items: PaletteItem[];
 }
 
@@ -42,10 +44,14 @@ export function paletteGroups(types: TypeIndex, query = ""): PaletteGroup[] {
     if (hidden(info) || !matches(info, query)) continue;
     const { group } = categoryInfo(info.category);
     if (group === PLUGIN_GROUP) {
-      // 플러그인 분류는 플러그인마다 한 묶음 (오른쪽에 플러그인 이름)
+      // 플러그인 분류는 플러그인마다 한 묶음: 묶음 이름은 플러그인 title, 오른쪽 칸은 "플러그인" (시안 Main
+      // "엔진 연동 · 플러그인", M6 U1)
       let g = plugins.get(info.plugin);
-      if (g === undefined) plugins.set(info.plugin, (g = { group: PLUGIN_GROUP, dot: PLUGIN_DOT, items: [] }));
-      g.items.push({ type: info.type, title: info.title, src: info.pluginTitle || info.plugin, info });
+      if (g === undefined) {
+        const title = info.pluginTitle || info.plugin;
+        plugins.set(info.plugin, (g = { group: title, dot: PLUGIN_DOT, src: PLUGIN_GROUP, plugin: info.plugin, items: [] }));
+      }
+      g.items.push({ type: info.type, title: info.title, src: PLUGIN_GROUP, info });
     } else {
       groups.get(group)!.items.push({ type: info.type, title: info.title, src: "", info });
     }
@@ -58,7 +64,7 @@ export function paletteGroups(types: TypeIndex, query = ""): PaletteGroup[] {
 
 /** 묶음 열쇠 (플러그인 묶음은 플러그인마다 다르다) */
 export function groupKey(g: PaletteGroup): string {
-  return g.group === PLUGIN_GROUP ? `${PLUGIN_GROUP}:${g.items[0]?.info.plugin ?? ""}` : g.group;
+  return g.plugin !== undefined ? `${PLUGIN_GROUP}:${g.plugin}` : g.group;
 }
 
 /** 처음 펼친 묶음 (시안 Main: 창·입력·화면 인식) */

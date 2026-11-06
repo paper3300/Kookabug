@@ -2700,7 +2700,7 @@ export const daemonRpcSchema: unknown = {
           "additionalProperties": false,
           "properties": {
             "params": {
-              "$ref": "#/$defs/EmptyParams"
+              "$ref": "#/$defs/PluginsGcParams"
             },
             "renderer": {
               "const": true
@@ -2796,7 +2796,7 @@ export const daemonRpcSchema: unknown = {
           "additionalProperties": false,
           "properties": {
             "params": {
-              "$ref": "#/$defs/EmptyParams"
+              "$ref": "#/$defs/PluginsRelockParams"
             },
             "renderer": {
               "const": true
@@ -4822,7 +4822,7 @@ export const daemonRpcSchema: unknown = {
     },
     "PluginGcCandidates": {
       "additionalProperties": false,
-      "description": "gc가 지울 후보 이름 (표시용 — 실제 gc는 검증한 선택으로 다시 판정한다)",
+      "description": "gc가 지울 후보 이름 (확인 카드용 — 실제 gc는 검증한 선택으로 다시 판정하고, plugins.gc candidates로 받은 것 안에서만 지운다)",
       "properties": {
         "envs": {
           "items": {
@@ -5116,6 +5116,20 @@ export const daemonRpcSchema: unknown = {
       "title": "PluginsDoneParams",
       "type": "object"
     },
+    "PluginsGcParams": {
+      "additionalProperties": false,
+      "properties": {
+        "candidates": {
+          "$ref": "#/$defs/PluginGcCandidates",
+          "description": "사람이 확인 카드에서 본 후보 (plugins.list gc_candidates). 그 안의 것만 지운다 — 그 사이 생긴 후보는 남는다"
+        }
+      },
+      "required": [
+        "candidates"
+      ],
+      "title": "PluginsGcParams",
+      "type": "object"
+    },
     "PluginsListResult": {
       "additionalProperties": false,
       "description": "플러그인 목록 (M6 3.8, 읽기만). lock_sha256 = 정규 잠금 해시 — 준비(plugins.sync)에 그대로 넘긴다. trusted = 이 PC에서 신뢰 확인한 잠금",
@@ -5338,6 +5352,20 @@ export const daemonRpcSchema: unknown = {
         "stage"
       ],
       "title": "PluginsProgressParams",
+      "type": "object"
+    },
+    "PluginsRelockParams": {
+      "additionalProperties": false,
+      "properties": {
+        "lock_sha256": {
+          "$ref": "#/$defs/Revision",
+          "description": "사람이 확인 카드에서 본 잠금의 정규 해시 (plugins.list lock_sha256). 거래 안에서 읽은 잠금과 다르면 revision_conflict (카드에 없던 플러그인을 확인 실행하지 않는다)"
+        }
+      },
+      "required": [
+        "lock_sha256"
+      ],
+      "title": "PluginsRelockParams",
       "type": "object"
     },
     "PluginsRemoveParams": {

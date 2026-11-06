@@ -13,7 +13,9 @@ import { useAgent } from "../agent/agentStore";
 import { useEditsLocked } from "../store/dialog";
 import { applyEdit, useDocuments } from "../store/documents";
 import { useRegistry } from "../store/registry";
-import { useTabs } from "../store/tabs";
+import { openPluginTab, useTabs } from "../store/tabs";
+import { ENV_STATUS_TEXT, pluginTitle } from "../plugins/model";
+import { usePlugins } from "../plugins/pluginStore";
 import { ChevronDownIcon, ChevronRightIcon } from "../theme/icons";
 import {
   useEditKeys,
@@ -273,6 +275,7 @@ function NodeFields({ path, view, ctx }: { path: string; view: NodeInspector; ct
           <dd className={css.mono} data-part="node-id">
             {node.id}
           </dd>
+          <PluginBadge plugin={view.info?.plugin ?? null} />
         </dl>
         {view.info?.description != null && <p className={css.description}>{view.info.description}</p>}
         {node.type === GRAPH_CALL_TYPE && <OpenSubgraphButton path={path} node={node.id} config={node.config} />}
@@ -307,6 +310,30 @@ function NodeFields({ path, view, ctx }: { path: string; view: NodeInspector; ct
           )}
         </>
       )}
+    </>
+  );
+}
+
+/** 설치 플러그인(잠금에 있는 것)의 노드면 머리에 플러그인 배지 (M6 B5). 누르면 그 플러그인 상세 탭 */
+function PluginBadge({ plugin }: { plugin: string | null }) {
+  const entry = usePlugins((s) => (plugin === null ? undefined : s.list?.plugins.find((p) => p.id === plugin)));
+  if (entry === undefined) return null;
+  const title = pluginTitle(entry);
+  return (
+    <>
+      <dt>플러그인</dt>
+      <dd>
+        <button
+          type="button"
+          className={css.pluginBadge}
+          data-part="node-plugin"
+          data-status={entry.env_status}
+          title={`${entry.id} · ${ENV_STATUS_TEXT[entry.env_status]}`}
+          onClick={() => openPluginTab(entry.id, title)}
+        >
+          {title} · {entry.version}
+        </button>
+      </dd>
     </>
   );
 }

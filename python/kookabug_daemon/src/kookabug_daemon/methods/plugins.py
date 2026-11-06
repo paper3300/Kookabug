@@ -4,8 +4,8 @@
 - 나머지(변경·미리보기·취소)는 모두 `ui_only` + `AGENT_DENIED` — agent 연결은 판정 전에
   `permission_denied` (`tools.Authorizer.gate`). 공개 MCP 도구는 없다
 - 작업은 `plugin_jobs.PluginJobs` (한 번에 하나·취소·진행 알림·미리보기 5분). 확인은 화면이 받는다:
-  미리보기 → `plugins.install`, sync는 사람이 본 정규 잠금 해시(`lock_sha256`), remove는 본 잠금의
-  revision(`base_revision`)일 때만 진행한다
+  미리보기 → `plugins.install`, sync·relock은 사람이 본 정규 잠금 해시(`lock_sha256`), remove는 본
+  잠금의 revision(`base_revision`)일 때만 진행하고, gc는 카드에서 본 후보(`candidates`)만 지운다
 """
 
 from __future__ import annotations
@@ -131,13 +131,20 @@ async def _sync(call: Call) -> dict[str, Any]:
 
 
 async def _relock(call: Call) -> dict[str, Any]:
+    # 확인 카드가 본 잠금(정규 해시)일 때만: 카드에 없던 플러그인을 확인 실행하지 않는다 (B5 검수 H)
+    expected = str(call.params["lock_sha256"])
     return await asyncio.to_thread(
-        _jobs(call).start, "relock", lambda ops: ops.relock(confirm=_yes)
+        _jobs(call).start, "relock", lambda ops: ops.relock(confirm=_yes, lock_sha256=expected)
     )
 
 
 async def _gc(call: Call) -> dict[str, Any]:
-    return await asyncio.to_thread(_jobs(call).start, "gc", lambda ops: ops.gc(confirm=_yes))
+    # 확인 카드가 본 후보만 지운다 (그 사이 생긴 후보는 확인받지 않았다)
+    raw = call.params["candidates"]
+    only = {k: [str(n) for n in raw.get(k, [])] for k in ("envs", "wheels", "staging")}
+    return await asyncio.to_thread(
+        _jobs(call).start, "gc", lambda ops: ops.gc(confirm=_yes, only=only)
+    )
 
 
 async def _cancel(call: Call) -> dict[str, Any]:

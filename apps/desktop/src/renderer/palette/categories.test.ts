@@ -47,9 +47,9 @@ describe("팔레트 묶음", () => {
     expect(NONDETERMINISTIC_BADGE).toBe("비결정");
   });
 
-  test("시안 분류 순서, 플러그인 분류는 플러그인 이름, 시작 노드는 뺀다", () => {
+  test("시안 분류 순서, 플러그인 분류는 플러그인 이름(오른쪽 '플러그인'), 시작 노드는 뺀다", () => {
     const groups = paletteGroups(types);
-    expect(groups.map((g) => g.group)).toEqual(["창", "입력", "화면 인식", "흐름", "판정", "Agent", "플러그인"]);
+    expect(groups.map((g) => g.group)).toEqual(["창", "입력", "화면 인식", "흐름", "판정", "Agent", "Acme 비전"]);
     const all = groups.flatMap((g) => g.items.map((i) => i.type));
     const entries = core.nodes.filter((n) => n.engine === "graph_entry").map((n) => n.type);
     expect(entries.length).toBe(1);
@@ -60,7 +60,8 @@ describe("팔레트 묶음", () => {
     expect(groups.find((g) => g.group === "입력")!.items.map((i) => i.type)).toContain("acme.input.tap");
     const pluginGroup = groups.at(-1)!;
     expect(pluginGroup.items).toHaveLength(1);
-    expect(pluginGroup.items[0].src).toBe("Acme 비전");
+    expect(pluginGroup.src).toBe("플러그인");
+    expect(pluginGroup.items[0].src).toBe("플러그인");
     expect(groupKey(pluginGroup)).toBe("플러그인:acme");
     expect(types.get("acme.vision.magic")!.pluginVersion).toBe("2.0.0");
   });

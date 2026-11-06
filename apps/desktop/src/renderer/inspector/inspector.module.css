@@ -452,6 +452,29 @@
   line-height: 18px;
 }
 
+/* 인스펙터 머리 플러그인 배지 (M6 B5) */
+.pluginBadge {
+  height: 18px;
+  padding: 0 6px;
+  background: none;
+  border: 1px solid var(--kb-cat-plugin);
+  border-radius: 9px;
+  color: var(--kb-fg);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.pluginBadge[data-status="missing"],
+.pluginBadge[data-status="stale"],
+.pluginBadge[data-status="broken"] {
+  border-color: var(--kb-status-warn);
+  color: var(--kb-status-warn);
+}
+
+.pluginBadge:hover {
+  background: var(--kb-hover-bg);
+}
+
 .description {
   margin: 0;
   color: var(--kb-fg-muted);

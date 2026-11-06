@@ -1,5 +1,5 @@
 // 타이틀 바 (시안 Main): 로고·메뉴·명령 검색 자리·창 버튼. 명령 검색은 파일 빠른 열기만 한다 (2.11).
-// 시안의 "플러그인" 메뉴는 M6까지 숨긴다 (2.10 "창", U3)
+// 시안의 "플러그인" 메뉴는 M6 B5에서 붙였다: 추가·목록·준비·다시 잠그기·정리 (사이드바와 같은 동작)
 import { useEffect, useRef, useState } from "react";
 import {
   pauseRun,
@@ -18,6 +18,9 @@ import { closeWorkspace, openFolder, useWorkspace } from "../store/workspace";
 import { LogoMark, SearchIcon } from "../theme/icons";
 import css from "./shell.module.css";
 import { WindowControls } from "./WindowControls";
+import { bannerView, gcSummary } from "../plugins/model";
+import { openAddDialog, startGc, startPrepare, startRelock, usePlugins } from "../plugins/pluginStore";
+import { showSide } from "./Sidebar";
 
 interface MenuItem {
   label: string;
@@ -38,6 +41,11 @@ function useMenus(): [string, MenuEntry[]][] {
   const inspectorOpen = useUi((s) => s.inspectorOpen);
   const runs = useRunAvailability();
   const debug = useDebugAvailability();
+  const connected = useWorkspace((s) => s.daemon.status === "connected");
+  const pluginList = usePlugins((s) => s.list);
+  const pluginBusy = usePlugins((s) => s.running !== null || (s.list?.busy ?? null) !== null);
+  const pluginBanner = bannerView(pluginList);
+  const pluginIdle = hasWorkspace && connected && !pluginBusy;
   const theme =(value: ThemeMode, label: string): MenuItem => ({
     label: `테마: ${label}`,
     checked: mode === value,
@@ -103,6 +111,24 @@ function useMenus(): [string, MenuEntry[]][] {
         { label: "다시 시작", shortcut: "Ctrl+Shift+F5", disabled: !debug.canRestart, run: restartRun },
         "separator",
         { label: "브레이크포인트 설정/해제", shortcut: "F9", disabled: graph === null, run: toggleSelectedBreakpoints },
+      ],
+    ],
+    [
+      "플러그인",
+      [
+        {
+          label: "플러그인 추가…",
+          disabled: !pluginIdle,
+          run: () => {
+            showSide("plugins");
+            openAddDialog();
+          },
+        },
+        { label: "플러그인 보기", disabled: !hasWorkspace, run: () => showSide("plugins") },
+        "separator",
+        { label: "준비…", disabled: !pluginIdle || pluginBanner?.kind !== "prepare", run: () => void startPrepare() },
+        { label: "다시 잠그기…", disabled: !pluginIdle || pluginBanner?.kind !== "relock", run: () => void startRelock() },
+        { label: "안 쓰는 환경 정리…", disabled: !pluginIdle || gcSummary(pluginList?.gc_candidates) === null, run: () => void startGc() },
       ],
     ],
     ["도움말", [{ label: "Kookabug 0.1", disabled: true }]],

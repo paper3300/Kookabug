@@ -22,6 +22,7 @@ import {
   setDocumentsConnection,
 } from "./documents";
 import { refreshRegistry, resetRegistry } from "./registry";
+import { initPlugins, reloadPlugins, resetPlugins } from "../plugins/pluginStore";
 import { closeAllTabs } from "./tabs";
 import { useUi } from "./ui";
 
@@ -115,6 +116,7 @@ function switchProject(root: string | null): void {
   breakpointModel.reset();
   resetRecorder();
   resetAgent();
+  resetPlugins();
   recovery.reset();
   useWorkspace.setState({
     root,
@@ -163,6 +165,8 @@ async function onDaemonState(state: DaemonState): Promise<void> {
     runListModel.reload(),
     refreshRecorderState(),
     agentConnected(),
+    // 플러그인 목록 (준비 띠·상태 바 경고색). daemon 감시 첫 주기 전 잠금 변경도 여기서 본다 (B4 5절)
+    reloadPlugins(),
   ]);
 }
 
@@ -216,6 +220,13 @@ export async function initWorkspace(): Promise<void> {
   client().on("debug.breakpoints.changed", (p) => breakpointModel.changed(p));
   // 에이전트 패널 세션·확인 요청·agent 연결 목록 (M5 B5)
   initAgent();
+  // 플러그인 작업 진행·끝·잠금 변경 (M6 B5). 잠금이 바뀌면 daemon은 레지스트리를 다시 만들고 알림만 준다:
+  // 노드 목록·워크스페이스 정보(상태 바 플러그인 수)·열린 그래프 검증을 다시 부른다
+  initPlugins(() => {
+    void loadRegistry();
+    void refreshInfo();
+    revalidateOpenDocs();
+  });
   recovery.addRuns(runModel.cursors);
   recovery.addDocs(documentsHost);
   recovery.addFrames(framesHost);

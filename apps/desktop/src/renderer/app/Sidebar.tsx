@@ -1,5 +1,6 @@
-// 액티비티 바와 사이드바 (시안 Main·RunViewer·Recorder). 액티비티 바는 탐색기·실행 기록(M3 T10)·녹화(M4 T9)가
-// 보인다: 화면 지도·플러그인·설정은 그 단계에서 붙인다 (U3). 실행 기록 배지는 지난 열람 이후 실패 수다.
+// 액티비티 바와 사이드바 (시안 Main·RunViewer·Recorder). 액티비티 바는 탐색기·실행 기록(M3 T10)·녹화(M4 T9)·
+// 플러그인(M6 B5)이 보인다: 화면 지도·설정은 그 단계에서 붙인다 (U3). 실행 기록 배지는 지난 열람 이후 실패 수,
+// 플러그인 배지는 준비 필요·조건 다름 수다.
 // 사이드바 아래 "노드" 섹션은 팔레트다 (T9). 워크스페이스 머리 줄 오른쪽에 "새 테스트·새 서브그래프" 단추가
 // 있다 (graph.create, T9)
 import { useState } from "react";
@@ -12,21 +13,26 @@ import { createGraphInteractive } from "../store/newGraph";
 import { useUi, type SideView } from "../store/ui";
 import { useWorkspace } from "../store/workspace";
 import { RecorderSidebar } from "../recorder/RecorderSidebar";
-import { ChevronDownIcon, ChevronRightIcon, ExplorerIcon, HistoryIcon, RecordIcon } from "../theme/icons";
+import { attentionCount } from "../plugins/model";
+import { PluginsSidebar } from "../plugins/PluginsSidebar";
+import { reloadPlugins, usePlugins } from "../plugins/pluginStore";
+import { ChevronDownIcon, ChevronRightIcon, ExplorerIcon, HistoryIcon, PluginIcon, RecordIcon } from "../theme/icons";
 import css from "./shell.module.css";
 
-function showSide(view: SideView): void {
+export function showSide(view: SideView): void {
   useUi.setState({ sideView: view });
   if (view === "runs") {
     runListModel.markSeen();
     void runListModel.reload();
   }
+  if (view === "plugins") void reloadPlugins();
 }
 
 export function ActivityBar() {
   const view = useUi((s) => s.sideView);
   const failures = useRunList((s) => failuresSince(s.runs, s.seenAt));
   const badge = view === "runs" ? 0 : failures;
+  const pluginAttention = usePlugins((s) => attentionCount(s.list));
   return (
     <nav aria-label="작업 영역" className={css.activitybar}>
       <button
@@ -62,6 +68,21 @@ export function ActivityBar() {
         onClick={() => showSide("recorder")}
       >
         <RecordIcon />
+      </button>
+      <button
+        type="button"
+        aria-label={pluginAttention > 0 ? `플러그인, 준비 필요 ${pluginAttention}` : "플러그인"}
+        aria-pressed={view === "plugins"}
+        className={css.activityButton}
+        data-part="activity-plugins"
+        onClick={() => showSide("plugins")}
+      >
+        <PluginIcon />
+        {pluginAttention > 0 && (
+          <span className={`${runsCss.activityBadge} ${css.activityBadgeWarn}`} data-part="activity-plugins-badge">
+            {pluginAttention}
+          </span>
+        )}
       </button>
     </nav>
   );
@@ -129,6 +150,15 @@ export function Sidebar() {
       <aside aria-label="사이드바" className={`${css.sidebar} ${css.sidebarRecorder}`}>
         <div className={css.sidebarInner} data-part="sidebar" data-view="recorder">
           <RecorderSidebar />
+        </div>
+      </aside>
+    );
+  }
+  if (view === "plugins") {
+    return (
+      <aside aria-label="사이드바" className={css.sidebar}>
+        <div className={css.sidebarInner} data-part="sidebar" data-view="plugins">
+          <PluginsSidebar />
         </div>
       </aside>
     );

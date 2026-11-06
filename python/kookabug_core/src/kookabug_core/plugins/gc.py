@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
 
@@ -127,8 +127,15 @@ def _only(
     return {k: [p for p in v if p.name in shown.get(k, [])] for k, v in targets.items()}
 
 
-def collect(layout: Layout, confirm: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
+def collect(
+    layout: Layout,
+    confirm: Callable[[dict[str, Any]], bool],
+    only: Mapping[str, Sequence[str]] | None = None,
+) -> dict[str, Any]:
     """busy.lock을 쥔 호출자가 부른다. 확인에서 취소하면 아무것도 지우지 않는다.
+
+    `only`: 사람이 미리 본 후보 이름(화면 카드 — `candidates()` 모양). 주면 그 안에 든 것만 지울
+    후보로 본다 (카드에 없던 것은 확인받지 않았으므로 남긴다). 생략하면 `confirm`이 본 것 전부.
 
     사람 확인은 op.lock **밖**에서 받는다 (답을 기다리는 동안 실행 시작이 op.lock을 기다리지 않게).
     확인 뒤 op.lock 안에서 다시 판정하고(잠금이 그대로면 고른 환경을 그대로 쓰고 사용 표식만 다시
@@ -136,6 +143,8 @@ def collect(layout: Layout, confirm: Callable[[dict[str, Any]], bool]) -> dict[s
     것은 남는다."""
     judged, targets = _judged(layout, lambda j, t: (j, t))
     shown = _names(targets)
+    if only is not None:
+        shown = {k: [n for n in names if n in set(only.get(k, ()))] for k, names in shown.items()}
     if not any(shown.values()):
         return {"removed": shown, "failed": [], "cancelled": False}
     if not confirm(shown):

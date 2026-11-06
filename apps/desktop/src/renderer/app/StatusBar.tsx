@@ -17,6 +17,9 @@ import { useDocuments } from "../store/documents";
 import { useRegistry } from "../store/registry";
 import { useWorkspace } from "../store/workspace";
 import { DotIcon, LockIcon, PlayIcon } from "../theme/icons";
+import { attentionCount } from "../plugins/model";
+import { usePlugins } from "../plugins/pluginStore";
+import { showSide } from "./Sidebar";
 import css from "./shell.module.css";
 
 const CONNECTION = {
@@ -157,6 +160,27 @@ function Agents() {
   );
 }
 
+/**
+ * "플러그인 N" (시안 Main): N은 실행 환경이 아는 플러그인 수(workspace.info). 준비 필요·조건 다름이면 경고색(M6 U1).
+ * 누르면 플러그인 사이드바
+ */
+function Plugins({ count }: { count: number }) {
+  const attention = usePlugins((s) => attentionCount(s.list));
+  return (
+    <button
+      type="button"
+      className={`${css.statusItem} ${css.statusButton} ${attention > 0 ? css.statusPluginsWarn : ""}`}
+      data-part="status-plugins"
+      data-attention={attention}
+      title={attention > 0 ? `준비가 필요한 플러그인 ${attention}개` : "플러그인 보기"}
+      onClick={() => showSide("plugins")}
+    >
+      플러그인 {count}
+      {attention > 0 && <span> · 준비 필요 {attention}</span>}
+    </button>
+  );
+}
+
 export function StatusBar() {
   const daemon = useWorkspace((s) => s.daemon);
   const info = useWorkspace((s) => s.info);
@@ -213,7 +237,7 @@ export function StatusBar() {
             {capture} · {ocr}
           </span>
           <span className={css.statusItem}>Python {pythonVersion(runtime.python)}</span>
-          <span className={css.statusItem}>플러그인 {info?.plugins.length ?? 0}</span>
+          <Plugins count={info?.plugins.length ?? 0} />
         </>
       )}
       {daemon.status === "connected" && !rec.recording && <Agents />}

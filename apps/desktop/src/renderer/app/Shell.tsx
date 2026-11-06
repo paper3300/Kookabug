@@ -14,6 +14,8 @@ import { Banner, OpenErrorBanner } from "./Banner";
 import { Dialog } from "./Dialog";
 import { Editor } from "./Editor";
 import { Panel } from "./Panel";
+import { PluginDialog } from "../plugins/PluginDialog";
+import { usePlugins } from "../plugins/pluginStore";
 import { QuickOpen } from "./QuickOpen";
 import { RightPanel } from "./RightPanel";
 import css from "./shell.module.css";
@@ -43,7 +45,7 @@ function useShortcuts(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // 대화 상자가 떠 있으면 뒤쪽 화면의 단축키(저장·실행 취소·탭 닫기 등)는 듣지 않는다
-      if (useDialog.getState().current !== null) return;
+      if (useDialog.getState().current !== null || usePlugins.getState().flow !== null) return;
       // 실행·디버거 (M3 2.9, VS Code 관례): F5 실행·계속, Shift+F5 정지, Ctrl+Shift+F5 다시 시작, F6 일시정지,
       // F9 브레이크포인트, F10·F11·Shift+F11 Step. 글자 칸 안에서도 기능 키는 디버거 것이다
       const debug = debugKey(e);
@@ -105,6 +107,7 @@ export function Shell() {
       </div>
       <StatusBar />
       <QuickOpen />
+      <PluginDialog />
       <Dialog />
     </div>
   );

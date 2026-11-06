@@ -14,6 +14,7 @@ from helpers.plugins import YES, Rig, env_run, plugin_cli, run_node, tree_hashes
 
 from kb_testing.plugin_fixtures import sdk_wheel
 from kookabug_core.plugins import SDK_WHEEL_ENV, PluginError, PluginOps
+from kookabug_core.plugins.lockfile import lock_sha256
 
 pytestmark = [pytest.mark.packaging, pytest.mark.process, pytest.mark.timeout(600)]
 
@@ -98,3 +99,20 @@ def test_relock_refused_when_range_excludes_new_sdk(rig: Rig, tmp_path: Path) ->
     assert caught.value.fields.get("plugin") == "sample"
     assert asked == []  # 신뢰 확인 전에 거부
     assert _state(rig) == before
+
+
+def test_relock_requires_confirmed_lock_hash(rig: Rig, tmp_path: Path) -> None:
+    """화면 카드가 본 정규 잠금 해시(`lock_sha256`)가 거래 안에서 읽은 잠금과 다르면 아무것도
+    안 하고 `revision_conflict` (B5 검수 H: 카드에 없던 플러그인을 확인 실행하지 않는다). 맞으면
+    진행."""
+    rig.add("sample")
+    seen = lock_sha256(rig.lock())
+    rig.add("compatible_c")  # 카드를 본 뒤 잠금이 바뀌었다
+    before = _state(rig)
+    ops, _ = _new_app(rig, tmp_path, "0.1.1")
+    with pytest.raises(PluginError) as caught:
+        ops.relock(confirm=YES, lock_sha256=seen)
+    assert caught.value.code == "revision_conflict"
+    assert ops.calls == []
+    assert _state(rig) == before
+    assert ops.relock(confirm=YES, lock_sha256=lock_sha256(rig.lock()))["changed"] is True

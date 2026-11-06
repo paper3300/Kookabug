@@ -92,6 +92,18 @@ export function RecordIcon(props: IconProps) {
   );
 }
 
+/** 액티비티 바 "플러그인" (시안 Main 5번째 아이콘, M6 B5) */
+export function PluginIcon(props: IconProps) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true" {...props}>
+      <rect x="3" y="3" width="7" height="7" />
+      <rect x="3" y="14" width="7" height="7" />
+      <rect x="14" y="14" width="7" height="7" />
+      <path d="M14 6.5h7M17.5 3v7" />
+    </svg>
+  );
+}
+
 /** 하단 패널 펼치기 (접힌 패널, M4 B5) */
 export function ChevronUpIcon(props: IconProps) {
   return (

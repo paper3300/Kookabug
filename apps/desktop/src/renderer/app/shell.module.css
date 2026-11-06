@@ -245,6 +245,29 @@
   color: var(--kb-activitybar-active-fg);
 }
 
+/* 플러그인 준비 필요·조건 다름 배지 (M6 B5): 실행 기록 배지 모양에 경고색 */
+.activityButton .activityBadgeWarn {
+  background: var(--kb-status-warn);
+  color: var(--kb-badge-fg);
+}
+
+/* 상태 바 "플러그인 N" (누르면 플러그인 사이드바, M6 B5): 칸 모양 그대로인 단추 */
+.statusButton {
+  background: none;
+  border: 0;
+  color: inherit;
+  font-size: 12px;
+}
+
+.statusButton:hover {
+  background: var(--kb-hover-bg);
+}
+
+/* 경고색 (준비 필요·조건 다름, M6 U1) */
+.statusPluginsWarn {
+  color: var(--kb-status-warn);
+}
+
 .sidebar {
   flex: 0 0 calc(var(--kb-sidebar-width) + 1px);
   min-width: 0;

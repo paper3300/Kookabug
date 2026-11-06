@@ -20,7 +20,8 @@ from helpers.graphs import GraphBuilder, link
 from helpers.plugins import Rig, plugin_world, rig, tree_hashes
 
 from kb_testing.daemon import ThreadDaemon
-from kookabug_core.plugins import PluginOps
+from kb_testing.plugin_fixtures import sdk_wheel
+from kookabug_core.plugins import SDK_WHEEL_ENV, PluginOps
 from kookabug_core.plugins.lockfile import lock_sha256, revision_of
 from kookabug_daemon.client import DaemonClient, DaemonError
 
@@ -223,8 +224,8 @@ def test_plugin_methods_agent_denied(rig: Rig, daemon: ThreadDaemon) -> None:
             "plugins.upgrade": {"id": "sample"},
             "plugins.remove": {"id": "sample", "base_revision": revision},
             "plugins.sync": {"lock_sha256": lock_sha256(lock)},
-            "plugins.relock": {},
-            "plugins.gc": {},
+            "plugins.relock": {"lock_sha256": lock_sha256(lock)},
+            "plugins.gc": {"candidates": {"envs": [], "wheels": [], "staging": []}},
             "plugins.cancel": {"op_id": "0" * 32},
         }
         for method, params in calls.items():
@@ -301,11 +302,85 @@ def test_sync_requires_confirmed_lock_hash(rig: Rig, daemon: ThreadDaemon) -> No
         # 정리: 안 쓰는 환경·wheel (목록의 후보 = gc가 지운 것)
         candidates = ui.call("plugins.list")["gc_candidates"]
         assert candidates["envs"] and candidates["wheels"]
-        started = ui.call("plugins.gc", {})
+        started = ui.call("plugins.gc", {"candidates": candidates})
         done = notification(ui, "plugins.done", op_id=started["op_id"])
         assert done["ok"] is True
         assert done["result"]["removed"]["envs"] == candidates["envs"]
         assert done["result"]["removed"]["wheels"] == candidates["wheels"]
+
+
+def _untrusted_stale(rig: Rig, tmp_path: Path) -> dict[str, str]:
+    """sample만 든 잠금, 환경·신뢰 기억 없음, 앱 SDK 0.1.1 (조건 다름 → 다시 잠그기 카드)."""
+    rig.add("sample")
+    shutil.rmtree(rig.envs)
+    local = rig.root / ".kookabug/local.json"
+    data = json.loads(local.read_text(encoding="utf-8-sig"))
+    data.pop("plugin_trust", None)
+    local.write_text(json.dumps(data), encoding="utf-8")
+    next_sdk = sdk_wheel(tmp_path / "next-sdk", version="0.1.1")
+    return {**rig.world.environ, SDK_WHEEL_ENV: str(next_sdk)}
+
+
+@pytest.mark.parametrize("change", ["added_plugin", "permissions"])
+def test_relock_requires_confirmed_lock_hash(rig: Rig, tmp_path: Path, change: str) -> None:
+    """다시 잠그기는 카드가 본 잠금(정규 해시)일 때만 (B5 검수 H 재현): 카드를 본 뒤 잠금이 바뀌면
+    (플러그인 추가·권한 변경) `revision_conflict` — 환경·잠금·신뢰 그대로. 다시 본 해시로는 진행."""
+    environ = _untrusted_stale(rig, tmp_path)
+    lock_path = rig.root / "kookabug.lock"
+    with (
+        ThreadDaemon(rig.root, plugin_environ=environ, watch_interval_s=0.1) as d,
+        d.client() as ui,
+    ):
+        card = ui.call("plugins.list")
+        assert [p["id"] for p in card["plugins"]] == ["sample"] and card["stale_reason"]
+        if change == "added_plugin":
+            # 밖에서 받은 새 잠금: 카드에 없던 플러그인이 들었다 (같은 PC의 다른 거래로 만든다)
+            PluginOps(rig.root, environ=rig.world.environ).add(
+                str(rig.world.wheel("compatible_c")), confirm=lambda _: True
+            )
+            shutil.rmtree(rig.envs)
+        else:
+            lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            lock["plugins"][0]["manifest"]["permissions"] = ["capture", "network"]
+            lock_path.write_text(json.dumps(lock, indent=2, sort_keys=True), encoding="utf-8")
+        local = rig.root / ".kookabug/local.json"
+        data = json.loads(local.read_text(encoding="utf-8-sig"))
+        data.pop("plugin_trust", None)
+        local.write_text(json.dumps(data), encoding="utf-8")
+        before = plugin_state(rig)
+        current = ui.call("plugins.list")
+        assert current["lock_sha256"] != card["lock_sha256"] and current["trusted"] is False
+        started = ui.call("plugins.relock", {"lock_sha256": card["lock_sha256"]})
+        done = notification(ui, "plugins.done", op_id=started["op_id"])
+        assert done["ok"] is False and done["error"]["code"] == "revision_conflict", done
+        assert plugin_state(rig) == before
+        assert ui.call("plugins.list")["trusted"] is False
+        # 다시 본 카드의 해시로는 진행한다
+        started = ui.call("plugins.relock", {"lock_sha256": current["lock_sha256"]})
+        done = notification(ui, "plugins.done", op_id=started["op_id"])
+        assert done["ok"] is True, done
+        after = ui.call("plugins.list")
+        assert after["stale_reason"] is None and after["trusted"] is True
+        assert all(p["env_status"] == "ready" for p in after["plugins"])
+
+
+def test_gc_removes_only_confirmed_candidates(rig: Rig, daemon: ThreadDaemon) -> None:
+    """정리는 카드에서 본 후보 안의 것만 지운다: 카드에 없던 후보(그 사이 생긴 것)는 남는다."""
+    rig.add("sample")
+    with daemon.client() as ui:
+        listed = ui.call("plugins.list")
+        removed = ui.call("plugins.remove", {"id": "sample", "base_revision": listed["revision"]})
+        assert notification(ui, "plugins.done", op_id=removed["op_id"])["ok"] is True
+        candidates = ui.call("plugins.list")["gc_candidates"]
+        assert candidates["envs"] and candidates["wheels"]
+        shown = {"envs": [], "wheels": candidates["wheels"], "staging": []}
+        started = ui.call("plugins.gc", {"candidates": shown})
+        done = notification(ui, "plugins.done", op_id=started["op_id"])
+        assert done["ok"] is True
+        assert done["result"]["removed"]["wheels"] == candidates["wheels"]
+        assert done["result"]["removed"]["envs"] == []
+        assert all((rig.envs / name).is_dir() for name in candidates["envs"])
+        assert ui.call("plugins.list")["gc_candidates"]["envs"] == candidates["envs"]
 
 
 def _staging_empty(rig: Rig) -> bool:

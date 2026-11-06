@@ -16,7 +16,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from kookabug_core.plugins.errors import PluginError
-from kookabug_core.plugins.lockfile import read_lock
+from kookabug_core.plugins.lockfile import UNCHECKED, Unchecked, lock_sha256, read_lock
 from kookabug_core.plugins.manifest import SDK_DIST, min_core_satisfied, requirement_name
 from kookabug_core.plugins.resolve import Package, ResolveFailure, resolve_with_app_sdk
 from kookabug_core.plugins.uv import find_uv, mask
@@ -27,7 +27,16 @@ if TYPE_CHECKING:
 __all__ = ["relock"]
 
 
-def relock(ops: PluginOps, *, confirm: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
+def relock(
+    ops: PluginOps,
+    *,
+    confirm: Callable[[dict[str, Any]], bool],
+    expected_sha256: str | Unchecked | None = UNCHECKED,
+) -> dict[str, Any]:
+    """`expected_sha256`: 사람이 확인 카드에서 본 잠금의 정규 해시 (잠금이 없었으면 명시적 None).
+    거래 안(busy.lock·op.lock 아래)에서 읽은 잠금과 None까지 비교해 다르면 `revision_conflict` —
+    확인한 목록과 확인 실행할 목록이 같을 때만 진행한다. 생략(`UNCHECKED`, CLI)만 비교하지 않는다
+    (CLI는 거래 안에서 묻는다)."""
     from kookabug_core.plugins.ops import (
         _EnvPlan,  # pyright: ignore[reportPrivateUsage]
         _last_line,  # pyright: ignore[reportPrivateUsage]
@@ -37,6 +46,11 @@ def relock(ops: PluginOps, *, confirm: Callable[[dict[str, Any]], bool]) -> dict
     with ops._transaction() as (op_id, staging, runner):  # pyright: ignore[reportPrivateUsage]
         with ops.layout.op():
             lock, revision = read_lock(ops.layout.lock)
+        current = None if lock is None else lock_sha256(lock)
+        if expected_sha256 is not UNCHECKED and expected_sha256 != current:
+            raise PluginError(
+                "revision_conflict", "확인한 뒤 kookabug.lock이 바뀌었다", stage="check"
+            )
         app = ops.app
         if lock is None or app.stale_reason(lock) is None:
             return {"op_id": op_id, "changed": False, "revision": revision}

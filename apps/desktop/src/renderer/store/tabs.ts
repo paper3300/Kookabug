@@ -29,7 +29,7 @@ export function fileBadgeText(path: string): string {
 export interface EditorTab {
   /** 파일 탭은 워크스페이스 기준 경로, RUN 탭은 `run:<run_id>` */
   path: string;
-  kind: "graph" | "target" | "run" | "file" | "rec" | "settings";
+  kind: "graph" | "target" | "run" | "file" | "rec" | "settings" | "plugin";
   graphKind: TreeEntry["graph_kind"] | null;
   title: string;
   /** RUN 탭의 실행, 스냅샷 그래프 탭이면 그 그래프를 돈 실행 */
@@ -135,6 +135,25 @@ export function openSettingsTab(): void {
   });
 }
 
+/** 플러그인 상세 탭 자리 (M6 B5, `plugin:<id>`) */
+export const PLUGIN_TAB_PREFIX = "plugin:";
+
+export function pluginTabPath(id: string): string {
+  return `${PLUGIN_TAB_PREFIX}${id}`;
+}
+
+/** 플러그인 상세 탭 (제목 "<이름> 플러그인"). 이미 열려 있으면 제목만 고치고 앞으로 */
+export function openPluginTab(id: string, title: string): void {
+  const path = pluginTabPath(id);
+  const text = `${title} 플러그인`;
+  useTabs.setState((s) => {
+    if (s.tabs.some((t) => t.path === path)) {
+      return { tabs: s.tabs.map((t) => (t.path === path ? { ...t, title: text } : t)), active: path };
+    }
+    return { tabs: [...s.tabs, { path, kind: "plugin", graphKind: null, title: text }], active: path };
+  });
+}
+
 /** 녹화 REC 탭 자리 (M4 T10, 녹화 세션 하나에 하나 — 세션이 끝나면 닫힌다) */
 export const REC_TAB_PATH = "rec:capture";
 
@@ -182,6 +201,7 @@ export function tabBadge(
   tab: Pick<EditorTab, "kind" | "graphKind"> & { snapshot?: boolean; preview?: boolean; path?: string },
 ): { text: string; tone: "test" | "target" | "run" | "file" | "rec" } {
   if (tab.kind === "settings") return { text: "SETTINGS", tone: "file" };
+  if (tab.kind === "plugin") return { text: "PLUGIN", tone: "file" };
   if (tab.preview === true) return { text: "PREVIEW", tone: "run" };
   if (tab.kind === "target") return { text: "TARGET", tone: "target" };
   if (tab.kind === "rec") return { text: "REC", tone: "rec" };
