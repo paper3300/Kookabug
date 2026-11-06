@@ -27,6 +27,7 @@ from kb_testing.proc import Spawned, assert_no_live, barrier, read_fake_input_lo
 from kookabug_core.record import read_run
 from kookabug_core.supervisor import RunHandle
 from kookabug_core.win import Process, identify, is_alive
+from kookabug_sdk.worker import EXIT_LOST
 
 pytestmark = pytest.mark.process
 
@@ -196,12 +197,14 @@ def test_runner_killed_before_worker_shutdown_job_cleans_worker(
     idents = job_idents(handle)
     with Process.open(worker_ident) as worker_proc:
         kill_runner(handle)
-        assert is_alive(worker_ident)  # runner가 죽어도 감독자의 Job 핸들이 있어 워커는 아직 산다
+        # M6 D8: 워커는 runner만 핸들을 쥔 워커 전용 Job(실행 Job 안 중첩, KILL_ON_JOB_CLOSE)
+        # 안이다 — runner가 죽으면 그 핸들이 닫혀 워커(런처·실제 인터프리터)도 곧 끝난다.
+        # 연결 상실로 스스로 끝나는 길은 멈춰 두었으므로(hang) 끝났다면 Job이 끝낸 것이다
+        exit_code = worker_proc.wait(10)
+        assert exit_code is not None and exit_code != EXIT_LOST
         outcome = handle.wait(30)
         assert_runner_died(outcome.run_end)
-        assert outcome.recovered is not None and outcome.recovered.job_terminated
-        # 스스로 끝난 것(연결 상실 EXIT_LOST)이 아니라 감독자의 Job 정리(종료 코드 1)로 끝났다
-        assert worker_proc.wait(10) == 1
+        assert outcome.recovered is not None
     assert_no_live(idents)
     assert not [e for e in events(handle) if e["event"] == "worker.exit"]
 

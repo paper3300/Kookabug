@@ -73,6 +73,7 @@ __all__ = [
     "DEFAULT_CAPTURE_TIMEOUT_MS",
     "FOREGROUND_NOT_ACQUIRED",
     "OCR_NODE_TYPES",
+    "PLUGIN_CAPTURE",
     "ArtifactStore",
     "FindReportingPlatform",
     "ForegroundPlatform",
@@ -188,6 +189,10 @@ OCR_NODE_TYPES: Final = frozenset(
 )
 """글자를 읽는 코어 노드. runner는 이 노드를 쓰는 실행의 시작 때 OCR 엔진을 미리 준비하고, 실행기는
 이 노드 함수를 부르기 전에 준비가 끝나기를 기다린다 (`PreparingPlatform`)."""
+PLUGIN_CAPTURE: Final = "$plugin.capture"
+"""`capture` 효과의 플러그인(원격) 노드를 부르기 전에 실행기가 `before_node`에 넘기는 이름 — 워커
+노드가 `ctx.ocr`를 부를 수 있으므로 코어 OCR 노드처럼 준비를 노드 기한 밖에서 기다린다 (BACKLOG
+sfix_2). 노드 타입이 아니다."""
 
 
 @runtime_checkable

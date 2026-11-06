@@ -78,11 +78,20 @@ class Observed(BaseModel):
 
 
 class Plugin(BaseModel):
+    """
+    실행이 쓴 플러그인. 설치 플러그인(kookabug.lock)은 env·wheel_sha256·schema_sha256까지 (M6)
+    """
+
     model_config = ConfigDict(
         extra="forbid",
     )
+    env: Annotated[
+        str | None, Field(description="설치 플러그인이 돈 환경 이름 (shared·iso-<id>)")
+    ] = None
     id: str
+    schema_sha256: Annotated[str | None, Field(pattern="^[0-9a-f]{64}$")] = None
     version: str
+    wheel_sha256: Annotated[str | None, Field(pattern="^[0-9a-f]{64}$")] = None
 
 
 class RunId(RootModel[str]):
@@ -160,6 +169,13 @@ class Conditions(BaseModel):
     )
     deadline_ms: Annotated[int, Field(ge=1)]
     platform: Annotated[str, Field(description="플랫폼 종류 (none·fake·windows)")]
+    plugin_lock_sha256: Annotated[
+        str | None,
+        Field(
+            description="실행이 읽은 kookabug.lock의 정규 잠금 해시 (설치 플러그인을 쓴 실행, M6)",
+            pattern="^[0-9a-f]{64}$",
+        ),
+    ] = None
     profile: str | None
     settings: Annotated[
         dict[

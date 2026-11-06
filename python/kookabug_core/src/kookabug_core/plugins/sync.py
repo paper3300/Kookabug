@@ -4,8 +4,9 @@
   `plugin_env_stale` (앱에 맞추려면 사람이 `relock`)
 - 빌드 없음: 커밋된 wheel만, 잠금의 `plugins/wheels/<sha256>/<원래 이름>` 경로를 그대로 uv에 넘기고
   넘기기 전에 바이트 sha256을 대조한다. 의존성은 잠금의 판·해시(`--require-hashes`)
-- 환경마다 3.5 ⑦: 같은 지문의 완성 환경이 있으면 읽기 검증만(digest = 잠금), 없으면 새 확정 경로에
-  만들고 digest가 잠금과 같을 때만 완성 표식. 틀리면 `verify_failed` (기존 폴더는 손대지 않는다)
+- 환경마다 3.5 ⑦: 같은 지문의 완성 환경이 있으면 읽기 검증만(digest = 잠금), 검증이 틀린 폴더는
+  깨짐으로 기록하고 건너뛴다(손대지 않음, gc 몫). 맞는 것이 없으면 새 확정 경로에 만들고 digest가
+  잠금과 같을 때만 완성 표식. 틀리면 `verify_failed`
 - 새 환경을 만들면 플러그인 코드가 돈다(검증 import) → 신뢰 확인. 이 PC에서 신뢰한 잠금(정규 잠금
   해시)이면 다시 묻지 않는다. `expected_sha256`(사람이 확인한 잠금)이 지금 잠금과 다르면
   `revision_conflict`
@@ -79,16 +80,12 @@ def sync(
                     stage="check",
                     env=name,
                 )
-            folder = envs_mod.find_env(ops.layout.envs, name, fp)
+            # (가) 읽기 검증만. 검증이 틀린 폴더는 깨짐으로 기록하고 건너뛴다(폴더는 그대로) —
+            # 맞는 후보가 없으면 새로 만든다
+            folder = envs_mod.select_env(ops.layout.envs, name, fp, env["digest"])
             if folder is None:
                 missing.append(name)
                 continue
-            # (가) 읽기 검증만
-            problem = envs_mod.verify_env(folder, fp, env["digest"])
-            if problem is not None:
-                raise PluginError(
-                    "verify_failed", f"{folder.name}: {problem}", stage="verify", env=name
-                )
             ready.append(name)
         if not missing:
             return {"op_id": op_id, "lock_sha256": current, "created": [], "ready": ready}

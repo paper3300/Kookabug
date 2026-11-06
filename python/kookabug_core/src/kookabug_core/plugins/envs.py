@@ -8,6 +8,9 @@
   바이트** sha256을 경로 순으로 이은 것의 sha256. 제외: `__pycache__/`·`*.pyc`, 각 `*.dist-info/`의
   `RECORD`·`INSTALLER`·`REQUESTED`·`direct_url.json`·`uv_cache.json`, `site-packages` 밖 전부
 - 재사용 검증은 읽기만 한다 (표식 지문 일치·digest 재계산 = 표식 값)
+- 검증에 실패한 완성 환경은 고치지 않고 `broken/<폴더 이름>` 기록(환경 폴더 밖)으로 "깨짐"을
+  남긴다. 찾기·실행·sync·설치는 깨진 폴더를 건너뛰고 다음 후보를 쓰거나 새로 만든다. 그 폴더는
+  gc가 지운다 (`select_env`)
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ import hashlib
 import json
 import os
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
@@ -24,18 +28,27 @@ from kookabug_core.plugins.uv import LINK_MODE
 
 __all__ = [
     "MARKER",
+    "Selection",
+    "broken_of",
+    "candidates",
     "env_digest",
     "env_python",
     "find_env",
     "fingerprint",
     "folder_name",
+    "is_broken",
+    "mark_broken",
     "read_marker",
+    "select",
+    "select_env",
+    "still_complete",
     "verify_env",
     "write_marker",
 ]
 
 MARKER: Final = ".kb-env.json"
 IN_USE_DIR: Final = ".in-use"
+BROKEN_DIR: Final = "broken"
 _DIST_INFO_SKIP: Final = frozenset(
     {"RECORD", "INSTALLER", "REQUESTED", "direct_url.json", "uv_cache.json"}
 )
@@ -126,16 +139,100 @@ def write_marker(env_dir: Path, *, env: str, fp: str, digest: str) -> None:
     write_atomic(env_dir / MARKER, (json.dumps(body, sort_keys=True, indent=2) + "\n").encode())
 
 
-def find_env(envs: Path, env: str, fp: str) -> Path | None:
-    """그 지문의 완성 환경 (이름 순 첫째). 없으면 None."""
+def broken_dir(envs: Path) -> Path:
+    """깨진 환경 기록 폴더 (`.kookabug/plugins/broken/`, 환경 폴더 밖)."""
+    return envs.parent / BROKEN_DIR
+
+
+def is_broken(env_dir: Path) -> bool:
+    return (broken_dir(env_dir.parent) / env_dir.name).is_file()
+
+
+def mark_broken(env_dir: Path, reason: str) -> None:
+    """그 환경을 깨짐으로 기록한다 (폴더는 손대지 않는다 — gc가 지운다)."""
+    record = broken_dir(env_dir.parent) / env_dir.name
+    record.parent.mkdir(parents=True, exist_ok=True)
+    record.write_text(reason + "\n", encoding="utf-8")
+
+
+def candidates(envs: Path, env: str, fp: str) -> list[Path]:
+    """그 지문의 깨지지 않은 완성 환경들 (이름 순)."""
     if not envs.is_dir():
-        return None
+        return []
     prefix = f"{env}-{fp[:12]}-"
+    found: list[Path] = []
     for folder in sorted(p for p in envs.iterdir() if p.is_dir() and p.name.startswith(prefix)):
         marker = read_marker(folder)
-        if marker is not None and marker.get("fingerprint") == fp:
-            return folder
-    return None
+        if marker is not None and marker.get("fingerprint") == fp and not is_broken(folder):
+            found.append(folder)
+    return found
+
+
+def find_env(envs: Path, env: str, fp: str) -> Path | None:
+    """그 지문의 깨지지 않은 완성 환경 (이름 순 첫째). 없으면 None. 검증하지 않는다."""
+    found = candidates(envs, env, fp)
+    return found[0] if found else None
+
+
+@dataclass(frozen=True, slots=True)
+class Selection:
+    """`select` 결과. `folder`: 검증을 통과한 첫째 (없으면 None). `unreadable`: 읽다 실패했거나
+    검증 중 사라진(gc가 지우는 중인) 후보 — 깨짐으로 기록하지 않았다. 호출자가 잠금·폴더를 다시
+    보고 재시도할지 정한다."""
+
+    folder: Path | None
+    unreadable: tuple[Path, ...] = ()
+
+
+def _same_marker(folder: Path, before: Mapping[str, Any]) -> bool:
+    return read_marker(folder) == before
+
+
+def select(envs: Path, env: str, fp: str, digest: str | None = None) -> Selection:
+    """그 지문의 완성 환경 중 읽기 검증(`verify_env`)을 통과한 첫째.
+
+    - 검증이 틀렸고(digest 다름) 그 뒤에도 폴더·완성 표식이 그대로면 깨짐으로 기록(폴더는
+      그대로)하고 다음 후보
+    - 파일 읽기가 실패했거나(`OSError`) 검증 중 완성 표식이 사라지거나 바뀌었으면(gc는 표식부터
+      지운다) 깨짐으로 기록하지 않고 `unreadable`에 넣고 다음 후보 — 일시적 실패·합법적 삭제를
+      영구 깨짐으로 남기지 않는다"""
+    unreadable: list[Path] = []
+    for folder in candidates(envs, env, fp):
+        before = read_marker(folder)
+        if before is None:
+            unreadable.append(folder)
+            continue
+        try:
+            problem = verify_env(folder, fp, digest)
+        except OSError:
+            unreadable.append(folder)
+            continue
+        if problem is None:
+            return Selection(folder, tuple(unreadable))
+        if not _same_marker(folder, before):
+            unreadable.append(folder)  # 지우는 중이었다: 파일 목록이 줄어 digest가 달랐을 수 있다
+            continue
+        mark_broken(folder, problem)
+    return Selection(None, tuple(unreadable))
+
+
+def select_env(envs: Path, env: str, fp: str, digest: str | None = None) -> Path | None:
+    """`select`의 폴더만 (읽을 수 없는 후보는 건너뛴다 — 호출자는 새로 만들거나 없음으로)."""
+    return select(envs, env, fp, digest).folder
+
+
+def still_complete(folder: Path) -> bool:
+    """완성 표식이 있고 깨짐 기록이 없다 (op.lock 안 재확인용)."""
+    return read_marker(folder) is not None and not is_broken(folder)
+
+
+def broken_of(envs: Path, env: str, fp: str) -> list[str]:
+    """그 지문의 깨짐 기록이 있는 폴더 이름들 (`verify` 보고용)."""
+    folder = broken_dir(envs)
+    if not folder.is_dir():
+        return []
+    prefix = f"{env}-{fp[:12]}-"
+    return sorted(p.name for p in folder.iterdir() if p.name.startswith(prefix))
 
 
 def verify_env(env_dir: Path, fp: str, digest: str | None = None) -> str | None:

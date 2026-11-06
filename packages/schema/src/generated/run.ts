@@ -119,6 +119,10 @@ export interface Conditions {
    * 플랫폼 종류 (none·fake·windows)
    */
   platform: string;
+  /**
+   * 실행이 읽은 kookabug.lock의 정규 잠금 해시 (설치 플러그인을 쓴 실행, M6)
+   */
+  plugin_lock_sha256?: string;
   profile: null | string;
   /**
    * 이 실행이 쓴 $setting 키 → 값·계층. 비밀값은 키만
@@ -171,12 +175,20 @@ export interface Observed {
   dpi: number;
 }
 /**
+ * 실행이 쓴 플러그인. 설치 플러그인(kookabug.lock)은 env·wheel_sha256·schema_sha256까지 (M6)
+ *
  * This interface was referenced by `Run`'s JSON-Schema
  * via the `definition` "Plugin".
  */
 export interface Plugin {
+  /**
+   * 설치 플러그인이 돈 환경 이름 (shared·iso-<id>)
+   */
+  env?: string;
   id: string;
+  schema_sha256?: string;
   version: string;
+  wheel_sha256?: string;
 }
 /**
  * This interface was referenced by `Run`'s JSON-Schema

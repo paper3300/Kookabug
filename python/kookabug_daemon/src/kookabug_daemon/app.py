@@ -33,7 +33,8 @@ from pathlib import Path
 from typing import Any, Final, TextIO
 
 from kookabug_core.permissions import TOOLSETS
-from kookabug_core.registry import Registry, default_registry
+from kookabug_core.plugins.runtime import installed_schemas
+from kookabug_core.registry import Registry, RegistryError, default_registry
 from kookabug_core.runner.spec import PlatformSpec
 from kookabug_core.service import (
     DevModulesRefused,
@@ -139,17 +140,27 @@ class DaemonConfig:
     """사람 확인을 기다리는 시간 (M5 U3: 120초). 검사 헬퍼만 바꾼다."""
 
 
-def plugin_registry(modules: tuple[str, ...]) -> Callable[[], Registry]:
-    """코어 노드 + `modules`의 노드 선언 (runner가 워커 hello로 등록하는 것과 같은 선언)."""
-    if not modules:
+def plugin_registry(modules: tuple[str, ...], root: Path | None = None) -> Callable[[], Registry]:
+    """코어 노드 + 개발 모듈 `modules`의 노드 선언(runner가 워커 hello로 등록하는 것과 같은 선언) +
+    설치 플러그인(`root`의 `kookabug.lock`)의 노드 스키마. 설치 플러그인은 커밋된 wheel 안 스키마
+    파일을 읽는다 — daemon은 플러그인 코드를 import하지 않는다 (M6 D9). 개발 모듈과 ID가 겹치면
+    개발 모듈이 이긴다 (runner와 같은 규칙)."""
+    if not modules and root is None:
         return default_registry
 
     def make() -> Registry:
-        from kookabug_sdk.worker import collect_plugins
-
         found = default_registry()
-        for plugin in collect_plugins(modules):
-            found.add_remote(plugin["schema"])
+        if modules:
+            from kookabug_sdk.worker import collect_plugins
+
+            for plugin in collect_plugins(modules):
+                found.add_remote(plugin["schema"])
+        if root is not None:
+            for plugin_id, schema in sorted(installed_schemas(root).items()):
+                if plugin_id in found.plugins:
+                    continue
+                with contextlib.suppress(RegistryError):
+                    found.add_remote(schema)
         return found
 
     return make
@@ -182,7 +193,7 @@ class Daemon:
         self.service = service or WorkspaceService(self.root)
         self._authorizer = Authorizer(self.service)
         self._documents = DocumentTable(self.root)
-        self._checker = GraphChecker(self.root, plugin_registry(config.plugin_modules))
+        self._checker = GraphChecker(self.root, plugin_registry(config.plugin_modules, self.root))
         self._frames = FrameCache()
         self._image_cache = EditorCache(self.root)
         self._targets = TargetStore(self.root, self._frames)

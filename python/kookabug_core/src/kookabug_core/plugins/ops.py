@@ -746,14 +746,10 @@ class PluginOps:
             packages=packages_json,
             plugin_wheels=[str(p["wheel_sha256"]) for p in plan.plugins],
         )
-        existing = envs_mod.find_env(self.layout.envs, plan.name, fp)
+        # (가) 읽기 검증만: uv·설치·표식 쓰기 없음. 검증이 틀린 폴더는 손대지 않고 깨짐으로
+        # 기록한 뒤 다음 후보 — 없으면 (나) 새로
+        existing = envs_mod.select_env(self.layout.envs, plan.name, fp)
         if existing is not None:
-            # (가) 읽기 검증만: uv·설치·표식 쓰기 없음. 틀리면 그 폴더는 손대지 않고 실패
-            problem = envs_mod.verify_env(existing, fp)
-            if problem is not None:
-                raise PluginError(
-                    "verify_failed", f"{existing.name}: {problem}", stage="verify", env=plan.name
-                )
             marker = envs_mod.read_marker(existing) or {}
             digest = str(marker["digest"])
             self._point("env_reused")
@@ -1074,14 +1070,28 @@ class PluginOps:
                     )
             stale = self.app.stale_reason(lock)
             for name, env in lock["environments"].items():
-                folder = envs_mod.find_env(self.layout.envs, name, env["fingerprint"])
+                fp = env["fingerprint"]
+                chosen = (
+                    envs_mod.Selection(None)
+                    if stale
+                    else envs_mod.select(self.layout.envs, name, fp, env["digest"])
+                )
+                folder = chosen.folder
+                problem: str | None = None
                 if stale:
                     status, problem = "stale", stale
-                elif folder is None:
-                    status, problem = "missing", "환경이 없다 (kookabug plugin sync)"
+                elif folder is not None:
+                    status = "ready"
+                elif chosen.unreadable:
+                    # 일시적일 수 있어 깨짐으로 기록하지 않는다 (다시 verify하면 다시 본다)
+                    status = "broken"
+                    names = ", ".join(p.name for p in chosen.unreadable)
+                    problem = f"환경 {names}의 파일을 읽을 수 없다"
+                elif broken := envs_mod.broken_of(self.layout.envs, name, fp):
+                    status = "broken"
+                    problem = f"환경 {', '.join(broken)}이(가) 깨졌다 (kookabug plugin sync로 새로)"
                 else:
-                    problem = envs_mod.verify_env(folder, env["fingerprint"], env["digest"])
-                    status = "ready" if problem is None else "broken"
+                    status, problem = "missing", "환경이 없다 (kookabug plugin sync)"
                 environments[name] = {"status": status, "folder": folder and folder.name}
                 if problem is not None:
                     problems.append({"env": name, "status": status, "problem": problem})

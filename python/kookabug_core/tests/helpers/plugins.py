@@ -22,12 +22,15 @@ from typing import Any
 
 import pytest
 
-from helpers.graphs import make_workspace
+from helpers.graphs import GraphBuilder, link, make_workspace
+from helpers.runner import RUNNER_CMD
 from kb_testing.plugin_fixtures import PLUGINS, SAMPLE, index_files, plugin_wheel, sdk_wheel
 from kb_testing.plugin_index import IndexServer
 from kb_testing.proc import direct_env, python_cmd
 from kookabug_core.plugins import SDK_WHEEL_ENV, PluginOps, Preview
 from kookabug_core.plugins.envs import find_env
+from kookabug_core.runner.spec import PlatformSpec
+from kookabug_core.supervisor import RunOutcome, StartOptions, Supervisor
 
 
 @dataclass
@@ -344,3 +347,36 @@ def git_source(repo: Path, ref: str | None = "v0.1.0") -> str:
 def calls_with(ops: PluginOps, *needles: str) -> list[tuple[str, ...]]:
     """자식 명령 기록 중 인자에 `needles`가 모두 든 것."""
     return [c for c in ops.calls if all(any(n in a for a in c) for n in needles)]
+
+
+SAMPLE_GRAPH = "tests/sample.graph.json"
+
+
+def sample_graph(root: Path, rel: str = SAMPLE_GRAPH, **plugins: str) -> str:
+    """예제 플러그인 순수 노드(글자 뒤집기)를 읽어 비교하고 통과하는 그래프."""
+    g = GraphBuilder(plugins={"sample": "0.1.0", **plugins})
+    g.entry("n_cmp")
+    g.node("n_rev", "sample.text.reverse", inputs={"text": "abc"})
+    g.node(
+        "n_cmp",
+        "core.assert.compare",
+        inputs={"a": link("n_rev.text"), "op": "==", "b": "cba"},
+        next={"ok": "n_pass"},
+    )
+    g.node("n_pass", "core.test.pass")
+    return g.write(root, rel)
+
+
+def run_graph(
+    rig: Rig, graph: str, *, env: dict[str, str] | None = None, timeout: float = 180.0
+) -> RunOutcome:
+    """설치 플러그인을 쓰는 그래프를 실제 감독자·runner·환경별 워커로 실행한다 (플랫폼 없음)."""
+    supervisor = Supervisor(runner_cmd=RUNNER_CMD, env=env or cli_env(rig.world))
+    handle = supervisor.start(rig.root, graph, StartOptions(platform=PlatformSpec("none")))
+    return handle.wait(timeout)
+
+
+def sample_graph_passes(rig: Rig) -> bool:
+    """예제 플러그인 그래프를 실제로 실행해 통과하는가 (원자성·kill 검사의 "기존 그래프 pass")."""
+    outcome = run_graph(rig, sample_graph(rig.root))
+    return outcome.verdict == "pass"

@@ -53,6 +53,7 @@ from kookabug_core.engine.cancel import Cancelled, CancelToken, DeadlineExceeded
 from kookabug_core.engine.clock import Clock, SystemClock
 from kookabug_core.engine.context import (
     DEFAULT_CAPTURE_TIMEOUT_MS,
+    PLUGIN_CAPTURE,
     ArtifactStore,
     Mark,
     Platform,
@@ -812,8 +813,10 @@ class _Run:
                 # 시도 사이(이벤트 싱크 처리 포함)에 생긴 취소·기한 초과면 다시 부르지 않는다
                 rt.check()
             if isinstance(rt.platform, PreparingPlatform):
-                # 노드 기한(ctx.deadline)은 노드 함수 안에서 만든다 — 그 전에 엔진 준비를 기다린다
-                rt.platform.before_node(node.type, rt.check)
+                # 노드 기한(ctx.deadline)은 노드 함수 안에서 만든다 — 그 전에 엔진 준비를 기다린다.
+                # capture 효과의 워커 노드도 ctx.ocr를 부를 수 있다 (BACKLOG sfix_2)
+                remote_capture = nodedef.remote and "capture" in nodedef.effects
+                rt.platform.before_node(PLUGIN_CAPTURE if remote_capture else node.type, rt.check)
             began = rt.wall_clock.now_ms()
             trace.begin_attempt()
             ctx = StepContext(rt, frame, node, step, config, step_window, trace=trace)

@@ -32,7 +32,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from kookabug_core.engine.context import OCR_NODE_TYPES
+from kookabug_core.engine.context import OCR_NODE_TYPES, PLUGIN_CAPTURE
 from kookabug_core.record.artifacts import (
     CANDIDATES_KEPT,
     CaptureMeta,
@@ -437,7 +437,15 @@ class RunEngines:
         return self._preparation(reader).wait(check)
 
     def before_node(self, node_type: str, check: Callable[[], None]) -> None:
-        """노드 함수를 부르기 전 (`PreparingPlatform`): 코어 OCR 노드면 OCR 엔진 준비를 기다린다."""
+        """노드 함수를 부르기 전 (`PreparingPlatform`): 코어 OCR 노드면 OCR 엔진 준비를 기다린다.
+        capture 효과 플러그인 노드(`PLUGIN_CAPTURE`)는 runner가 시작 때 준비를 이미 시작했을 때만
+        기다린다 (OCR을 안 쓰는 플러그인 노드에 모델 준비를 새로 걸지 않는다)."""
+        if node_type == PLUGIN_CAPTURE:
+            with self._lock:
+                started = self._prep is not None
+            if started:
+                self.await_ocr(check)
+            return
         if node_type in OCR_NODE_TYPES:
             self.await_ocr(check)
 

@@ -63,6 +63,7 @@ from typing import Any, Final
 from kookabug_core.engine.debug import Breakpoint, ResumeMode
 from kookabug_core.inputs.lease import LEASE_NAME_ENV, STATE_DIR_ENV
 from kookabug_core.permissions import Decision
+from kookabug_core.plugins.runtime import release_markers
 from kookabug_core.record import read_run, read_run_json
 from kookabug_core.record.journal import format_t
 from kookabug_core.record.runfolder import RunFolder, create_run_folder
@@ -715,10 +716,15 @@ class RunHandle:
         recovered: RecoverResult | None = None
         recover_error: str | None = None
         if self.runner is not None:
+            ident = self.runner.ident
             try:
                 recovered = self._recover()
             except Exception as exc:  # 기록 오류: Job은 이미 정리됐다. 결과로만 알린다
                 recover_error = f"{type(exc).__name__}: {exc}"
+            # 설치 플러그인 환경의 사용 표식 (runner가 죽어 놓지 못한 것, M6 3.6). runner는
+            # 이미 끝났다 — 정상 마무리였으면 지울 것이 없다
+            with contextlib.suppress(OSError):
+                release_markers(self.spec.workspace_root, ident)
         else:
             self._clean_job()
         self.close()

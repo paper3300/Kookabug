@@ -46,7 +46,8 @@ from kookabug_core.registry import (
     Registry,
     RegistryError,
 )
-from kookabug_core.win.process import ProcessId, identify, spawn
+from kookabug_core.win.job import Job
+from kookabug_core.win.process import ProcessId, identify, resume_suspended, spawn
 from kookabug_sdk import NodeContractError, Result
 from kookabug_sdk.codec import CodecError, decode, decode_message, encode
 from kookabug_sdk.context import (
@@ -116,8 +117,15 @@ type ExitReason = Literal[
 ]
 type Emit = Callable[[dict[str, Any]], None]
 type StartErrorCode = Literal[
-    "worker_start_timeout", "worker_died", "protocol_version", "worker_start_failed"
+    "worker_start_timeout",
+    "worker_died",
+    "protocol_version",
+    "worker_start_failed",
+    "plugin_schema_mismatch",
+    "plugin_permission_exceeded",
 ]
+type HelloCheck = Callable[[list[dict[str, Any]]], tuple[StartErrorCode, str] | None]
+WORKER_MODULE: Final = "kookabug_sdk.worker"
 
 
 class WorkerStartError(Exception):
@@ -134,7 +142,12 @@ class WorkerStartError(Exception):
 
 
 class WorkerProcess:
-    """워커 프로세스 하나 (실행당 하나). `start()`로 만든다."""
+    """워커 프로세스 하나 (환경마다 하나, M6 D8). `start()`로 만든다.
+
+    워커는 멈춘 채 띄워 **워커 전용 Job**(실행 Job 안에 중첩, `KILL_ON_JOB_CLOSE`)에 넣은 뒤 이어
+    돌린다. venv의 `python.exe`는 런처라 실제 인터프리터가 자식이다 — 끝내기는 그 Job을 끝내므로
+    hello 전(import 중 멈춤)이어도 런처·실제 인터프리터가 함께 끝난다. hello의 `pid`(실제
+    인터프리터)는 기록용(`hello_pid`)이다."""
 
     def __init__(
         self,
@@ -142,11 +155,15 @@ class WorkerProcess:
         *,
         emit: Emit,
         cancel_grace_ms: int,
+        job: Job | None = None,
     ) -> None:
         self.proc = proc
         self.ident: ProcessId | None = identify(proc.pid)
         self.peer: RpcPeer | None = None
         self.plugins: list[dict[str, Any]] = []
+        self.hello_pid: int | None = None
+        self._job = job
+        self._job_lock = threading.Lock()
         self._emit = emit
         self._cancel_grace_ms = cancel_grace_ms
         self._lock = threading.Lock()
@@ -179,12 +196,18 @@ class WorkerProcess:
         env: Mapping[str, str] | None = None,
         protocol: int = PROTOCOL,
         trace: Callable[[str, bytes], None] | None = None,
+        python: Sequence[str | os.PathLike[str]] | None = None,
+        log_name: str = "worker",
+        check_hello: HelloCheck | None = None,
     ) -> WorkerProcess:
         """워커를 띄우고 hello한 뒤 원격 노드를 `registry`에 등록한다.
 
         `check()`는 취소·전체 기한을 보고 `Cancelled`를 던지는 함수다(기다리는 동안 계속 부른다).
         실패하면 워커를 끝내고(`worker.exit`) `WorkerStartError`, 취소면 그 `Cancelled`를 던진다.
         `trace(방향, 프레임 본문)`은 주고받는 RPC 메시지를 본다(검사용).
+        `python`: 워커 인터프리터와 그 옵션 (기본 이 프로세스의 인터프리터 — 개발 모듈. 설치
+        플러그인은 `<환경>\\Scripts\\python.exe -I`). `check_hello(plugins)`: 등록 전에 hello를
+        대조한다(설치 플러그인 — 잠금의 digest·permissions). 틀리면 그 코드로 실패한다.
         """
         deadline = time.monotonic() + start_timeout_ms / 1000
         key = new_key()
@@ -192,17 +215,37 @@ class WorkerProcess:
         child_env = dict(os.environ if env is None else env)
         child_env[ENV_PIPE] = listener.name
         child_env[ENV_KEY] = key.hex()
+        command = [*(python or (sys.executable,)), "-m", WORKER_MODULE]
         try:
-            proc = spawn(
-                [sys.executable, "-m", "kookabug_sdk.worker"],
-                stdout=log_dir / "worker.stdout.log",
-                stderr=log_dir / "worker.stderr.log",
-                env=child_env,
-            )
+            job = Job.create()
         except BaseException:
             listener.close()
             raise
-        worker = cls(proc, emit=emit, cancel_grace_ms=cancel_grace_ms)
+        try:
+            proc = spawn(
+                command,
+                stdout=log_dir / f"{log_name}.stdout.log",
+                stderr=log_dir / f"{log_name}.stderr.log",
+                env=child_env,
+                suspended=True,
+            )
+        except BaseException:
+            listener.close()
+            job.close()
+            raise
+        try:
+            # 멈춘 채 워커 Job에 넣고 이어 돌린다: 런처가 띄우는 실제 인터프리터도 처음부터 Job 안
+            job.assign(proc.pid)
+            resume_suspended(proc.pid)
+        except BaseException:
+            listener.close()
+            with contextlib.suppress(OSError):
+                proc.kill()
+            job.close()
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(_EXIT_WAIT_S)
+            raise
+        worker = cls(proc, emit=emit, cancel_grace_ms=cancel_grace_ms, job=job)
         emit({"event": "worker.start", "pid": proc.pid})
         try:
             worker._connect(listener, key, deadline, check, trace)
@@ -217,6 +260,8 @@ class WorkerProcess:
                 deadline,
                 check,
             )
+            if check_hello is not None and (refused := check_hello(worker.plugins)) is not None:
+                worker._fail(refused[0], "start_failed", refused[1])
             worker._register(registry)
         except BaseException:
             listener.close()
@@ -287,6 +332,8 @@ class WorkerProcess:
         if not isinstance(plugins, list) or not all(isinstance(p, dict) for p in plugins):  # pyright: ignore[reportUnknownVariableType]
             self._fail("worker_start_failed", "start_failed", "hello의 plugins가 목록이 아니다")
         self.plugins = list(plugins)  # pyright: ignore[reportUnknownArgumentType]
+        pid: Any = reply.get("pid")  # pyright: ignore[reportUnknownMemberType]
+        self.hello_pid = pid if isinstance(pid, int) and not isinstance(pid, bool) else None
 
     def _register(self, registry: Registry) -> None:
         try:
@@ -378,15 +425,41 @@ class WorkerProcess:
             self.kill("killed_after_grace")
 
     def kill(self, reason: ExitReason) -> None:
-        """워커를 끝내고(`TerminateProcess`) `worker.exit`를 남긴다."""
+        """워커를 끝내고(워커 Job — 런처와 실제 인터프리터 모두) `worker.exit`를 남긴다."""
         with self._lock:
             if self._exit_reason is None:
                 self._exit_reason = reason  # 먼저 정한 사유가 남는다 (죽음과 겹쳐도)
-        with contextlib.suppress(OSError):
-            self.proc.kill()
+        self._terminate()
         self._exited(reason, self._wait_exit())
+        self.close_job()
         if self.peer is not None:
             self.peer.close()
+
+    def _terminate(self) -> None:
+        """워커 Job을 끝내고 Job이 빌 때까지(최대 `_EXIT_WAIT_S`) 기다린다 — 끝내기는 비동기라
+        돌아온 뒤에는 런처·실제 인터프리터가 모두 끝나 있게."""
+        with self._job_lock:
+            job = self._job
+            if job is not None:
+                with contextlib.suppress(OSError):
+                    job.terminate(KILLED_EXIT_CODE)
+                deadline = time.monotonic() + _EXIT_WAIT_S
+                with contextlib.suppress(OSError):
+                    while job.process_ids() and time.monotonic() < deadline:
+                        time.sleep(_POLL_S)
+        with contextlib.suppress(OSError):
+            self.proc.kill()
+
+    def close_job(self) -> None:
+        """워커 Job 핸들을 닫는다 (`KILL_ON_JOB_CLOSE`: 남은 자손도 끝난다). 여러 번 불러도 된다."""
+        with self._job_lock:
+            job, self._job = self._job, None
+        if job is not None:
+            job.close()
+
+    @property
+    def job(self) -> Job | None:
+        return self._job
 
     def _wait_exit(self) -> int | None:
         try:
@@ -421,6 +494,7 @@ class WorkerProcess:
             self.kill("unexpected")
             exit_code = self.proc.poll()
         self._exited("unexpected", exit_code)
+        self.close_job()
         if self._exit_reason == "killed_after_grace":
             return EngineError(
                 "worker_died", f"워커가 취소 유예를 넘겨 끝났다 (종료 코드 {exit_code})"
@@ -448,6 +522,7 @@ class WorkerProcess:
             timer.cancel()
         if self.proc.poll() is not None:
             self._exited("unexpected", self._wait_exit())
+            self.close_job()
             return
         if self.peer is not None:
             with contextlib.suppress(PeerLost):
@@ -465,6 +540,7 @@ class WorkerProcess:
                 continue
             break
         self._exited("shutdown", exit_code)
+        self.close_job()
         if self.peer is not None:
             self.peer.close()
 

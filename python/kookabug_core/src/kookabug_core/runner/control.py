@@ -343,7 +343,7 @@ class Controller:
         self._lock = threading.Lock()
         self._reason: CancelReason | None = None
         self._actor: InputActor | None = None
-        self._worker: WorkerProcess | None = None
+        self._workers: list[WorkerProcess] = []
         self._emit: Emit | None = None
         self._cancel_logged = False
         self._record_lock = threading.Lock()  # `cancel.requested` 차지·기록을 한 번에
@@ -474,8 +474,9 @@ class Controller:
             actor.close_gate()
 
     def attach_worker(self, worker: WorkerProcess) -> None:
+        """워커를 취소 대상에 더한다 (환경마다 하나 — 취소는 모두에게)."""
         with self._lock:
-            self._worker = worker
+            self._workers.append(worker)
             cancelled = self._reason is not None
         if cancelled:
             worker.cancel()
@@ -510,13 +511,13 @@ class Controller:
                 return False
             self._reason = reason
             actor = self._actor
-            worker = self._worker
+            workers = list(self._workers)
         self.watchdog.arm()
         self.token.cancel(reason)
         self.pause.wake()
         if actor is not None:
             actor.close_gate()
-        if worker is not None:
+        for worker in workers:
             worker.cancel()
         self.notify_stopping(reason)
         # 감독자 사망 취소면 사망 + 유예가 새 종료 기한이다 (stopping을 이미 보냈어도 알린다)

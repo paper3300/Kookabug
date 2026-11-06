@@ -17,7 +17,7 @@ from helpers.plugins import (
     cache_hashes,
     cli_env,
     hang_wheel,
-    run_node,
+    sample_graph_passes,
     tree_hashes,
     tree_mtimes,
     write_then_hang_wheel,
@@ -94,6 +94,7 @@ def test_failure_at_each_stage_keeps_lock_and_envs(rig: Rig) -> None:
         assert not any(_staging(rig).iterdir()), name
     assert [p["id"] for p in rig.lock()["plugins"]] == ["sample"]
     assert rig.ops().verify()["ok"]
+    assert sample_graph_passes(rig)  # 기존 그래프가 실제 실행(환경별 워커)으로 통과 (B3)
 
 
 def _reuse_setup(rig: Rig) -> tuple[Path, dict[str, str], dict[str, int]]:
@@ -204,6 +205,7 @@ def test_kill_before_commit_cleans_staging_only(rig: Rig, spawned: Spawned, tmp_
     assert [p["id"] for p in rig.lock()["plugins"]] == ["compatible_c", "sample"]
     now = tree_hashes(rig.envs)
     assert {k: now.get(k) for k in envs} == envs
+    assert sample_graph_passes(rig)
 
 
 def test_kill_right_after_lock_replace_keeps_new_install(
@@ -224,10 +226,8 @@ def test_kill_right_after_lock_replace_keeps_new_install(
     assert [p["id"] for p in rig.lock()["plugins"]] == ["conflict_b", "sample"]
     assert tree_hashes(shared) == files
     assert rig.ops().verify()["ok"]
-    out = run_node(
-        shared, ["kookabug_plugin_sample.nodes.text"], "sample.text.reverse", {"text": "kb"}
-    )
-    assert out["outputs"] == {"text": "bk"}
+    assert sample_graph_passes(rig)  # 그 플러그인 그래프를 실제로 실행 (B3)
+    assert tree_hashes(shared) == files
     # CLI verify도 통과
     proc = subprocess.run(
         python_cmd("-m", "kookabug_cli", "plugin", "verify", "--json", "--workspace", rig.root),

@@ -61,6 +61,9 @@ POINTS: Final[dict[str, frozenset[Role]]] = {
     "runner.before_lease_release": _RUNNER,
     "runner.after_hello": _RUNNER,
     "runner.before_validate": _RUNNER,
+    # 설치 플러그인 준비 (M6 3.6, 이벤트: read = op.lock 안에서 잠금을 읽은 뒤 / marked = 사용
+    # 표식을 만든 뒤 — 잠금 교체와의 교차 검사)
+    "runner.plugins": _RUNNER,
     # 취소 순서를 시작하기 직전 (`Controller.cancel`, 이벤트 = 취소 사유: 늦은 취소 처리 흉내)
     "runner.before_cancel": _RUNNER,
     # 받은 제어 요청을 처리하기 직전 (`Controller._handle`, 이벤트 = 메서드: 늦은 수신 처리 흉내)

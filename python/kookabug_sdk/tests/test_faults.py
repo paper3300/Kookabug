@@ -210,6 +210,8 @@ def test_points_table_matches_plan() -> None:
         "runner.before_lease_release",
         "runner.after_hello",
         "runner.before_validate",
+        # M6 B3: 설치 플러그인 잠금 읽기·사용 표식 (잠금 교체와의 교차)
+        "runner.plugins",
         # CI 수정 5: 취소 순서 시작 직전 (늦은 취소 처리 흉내)
         "runner.before_cancel",
         # CI 수정 5: 받은 제어 요청 처리 직전 (늦은 수신 처리 흉내)

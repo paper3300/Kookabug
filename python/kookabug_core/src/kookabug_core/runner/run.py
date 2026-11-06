@@ -7,7 +7,11 @@
    전체 기한(runner 시작부터, 멈춘 시간을 뺀 활성 시계 — M3 2.2) 감시가 동작한다
 3. `run.json`(`running`)·저널, `run.start` → 고장 지점 `runner.after_hello`
 4. 스냅샷 (파일 참조만 따라가므로 레지스트리가 필요 없다)
-5. `plugin_modules`가 있으면 워커를 띄우고 hello → 원격 노드 등록
+5. 워커 (M6 3.6·D8): `plugin_modules`(개발 모듈, 사람 전용)가 있으면 그 워커. 그래프가 쓰는 나머지
+   플러그인은 설치 플러그인 — `op.lock` 안에서 `kookabug.lock`을 읽어(스냅샷에 사본) 조건·환경을
+   정하고 환경마다 사용 표식을 만든 뒤, 환경마다 워커(`<환경>\\Scripts\\python.exe -I`, 워커 전용
+   중첩 Job)를 띄워 hello를 잠금(digest·permissions)과 대조 → 원격 노드 등록. 잠금에 없음·환경
+   없음·조건 다름은 워커 없이 검증 오류(`plugin_*`). 사용 표식은 워커가 끝난 뒤 놓는다
 6. 스냅샷 프로그램의 의미 검증(코어 + 원격). 오류면 `run.end`(`error`/`graph_invalid`, 진단은
    `run.json`)
 7. 플랫폼 (M1 T9): `windows`는 DPI 인식(PMv2) 확인 → `WindowsPlatform`(창 수명 추적기·WGC
@@ -57,12 +61,13 @@ from __future__ import annotations
 import contextlib
 import importlib.metadata
 import math
+import os
 import platform as host
 import sys
 import threading
 import time
 import traceback
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Final, cast
 
@@ -83,6 +88,7 @@ from kookabug_core.engine import (
 from kookabug_core.engine.context import OCR_NODE_TYPES, InputObserver, ObservationLimits
 from kookabug_core.engine.errors import EngineError
 from kookabug_core.engine.executor import run_record_policy
+from kookabug_core.engine.invoker import NodeInvoker, PluginRouter
 from kookabug_core.engine.scenario import FakeScenario, ScenarioError, ScenarioPlatform
 from kookabug_core.inputs import (
     InputActor,
@@ -95,6 +101,8 @@ from kookabug_core.inputs import (
 )
 from kookabug_core.inputs.service import InputService, InputSink
 from kookabug_core.loader import Program
+from kookabug_core.plugins import runtime as plugin_runtime
+from kookabug_core.plugins.layout import LOCK_FILE
 from kookabug_core.record import FileArtifacts, Journal, write_run_json
 from kookabug_core.record.artifacts import FindEvidence, FrameRegistry, find_with_report
 from kookabug_core.record.finalize import (
@@ -116,7 +124,7 @@ from kookabug_core.record.video import (
     encoder_factory_from_env,
     finish_wait_from_env,
 )
-from kookabug_core.registry import Registry, default_registry
+from kookabug_core.registry import Registry, RegistryError, default_registry
 from kookabug_core.runner.clock import ActiveClock
 from kookabug_core.runner.control import Controller, PauseGate, PollPoint
 from kookabug_core.runner.spec import (
@@ -128,6 +136,7 @@ from kookabug_core.runner.spec import (
 )
 from kookabug_core.runner.watchdog import Watchdog
 from kookabug_core.validate import validate
+from kookabug_core.validate.plugins import plugin_diagnostics, used_plugins
 from kookabug_core.win import Job, ProcessId, current, dpi
 from kookabug_core.workerhost import WorkerInvoker, WorkerProcess, WorkerStartError
 from kookabug_core.workspace import RunOptions, SettingLookup, Workspace, WorkspaceError
@@ -390,7 +399,12 @@ class Runner:
         self.watchdog: Watchdog | None = None
         self.controller: Controller | None = None
         self.journal: Journal | None = None
-        self.worker: WorkerProcess | None = None
+        self.workers: list[WorkerProcess] = []
+        """워커들: 개발 모듈 하나 + 설치 플러그인 환경마다 하나 (M6 D8)."""
+        self.routes: dict[str, NodeInvoker] = {}
+        """플러그인 ID → 그 노드를 실행할 워커."""
+        self.plugins: plugin_runtime.RunPlugins | None = None
+        """설치 플러그인 (잠금 사본·환경·사용 표식, M6 3.6)."""
         self.actor: InputActor | None = None
         self.lease: InputLease | None = None
         self.job: Job | None = None
@@ -407,6 +421,11 @@ class Runner:
         self._video_probe: EncoderProbe | None = None
         self._run_json: dict[str, Any] = {}
         self._sink: _JournalSink | None = None
+
+    @property
+    def worker(self) -> WorkerProcess | None:
+        """첫 워커 (워커가 없으면 None)."""
+        return self.workers[0] if self.workers else None
 
     @property
     def window_tracker(self) -> WindowTracker | None:
@@ -568,34 +587,44 @@ class Runner:
         self._save_running()
         self._check()
 
-        # 5. 워커
+        # 5. 워커: 개발 모듈(사람 전용) → 설치 플러그인 (잠금·환경·사용 표식, 환경마다 워커)
         registry = self.registry = default_registry()
         if spec.plugin_modules:
-            try:
-                self.worker = WorkerProcess.start(
-                    modules=spec.plugin_modules,
-                    files_root=self.folder.snapshot,
-                    log_dir=self.folder.logs,
-                    run_id=spec.run_id,
-                    workspace_id=str(spec.workspace_root),
-                    registry=registry,
-                    emit=self._emit_quiet,
-                    check=self._check,
-                    start_timeout_ms=spec.worker_start_timeout_ms,
-                    cancel_grace_ms=spec.worker_cancel_grace_ms,
+            refused = self._start_worker(registry, spec.plugin_modules)
+            if refused is not None:
+                return refused
+        plugin_problems = self._acquire_plugins(program, registry)
+        if plugin_problems is None and self.plugins is not None:
+            # 환경 인터프리터는 격리(-I)하고, 이 프로세스의 venv 런처 표시도 넘기지 않는다. -B:
+            # 실행 중에는 환경에 아무것도 쓰지 않는다(바이트코드 캐시도 — 실행 중 환경 불변)
+            child_env = {k: v for k, v in os.environ.items() if k != "__PYVENV_LAUNCHER__"}
+            for env in self.plugins.envs:
+                refused = self._start_worker(
+                    registry,
+                    env.modules,
+                    python=(str(env.python), "-I", "-B"),
+                    env=child_env,
+                    log_name=f"worker-{env.name}",
+                    check_hello=lambda found, env=env: plugin_runtime.check_hello(env, found),
                 )
-            except WorkerStartError as exc:
-                return _End.error(exc.code, exc.message)
-            self.controller.attach_worker(self.worker)
-        self._run_json["plugins"] = [
-            {"id": pid, "version": version} for pid, version in sorted(registry.plugins.items())
-        ]
+                if refused is not None:
+                    return refused
+        self._run_json["plugins"] = self._plugins_json(registry)
         self._save_running()
 
         # 6. 의미 검증
         _faults.fault_point("runner.before_validate")
         self._check()
         diagnostics = validate(program, registry)
+        if self.plugins is not None:
+            diagnostics = [
+                *diagnostics,
+                *plugin_diagnostics(
+                    program,
+                    [(p.code, p.plugin, p.message) for p in self.plugins.problems],
+                    self.plugins.versions,
+                ),
+            ]
         if has_errors(diagnostics):
             errors = [d for d in diagnostics if d.severity == "error"]
             summary = "; ".join(f"{d.code} {d.file or ''}{d.pointer or ''}" for d in errors[:5])
@@ -616,7 +645,12 @@ class Runner:
         refused = self._open_platform(snap.workspace)
         if refused is not None:
             return refused
-        if _uses_ocr(program):
+        installed = (
+            set()
+            if self.plugins is None
+            else {p.id for env in self.plugins.envs for p in env.plugins}
+        )
+        if _uses_ocr(program, registry, installed):
             self._prepare_ocr()
 
         # 8. 입력 임대권 → 입력 액터
@@ -629,6 +663,87 @@ class Runner:
         # 9. 실행 (영상을 남길 수 있으면 인코더 준비가 끝난 뒤 첫 스텝)
         self._wait_video_probe(program)
         return self._run_program(program, registry)
+
+    def _start_worker(
+        self,
+        registry: Registry,
+        modules: Sequence[str],
+        *,
+        python: Sequence[str] | None = None,
+        env: Mapping[str, str] | None = None,
+        log_name: str = "worker",
+        check_hello: Callable[[list[dict[str, Any]]], Any] | None = None,
+    ) -> _End | None:
+        """워커 하나를 띄워 원격 노드를 등록한다. 실패면 끝낼 사유."""
+        spec = self.spec
+        assert self.controller is not None
+        try:
+            worker = WorkerProcess.start(
+                modules=modules,
+                files_root=self.folder.snapshot,
+                log_dir=self.folder.logs,
+                run_id=spec.run_id,
+                workspace_id=str(spec.workspace_root),
+                registry=registry,
+                emit=self._emit_quiet,
+                check=self._check,
+                start_timeout_ms=spec.worker_start_timeout_ms,
+                cancel_grace_ms=spec.worker_cancel_grace_ms,
+                python=python,
+                env=env,
+                log_name=log_name,
+                check_hello=check_hello,
+            )
+        except WorkerStartError as exc:
+            return _End.error(exc.code, exc.message)
+        self.workers.append(worker)
+        self.controller.attach_worker(worker)
+        invoker = WorkerInvoker(worker)
+        for plugin in worker.plugins:
+            self.routes[str(plugin["id"])] = invoker
+        return None
+
+    def _acquire_plugins(self, program: Program, registry: Registry) -> bool | None:
+        """그래프가 쓰는 설치 플러그인(코어·개발 모듈 밖)의 잠금을 `op.lock` 안에서 읽고 환경을
+        정해 사용 표식을 만든다 (워커를 띄우기 전, M6 3.6). 잠금 사본은 스냅샷에. 문제가 있으면
+        True (워커를 띄우지 않고 검증 진단으로 끝난다 — 노드는 커밋된 wheel의 스키마로 등록), 쓸
+        것이 없거나 준비됐으면 None."""
+        used = used_plugins(program) - set(registry.plugins)
+        if not used:
+            return None
+        plugins = self.plugins = plugin_runtime.acquire(
+            self.spec.workspace_root,
+            used,
+            self.ident,
+            environ=os.environ,
+            fault=lambda event: _faults.fault_point("runner.plugins", event=event),
+        )
+        if plugins.lock_bytes is not None:
+            (self.folder.snapshot / LOCK_FILE).write_bytes(plugins.lock_bytes)
+            self._run_json["conditions"]["plugin_lock_sha256"] = plugins.lock_sha256
+        if not plugins.problems:
+            return None
+        plugins.release()
+        plugins.envs = []
+        for schema in plugins.unready.values():
+            with contextlib.suppress(RegistryError):
+                registry.add_remote(schema)
+        return True
+
+    def _plugins_json(self, registry: Registry) -> list[dict[str, Any]]:
+        """`run.json plugins`: 설치 플러그인은 환경·wheel·스키마 해시까지 (M6 3.3)."""
+        out: list[dict[str, Any]] = []
+        for pid, version in sorted(registry.plugins.items()):
+            locked = None if self.plugins is None else self.plugins.plugin(pid)
+            if locked is not None and pid in self.routes:
+                out.append(locked.run_json())
+            else:
+                out.append({"id": pid, "version": version})
+        return out
+
+    def _release_plugins(self) -> None:
+        if self.plugins is not None:
+            self.plugins.release()
 
     def _prepare_ocr(self) -> None:
         """OCR 노드를 쓰는 실행: OCR 엔진 준비(모델 확인·세션 만들기)를 지금 백그라운드로 시작한다
@@ -796,7 +911,7 @@ class Runner:
             cancel=self.token,
             artifacts=FileArtifacts(self.folder.path),
             sink=sink,
-            invoker=RoutingInvoker(None if self.worker is None else WorkerInvoker(self.worker)),
+            invoker=RoutingInvoker(PluginRouter(self.routes) if self.routes else None),
             before_step=lambda point: self.pause.at_boundary(point, self._emit),
             pause_point=PollPoint(self.pause, self._emit),
             # 관측 세대: 멈춤 게이트가 재개할 때 올리고 실행기가 읽는다 (M3 2.4)
@@ -907,11 +1022,13 @@ class Runner:
         self.controller.add_deadline_listener(wake)
         try:
             _faults.fault_point("runner.before_worker_shutdown")
-            if self.worker is not None:
+            for worker in self.workers:
                 with contextlib.suppress(Exception):
-                    self.worker.shutdown(
+                    worker.shutdown(
                         spec.worker_cancel_grace_ms, cutoff=lambda: self._cutoff(stop_at)
                     )
+            # 워커가 다 끝난 뒤 사용 표식을 놓는다 (runner가 죽으면 감독자가)
+            self._release_plugins()
             quiesced = True
             if self.actor is not None:
                 self.actor.stop(0)
@@ -1155,6 +1272,9 @@ class Runner:
             traceback.print_exc()
 
     def _close(self) -> None:
+        for worker in self.workers:
+            worker.close_job()  # 남은 워커 자손을 끝낸다 (shutdown이 이미 닫았으면 아무것도 안 함)
+        self._release_plugins()
         if self.journal is not None:
             with contextlib.suppress(Exception):
                 self.journal.close()
@@ -1173,9 +1293,18 @@ OCR_PREPARE_NOTE_MS: Final = 1000
 """OCR 엔진 준비가 이만큼 넘게 걸리면 runner stderr에 남긴다."""
 
 
-def _uses_ocr(program: Program) -> bool:
-    graphs = program.graphs.values()
-    return any(node.type in OCR_NODE_TYPES for graph in graphs for node in graph.nodes.values())
+def _uses_ocr(program: Program, registry: Registry, installed: Collection[str]) -> bool:
+    """글자를 읽는 코어 노드, 또는 `capture` 효과의 설치 플러그인 노드(워커가 `ctx.ocr`를 부를 수
+    있다 — BACKLOG sfix_2: 첫 OCR 준비가 노드 기한 안에서 흐르지 않게 시작 때 준비하고, 실행기가
+    그 노드 전에 기다린다). 개발 모듈 노드는 지금처럼 준비를 걸지 않는다."""
+    for graph in program.graphs.values():
+        for node in graph.nodes.values():
+            if node.type in OCR_NODE_TYPES:
+                return True
+            nodedef = registry.get(node.type)
+            if nodedef is not None and nodedef.plugin in installed and "capture" in nodedef.effects:
+                return True
+    return False
 
 
 def _uses_input(program: Program, registry: Registry) -> bool:

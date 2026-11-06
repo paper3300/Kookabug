@@ -43,6 +43,7 @@ _TERMINATING_WAIT_S: Final = 5.0
 
 # 감독자가 띄우는 자식: 콘솔 Ctrl+C는 감독자가 취소 순서로 전하고, 창은 띄우지 않는다
 CHILD_FLAGS: Final = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+CREATE_SUSPENDED: Final = 0x00000004
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,9 +182,11 @@ def spawn(
     env: Mapping[str, str] | None = None,
     cwd: Path | None = None,
     stdin: int | IO[Any] | None = subprocess.DEVNULL,
+    suspended: bool = False,
 ) -> subprocess.Popen[bytes]:
     """감독자·runner가 자식을 띄우는 방식. stdout·stderr는 **파일**로 보낸다 —
-    부모가 죽거나 읽지 않아도 파이프 버퍼로 자식이 막히지 않는다."""
+    부모가 죽거나 읽지 않아도 파이프 버퍼로 자식이 막히지 않는다. `suspended`면 멈춘 채 띄운다
+    (Job에 넣은 뒤 `resume_suspended`로 이어 돌린다)."""
     for path in (stdout, stderr):
         path.parent.mkdir(parents=True, exist_ok=True)
     with stdout.open("ab") as out, stderr.open("ab") as err:
@@ -194,6 +197,6 @@ def spawn(
             stderr=err,
             env=None if env is None else dict(env),
             cwd=cwd,
-            creationflags=CHILD_FLAGS,
+            creationflags=CHILD_FLAGS | (CREATE_SUSPENDED if suspended else 0),
             close_fds=True,
         )

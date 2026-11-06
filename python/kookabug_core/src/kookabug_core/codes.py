@@ -93,6 +93,13 @@ CODES: Final[dict[str, CodeInfo]] = {
     "screen_unknown": _w("screens", "출구의 screen이 screens/에 없는 화면 ID다"),
     "screen_ambiguous": _e("screens", "같은 화면 ID의 *.screen.json이 둘 이상이다"),
     "screen_invalid": _w("screens", "화면 파일 형식이 틀렸거나 그 target을 쓸 수 없다"),
+    # 설치 플러그인 (M6 계획 3.3·3.7 — 실행 전에 runner가 잠금·환경으로 판정)
+    "plugin_not_installed": _e("plugins", "그래프가 쓰는 플러그인이 kookabug.lock에 없다"),
+    "plugin_env_missing": _e("plugins", "플러그인 환경이 준비되지 않았다 (kookabug plugin sync)"),
+    "plugin_env_stale": _e(
+        "plugins", "잠금의 Python·SDK 조건이 앱과 다르다 (kookabug plugin relock)"
+    ),
+    "plugin_version_differs": _w("plugins", "그래프 plugins의 판이 kookabug.lock의 판과 다르다"),
     # 기록 정책 (M4 T12)
     "video_on_ineffective": _w(
         "record", "record.video 'on'인데 위 층의 영상 정책이 더 세서 효과가 없다"

@@ -19,7 +19,15 @@ from kookabug_core.plugins.envs import canonical_hash
 from kookabug_core.plugins.errors import PluginError
 from kookabug_core.schema import check_shape
 
-__all__ = ["LOCK_FORMAT", "dumps_lock", "lock_sha256", "read_lock", "revision_of", "write_lock"]
+__all__ = [
+    "LOCK_FORMAT",
+    "dumps_lock",
+    "lock_sha256",
+    "parse_lock",
+    "read_lock",
+    "revision_of",
+    "write_lock",
+]
 
 LOCK_FORMAT: Final = "kookabug.lock/0"
 
@@ -40,17 +48,22 @@ def read_lock(path: Path) -> tuple[dict[str, Any] | None, str | None]:
     data = _read_bytes(path)
     if data is None:
         return None, None
+    return parse_lock(data, path.name), revision_of(data)
+
+
+def parse_lock(data: bytes, name: str = "kookabug.lock") -> dict[str, Any]:
+    """잠금 바이트 → 잠금. 형식이 틀리면 `lock_invalid`."""
     try:
         value = loads_strict(data.decode("utf-8"))
     except (UnicodeDecodeError, ValueError) as exc:
-        raise PluginError("lock_invalid", f"{path.name}을(를) 읽을 수 없다: {exc}") from exc
+        raise PluginError("lock_invalid", f"{name}을(를) 읽을 수 없다: {exc}") from exc
     if not isinstance(value, dict) or value.get("format") != LOCK_FORMAT:
-        raise PluginError("lock_invalid", f"{path.name}의 format이 {LOCK_FORMAT}이(가) 아니다")
+        raise PluginError("lock_invalid", f"{name}의 format이 {LOCK_FORMAT}이(가) 아니다")
     if problems := check_shape(value, "plugin-lock"):
         first = problems[0]
-        raise PluginError("lock_invalid", f"{path.name}{first.pointer or ''}: {first.message}")
+        raise PluginError("lock_invalid", f"{name}{first.pointer or ''}: {first.message}")
     lock: dict[str, Any] = value
-    return lock, revision_of(data)
+    return lock
 
 
 def normalized(lock: dict[str, Any]) -> dict[str, Any]:

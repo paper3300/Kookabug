@@ -87,6 +87,7 @@ def test_code_table_covers_plan_codes() -> None:
         "unconnected_ok_exit",  # T6
         *("screen_unknown", "screen_invalid"),  # M1 T6 (화면 지도용 정보라 실행을 막지 않는다)
         "video_on_ineffective",  # M4 T12 (효과 없는 하위 층 record.video on)
+        "plugin_version_differs",  # M6 B3 (그래프 plugins 판 ≠ 잠금 판)
     }
 
 

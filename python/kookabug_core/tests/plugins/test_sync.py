@@ -16,7 +16,7 @@ from helpers.plugins import YES, Rig, calls_with, git_source, plugin_cli, run_no
 
 from kb_testing.plugin_fixtures import SAMPLE, git_repo
 from kookabug_core.plugins import PluginError, PluginOps
-from kookabug_core.plugins.envs import env_digest, find_env
+from kookabug_core.plugins.envs import env_digest, find_env, is_broken
 from kookabug_core.plugins.lockfile import lock_sha256
 from kookabug_core.plugins.uv import remove_tree
 
@@ -134,17 +134,29 @@ def test_tampered_wheel_or_hash_fails_nothing_changes(rig: Rig, tmp_path: Path) 
         assert caught.value.code == "verify_failed", (tamper, caught.value.message)
         assert ops.calls == []
         assert _snapshot(root) == before and _complete_envs(root, data) == []
-    # (3) 같은 지문 폴더의 파일 변조 → 읽기 검증 실패, 그 폴더는 손대지 않음
+    # (3) 같은 지문 폴더의 파일 변조 → 읽기 검증 실패: 그 폴더는 손대지 않고 깨짐으로 기록(gc
+    # 몫)한 뒤 건너뛰고 새 환경을 만든다 (B3 조율자 방향 — 깨진 첫째 후보가 sync를 막지 않는다)
     folder = rig.env_dir("shared")
     target = folder / "Lib" / "site-packages" / "kbfix_dep" / "__init__.py"
     target.write_text('__version__ = "tampered"\n', encoding="utf-8")
     files = tree_hashes(folder)
     lock_bytes = rig.lock_bytes()
     ops = rig.ops()
-    with pytest.raises(PluginError) as caught:
-        ops.sync(confirm=YES)
-    assert caught.value.code == "verify_failed"
-    assert ops.calls == [] and tree_hashes(folder) == files and rig.lock_bytes() == lock_bytes
+    result = ops.sync(confirm=YES)
+    assert result["created"] == ["shared"]
+    assert tree_hashes(folder) == files and rig.lock_bytes() == lock_bytes
+    assert is_broken(folder)
+    fresh = rig.env_dir("shared")
+    assert fresh != folder
+    assert env_digest(fresh) == lock["environments"]["shared"]["digest"]
+    assert all(str(folder) not in arg for call in ops.calls for arg in call)
+    # 다시 sync는 새 환경을 읽기 검증만 한다
+    again = rig.ops()
+    assert again.sync(confirm=YES)["created"] == [] and again.calls == []
+    # gc는 깨진 폴더를 지운다 (새 환경은 남는다)
+    removed = rig.ops().gc(confirm=YES)["removed"]["envs"]
+    assert folder.name in removed and not folder.exists() and fresh.is_dir()
+    assert not is_broken(folder)
 
 
 def test_sync_does_not_write_lock(rig: Rig, tmp_path: Path) -> None:

@@ -22,7 +22,7 @@ from kookabug_sdk import Result
 from kookabug_sdk.context import Context
 from kookabug_sdk.decorators import CORE_PLUGIN
 
-__all__ = ["InProcessInvoker", "NodeInvoker", "RoutingInvoker"]
+__all__ = ["InProcessInvoker", "NodeInvoker", "PluginRouter", "RoutingInvoker"]
 
 
 class NodeInvoker(Protocol):
@@ -74,3 +74,21 @@ class RoutingInvoker:
                 f"'{node.id}': 플러그인 '{nodedef.plugin}' 노드를 실행할 워커가 없다",
             )
         return self.remote.invoke(nodedef, node, ctx, inputs)
+
+
+class PluginRouter:
+    """원격 노드를 플러그인 ID → 그 플러그인을 띄운 워커로 보낸다 (환경마다 워커, M6 D8)."""
+
+    def __init__(self, by_plugin: Mapping[str, NodeInvoker]) -> None:
+        self.by_plugin = dict(by_plugin)
+
+    def invoke(
+        self, nodedef: NodeDef, node: Node, ctx: Context, inputs: Mapping[str, Any]
+    ) -> Result:
+        target = self.by_plugin.get(nodedef.plugin)
+        if target is None:
+            raise EngineError(
+                "worker_missing",
+                f"'{node.id}': 플러그인 '{nodedef.plugin}' 노드를 실행할 워커가 없다",
+            )
+        return target.invoke(nodedef, node, ctx, inputs)
