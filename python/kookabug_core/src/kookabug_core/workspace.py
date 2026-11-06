@@ -21,6 +21,10 @@ from kookabug_core.diagnostics import Diagnostic
 from kookabug_core.schema import check_shape
 
 __all__ = [
+    "AGENTS_BEGIN",
+    "AGENTS_END",
+    "AGENTS_FILE",
+    "AGENTS_SECTION",
     "LOCAL_FILE",
     "RETENTION_DEFAULTS",
     "SECRET_ENV_PREFIX",
@@ -34,10 +38,12 @@ __all__ = [
     "SettingLookup",
     "Workspace",
     "WorkspaceError",
+    "agents_md_section",
     "default_secrets",
     "ensure_workspace_id",
     "secret_env_name",
     "workspace_id",
+    "write_agents_md",
 ]
 
 WORKSPACE_FILE: Final = "kookabug.json"
@@ -377,6 +383,65 @@ def ensure_workspace_id(root: Path) -> str:
     data["id"] = new_id
     write_atomic(path, save_text(text, data).encode("utf-8"))
     return new_id
+
+
+AGENTS_FILE: Final = "AGENTS.md"
+AGENTS_BEGIN: Final = "<!-- kookabug:begin -->"
+AGENTS_END: Final = "<!-- kookabug:end -->"
+AGENTS_SECTION: Final = """\
+## Kookabug 워크스페이스 규칙 (자동 관리 구간 — 이 표시 사이는 Kookabug가 다시 쓴다)
+
+- 폴더: `tests/` 테스트 그래프, `subgraphs/` 서브그래프, `targets/` 찾기 대상(`*.target.json` +
+  PNG), `screens/` 화면 지도, `runs/` 실행 기록(읽기 전용), `.kookabug/` 개인 설정·캐시(Git 제외)
+- 파일 형식은 Kookabug 저장소의 `Docs/Design/그래프 JSON 스키마 v0.md`·`워크스페이스 구조.md`
+- 그래프는 Kookabug MCP 도구(`kb_graph_create`·`kb_graph_patch`)로 고친다. 노드 ID를 바꾸지 않는다
+- 도구는 `kb_toolset_enable`로 툴셋(graph_edit·run·observe·control·screens)을 켠 뒤 쓴다
+- 실패 분석은 `kb_run_status`(실패 요약)·`kb_run_events`부터 본다. 그다음 `kb_run_artifact_get`
+  (스크린샷)·`kb_run_compare`(지난 성공과 비교)
+- 비밀값(비밀번호·토큰)을 파일·그래프에 쓰지 않는다. 그래프에서는 `{"$secret": "키"}`로 가리킨다
+"""
+"""예제·새 워크스페이스 `AGENTS.md`의 관리 구간 본문 (M5 3.12)."""
+
+
+def agents_md_section(root: Path) -> str | None:
+    """`AGENTS.md`의 관리 구간 본문 (표시 사이). 파일·표시가 없거나 읽을 수 없으면 None."""
+    try:
+        text = (root / AGENTS_FILE).read_text(encoding="utf-8-sig")
+    except OSError, UnicodeDecodeError:
+        return None
+    begin = text.find(AGENTS_BEGIN)
+    end = text.find(AGENTS_END, begin + len(AGENTS_BEGIN)) if begin >= 0 else -1
+    if begin < 0 or end < 0:
+        return None
+    return text[begin + len(AGENTS_BEGIN) : end].strip("\r\n")
+
+
+def write_agents_md(root: Path, section: str = AGENTS_SECTION) -> None:
+    """`AGENTS.md`의 관리 구간만 `section`으로 쓴다 (워크스페이스 구조 "`AGENTS.md`"). 사용자가 쓴
+    구간 밖 글은 그대로 둔다. 파일이 없으면 만들고, 표시가 없으면 끝에 구간을 붙인다. 같은 폴더
+    임시 파일 → `os.replace`."""
+    from kookabug_core.documents import write_atomic
+
+    path = root / AGENTS_FILE
+    block = f"{AGENTS_BEGIN}\n{section.strip(chr(10))}\n{AGENTS_END}"
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        text = None
+    except (OSError, UnicodeDecodeError) as exc:
+        raise WorkspaceError(f"{path}을(를) 읽을 수 없어 고치지 않는다: {exc}") from exc
+    if text is None:
+        new = f"# 에이전트 안내\n\n{block}\n"
+    else:
+        begin = text.find(AGENTS_BEGIN)
+        end = text.find(AGENTS_END, begin + len(AGENTS_BEGIN)) if begin >= 0 else -1
+        if begin >= 0 and end >= 0:
+            new = text[:begin] + block + text[end + len(AGENTS_END) :]
+        else:
+            new = text + ("" if text.endswith("\n") or not text else "\n") + f"\n{block}\n"
+        if new == text:
+            return
+    write_atomic(path, new.encode("utf-8"))
 
 
 def default_secrets(workspace: Workspace | None = None) -> SecretProvider:

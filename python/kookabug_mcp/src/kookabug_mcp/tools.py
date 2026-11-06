@@ -115,7 +115,7 @@ RECT: Final = {
     "maxItems": 4,
     "description": "[x, y, w, h] 클라이언트 영역 물리 픽셀",
 }
-WINDOW: Final = {"type": "string", "minLength": 1, "description": "창 제목"}
+WINDOW: Final = {"type": "string", "minLength": 1, "description": "창 제목 (정확히 같은 제목)"}
 POINT: Final = {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2}
 
 
@@ -141,6 +141,8 @@ def _project_info(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     # daemon 메서드는 kb_project_info로 판정되는 것만 부른다. 켜진 툴셋은 이 연결에서 켠 것을
     # shim이 기억한다(붙을 때·켤 때 daemon이 알려 준 값)
     info = _daemon(link, "workspace.info")
+    permissions = _daemon(link, "permissions.get")
+    verdicts = {t["tool"]: t["final"] for t in permissions["tools"]}
     enabled = set(link.toolsets)
     data = {
         "workspace": {
@@ -151,6 +153,7 @@ def _project_info(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
         },
         "principal": link.principal,
         "folders": FOLDERS,
+        "agents_md": info.get("agents_md"),
         "toolsets": [
             {
                 "name": name,
@@ -159,6 +162,8 @@ def _project_info(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
             }
             for name in TOOLSETS
         ],
+        # 이 연결의 도구별 판정 요약 (인자 없는 대표 판정 — 경로 규칙은 실제 호출에서 다시 본다)
+        "permissions": {d.name: verdicts.get(d.name, "deny") for d in TOOL_DEFS},
     }
     on = ", ".join(t for t in TOOLSETS if t in enabled)
     return ok_result(f"워크스페이스 {info['root']} · 켜진 툴셋 {on}", data)
@@ -515,6 +520,52 @@ def _screen_get(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     return ok_result(f"{got['path']}{note}", got)
 
 
+# ---------------------------------------------------------------- 처리기 (control)
+
+
+def _control_done(what: str, result: Mapping[str, Any]) -> dict[str, Any]:
+    data = {"run": result["run_id"], **result}
+    if result["verdict"] == "pass":
+        return ok_result(f"{what} 했다 (제어 실행 {result['run_id']})", data)
+    error = result.get("error") or {}
+    raise ToolError(
+        str(error.get("code") or "control_failed"),
+        f"{what} 실패 (제어 실행 {result['run_id']}, 판정 {result['verdict']}): "
+        f"{error.get('message', '')}",
+        run=result["run_id"],
+        verdict=result["verdict"],
+    )
+
+
+def _input_click(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params: dict[str, Any] = {"window": args["window"]}
+    for key in ("point", "target", "button", "count"):
+        if key in args:
+            params[key] = args[key]
+    return _control_done(f"'{args['window']}' 클릭", _daemon(link, "control.click", params))
+
+
+def _input_key(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params = {"window": args["window"], "keys": args["keys"]}
+    done = _daemon(link, "control.key", params)
+    return _control_done(f"'{args['window']}'에 키 {args['keys']}", done)
+
+
+def _input_type(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params: dict[str, Any] = {"window": args["window"]}
+    for key in ("text", "secret"):
+        if key in args:
+            params[key] = args[key]
+    what = "비밀값 입력" if "secret" in args else "글자 입력"
+    return _control_done(f"'{args['window']}'에 {what}", _daemon(link, "control.type", params))
+
+
+def _app_launch(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params = {"profile": args["profile"]} if "profile" in args else {}
+    launched = _daemon(link, "app.launch", params)
+    return ok_result(f"게임을 띄웠다 (PID {launched['pid']})", launched)
+
+
 # ---------------------------------------------------------------- 정의
 
 TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
@@ -752,27 +803,35 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
             },
             ("window",),
         ),
+        _input_click,
     ),
     ToolDef(
         "kb_input_key",
         "키 누르기",
         "키 조합을 한 번 누르고 뗀다 (누른 채 두기 없음)",
         _schema({"window": WINDOW, "keys": {"type": "string", "minLength": 1}}, ("window", "keys")),
+        _input_key,
     ),
     ToolDef(
         "kb_input_type",
         "글자 입력",
         "글자를 입력한다. secret을 주면 그 비밀값(키 이름)을 입력하고 값은 돌려주지 않는다",
         _schema(
-            {"window": WINDOW, "text": {"type": "string"}, "secret": {"type": "string"}},
+            {
+                "window": WINDOW,
+                "text": {"type": "string"},
+                "secret": daemon_def("SecretKey"),
+            },
             ("window",),
         ),
+        _input_type,
     ),
     ToolDef(
         "kb_app_launch",
         "게임 실행",
-        "프로필의 게임을 띄운다 (실행·녹화 중이면 거부)",
+        "프로필의 게임을 띄운다 (설정 game.executable·game.args. 실행·녹화 중이면 거부)",
         _schema({"profile": {"type": "string"}}),
+        _app_launch,
     ),
     # screens
     ToolDef(

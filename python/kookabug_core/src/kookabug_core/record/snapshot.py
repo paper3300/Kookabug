@@ -27,11 +27,12 @@ from __future__ import annotations
 import os
 import shutil
 import stat
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final, Literal
+from typing import Any, Final, Literal
 
+from kookabug_core.canonical import canonical_dumps
 from kookabug_core.loader import Program, load_program
 from kookabug_core.record.runfolder import SNAPSHOT_DIR
 from kookabug_core.screens import screen_index
@@ -116,17 +117,25 @@ def take_snapshot(
     secrets: SecretProvider | None = None,
     limits: SnapshotLimits = DEFAULT_LIMITS,
     on_copy: Callable[[str, int], None] | None = None,
+    graph_value: Mapping[str, Any] | None = None,
 ) -> Snapshot:
     """`graph`(워크스페이스 기준 경로)와 그것이 참조하는 파일을 `dest`에 복사하고 거기서 읽는다.
 
     `dest`에 있던 내용은 지운다. `on_copy(경로, 시도 번호)`는 파일 하나를 복사한 직후 불린다
     (테스트에서 복사 도중 원본을 바꿀 때 쓴다).
+
+    `graph_value`를 주면 루트 그래프는 원본에서 복사하지 않고 그 값을 스냅샷의 `graph` 자리에 쓴다
+    (daemon이 메모리에서 만든 에이전트 제어 실행, M5 3.9 — 워크스페이스에 그래프 파일을 쓰지
+    않는다).
+    참조하는 target 등은 원본에서 복사한다.
     """
     root = Path(dest).resolve()
     for attempt in range(1, limits.max_retries + 2):
         _clear(root)
         copier = _Copier(workspace, root, limits, attempt, on_copy)
         copier.copy(WORKSPACE_FILE)
+        if graph_value is not None:
+            copier.write_value(graph, graph_value)
         snap = _open_snapshot(workspace, root)
         screens = screen_index(workspace)
         queue = {graph}
@@ -192,14 +201,27 @@ class _Copier:
         self.on_copy = on_copy
         self.copied: dict[str, _Signature] = {}
         self.absent: set[str] = set()
+        self.written: set[str] = set()
+        """원본이 아니라 값으로 쓴 파일 (`graph_value`). 고정점의 변경 검사 대상이 아니다."""
         self.total = 0
 
     def done(self) -> set[str]:
-        return self.copied.keys() | self.absent
+        return self.copied.keys() | self.absent | self.written
+
+    def write_value(self, rel: str, value: Mapping[str, Any]) -> None:
+        if self.source.resolve(rel) is None or self._private(rel, self.root / rel):
+            raise SnapshotError("snapshot_failed", f"'{rel}'은(는) 쓸 수 있는 그래프 경로가 아니다")
+        dst = self.root.joinpath(*rel.split("/"))
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_text(canonical_dumps(dict(value)), encoding="utf-8")
+        except (OSError, TypeError, ValueError) as exc:
+            raise SnapshotError("snapshot_failed", f"'{rel}'을(를) 쓰지 못했다: {exc}") from exc
+        self.written.add(rel)
 
     def copy(self, rel: str) -> None:
         src = self.source.resolve(rel)
-        if src is None or rel in self.copied or rel in self.absent:
+        if src is None or rel in self.done():
             return  # 워크스페이스 경로가 아님(로더가 graph_missing으로 보고) 또는 이미 처리
         if self._private(rel, src):
             raise SnapshotError(

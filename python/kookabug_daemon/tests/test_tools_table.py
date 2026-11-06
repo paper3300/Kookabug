@@ -48,6 +48,8 @@ M4_DENIED = {
     "secrets.create",
     "target.read_text",
 }
+# M5 B3 사람 확인·권한 설정 (계획 3.6 엄격: 에이전트가 자기 요청을 승인하거나 권한을 바꾸지 못함)
+M5_DENIED = {"approval.list", "approval.respond", "approval.preview", "permissions.set"}
 
 
 def test_ui_only_methods_agent_denied_or_allowlisted() -> None:
@@ -55,15 +57,18 @@ def test_ui_only_methods_agent_denied_or_allowlisted() -> None:
     assert ui_only == {name for name, tool in METHOD_TOOLS.items() if tool == UI_ONLY}
     assert ui_only >= AGENT_DENIED
     assert ui_only - AGENT_DENIED == UI_ONLY_AGENT_ALLOWED == ALLOWED_BEFORE_M3
-    assert {"daemon.shutdown"} | M3_DENIED | M4_DENIED == AGENT_DENIED
+    assert {"daemon.shutdown"} | M3_DENIED | M4_DENIED | M5_DENIED == AGENT_DENIED
 
 
 class _NoService:
     def require(self, principal: Principal, tool: str, arg: str = "", *, approved: bool = False):
         raise AssertionError("ui_only 메서드는 판정하지 않는다")
 
+    def authorize(self, principal: Principal, tool: str, arg: str = ""):
+        raise AssertionError("ui_only 메서드는 판정하지 않는다")
 
-@pytest.mark.parametrize("method", sorted(M3_DENIED | M4_DENIED))
+
+@pytest.mark.parametrize("method", sorted(M3_DENIED | M4_DENIED | M5_DENIED))
 def test_agent_denied_before_decision(method: str) -> None:
     authorizer = Authorizer(_NoService())
     agent = Principal("agent", "codex-1", attended=True)

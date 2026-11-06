@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Final
 
 from kookabug_core.permissions import (
+    USER_SETTINGS_FILE,
     Decision,
     Policy,
     Principal,
@@ -94,6 +95,11 @@ class WorkspaceService:
 
     def policy(self) -> Policy:
         return load_policy(self.root, user_config_dir(self._environ))
+
+    def user_settings_path(self) -> Path | None:
+        """사용자 설정 파일 (권한 사용자 계층). 폴더를 정할 수 없으면 None."""
+        folder = user_config_dir(self._environ)
+        return None if folder is None else folder / USER_SETTINGS_FILE
 
     def authorize(self, principal: Principal, tool: str, arg: str = "") -> Decision:
         return decide(self.policy(), principal, tool, arg)

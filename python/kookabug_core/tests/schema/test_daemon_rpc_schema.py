@@ -84,7 +84,18 @@ TOOLS = {
     "screen.read_text": "kb_ocr_read",
     "screens.list": "kb_screen_list",
     "screens.get": "kb_screen_get",
+    # M5 B3: 사람 확인·권한 설정·게임 조작
+    "approval.list": "ui_only",
+    "approval.respond": "ui_only",
+    "approval.preview": "ui_only",
+    "permissions.get": "kb_project_info",
+    "permissions.set": "ui_only",
+    "control.click": "kb_input_click",
+    "control.key": "kb_input_key",
+    "control.type": "kb_input_type",
+    "app.launch": "kb_app_launch",
 }
+AGENT_ONLY_B3 = {"control.click", "control.key", "control.type", "app.launch"}
 AGENT_ONLY_B2 = {
     "run.failure",
     "run.events",
@@ -121,6 +132,7 @@ def test_method_table_matches_permission_table() -> None:
         "graph.list",
         "graph.check",
         *AGENT_ONLY_B2,
+        *AGENT_ONLY_B3,
     }
     for row in table.values():
         for part in ("params", "result"):
@@ -132,6 +144,8 @@ def test_method_table_matches_permission_table() -> None:
 def test_notification_table() -> None:
     table = DEFS["Notifications"]["properties"]
     assert sorted(table) == [
+        "approval.requested",
+        "approval.resolved",
         "debug.breakpoints.changed",
         "graph.changed",
         "lease.changed",

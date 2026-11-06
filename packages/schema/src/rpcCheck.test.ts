@@ -28,6 +28,10 @@ test("test_method_table_tools_and_internal_methods", () => {
   expect(internal.sort()).toEqual([
     "agent.toolsets.enable",
     "agent.toolsets.get",
+    "app.launch",
+    "control.click",
+    "control.key",
+    "control.type",
     "daemon.shutdown",
     "graph.check",
     "graph.list",
@@ -44,6 +48,8 @@ test("test_method_table_tools_and_internal_methods", () => {
     "session.hello",
   ]);
   expect(Object.keys(NOTIFICATIONS).sort()).toEqual([
+    "approval.requested",
+    "approval.resolved",
     "debug.breakpoints.changed",
     "graph.changed",
     "lease.changed",

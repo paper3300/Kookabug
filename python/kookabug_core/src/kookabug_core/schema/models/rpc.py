@@ -257,6 +257,17 @@ class RunResumeParams(BaseModel):
     mode: Annotated[Any | None, Field(description="urn:kookabug:events:0#/$defs/ResumeMode")] = None
 
 
+class Agent(BaseModel):
+    """
+    그 실행을 낸 에이전트 (M5 에이전트 제어 실행)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: str
+
+
 class Control(BaseModel):
     """
     제어 채널: 감독자가 연 파이프 이름과 상호 인증 키(32바이트 hex)
@@ -832,6 +843,9 @@ class RunSpec(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    agent: Annotated[
+        Agent | None, Field(description="그 실행을 낸 에이전트 (M5 에이전트 제어 실행)")
+    ] = None
     breakpoints: Annotated[
         Any | None,
         Field(
@@ -861,6 +875,12 @@ class RunSpec(BaseModel):
         int | None, Field(description="스텝 출력으로 나간 캡처를 남기는 개수. 없으면 32", ge=0)
     ] = None
     graph: Annotated[str, Field(description="실행할 테스트 그래프 (워크스페이스 기준 경로)")]
+    graph_value: Annotated[
+        dict[str, Any] | None,
+        Field(
+            description="루트 그래프 값 (M5 에이전트 제어 실행 — daemon 내부 진입점만 채운다). 있으면 graph 자리의 워크스페이스 파일 대신 이 값을 스냅샷에 쓴다"
+        ),
+    ] = None
     job_name: Annotated[
         str,
         Field(
@@ -888,6 +908,10 @@ class RunSpec(BaseModel):
     shutdown_grace_ms: Annotated[
         int | None,
         Field(description="마무리 유예: 감독자 하드 종료·감독자 사망 뒤 자기 종료까지", ge=0),
+    ] = None
+    source: Annotated[
+        Literal["agent_control"] | None,
+        Field(description="실행 출처 (M5: agent_control = 에이전트 게임 조작). run.json에 남는다"),
     ] = None
     supervisor: ProcessIdent
     worker_cancel_grace_ms: Annotated[int | None, Field(ge=0)] = None

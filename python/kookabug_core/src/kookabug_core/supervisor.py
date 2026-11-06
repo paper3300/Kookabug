@@ -180,6 +180,11 @@ class StartOptions:
     breakpoints: tuple[Breakpoint, ...] = ()
     """시작할 때의 브레이크포인트 (M3 2.1). daemon이 사람이 UI에서 시작한 실행에만 채운다. CLI·
     에이전트 실행은 비워 둔다."""
+    graph_value: Mapping[str, Any] | None = None
+    """루트 그래프 값 (M5 에이전트 제어 실행 — daemon 내부 진입점만 채운다). `graph`는 그 값을 둘
+    스냅샷 안 경로다."""
+    source: str | None = None
+    agent: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,6 +282,9 @@ class Supervisor:
             frame_budget_mib=opts.frame_budget_mib,
             frame_output_refs=opts.frame_output_refs,
             breakpoints=tuple(opts.breakpoints),
+            graph_value=opts.graph_value,
+            source=opts.source,
+            agent=opts.agent,
         )
         handle = RunHandle(self, spec, folder, job, started_at)
         handle._launch(listener, key)

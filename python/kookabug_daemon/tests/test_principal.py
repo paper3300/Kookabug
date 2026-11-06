@@ -53,6 +53,11 @@ class RecordingService:
             raise ApprovalRequired(tool, decision)
         return decision
 
+    def authorize(self, principal: Principal, tool: str, arg: str = "") -> Decision:
+        """집행 없는 판정 보기 (`run.start`의 사람 확인 사전 확인). 기록하지 않는다."""
+        verdict: Any = self.outcome
+        return Decision(verdict, verdict, "project", "rule:x", "rule")
+
 
 @pytest.fixture
 def recorded(root: Path) -> Iterator[tuple[ThreadDaemon, RecordingService, list[Call]]]:
@@ -120,6 +125,11 @@ def test_every_method_has_tool_or_ui_only() -> None:
         "run.resume",
         "run.restart",
         "run.export",
+        # M5 B3 사람 확인·권한 설정
+        "approval.list",
+        "approval.respond",
+        "approval.preview",
+        "permissions.set",
     } | RECORDER_METHODS
 
 

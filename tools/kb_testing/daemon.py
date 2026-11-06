@@ -160,11 +160,17 @@ class ThreadDaemon:
         recorder_script_speed: float | None = float("inf"),
         recorder_testing: HookTesting | None = None,
         agent_toolsets: Iterable[str] | None = None,
+        approval_timeout_s: float | None = None,
     ) -> None:
         """`agent_toolsets`: agent 연결이 hello 때 갖는 툴셋. None이면 **전부**(M5 이전 검사가
-        툴셋 없이 판정만 보던 그대로). M5 툴셋 검사는 제품 기본값 `("core",)`을 넘긴다."""
+        툴셋 없이 판정만 보던 그대로). M5 툴셋 검사는 제품 기본값 `("core",)`을 넘긴다.
+        `approval_timeout_s`: 사람 확인 대기 (None이면 제품 기본값 120초)."""
         self.root = root
+        extra: dict[str, Any] = {}
+        if approval_timeout_s is not None:
+            extra["approval_timeout_s"] = approval_timeout_s
         config = DaemonConfig(
+            **extra,
             agent_toolsets=frozenset(TOOLSETS if agent_toolsets is None else agent_toolsets),
             workspace=root,
             idle_timeout_s=idle_timeout_s,

@@ -14,6 +14,8 @@
 - **창**: 제목·클래스·클라이언트 크기·DPI는 표의 `window`, 프로세스 이름은 `process.name`.
   닫으면(`close`) 그 창은 `window_gone`. 크기는 바꿀 수 없다(장면 PNG가 한 크기) — 같은 크기로
   맞추기만 참
+- **이미 떠 있는 게임**: 표의 `running: true`면 시작할 때 기본 갈래 게임 하나가 떠 있다(띄우지
+  않고 창에 붙는 그래프용)
 
 SDK `fake_context(scenario=)`에도 그대로 넣는다(`kookabug_sdk.testing.Scenario`: `capture`·
 `on_input`·`launch`). 그때는 가장 나중에 띄운 게임이 화면·입력을 받는다.
@@ -126,6 +128,7 @@ def _check(data: Any, folder: Path) -> dict[str, Any]:
         "forms",
         "launch",
         "process",
+        "running",
         "scenes",
         "start",
         "transitions",
@@ -157,6 +160,8 @@ def _check(data: Any, folder: Path) -> dict[str, Any]:
         _int(v, "/window/client_size", minimum=1)
     _int(window.get("dpi", 96), "/window/dpi", minimum=1)
     _str(_obj(spec.get("process"), "/process").get("name"), "/process/name")
+    if not isinstance(spec.get("running", False), bool):
+        raise _fail("/running", "true·false여야 한다")
     rules = _list(spec.get("launch"), "/launch")
     if not any("args_contains" not in _obj(r, "/launch") for r in rules):
         raise _fail("/launch", "조건 없는 기본 규칙이 없다")
@@ -404,6 +409,9 @@ class FakeScenario:
         self._hwnds = itertools.count(FIRST_HWND, 0x10)
         self.inputs: list[tuple[int, str, tuple[Any, ...]]] = []
         """장면에 닿은 입력 (창 HWND, 종류, 인수) — 검사용."""
+        if self.spec.get("running", False):
+            # 이미 떠 있는 게임 하나 (띄우지 않고 창에 붙는 그래프·에이전트 제어 실행 검사, M5)
+            self.launch_game("", ())
 
     @classmethod
     def load(cls, path: str | Path) -> FakeScenario:

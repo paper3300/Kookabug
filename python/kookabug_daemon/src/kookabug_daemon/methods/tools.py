@@ -106,6 +106,17 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     "run.restart": UI_ONLY,
     "run.export": UI_ONLY,
     **dict.fromkeys(sorted(RECORDER_METHODS), UI_ONLY),
+    # M5 B3: 사람 확인·권한 설정 (계획 3.5·3.6) — 답·설정은 사람만
+    "approval.list": UI_ONLY,
+    "approval.respond": UI_ONLY,
+    "approval.preview": UI_ONLY,
+    "permissions.get": "kb_project_info",
+    "permissions.set": UI_ONLY,
+    # M5 B3: 게임 조작 (계획 3.9) — 한 스텝짜리 제어 실행
+    "control.click": "kb_input_click",
+    "control.key": "kb_input_key",
+    "control.type": "kb_input_type",
+    "app.launch": "kb_app_launch",
 }
 
 AGENT_DENIED: Final = frozenset(
@@ -118,6 +129,11 @@ AGENT_DENIED: Final = frozenset(
         "run.restart",
         "run.export",
         *RECORDER_METHODS,
+        # 에이전트가 자기 확인 요청을 승인하거나 권한을 바꾸지 못하게 (M5 3.6 엄격 항목)
+        "approval.list",
+        "approval.respond",
+        "approval.preview",
+        "permissions.set",
     }
 )
 """`ui_only`이지만 agent 연결에는 판정 전에 거부하는 메서드. `ui_only`는 판정을 건너뛰므로
@@ -155,6 +171,8 @@ class ServiceLike(Protocol):
         self, principal: Principal, tool: str, arg: str = "", *, approved: bool = False
     ) -> Decision: ...
 
+    def authorize(self, principal: Principal, tool: str, arg: str = "") -> Decision: ...
+
 
 class Authorizer:
     """연결의 주체로 메서드 하나를 판정한다. 거부·승인 필요는 `RequestFailed`."""
@@ -185,8 +203,19 @@ class Authorizer:
                 toolset=toolset,
             )
 
-    def require(self, principal: Principal, method: str, arg: str = "") -> Decision | None:
-        """판정했으면 그 결과, `ui_only`라 판정하지 않았으면 None."""
+    def peek(self, principal: Principal, method: str, arg: str = "") -> Decision | None:
+        """집행하지 않고 판정만 본다 (`ui_only`면 None). 스스로 판정하는 메서드가 ask인지 미리 볼
+        때 쓴다 — 집행은 그 메서드의 `require`가 한다."""
+        tool = METHOD_TOOLS[method]
+        if tool == UI_ONLY:
+            return None
+        return self.service.authorize(principal, tool, arg)
+
+    def require(
+        self, principal: Principal, method: str, arg: str = "", *, approved: bool = False
+    ) -> Decision | None:
+        """판정했으면 그 결과, `ui_only`라 판정하지 않았으면 None. ask는 `approved`(사람 확인을
+        받았음, `approvals.ApprovalBroker`)일 때만 통과하고 아니면 `approval_required`다."""
         tool = METHOD_TOOLS[method]
         if tool == UI_ONLY:
             if principal.kind == "agent" and method in AGENT_DENIED:
@@ -194,9 +223,8 @@ class Authorizer:
                     "permission_denied", f"에이전트 연결은 {method}를 쓸 수 없다 (ui_only)"
                 )
             return None
-        # M2에는 승인 UI가 없다: ask는 approved 없이 넘겨 approval_required가 된다 (2.5)
         try:
-            return self.service.require(principal, tool, arg)
+            return self.service.require(principal, tool, arg, approved=approved)
         except PermissionDenied as exc:
             raise RequestFailed(
                 "permission_denied", str(exc), decision=exc.decision.to_dict()

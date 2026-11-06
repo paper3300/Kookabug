@@ -8,10 +8,111 @@
  */
 export type Toolset = "control" | "core" | "graph_edit" | "observe" | "run" | "screens";
 /**
+ * 사람 확인 답 (M5 3.6). allow_always는 프로젝트 계층(.kookabug/local.json)에 그 도구·인자에만 맞는 allow 규칙을 더한 뒤 실행한다. control 도구에는 받지 않는다(always_not_allowed)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ApprovalAnswer".
+ */
+export type ApprovalAnswer = "allow_always" | "allow_once" | "deny";
+/**
+ * 사람 확인 요청 ID
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ApprovalId".
+ */
+export type ApprovalId = string;
+/**
+ * UTC 시각, 밀리초까지 (2026-10-29T06:02:11.104Z)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Timestamp".
+ */
+export type Timestamp = string;
+/**
+ * 점으로 나눈 소문자 이름 (예: graph.open)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "MethodName".
+ */
+export type MethodName = string;
+/**
+ * 권한 판정에 쓰는 도구 이름 (구현 계획 7장). ui_only는 판정하지 않는 메서드 (agent 연결이면 daemon의 AGENT_DENIED 목록 — daemon.shutdown, M3 디버그 메서드 debug.breakpoints.get·set·run.pause·run.resume·run.restart, run.export, M4 녹화·비밀값 메서드 recorder.*·secrets.*·target.read_text — 를 판정 전에 거부)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ToolName".
+ */
+export type ToolName =
+  | "kb_app_launch"
+  | "kb_graph_create"
+  | "kb_graph_get"
+  | "kb_graph_list"
+  | "kb_graph_patch"
+  | "kb_graph_validate"
+  | "kb_image_find"
+  | "kb_input_click"
+  | "kb_input_key"
+  | "kb_input_type"
+  | "kb_log_search"
+  | "kb_node_search"
+  | "kb_ocr_read"
+  | "kb_project_info"
+  | "kb_run_artifact_get"
+  | "kb_run_cancel"
+  | "kb_run_compare"
+  | "kb_run_events"
+  | "kb_run_start"
+  | "kb_run_status"
+  | "kb_screen_capture"
+  | "kb_screen_get"
+  | "kb_screen_list"
+  | "kb_target_create"
+  | "kb_toolset_enable"
+  | "ui_only";
+/**
+ * 워크스페이스 루트 기준 경로 ('/' 구분). daemon이 루트 밖·.kookabug/ 안을 거부한다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "WorkspacePath".
+ */
+export type WorkspacePath = string;
+/**
+ * 그래프 파일 revision: 디스크 바이트의 sha256 hex
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Revision".
+ */
+export type Revision = string;
+/**
+ * 그래프 파일 값 전체 (JSON 트리). 편집 중이라 형식이 틀릴 수 있다. JS에서 보낼 때는 반드시 wireStringify로 직렬화한다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "GraphValue".
+ */
+export type GraphValue = {[key: string]: unknown};
+/**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "ClientInfo".
  */
 export type ClientInfo = UiClientInfo | AgentClientInfo;
+/**
+ * 실행 ID: 소문자·숫자 8자
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunId".
+ */
+export type RunId = string;
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Verdict".
+ */
+export type Verdict = "error" | "fail" | "pass" | "skipped";
+/**
+ * 비밀값 키 (그래프 $secret 키와 같은 규칙)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "SecretKey".
+ */
+export type SecretKey = string;
 /**
  * [x, y, w, h] 물리 픽셀
  *
@@ -37,7 +138,7 @@ export type DaemonErrorCode = -32700 | -32600 | -32601 | -32602 | -32603 | -3210
  */
 export type DaemonErrorObject = DaemonStandardError | DaemonRequestFailedError;
 /**
- * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀)
+ * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RequestFailedCode".
@@ -107,14 +208,11 @@ export type RequestFailedCode =
   | "video_not_served"
   | "recorder_frame"
   | "sensitive_region"
-  | "frame_not_owned";
-/**
- * 실행 ID: 소문자·숫자 8자
- *
- * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
- * via the `definition` "RunId".
- */
-export type RunId = string;
+  | "frame_not_owned"
+  | "approval_denied"
+  | "approval_timeout"
+  | "always_not_allowed"
+  | "settings_invalid";
 /**
  * 녹화 세션 상태: idle → starting → recording ⇄ paused → stopped → committing → committed | stopped, 또는 discarded. 오류로 멈춤(hook_lost·input_overflow·window_gone·storage_full)도 stopped (stop_reason)
  *
@@ -184,27 +282,6 @@ export type ImageRef =
       workspace: WorkspacePath;
     };
 /**
- * 워크스페이스 루트 기준 경로 ('/' 구분). daemon이 루트 밖·.kookabug/ 안을 거부한다
- *
- * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
- * via the `definition` "WorkspacePath".
- */
-export type WorkspacePath = string;
-/**
- * 그래프 파일 revision: 디스크 바이트의 sha256 hex
- *
- * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
- * via the `definition` "Revision".
- */
-export type Revision = string;
-/**
- * 그래프 파일 값 전체 (JSON 트리). 편집 중이라 형식이 틀릴 수 있다. JS에서 보낼 때는 반드시 wireStringify로 직렬화한다
- *
- * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
- * via the `definition` "GraphValue".
- */
-export type GraphValue = {[key: string]: unknown};
-/**
  * graph.patch 연산 하나 (M5 계획 3.4). 노드 ID는 바꿀 수 없다
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -235,12 +312,12 @@ export type GraphPatchNodeRef = string;
  */
 export type RequestSeq = number;
 /**
- * 점으로 나눈 소문자 이름 (예: graph.open)
+ * 권한 판정 값
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
- * via the `definition` "MethodName".
+ * via the `definition` "PermissionVerdict".
  */
-export type MethodName = string;
+export type PermissionVerdict = "allow" | "ask" | "deny";
 /**
  * 커밋 토큰 (commit_prepare가 주고 commit_finish·commit_abort가 받는다)
  *
@@ -262,13 +339,6 @@ export type TargetRevision = string;
  * via the `definition` "RecorderSessionId".
  */
 export type RecorderSessionId = string;
-/**
- * UTC 시각, 밀리초까지 (2026-10-29T06:02:11.104Z)
- *
- * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
- * via the `definition` "Timestamp".
- */
-export type Timestamp = string;
 /**
  * 녹화가 멈춘 까닭: user(정지 단추·단축키·커밋), hook_lost(훅 끊김), input_overflow(중요 입력 유실), window_gone(대상 창 닫힘), storage_full(세션 저장소 상한)
  *
@@ -299,13 +369,6 @@ export type RecorderNeedsReviewReason =
   | "secret_overlap"
   | "wait_target_unknown"
   | "window_undetermined";
-/**
- * 비밀값 키 (그래프 $secret 키와 같은 규칙)
- *
- * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
- * via the `definition` "SecretKey".
- */
-export type SecretKey = string;
 /**
  * 입력 칸 구간의 글자 판정: pending(판정 중) → ordinary(일반 글자 — 긍정 근거 또는 사람 확인) | secret(비밀값, 끈적) | needs_review(근거 없음 — 사람이 고를 때까지 커밋 거부)
  *
@@ -343,11 +406,6 @@ export type RunCompareResult = import("./run-index.js").CompareResult;
  */
 export type RunIndexResult = import("./run-index.js").RunIndex;
 /**
- * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
- * via the `definition` "Verdict".
- */
-export type Verdict = "error" | "fail" | "pass" | "skipped";
-/**
  * crop = 편집 중 새로 고른 영역, image = 기존 target 이미지(target 기준 경로)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -367,35 +425,6 @@ export type PreviewTemplate =
  * via the `definition` "Seq".
  */
 export type Seq = number;
-/**
- * 권한 판정에 쓰는 도구 이름 (구현 계획 7장). ui_only는 판정하지 않는 메서드 (agent 연결이면 daemon의 AGENT_DENIED 목록 — daemon.shutdown, M3 디버그 메서드 debug.breakpoints.get·set·run.pause·run.resume·run.restart, run.export, M4 녹화·비밀값 메서드 recorder.*·secrets.*·target.read_text — 를 판정 전에 거부)
- *
- * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
- * via the `definition` "ToolName".
- */
-export type ToolName =
-  | "kb_graph_create"
-  | "kb_graph_get"
-  | "kb_graph_list"
-  | "kb_graph_patch"
-  | "kb_graph_validate"
-  | "kb_image_find"
-  | "kb_log_search"
-  | "kb_node_search"
-  | "kb_ocr_read"
-  | "kb_project_info"
-  | "kb_run_artifact_get"
-  | "kb_run_cancel"
-  | "kb_run_compare"
-  | "kb_run_events"
-  | "kb_run_start"
-  | "kb_run_status"
-  | "kb_screen_capture"
-  | "kb_screen_get"
-  | "kb_screen_list"
-  | "kb_target_create"
-  | "kb_toolset_enable"
-  | "ui_only";
 
 /**
  * UI·에이전트 ↔ daemon JSON-RPC 2.0 메시지 하나 (WebSocket 텍스트 프레임 하나, UTF-8 JSON, 최대 16 MiB). 값 규칙은 M0b와 같다: NaN·무한 금지, 정수 ±(2^53-1), 중첩 128단. 메서드·알림 모양은 $defs의 Methods·Notifications 표
@@ -454,6 +483,109 @@ export interface AgentToolsetsResult {
   enabled: Toolset[];
 }
 /**
+ * 게임을 띄운다 (설정 game.executable·game.args·game.cwd, 프로필 계층 포함). 실행·녹화 중이면 거부. 실행 Job 밖
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "AppLaunchParams".
+ */
+export interface AppLaunchParams {
+  profile?: null | string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "AppLaunchResult".
+ */
+export interface AppLaunchResult {
+  pid: number;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ApprovalIdParams".
+ */
+export interface ApprovalIdParams {
+  id: ApprovalId;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ApprovalListResult".
+ */
+export interface ApprovalListResult {
+  requests: ApprovalRequest[];
+}
+/**
+ * 에이전트의 ask 판정 요청 하나 (approval.requested·approval.list). 기다리는 동안 daemon은 아무것도 쓰지 않는다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ApprovalRequest".
+ */
+export interface ApprovalRequest {
+  agent: ApprovalAgent;
+  /**
+   * "항상 허용"을 고르면 저장할 규칙 글자. control 도구·규칙으로 쓸 수 없는 인자면 null(단추 없음)
+   */
+  always_rule: null | string;
+  /**
+   * 권한 인자 (그래프·target 경로, 실행 그래프 경로, 창 제목 등)
+   */
+  arg: string;
+  /**
+   * 요청한 agent 연결 번호
+   */
+  connection: number;
+  expires_at: Timestamp;
+  id: ApprovalId;
+  method: MethodName;
+  /**
+   * approval.preview로 바뀔 그래프 값을 볼 수 있다 (graph.patch·graph.save·graph.create)
+   */
+  previewable: boolean;
+  /**
+   * 사람이 읽는 요약 줄
+   */
+  summary: string[];
+  tool: ToolName;
+}
+export interface ApprovalAgent {
+  id: string;
+  name: string;
+}
+/**
+ * 승인하면 쓰일 그래프 값 (쓰지 않는다, "캔버스에서 보기" U10)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ApprovalPreviewResult".
+ */
+export interface ApprovalPreviewResult {
+  path: WorkspacePath;
+  /**
+   * 기준 디스크 revision (새 파일이면 null)
+   */
+  revision: Revision | null;
+  value: GraphValue;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ApprovalResolvedParams".
+ */
+export interface ApprovalResolvedParams {
+  /**
+   * 답한 ui 연결(ui:<번호>) 또는 daemon(시간 초과·요청 연결 끊김)
+   */
+  by: string;
+  id: ApprovalId;
+  verdict: "allow_always" | "allow_once" | "cancelled" | "deny" | "timeout";
+}
+/**
+ * 사람 확인 답. 끝난(답함·시간 초과·취소) 요청이면 not_found
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ApprovalRespondParams".
+ */
+export interface ApprovalRespondParams {
+  id: ApprovalId;
+  verdict: ApprovalAnswer;
+}
+/**
  * debug.breakpoints.get·set 결과, debug.breakpoints.changed 알림 (다른 연결이 바꿨을 때)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -481,6 +613,71 @@ export interface UiClientInfo {
   kind: "ui";
   name: string;
   version: string;
+}
+/**
+ * 창을 클릭한다 (point와 target 중 하나). daemon이 한 스텝짜리 제어 실행으로 돌린다 (M5 3.9)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ControlClickParams".
+ */
+export interface ControlClickParams {
+  button?: "left" | "middle" | "right";
+  count?: number;
+  /**
+   * [x, y] 클라이언트 영역 물리 픽셀
+   *
+   * @minItems 2
+   * @maxItems 2
+   */
+  point?: [number, number];
+  target?: WorkspacePath;
+  /**
+   * 창 제목 (정확히 같은 제목의 창, 권한 인자)
+   */
+  window: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ControlKeyParams".
+ */
+export interface ControlKeyParams {
+  /**
+   * 키 하나나 조합 (ctrl+a). 누르고 바로 뗀다
+   */
+  keys: string;
+  /**
+   * 창 제목 (정확히 같은 제목의 창, 권한 인자)
+   */
+  window: string;
+}
+/**
+ * 제어 실행 결과 (runs/ 아래 source agent_control 기록). 실패면 error (메시지는 3.8로 가림)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ControlResult".
+ */
+export interface ControlResult {
+  error?: ControlError;
+  run_id: RunId;
+  verdict: Verdict;
+}
+export interface ControlError {
+  code: string;
+  message?: string;
+}
+/**
+ * 글자 입력 (text와 secret 중 하나). secret은 비밀값 키 — 값은 runner가 찾고 결과·기록·오류에 원문이 없다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ControlTypeParams".
+ */
+export interface ControlTypeParams {
+  secret?: SecretKey;
+  text?: string;
+  /**
+   * 창 제목 (정확히 같은 제목의 창, 권한 인자)
+   */
+  window: string;
 }
 /**
  * 정지 화면에서 자른 영역 (저장 전 템플릿)
@@ -518,7 +715,7 @@ export interface DaemonRequestFailedError {
   message: string;
 }
 /**
- * error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message
+ * error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message. M5 B3: approval_required → decision·reason
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RequestFailedData".
@@ -542,6 +739,10 @@ export interface RequestFailedData {
   owner?: LeaseOwner | null;
   path?: string;
   protocol?: number;
+  /**
+   * approval_required: no_approver(사람 연결 없음)
+   */
+  reason?: string;
   revision?: string | null;
   run_id?: RunId;
   state?: RecorderState;
@@ -1083,6 +1284,48 @@ export interface Methods {
     result: AgentToolsetsResult;
     tool: "kb_toolset_enable";
   };
+  "app.launch": {
+    params: AppLaunchParams;
+    renderer: false;
+    result: AppLaunchResult;
+    tool: "kb_app_launch";
+  };
+  "approval.list": {
+    params: EmptyParams;
+    renderer: true;
+    result: ApprovalListResult;
+    tool: "ui_only";
+  };
+  "approval.preview": {
+    params: ApprovalIdParams;
+    renderer: true;
+    result: ApprovalPreviewResult;
+    tool: "ui_only";
+  };
+  "approval.respond": {
+    params: ApprovalRespondParams;
+    renderer: true;
+    result: EmptyResult;
+    tool: "ui_only";
+  };
+  "control.click": {
+    params: ControlClickParams;
+    renderer: false;
+    result: ControlResult;
+    tool: "kb_input_click";
+  };
+  "control.key": {
+    params: ControlKeyParams;
+    renderer: false;
+    result: ControlResult;
+    tool: "kb_input_key";
+  };
+  "control.type": {
+    params: ControlTypeParams;
+    renderer: false;
+    result: ControlResult;
+    tool: "kb_input_type";
+  };
   "daemon.shutdown": {
     params: DaemonShutdownParams;
     renderer: false;
@@ -1154,6 +1397,18 @@ export interface Methods {
     renderer: true;
     result: NodesListResult;
     tool: "kb_node_search";
+  };
+  "permissions.get": {
+    params: EmptyParams;
+    renderer: true;
+    result: PermissionsGetResult;
+    tool: "kb_project_info";
+  };
+  "permissions.set": {
+    params: PermissionsSetParams;
+    renderer: true;
+    result: PermissionsSetResult;
+    tool: "ui_only";
   };
   "recorder.commit_abort": {
     params: RecorderCommitTokenParams;
@@ -1469,6 +1724,101 @@ export interface NodesListResult {
   schemas: {
     [k: string]: unknown | undefined;
   }[];
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PermissionsGetResult".
+ */
+export interface PermissionsGetResult {
+  /**
+   * 계층별 파일 값 (ui 연결만. agent 연결에는 자기 판정 요약 tools만)
+   */
+  layers?: PermissionsLayer[];
+  principal: Principal;
+  /**
+   * 도구별 실효 판정. agent 연결은 자기 주체, ui 연결은 사람이 지켜보는 에이전트(attended) 기준
+   */
+  tools: PermissionsToolDecision[];
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PermissionsLayer".
+ */
+export interface PermissionsLayer {
+  diagnostics: Diagnostic[];
+  /**
+   * permissions.set으로 고칠 수 있는 계층 (team은 false — kookabug.json에서 편집)
+   */
+  editable: boolean;
+  layer: "project" | "team" | "user";
+  /**
+   * 그 파일의 permissions 값 그대로 (없으면 null)
+   */
+  permissions: null | {
+    [k: string]: unknown | undefined;
+  };
+  /**
+   * 그 파일 바이트의 sha256 (파일이 없으면 null). permissions.set의 base_revision
+   */
+  revision: Revision | null;
+  /**
+   * 파일 경로 (표시용, 정할 수 없으면 null)
+   */
+  source: null | string;
+}
+/**
+ * 연결의 주체 (kookabug_core.permissions.Principal)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Principal".
+ */
+export interface Principal {
+  attended: boolean;
+  id: string;
+  kind: "agent" | "user";
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PermissionsToolDecision".
+ */
+export interface PermissionsToolDecision {
+  final: PermissionVerdict;
+  layer: ("default" | "project" | "team" | "user") | null;
+  mutating: boolean;
+  reason: string;
+  source: string;
+  /**
+   * 권한 표 도구 이름 (M7 kb_screen_save 포함)
+   */
+  tool: string;
+  toolset: Toolset;
+  verdict: PermissionVerdict;
+}
+/**
+ * 권한 계층 하나의 permissions만 바꾼다. 다른 키·순서는 보존, 같은 폴더 임시 파일 → 교체. 형식이 틀린 파일은 고치지 않고 settings_invalid
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PermissionsSetParams".
+ */
+export interface PermissionsSetParams {
+  /**
+   * 읽은 때의 파일 revision (파일이 없었으면 null). 다르면 revision_conflict
+   */
+  base_revision: Revision | null;
+  layer: "project" | "user";
+  /**
+   * 새 permissions 값 (메타스키마 Permissions)
+   */
+  permissions: {
+    [k: string]: unknown | undefined;
+  };
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "PermissionsSetResult".
+ */
+export interface PermissionsSetResult {
+  revision: Revision;
 }
 /**
  * recorder.commit_abort: 그래프 단계가 실패 → stopped로 돌아가 다른 이름·위치로 다시 commit_prepare (써진 target 재사용)
@@ -2130,6 +2480,10 @@ export interface RunSummary {
   reason?: string;
   run_dir: string;
   run_id: RunId;
+  /**
+   * 배지 "에이전트 제어": source agent_control 실행 (M5 3.9, run.json에서)
+   */
+  source?: "agent_control";
   started_at: Timestamp | null;
   state: "ended" | "running";
 }
@@ -2404,17 +2758,6 @@ export interface SessionHelloResult {
   workspace: string;
 }
 /**
- * 연결의 주체 (kookabug_core.permissions.Principal)
- *
- * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
- * via the `definition` "Principal".
- */
-export interface Principal {
-  attended: boolean;
-  id: string;
-  kind: "agent" | "user";
-}
-/**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "TargetCaptureParams".
  */
@@ -2660,6 +3003,10 @@ export interface WindowInfo {
  */
 export interface WorkspaceInfoResult {
   /**
+   * AGENTS.md의 Kookabug 관리 구간 (없으면 null, M5 3.12)
+   */
+  agents_md?: null | string;
+  /**
    * run.start에 deadline_ms를 주지 않았을 때의 실행 전체 기한 (kookabug.json run.deadline_ms, 없으면 30분). 실행 툴바의 기한 고르기가 "기본"에 보인다
    */
   deadline_ms?: number;
@@ -2774,6 +3121,12 @@ export interface Params {
  * via the `definition` "Notifications".
  */
 export interface Notifications {
+  "approval.requested": {
+    params: ApprovalRequest;
+  };
+  "approval.resolved": {
+    params: ApprovalResolvedParams;
+  };
   "debug.breakpoints.changed": {
     params: BreakpointsResult;
   };

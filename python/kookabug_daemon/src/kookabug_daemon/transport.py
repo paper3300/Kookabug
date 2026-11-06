@@ -32,6 +32,7 @@ from websockets.http11 import Request, Response
 
 from kookabug_core.diagnostics import Diagnostic
 from kookabug_core.permissions import TOOLSETS, Principal
+from kookabug_daemon.approvals import ApprovalBroker
 from kookabug_daemon.methods import Call, DaemonContext, MethodSpec
 from kookabug_daemon.methods.session import InvalidHello, hello
 from kookabug_daemon.methods.tools import Authorizer
@@ -301,6 +302,11 @@ class Host(Protocol):
     def authorizer(self) -> Authorizer: ...
 
     @property
+    def approvals(self) -> ApprovalBroker:
+        """판정과 사람 확인 (M5 3.6)."""
+        ...
+
+    @property
     def shutting_down(self) -> bool: ...
 
     @property
@@ -560,7 +566,8 @@ class Transport:
             self.host.authorizer.gate(conn.principal, method, conn.toolsets)
             arg = spec.arg(call)
             if not spec.self_authorized:
-                await asyncio.to_thread(self.host.authorizer.require, conn.principal, method, arg)
+                # ask면 사람 확인을 기다린다 (M5 3.6). 기다리는 동안 잠금을 쥐지 않는다
+                await self.host.approvals.authorize(call, arg)
             result = await spec.handler(call)
         except RequestFailed as failed:
             conn.send(error_message(request_id, **_fields(failed)))

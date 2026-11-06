@@ -100,6 +100,232 @@ export const daemonRpcSchema: unknown = {
       "title": "AgentToolsetsResult",
       "type": "object"
     },
+    "AppLaunchParams": {
+      "additionalProperties": false,
+      "description": "게임을 띄운다 (설정 game.executable·game.args·game.cwd, 프로필 계층 포함). 실행·녹화 중이면 거부. 실행 Job 밖",
+      "properties": {
+        "profile": {
+          "type": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "title": "AppLaunchParams",
+      "type": "object"
+    },
+    "AppLaunchResult": {
+      "additionalProperties": false,
+      "properties": {
+        "pid": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "pid"
+      ],
+      "title": "AppLaunchResult",
+      "type": "object"
+    },
+    "ApprovalAnswer": {
+      "description": "사람 확인 답 (M5 3.6). allow_always는 프로젝트 계층(.kookabug/local.json)에 그 도구·인자에만 맞는 allow 규칙을 더한 뒤 실행한다. control 도구에는 받지 않는다(always_not_allowed)",
+      "enum": [
+        "allow_always",
+        "allow_once",
+        "deny"
+      ],
+      "title": "ApprovalAnswer"
+    },
+    "ApprovalId": {
+      "description": "사람 확인 요청 ID",
+      "pattern": "^ap_[0-9a-f]{16}$",
+      "title": "ApprovalId",
+      "type": "string"
+    },
+    "ApprovalIdParams": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ApprovalId"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "ApprovalIdParams",
+      "type": "object"
+    },
+    "ApprovalListResult": {
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "items": {
+            "$ref": "#/$defs/ApprovalRequest"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "requests"
+      ],
+      "title": "ApprovalListResult",
+      "type": "object"
+    },
+    "ApprovalPreviewResult": {
+      "additionalProperties": false,
+      "description": "승인하면 쓰일 그래프 값 (쓰지 않는다, \"캔버스에서 보기\" U10)",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/WorkspacePath"
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "기준 디스크 revision (새 파일이면 null)"
+        },
+        "value": {
+          "$ref": "#/$defs/GraphValue"
+        }
+      },
+      "required": [
+        "path",
+        "revision",
+        "value"
+      ],
+      "title": "ApprovalPreviewResult",
+      "type": "object"
+    },
+    "ApprovalRequest": {
+      "additionalProperties": false,
+      "description": "에이전트의 ask 판정 요청 하나 (approval.requested·approval.list). 기다리는 동안 daemon은 아무것도 쓰지 않는다",
+      "properties": {
+        "agent": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "title": "ApprovalAgent",
+          "type": "object"
+        },
+        "always_rule": {
+          "description": "\"항상 허용\"을 고르면 저장할 규칙 글자. control 도구·규칙으로 쓸 수 없는 인자면 null(단추 없음)",
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "arg": {
+          "description": "권한 인자 (그래프·target 경로, 실행 그래프 경로, 창 제목 등)",
+          "type": "string"
+        },
+        "connection": {
+          "description": "요청한 agent 연결 번호",
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "id": {
+          "$ref": "#/$defs/ApprovalId"
+        },
+        "method": {
+          "$ref": "#/$defs/MethodName"
+        },
+        "previewable": {
+          "description": "approval.preview로 바뀔 그래프 값을 볼 수 있다 (graph.patch·graph.save·graph.create)",
+          "type": "boolean"
+        },
+        "summary": {
+          "description": "사람이 읽는 요약 줄",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tool": {
+          "$ref": "#/$defs/ToolName"
+        }
+      },
+      "required": [
+        "agent",
+        "always_rule",
+        "arg",
+        "connection",
+        "expires_at",
+        "id",
+        "method",
+        "previewable",
+        "summary",
+        "tool"
+      ],
+      "title": "ApprovalRequest",
+      "type": "object"
+    },
+    "ApprovalResolvedParams": {
+      "additionalProperties": false,
+      "properties": {
+        "by": {
+          "description": "답한 ui 연결(ui:<번호>) 또는 daemon(시간 초과·요청 연결 끊김)",
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/ApprovalId"
+        },
+        "verdict": {
+          "enum": [
+            "allow_always",
+            "allow_once",
+            "cancelled",
+            "deny",
+            "timeout"
+          ]
+        }
+      },
+      "required": [
+        "by",
+        "id",
+        "verdict"
+      ],
+      "title": "ApprovalResolvedParams",
+      "type": "object"
+    },
+    "ApprovalRespondParams": {
+      "additionalProperties": false,
+      "description": "사람 확인 답. 끝난(답함·시간 초과·취소) 요청이면 not_found",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/ApprovalId"
+        },
+        "verdict": {
+          "$ref": "#/$defs/ApprovalAnswer"
+        }
+      },
+      "required": [
+        "id",
+        "verdict"
+      ],
+      "title": "ApprovalRespondParams",
+      "type": "object"
+    },
     "BreakpointsResult": {
       "additionalProperties": false,
       "description": "debug.breakpoints.get·set 결과, debug.breakpoints.changed 알림 (다른 연결이 바꿨을 때)",
@@ -138,6 +364,125 @@ export const daemonRpcSchema: unknown = {
         }
       ],
       "title": "ClientInfo"
+    },
+    "ControlClickParams": {
+      "additionalProperties": false,
+      "description": "창을 클릭한다 (point와 target 중 하나). daemon이 한 스텝짜리 제어 실행으로 돌린다 (M5 3.9)",
+      "properties": {
+        "button": {
+          "enum": [
+            "left",
+            "middle",
+            "right"
+          ]
+        },
+        "count": {
+          "maximum": 3,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "point": {
+          "description": "[x, y] 클라이언트 영역 물리 픽셀",
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "target": {
+          "$ref": "#/$defs/WorkspacePath"
+        },
+        "window": {
+          "description": "창 제목 (정확히 같은 제목의 창, 권한 인자)",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "window"
+      ],
+      "title": "ControlClickParams",
+      "type": "object"
+    },
+    "ControlKeyParams": {
+      "additionalProperties": false,
+      "properties": {
+        "keys": {
+          "description": "키 하나나 조합 (ctrl+a). 누르고 바로 뗀다",
+          "minLength": 1,
+          "type": "string"
+        },
+        "window": {
+          "description": "창 제목 (정확히 같은 제목의 창, 권한 인자)",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "keys",
+        "window"
+      ],
+      "title": "ControlKeyParams",
+      "type": "object"
+    },
+    "ControlResult": {
+      "additionalProperties": false,
+      "description": "제어 실행 결과 (runs/ 아래 source agent_control 기록). 실패면 error (메시지는 3.8로 가림)",
+      "properties": {
+        "error": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "title": "ControlError",
+          "type": "object"
+        },
+        "run_id": {
+          "$ref": "#/$defs/RunId"
+        },
+        "verdict": {
+          "$ref": "#/$defs/Verdict"
+        }
+      },
+      "required": [
+        "run_id",
+        "verdict"
+      ],
+      "title": "ControlResult",
+      "type": "object"
+    },
+    "ControlTypeParams": {
+      "additionalProperties": false,
+      "description": "글자 입력 (text와 secret 중 하나). secret은 비밀값 키 — 값은 runner가 찾고 결과·기록·오류에 원문이 없다",
+      "properties": {
+        "secret": {
+          "$ref": "#/$defs/SecretKey"
+        },
+        "text": {
+          "type": "string"
+        },
+        "window": {
+          "description": "창 제목 (정확히 같은 제목의 창, 권한 인자)",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "window"
+      ],
+      "title": "ControlTypeParams",
+      "type": "object"
     },
     "CropRef": {
       "additionalProperties": false,
@@ -1447,6 +1792,174 @@ export const daemonRpcSchema: unknown = {
           ],
           "type": "object"
         },
+        "app.launch": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/AppLaunchParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/AppLaunchResult"
+            },
+            "tool": {
+              "const": "kb_app_launch"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "approval.list": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/ApprovalListResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "approval.preview": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ApprovalIdParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/ApprovalPreviewResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "approval.respond": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ApprovalRespondParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/EmptyResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "control.click": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ControlClickParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/ControlResult"
+            },
+            "tool": {
+              "const": "kb_input_click"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "control.key": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ControlKeyParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/ControlResult"
+            },
+            "tool": {
+              "const": "kb_input_key"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "control.type": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ControlTypeParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/ControlResult"
+            },
+            "tool": {
+              "const": "kb_input_type"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
         "daemon.shutdown": {
           "additionalProperties": false,
           "properties": {
@@ -1725,6 +2238,54 @@ export const daemonRpcSchema: unknown = {
             },
             "tool": {
               "const": "kb_node_search"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "permissions.get": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/PermissionsGetResult"
+            },
+            "tool": {
+              "const": "kb_project_info"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "permissions.set": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/PermissionsSetParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/PermissionsSetResult"
+            },
+            "tool": {
+              "const": "ui_only"
             }
           },
           "required": [
@@ -2939,6 +3500,13 @@ export const daemonRpcSchema: unknown = {
       "required": [
         "agent.toolsets.enable",
         "agent.toolsets.get",
+        "app.launch",
+        "approval.list",
+        "approval.preview",
+        "approval.respond",
+        "control.click",
+        "control.key",
+        "control.type",
         "daemon.shutdown",
         "debug.breakpoints.get",
         "debug.breakpoints.set",
@@ -2951,6 +3519,8 @@ export const daemonRpcSchema: unknown = {
         "graph.save",
         "graph.validate",
         "nodes.list",
+        "permissions.get",
+        "permissions.set",
         "recorder.commit_abort",
         "recorder.commit_finish",
         "recorder.commit_prepare",
@@ -3091,6 +3661,30 @@ export const daemonRpcSchema: unknown = {
       "additionalProperties": false,
       "description": "알림 표 (daemon → 클라이언트). 타입 표다",
       "properties": {
+        "approval.requested": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ApprovalRequest"
+            }
+          },
+          "required": [
+            "params"
+          ],
+          "type": "object"
+        },
+        "approval.resolved": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ApprovalResolvedParams"
+            }
+          },
+          "required": [
+            "params"
+          ],
+          "type": "object"
+        },
         "debug.breakpoints.changed": {
           "additionalProperties": false,
           "properties": {
@@ -3189,6 +3783,8 @@ export const daemonRpcSchema: unknown = {
         }
       },
       "required": [
+        "approval.requested",
+        "approval.resolved",
         "debug.breakpoints.changed",
         "graph.changed",
         "lease.changed",
@@ -3227,6 +3823,201 @@ export const daemonRpcSchema: unknown = {
       "additionalProperties": true,
       "description": "이름 있는 인자만 쓴다 (배열 params는 쓰지 않는다). 메서드별 모양은 Methods 표의 params",
       "title": "Params",
+      "type": "object"
+    },
+    "PermissionVerdict": {
+      "description": "권한 판정 값",
+      "enum": [
+        "allow",
+        "ask",
+        "deny"
+      ],
+      "title": "PermissionVerdict"
+    },
+    "PermissionsGetResult": {
+      "additionalProperties": false,
+      "properties": {
+        "layers": {
+          "description": "계층별 파일 값 (ui 연결만. agent 연결에는 자기 판정 요약 tools만)",
+          "items": {
+            "$ref": "#/$defs/PermissionsLayer"
+          },
+          "type": "array"
+        },
+        "principal": {
+          "$ref": "#/$defs/Principal"
+        },
+        "tools": {
+          "description": "도구별 실효 판정. agent 연결은 자기 주체, ui 연결은 사람이 지켜보는 에이전트(attended) 기준",
+          "items": {
+            "$ref": "#/$defs/PermissionsToolDecision"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "principal",
+        "tools"
+      ],
+      "title": "PermissionsGetResult",
+      "type": "object"
+    },
+    "PermissionsLayer": {
+      "additionalProperties": false,
+      "properties": {
+        "diagnostics": {
+          "items": {
+            "$ref": "#/$defs/Diagnostic"
+          },
+          "type": "array"
+        },
+        "editable": {
+          "description": "permissions.set으로 고칠 수 있는 계층 (team은 false — kookabug.json에서 편집)",
+          "type": "boolean"
+        },
+        "layer": {
+          "enum": [
+            "project",
+            "team",
+            "user"
+          ]
+        },
+        "permissions": {
+          "description": "그 파일의 permissions 값 그대로 (없으면 null)",
+          "type": [
+            "null",
+            "object"
+          ]
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "그 파일 바이트의 sha256 (파일이 없으면 null). permissions.set의 base_revision"
+        },
+        "source": {
+          "description": "파일 경로 (표시용, 정할 수 없으면 null)",
+          "type": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "diagnostics",
+        "editable",
+        "layer",
+        "permissions",
+        "revision",
+        "source"
+      ],
+      "title": "PermissionsLayer",
+      "type": "object"
+    },
+    "PermissionsSetParams": {
+      "additionalProperties": false,
+      "description": "권한 계층 하나의 permissions만 바꾼다. 다른 키·순서는 보존, 같은 폴더 임시 파일 → 교체. 형식이 틀린 파일은 고치지 않고 settings_invalid",
+      "properties": {
+        "base_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Revision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "읽은 때의 파일 revision (파일이 없었으면 null). 다르면 revision_conflict"
+        },
+        "layer": {
+          "enum": [
+            "project",
+            "user"
+          ]
+        },
+        "permissions": {
+          "description": "새 permissions 값 (메타스키마 Permissions)",
+          "type": "object"
+        }
+      },
+      "required": [
+        "base_revision",
+        "layer",
+        "permissions"
+      ],
+      "title": "PermissionsSetParams",
+      "type": "object"
+    },
+    "PermissionsSetResult": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "title": "PermissionsSetResult",
+      "type": "object"
+    },
+    "PermissionsToolDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "final": {
+          "$ref": "#/$defs/PermissionVerdict"
+        },
+        "layer": {
+          "anyOf": [
+            {
+              "enum": [
+                "default",
+                "project",
+                "team",
+                "user"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mutating": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "tool": {
+          "description": "권한 표 도구 이름 (M7 kb_screen_save 포함)",
+          "type": "string"
+        },
+        "toolset": {
+          "$ref": "#/$defs/Toolset"
+        },
+        "verdict": {
+          "$ref": "#/$defs/PermissionVerdict"
+        }
+      },
+      "required": [
+        "final",
+        "layer",
+        "mutating",
+        "reason",
+        "source",
+        "tool",
+        "toolset",
+        "verdict"
+      ],
+      "title": "PermissionsToolDecision",
       "type": "object"
     },
     "PinShape": {
@@ -4775,7 +5566,7 @@ export const daemonRpcSchema: unknown = {
       "type": "object"
     },
     "RequestFailedCode": {
-      "description": "-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀)",
+      "description": "-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음)",
       "enum": [
         "approval_required",
         "classification_pending",
@@ -4841,14 +5632,18 @@ export const daemonRpcSchema: unknown = {
         "video_not_served",
         "recorder_frame",
         "sensitive_region",
-        "frame_not_owned"
+        "frame_not_owned",
+        "approval_denied",
+        "approval_timeout",
+        "always_not_allowed",
+        "settings_invalid"
       ],
       "title": "RequestFailedCode",
       "type": "string"
     },
     "RequestFailedData": {
       "additionalProperties": false,
-      "description": "error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message",
+      "description": "error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message. M5 B3: approval_required → decision·reason",
       "properties": {
         "code": {
           "$ref": "#/$defs/RequestFailedCode"
@@ -4905,6 +5700,10 @@ export const daemonRpcSchema: unknown = {
           "maximum": 9007199254740991,
           "minimum": 1,
           "type": "integer"
+        },
+        "reason": {
+          "description": "approval_required: no_approver(사람 연결 없음)",
+          "type": "string"
         },
         "revision": {
           "type": [
@@ -5979,6 +6778,12 @@ export const daemonRpcSchema: unknown = {
         "run_id": {
           "$ref": "#/$defs/RunId"
         },
+        "source": {
+          "description": "배지 \"에이전트 제어\": source agent_control 실행 (M5 3.9, run.json에서)",
+          "enum": [
+            "agent_control"
+          ]
+        },
         "started_at": {
           "anyOf": [
             {
@@ -6539,12 +7344,16 @@ export const daemonRpcSchema: unknown = {
     "ToolName": {
       "description": "권한 판정에 쓰는 도구 이름 (구현 계획 7장). ui_only는 판정하지 않는 메서드 (agent 연결이면 daemon의 AGENT_DENIED 목록 — daemon.shutdown, M3 디버그 메서드 debug.breakpoints.get·set·run.pause·run.resume·run.restart, run.export, M4 녹화·비밀값 메서드 recorder.*·secrets.*·target.read_text — 를 판정 전에 거부)",
       "enum": [
+        "kb_app_launch",
         "kb_graph_create",
         "kb_graph_get",
         "kb_graph_list",
         "kb_graph_patch",
         "kb_graph_validate",
         "kb_image_find",
+        "kb_input_click",
+        "kb_input_key",
+        "kb_input_type",
         "kb_log_search",
         "kb_node_search",
         "kb_ocr_read",
@@ -6735,6 +7544,13 @@ export const daemonRpcSchema: unknown = {
       "additionalProperties": false,
       "description": "루트(절대 경로), kookabug.json 요약(프로필 이름·진단), 플러그인, 상태 바용 실행 환경",
       "properties": {
+        "agents_md": {
+          "description": "AGENTS.md의 Kookabug 관리 구간 (없으면 null, M5 3.12)",
+          "type": [
+            "null",
+            "string"
+          ]
+        },
         "deadline_ms": {
           "description": "run.start에 deadline_ms를 주지 않았을 때의 실행 전체 기한 (kookabug.json run.deadline_ms, 없으면 30분). 실행 툴바의 기한 고르기가 \"기본\"에 보인다",
           "maximum": 9007199254740991,

@@ -5,6 +5,17 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, RootModel, StringConstraints
 
 
+class Agent(BaseModel):
+    """
+    에이전트 제어 실행을 낸 에이전트 (source agent_control)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: str
+
+
 class FailurePath(RootModel[list[str]]):
     root: Annotated[list[str], Field(min_length=1)]
 
@@ -170,6 +181,9 @@ class Run(BaseModel):
     active_duration_ms: Annotated[
         int | None, Field(description="멈춘 시간을 뺀 경과 (M3)", ge=0)
     ] = None
+    agent: Annotated[
+        Agent | None, Field(description="에이전트 제어 실행을 낸 에이전트 (source agent_control)")
+    ] = None
     agent_mask: Annotated[
         Literal[1] | None,
         Field(
@@ -213,6 +227,12 @@ class Run(BaseModel):
         Field(
             description='run.end.secret_paths 그대로 (reason에 비밀값이 있으면 ["/reason"], M5 3.8)',
             min_length=1,
+        ),
+    ] = None
+    source: Annotated[
+        Literal["agent_control"] | None,
+        Field(
+            description="실행 출처 (M5 3.9). agent_control = 에이전트의 게임 조작(kb_input_*)을 daemon이 한 스텝짜리 실행으로 돌린 것. 없으면 일반 실행"
         ),
     ] = None
     started_at: Timestamp

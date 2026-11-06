@@ -37,6 +37,7 @@ from kookabug_core.runner.spec import PlatformSpec
 from kookabug_core.service import WorkspaceService
 from kookabug_core.workspace import WorkspaceError
 from kookabug_daemon.agent_cache import AgentCache
+from kookabug_daemon.approvals import APPROVAL_TIMEOUT_S, ApprovalBroker
 from kookabug_daemon.documents import DocumentTable, GraphChecker
 from kookabug_daemon.frames import FrameCache
 from kookabug_daemon.image_cache import EditorCache
@@ -46,6 +47,7 @@ from kookabug_daemon.methods.screens import in_screens
 from kookabug_daemon.methods.secrets import RecorderSecretSource
 from kookabug_daemon.methods.tools import Authorizer
 from kookabug_daemon.options import DEFAULT_IDLE_TIMEOUT_S, SESSION_WAIT_S, add_arguments
+from kookabug_daemon.permission_files import PermissionFiles
 from kookabug_daemon.protocol import DAEMON_VERSION, PROTOCOL, json_text
 from kookabug_daemon.recorder import RecorderService
 from kookabug_daemon.recorder_hook import HookTesting, testing_options
@@ -124,6 +126,8 @@ class DaemonConfig:
     """각본을 흘리는 빠르기 (`inf` = 기다리지 않음, None = 검사가 직접 흘림)."""
     agent_toolsets: frozenset[str] = DEFAULT_AGENT_TOOLSETS
     """agent 연결이 hello 때 갖는 툴셋 (M5 계획 D3: core). 검사 헬퍼만 바꾼다."""
+    approval_timeout_s: float = APPROVAL_TIMEOUT_S
+    """사람 확인을 기다리는 시간 (M5 U3: 120초). 검사 헬퍼만 바꾼다."""
 
 
 def plugin_registry(modules: tuple[str, ...]) -> Callable[[], Registry]:
@@ -199,6 +203,10 @@ class Daemon:
         """녹화 세션 메모리의 원문 (`secrets.create`). 녹화 세션(M4 T8)이 둔다."""
         self.recorder = RecorderService(self)
         """녹화 세션 (M4 T8, `recorder.*`)."""
+        self.permission_files = PermissionFiles(self.root, self.service)
+        """권한 파일 읽기·쓰기 (M5 B3 `permissions.*`·"항상 허용")."""
+        self.approvals = ApprovalBroker(self, self._authorizer, config.approval_timeout_s)
+        """사람 확인 (M5 B3 `approval.*`)."""
 
     # ---------------------------------------------------------------- Host (transport)
 
@@ -306,6 +314,17 @@ class Daemon:
             c.authenticated and not c.mismatch and c.client_kind == "ui"
             for c in list(self.transport.connections)
         )
+
+    def connection_name(self, connection: int) -> str:
+        """그 연결의 `client.name` (확인 카드 표시용, 끝난 연결이면 빈 글자)."""
+        conn = self.transport.find(connection)
+        return "" if conn is None else conn.client_name
+
+    def notify_ui(self, method: str, params: Mapping[str, Any]) -> None:
+        """ui 연결에만 알린다 (이벤트 루프 안, `approval.*` — 에이전트는 확인 요청을 보지
+        못한다)."""
+        for conn in self.transport.ui_connections():
+            self.transport.notify(conn, method, params)
 
     def breakpoints_changed(self, connection: int, breakpoints: list[dict[str, str]]) -> None:
         params = {"breakpoints": breakpoints}

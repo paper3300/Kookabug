@@ -17,9 +17,12 @@ from typing import TYPE_CHECKING, Any, Protocol
 from kookabug_core.permissions import Principal
 
 if TYPE_CHECKING:
+    from kookabug_core.service import WorkspaceService
+    from kookabug_daemon.approvals import ApprovalBroker
     from kookabug_daemon.documents import DocumentTable, GraphChecker
     from kookabug_daemon.frames import FrameCache
     from kookabug_daemon.image_cache import EditorCache
+    from kookabug_daemon.permission_files import PermissionFiles
     from kookabug_daemon.runs import RunManager
     from kookabug_daemon.targets import TargetStore
 
@@ -103,6 +106,21 @@ class DaemonContext(Protocol):
         (`debug.breakpoints.changed`, 이벤트 루프 안)."""
         ...
 
+    @property
+    def service(self) -> WorkspaceService:
+        """판정·정책 (`permissions.get`)."""
+        ...
+
+    @property
+    def approvals(self) -> ApprovalBroker:
+        """판정과 사람 확인 (M5 3.6). 스스로 판정하는 처리기가 부른다."""
+        ...
+
+    @property
+    def permission_files(self) -> PermissionFiles:
+        """권한 파일 읽기·쓰기 (M5 3.6)."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class Call:
@@ -139,9 +157,12 @@ def registry() -> dict[str, MethodSpec]:
     """이 daemon이 처리하는 메서드. 계약에 있지만 여기 없는 메서드는 `method_not_found`다."""
     from kookabug_daemon.methods import (
         agent,
+        approval,
+        control,
         debug,
         graph,
         nodes,
+        permissions,
         recorder,
         run,
         run_agent,
@@ -155,6 +176,9 @@ def registry() -> dict[str, MethodSpec]:
 
     return {
         **agent.METHODS,
+        **approval.METHODS,
+        **control.METHODS,
+        **permissions.METHODS,
         **debug.METHODS,
         **recorder.METHODS,
         **secrets.METHODS,

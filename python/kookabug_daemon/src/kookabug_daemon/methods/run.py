@@ -47,6 +47,8 @@ async def _start(call: Call) -> dict[str, Any]:
     profile = params.get("profile")
     key = params.get("idempotency_key")
     deadline = params.get("deadline_ms")
+    # ask면 시작 잠금 밖에서 사람 확인을 받는다 (M5 3.6). 판정 자체는 ② 단계에서 다시 한다
+    approved = await call.daemon.approvals.approve(call, _path_arg(call))
     request = StartRequest(
         principal=call.principal,
         path=str(params["path"]),
@@ -56,6 +58,7 @@ async def _start(call: Call) -> dict[str, Any]:
         idempotency_key=None if key is None else str(key),
         # 사람이 UI에서 시작한 실행만 디버그 대상 (주체 kind가 아니라 연결 종류로, M3 2.1)
         ui=call.client_kind == "ui",
+        approved=approved,
     )
     return await asyncio.to_thread(call.daemon.run_manager.start, request)
 

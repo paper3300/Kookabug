@@ -857,6 +857,17 @@
       "additionalProperties": false,
       "description": "실행 사양: 감독자가 runner의 stdin에 JSON 하나로 주고 닫는다 (제어 채널 키를 명령줄·실행 폴더에 남기지 않는다). 시간 값을 빼면 runner 기본값(취소 유예 2000, 워커 시작 30000, 마무리 유예 5000, 자기 종료 여유 10000 ms)",
       "properties": {
+        "agent": {
+          "additionalProperties": false,
+          "description": "그 실행을 낸 에이전트 (M5 에이전트 제어 실행)",
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": ["id"],
+          "type": "object"
+        },
         "breakpoints": {
           "$ref": "urn:kookabug:breakpoints:0#/$defs/BreakpointList",
           "description": "시작할 때의 브레이크포인트 (M3). 사람이 UI에서 시작한 실행만 daemon이 채운다. 없으면 빈 목록"
@@ -900,6 +911,10 @@
           "description": "실행할 테스트 그래프 (워크스페이스 기준 경로)",
           "type": "string"
         },
+        "graph_value": {
+          "description": "루트 그래프 값 (M5 에이전트 제어 실행 — daemon 내부 진입점만 채운다). 있으면 graph 자리의 워크스페이스 파일 대신 이 값을 스냅샷에 쓴다",
+          "type": "object"
+        },
         "job_name": {
           "description": "감독자가 만든 실행 Job 이름. runner는 어떤 자식도 띄우기 전에 자기를 넣는다",
           "type": "string"
@@ -938,6 +953,10 @@
           "description": "마무리 유예: 감독자 하드 종료·감독자 사망 뒤 자기 종료까지",
           "minimum": 0,
           "type": "integer"
+        },
+        "source": {
+          "description": "실행 출처 (M5: agent_control = 에이전트 게임 조작). run.json에 남는다",
+          "enum": ["agent_control"]
         },
         "supervisor": {
           "$ref": "#/$defs/ProcessIdent"

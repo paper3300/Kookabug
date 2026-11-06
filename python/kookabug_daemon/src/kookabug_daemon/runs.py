@@ -76,6 +76,7 @@ import itertools
 import json
 import logging
 import os
+import subprocess
 import threading
 import time
 from collections import deque
@@ -110,7 +111,7 @@ from kookabug_core.supervisor import (
     RunOutcome,
     run_exit_code,
 )
-from kookabug_core.validate import check_graph
+from kookabug_core.validate import check_graph, check_graph_value
 from kookabug_core.win import identify, is_alive
 from kookabug_core.workspace import RunOptions, Workspace, WorkspaceError
 from kookabug_daemon.breakpoints import BreakpointStore
@@ -156,6 +157,15 @@ RUNS_BYTES_TTL_S: Final = 60.0
 TAIL_READ: Final = 64 * 1024
 """끝난 실행 요약이 읽는 `events.jsonl` 끝부분 바이트."""
 _VERDICTS: Final = frozenset({"error", "fail", "pass", "skipped"})
+CONTROL_GRAPH: Final = "agent_control.graph.json"
+"""에이전트 제어 실행의 그래프 자리 (스냅샷 안에만 쓴다 — 워크스페이스 파일이 아니다)."""
+CONTROL_DEADLINE_MS: Final = 30_000
+"""제어 실행 하나의 기한 (M5 3.9)."""
+_DETACHED_FLAGS: Final = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(
+    subprocess, "DETACHED_PROCESS", 0
+)
+_BREAKAWAY: Final = 0x01000000
+"""CREATE_BREAKAWAY_FROM_JOB: daemon을 띄운 쪽(앱 등)의 Job에 묶이지 않게."""
 
 
 class RunSink(Protocol):
@@ -193,6 +203,39 @@ class StartRequest:
     ui: bool = False
     """사람이 UI 연결(`client.kind: ui`)에서 시작했다. 이 실행만 브레이크포인트·디버그 메서드를
     받는다 (M3 2.1)."""
+    approved: bool = False
+    """ask 판정을 사람이 확인했다 (M5 3.6, `approvals.ApprovalBroker.approve`). ② 단계의 판정에
+    넘긴다 — 그 사이 정책이 deny로 바뀌었으면 그대로 거부된다."""
+
+
+@dataclass(frozen=True, slots=True)
+class _LaunchCommand:
+    argv: list[str]
+    cwd: str | None
+
+
+def _launch_command(workspace: Workspace, options: RunOptions) -> _LaunchCommand:
+    """`game.executable`·`game.args`·`game.cwd` 설정 (`$setting` 탐색 순서 그대로)."""
+
+    def value(key: str) -> Any:
+        found = workspace.lookup_setting(key, options)
+        return found.value if found.found else None
+
+    executable = value("game.executable")
+    if not isinstance(executable, str) or not executable:
+        raise RequestFailed(
+            "launch_failed",
+            "설정 game.executable이 없다 (.kookabug/local.json이나 프로필에 실행 파일 경로를 쓴다)",
+        )
+    args = value("game.args")
+    if args is None:
+        args = []
+    if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
+        raise RequestFailed("launch_failed", "설정 game.args는 글자 목록이어야 한다")
+    cwd = value("game.cwd")
+    if cwd is not None and not isinstance(cwd, str):
+        raise RequestFailed("launch_failed", "설정 game.cwd는 글자여야 한다")
+    return _LaunchCommand([executable, *cast(list[str], args)], cwd)
 
 
 @dataclass(frozen=True, slots=True)
@@ -478,7 +521,9 @@ class RunManager:
                         run_id=previous.run_id,
                     )
             # ② 권한 (키가 같아도 다시 판정한다: 그 사이 정책이 바뀌었을 수 있다)
-            decision = self.authorizer.require(principal, "run.start", where.rel)
+            decision = self.authorizer.require(
+                principal, "run.start", where.rel, approved=request.approved
+            )
             assert decision is not None  # run.start는 ui_only가 아니다
             if previous is not None:
                 return dict(previous.result)
@@ -501,6 +546,130 @@ class RunManager:
         except BaseException:
             self._unreserve(reserved)
             raise
+        return self._register(request, handle, current, version, key)
+
+    # ---------------------------------------------------------------- 내부 진입점 (M5 3.9)
+
+    def start_internal(
+        self,
+        principal: Principal,
+        graph_value: Mapping[str, Any],
+        decision: Decision,
+        *,
+        approved: bool = False,
+        source: Literal["agent_control"] = "agent_control",
+        deadline_ms: int = CONTROL_DEADLINE_MS,
+    ) -> str:
+        """daemon이 메모리에서 만든 그래프 값으로 실행한다 (에이전트 제어 실행). **공개 RPC가
+        아니다** — `control.*` 처리기만 부르고, 이미 집행한 그 도구의 판정(`decision`)을 받는다
+        (`kb_run_start`를 다시 판정하지 않음). 나머지는 `run.start`와 같다: 시작 잠금 → 시작 예약
+        (`run_busy`·`recording_active`·`shutting_down`) → 사전 검증(값) → 감독자 시작(그래프 값을
+        스냅샷에 직접 쓴다 — 워크스페이스·`.kookabug/`에 그래프 파일을 쓰지 않음) → 임대권·감독자
+        복구·기록은 runner·감독자 그대로. 실행 ID를 돌려준다 (막히는 호출).
+
+        받는 판정은 allow이거나 사람이 승인한 ask(`approved`)다. 승인 없는 ask·deny면 아무것도
+        만들지 않고 `ValueError`(호출자의 버그)."""
+        if not (decision.final == "allow" or (decision.final == "ask" and approved)):
+            raise ValueError(f"허용되지 않은 판정으로는 시작할 수 없다: {decision.final}")
+        request = StartRequest(principal=principal, path=CONTROL_GRAPH)
+        with self._start_lock:
+            reserved = self._reserve()
+            try:
+                workspace = _open_workspace(self.root)
+                _, diagnostics = check_graph_value(
+                    workspace, CONTROL_GRAPH, dict(graph_value), registry=self._registry()
+                )
+                errors = [d for d in diagnostics if d.severity == "error"]
+                if errors:
+                    raise RequestFailed(
+                        "validation_failed",
+                        f"제어 실행 검증 오류 {len(errors)}개: {errors[0].message}",
+                        diagnostics=[d.to_dict() for d in diagnostics],
+                    )
+                start = start_options(
+                    workspace.run_conditions(),
+                    deadline_ms=deadline_ms,
+                    plugin_modules=self.plugin_modules,
+                    platform=self.platform,
+                )
+                options = replace(
+                    start,
+                    run_id=reserved,
+                    graph_value=dict(graph_value),
+                    source=source,
+                    agent={"id": principal.id},
+                )
+                try:
+                    handle = self.service.start_decided(
+                        decision, CONTROL_GRAPH, options, approved=approved
+                    )
+                except (OSError, RuntimeError) as exc:
+                    text = f"실행을 시작할 수 없다: {exc}"
+                    raise RequestFailed("io_error", text, message=text) from exc
+            except BaseException:
+                self._unreserve(reserved)
+                raise
+            return self._register(request, handle, CONTROL_GRAPH, -1, None)["run_id"]
+
+    def wait_outcome(self, run_id: str, timeout: float) -> RunOutcome | None:
+        """이 daemon이 띄운 실행의 마무리를 기다린다 (감독자 복구까지). 기한 안에 안 끝나면 None."""
+        with self._lock:
+            run = self._runs.get(run_id)
+        if run is None or not run.done.wait(timeout):
+            return None
+        return run.outcome
+
+    def launch_app(self, profile: str | None) -> int:
+        """`app.launch` (M5 C5): 프로필 계층까지 본 설정 `game.executable`·`game.args`·`game.cwd`로
+        게임을 띄운다. 실행 Job 밖이다(실행이 끝나도 게임은 남는다). 시작 예약과 같은 잠금 안에서
+        실행 중·예약·녹화 중이면 거부한다 (막히는 호출). PID를 돌려준다."""
+        with self._start_lock, self._lock:
+            if self._closing:
+                text = "daemon이 끝나는 중이다"
+                raise RequestFailed("shutting_down", text, message=text)
+            if self._recording is not None:
+                raise _recording_active(self._recording_state)
+            busy = self._busy()
+            if busy is not None:
+                raise RequestFailed("run_busy", f"진행 중인 실행 {busy}이(가) 있다", run_id=busy)
+            workspace = _open_workspace(self.root)
+            options = RunOptions(profile=profile)
+            problems = [d for d in workspace.check_options(options) if d.severity == "error"]
+            if problems:
+                raise RequestFailed("launch_failed", problems[0].message)
+            command = _launch_command(workspace, options)
+
+            def spawn(flags: int) -> subprocess.Popen[bytes]:
+                return subprocess.Popen(
+                    command.argv,
+                    cwd=command.cwd,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=flags,
+                    close_fds=True,
+                )
+
+            try:
+                try:
+                    proc = spawn(_DETACHED_FLAGS | _BREAKAWAY)
+                except PermissionError:
+                    # daemon을 띄운 쪽의 Job이 빠져나가기를 허용하지 않는다: 그 Job 안에서 띄운다
+                    # (실행 Job은 아니다 — 실행이 끝나도 게임은 남는다)
+                    proc = spawn(_DETACHED_FLAGS)
+            except OSError as exc:
+                raise RequestFailed("launch_failed", f"게임을 띄우지 못했다: {exc}") from exc
+            log.info("게임을 띄웠다: PID %d (%s)", proc.pid, command.argv[0])
+            return proc.pid
+
+    def _register(
+        self,
+        request: StartRequest,
+        handle: RunHandle,
+        current: str,
+        version: int,
+        key: tuple[tuple[str, str, str], str] | None,
+    ) -> dict[str, Any]:
         # ⑥ 등록 (예약 → 진행 중)
         run = _Run(
             handle.run_id,
@@ -572,8 +741,12 @@ class RunManager:
         )
         breakpoints, version = self.breakpoints.snapshot() if request.ui else ((), -1)
         try:
+            # 사람이 승인한 ask면 그 사실을 감독자 시작까지 넘긴다 (M5 3.6, 공개 인자 아님)
             handle = self.service.start_decided(
-                decision, current.rel, replace(start, run_id=run_id, breakpoints=breakpoints)
+                decision,
+                current.rel,
+                replace(start, run_id=run_id, breakpoints=breakpoints),
+                approved=request.approved,
             )
         except (OSError, RuntimeError) as exc:  # 실행 폴더·Job·파이프를 만들지 못함
             text = f"실행을 시작할 수 없다: {exc}"
@@ -1226,6 +1399,8 @@ def _badges(
         profile: Any = conditions["profile"]
         if profile is None or isinstance(profile, str):
             out["profile"] = profile
+    if data.get("source") == "agent_control":
+        out["source"] = "agent_control"  # 배지 "에이전트 제어" (M5 U4)
     return out
 
 

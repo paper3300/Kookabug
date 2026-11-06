@@ -236,10 +236,14 @@ def _adopt(doc: Document, data: bytes, text: str) -> None:
     doc.revision = revision_of(data)
 
 
-def write_atomic(path: Path, data: bytes) -> None:
+def write_atomic(
+    path: Path, data: bytes, *, before_replace: Callable[[], None] | None = None
+) -> None:
     """같은 폴더 임시 파일에 쓰고 fsync한 뒤 `os.replace`. 실패하면 임시 파일을 남기지 않는다.
 
     임시 파일을 만들지 못한 경우(폴더 쓰기 권한·디스크)도 `io_error`다. 대상 파일은 그대로다.
+    `before_replace`는 임시 파일 fsync 뒤 `os.replace` 바로 앞에 부른다. 예외를 내면 임시 파일을
+    지우고 그 예외를 그대로 낸다(대상은 그대로) — 권한 파일의 교체 직전 revision 재확인(M5 B3).
     """
     try:
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
@@ -252,6 +256,8 @@ def write_atomic(path: Path, data: bytes) -> None:
             f.write(data)
             f.flush()
             os.fsync(f.fileno())
+        if before_replace is not None:
+            before_replace()
         os.replace(tmp, path)
     except OSError as exc:
         with contextlib.suppress(OSError):

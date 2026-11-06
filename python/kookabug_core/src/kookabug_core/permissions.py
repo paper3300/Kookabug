@@ -48,6 +48,7 @@ __all__ = [
     "Toolset",
     "Verdict",
     "decide",
+    "exact_rule",
     "load_policy",
     "parse_rule",
     "preset_verdict",
@@ -141,6 +142,20 @@ class Rule:
 
     def matches(self, tool: str, arg: str) -> bool:
         return fnmatchcase(tool, self.tool) and fnmatchcase(arg, self.arg)
+
+
+_GLOB_ESCAPE: Final = str.maketrans({"[": "[[]", "*": "[*]", "?": "[?]"})
+
+
+def exact_rule(tool: str, arg: str) -> str:
+    """`tool(arg)`에 **그 인자 하나만** 맞는 규칙 글자 ("항상 허용", M5 3.6 H5). glob 메타문자를
+    이스케이프하고(`[`→`[[]`, `*`→`[*]`, `?`→`[?]`), 만든 규칙이 원래 인자에 맞는지 확인한다.
+    규칙 형식으로 쓸 수 없는 인자(줄바꿈 등)면 `ValueError`."""
+    text = f"{tool}({arg.translate(_GLOB_ESCAPE)})"
+    rule = parse_rule(text, "allow")
+    if rule.tool != tool or not rule.matches(tool, arg):
+        raise ValueError(f"{tool}({arg!r})을(를) 정확히 맞는 규칙으로 쓸 수 없다")
+    return text
 
 
 def parse_rule(text: str, verdict: Verdict) -> Rule:

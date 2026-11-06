@@ -508,6 +508,11 @@ class Runner:
             # 기록이다 (M5 3.8). 없으면 daemon은 에이전트에게 안전 필드만 준다
             "agent_mask": 1,
         }
+        # 에이전트 제어 실행 (M5 3.9): 기록 뷰어 배지·감사 기록
+        if spec.source is not None:
+            self._run_json["source"] = spec.source
+        if spec.agent is not None:
+            self._run_json["agent"] = dict(spec.agent)
         write_run_json(self.folder.run_json, self._run_json)
         self.controller.journal_ready(self._emit_quiet)
 
@@ -549,6 +554,7 @@ class Runner:
                 spec.graph,
                 self.folder.snapshot,
                 options=RunOptions(settings=dict(spec.settings), profile=spec.profile),
+                graph_value=spec.graph_value,
             )
         except SnapshotError as exc:
             return _End.error(exc.code, str(exc))

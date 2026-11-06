@@ -66,6 +66,16 @@ CASES: dict[str, list[dict[str, Any]]] = {
     "kb_ocr_read": [{"frame_id": "f_x"}, {"frame_id": "f_x", "rect": [0, 0, 2, 2]}],
     "kb_screen_list": [{}, {"under": "lobby"}],
     "kb_screen_get": [{"path": "screens/login.screen.json"}],
+    # M5 B3: control 툴셋 (B2가 넘김)
+    "kb_input_click": [
+        {"window": "SampleRPG", "point": [10, 10]},
+        {"window": "SampleRPG", "target": "targets/login/login_button.target.json",
+         "button": "right", "count": 2},
+    ],
+    "kb_input_key": [{"window": "SampleRPG", "keys": "ctrl+a"}],
+    "kb_input_type": [{"window": "SampleRPG", "text": "abc"},
+                      {"window": "SampleRPG", "secret": "accounts.qa_tester_01"}],
+    "kb_app_launch": [{}, {"profile": "login_fail"}],
 }  # fmt: skip
 PROCESS_SKIP = {"kb_run_cancel"}
 """daemon이 판정 전에 대표 인자(실행의 그래프 경로)를 구하다 `run_not_found`가 되는 도구 — 정적
@@ -122,6 +132,11 @@ class RecordingLink:
             "screens.list": {"screens": []},
             "screens.get": {"path": "screens/login.screen.json", "value": {}},
             "target.save": {"revision": "r", "image": "i.png", "preview": None, "warnings": []},
+            "permissions.get": {"principal": self.principal, "tools": []},
+            "control.click": {"run_id": "abcd1234", "verdict": "pass"},
+            "control.key": {"run_id": "abcd1234", "verdict": "pass"},
+            "control.type": {"run_id": "abcd1234", "verdict": "pass"},
+            "app.launch": {"pid": 1234},
         }[method]  # fmt: skip
 
     def enable(self, toolsets: list[str]) -> dict[str, Any]:

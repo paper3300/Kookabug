@@ -22,7 +22,7 @@ from typing import Any, Final
 from kookabug_core import documents
 from kookabug_core.documents import DocumentError
 from kookabug_core.supervisor import DEFAULT_DEADLINE_MS
-from kookabug_core.workspace import Workspace, WorkspaceError
+from kookabug_core.workspace import Workspace, WorkspaceError, agents_md_section
 from kookabug_daemon.documents import GRAPH_SUFFIX, resolve_path
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.methods.screens import in_screens
@@ -193,6 +193,7 @@ def _info_sync(call: Call) -> dict[str, Any]:
         "diagnostics": [d.to_dict() for d in workspace.diagnostics],
         "plugins": [registry.plugin_info(p) for p in sorted(registry.plugins)],
         "runtime": runtime_info(call.daemon.platform_fake),
+        "agents_md": agents_md_section(root),
     }
 
 

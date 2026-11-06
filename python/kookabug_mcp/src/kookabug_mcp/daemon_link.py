@@ -31,7 +31,8 @@ __all__ = ["DEFAULT_TIMEOUT", "DaemonLink", "LinkError"]
 
 log = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT: Final = 60.0
+DEFAULT_TIMEOUT: Final = 240.0
+"""daemon 호출 하나의 기한. 사람 확인 대기(120초) + 제어 실행(기한 30초·마무리)보다 길다 (M5 B3)."""
 
 
 class LinkError(Exception):

@@ -133,6 +133,13 @@ class RunSpec:
     frame_output_refs: int = DEFAULT_FRAME_OUTPUT_REFS
     breakpoints: tuple[Breakpoint, ...] = ()
     """시작할 때의 브레이크포인트 (M3 2.1). 사람이 UI에서 시작한 실행만 daemon이 채운다."""
+    graph_value: Mapping[str, Any] | None = None
+    """루트 그래프 값 (M5 에이전트 제어 실행). 있으면 워크스페이스 파일 대신 이 값을 스냅샷에
+    쓴다."""
+    source: str | None = None
+    """실행 출처 (`agent_control`). `run.json`에 남는다."""
+    agent: Mapping[str, Any] | None = None
+    """그 실행을 낸 에이전트 (`{id}`, 에이전트 제어 실행)."""
 
     @classmethod
     def from_json(cls, data: Any) -> RunSpec:
@@ -178,6 +185,9 @@ class RunSpec:
                 scenario=platform.get("scenario"),
             ),
             breakpoints=Breakpoint.many(spec.get("breakpoints", ())),
+            graph_value=spec.get("graph_value"),
+            source=spec.get("source"),
+            agent=spec.get("agent"),
             **optional,
         )
 
@@ -211,4 +221,7 @@ class RunSpec:
             "frame_budget_mib": self.frame_budget_mib,
             "frame_output_refs": self.frame_output_refs,
             "breakpoints": [bp.to_json() for bp in self.breakpoints],
+            **({} if self.graph_value is None else {"graph_value": dict(self.graph_value)}),
+            **({} if self.source is None else {"source": self.source}),
+            **({} if self.agent is None else {"agent": dict(self.agent)}),
         }

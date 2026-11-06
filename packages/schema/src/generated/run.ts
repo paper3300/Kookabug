@@ -41,6 +41,12 @@ export interface Run {
    */
   active_duration_ms?: number;
   /**
+   * 에이전트 제어 실행을 낸 에이전트 (source agent_control)
+   */
+  agent?: {
+    id: string;
+  };
+  /**
    * 에이전트용 비밀값 분류(이벤트 secret_paths·스텝 secret·agent_withhold)를 남긴 기록 (M5 3.8). 없으면 daemon은 에이전트에게 안전 필드(판정·스텝·노드·출구·상태·오류 코드·시각·기간)만 준다
    */
   agent_mask?: 1;
@@ -92,6 +98,10 @@ export interface Run {
    * @minItems 1
    */
   secret_paths?: [string, ...string[]];
+  /**
+   * 실행 출처 (M5 3.9). agent_control = 에이전트의 게임 조작(kb_input_*)을 daemon이 한 스텝짜리 실행으로 돌린 것. 없으면 일반 실행
+   */
+  source?: "agent_control";
   started_at: Timestamp;
   status: "finished" | "running";
   verdict?: Verdict;
