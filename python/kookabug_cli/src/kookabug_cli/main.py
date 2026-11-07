@@ -5,6 +5,7 @@
                  [--plugin-module 모듈]...   (개발용, 사람만: KOOKABUG_AGENT면 종료 5)
     kookabug target test <target.json> (--window 제목 | --hwnd N | --image PNG) ...  (target_cmd)
     kookabug screen test <ID|파일> (--window 제목 | --hwnd N | --image PNG) ...       (screen_cmd)
+    kookabug screen list [--explored] [--workspace DIR] [--json]                     (screen_cmd)
     kookabug doctor [--profile headless|desktop] [--json]                            (doctor_cmd)
     kookabug daemon [--workspace DIR] [--idle-timeout-s 600] [--json]                (daemon_cmd)
     kookabug plugin add|remove|list|verify|gc ...                                    (plugin_cmd)
@@ -213,7 +214,7 @@ def build_parser() -> argparse.ArgumentParser:
         "test",
         help="화면 판정 조건을 창이나 이미지에서 본다",
         description="화면 판정 조건을 창(지금 화면) 또는 이미지에서 본다 "
-        "(0 그 화면, 1 아님, 6 사용법·환경 오류)",
+        "(0 그 화면, 1 아님, 3 판정 불가, 6 사용법·환경 오류)",
     )
     screen_test.add_argument("screen", help="화면 ID 또는 *.screen.json 파일")
     _add_source_arguments(screen_test)
@@ -221,6 +222,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--workspace", metavar="DIR", help="워크스페이스 루트 (기본: 현재 폴더에서 위로 찾는다)"
     )
     screen_test.add_argument("--json", action="store_true", help="결과 JSON 한 개만 출력한다")
+    screen_list = screen_commands.add_parser(
+        "list",
+        help="화면 판정 파일 목록 (--explored: 탐색 결과 후보도)",
+        description="screens/의 화면 목록을 보인다 (0 성공, 6 사용법·환경 오류)",
+    )
+    screen_list.add_argument(
+        "--explored", action="store_true", help="screens/_explored/의 탐색 결과 후보도 보인다"
+    )
+    screen_list.add_argument(
+        "--workspace", metavar="DIR", help="워크스페이스 루트 (기본: 현재 폴더에서 위로 찾는다)"
+    )
+    screen_list.add_argument("--json", action="store_true", help="결과 JSON 한 개만 출력한다")
 
     doctor = commands.add_parser(
         "doctor",

@@ -112,3 +112,46 @@ def test_invalid_screen_warning(tmp_path: Path) -> None:
     write_json(ws, "screens/lobby.screen.json", {"detect": {}, "format": "kookabug.screen/0"})
     (diag,) = screen_diags(check(ws, SUB))
     assert diag.code == "screen_invalid" and "형식" in diag.message
+
+
+def v1_screen(**extra: Any) -> dict[str, Any]:
+    return {
+        "format": "kookabug.screen/1",
+        "title": "로비",
+        "detect": {
+            "all": [
+                {"$target": "targets/a.target.json"},
+                {"ocr": {"rect": [0.3, 0.15, 0.4, 0.08], "text": "서버 선택"}},
+            ]
+        },
+        "shot": {"image": "screens/lobby.shot.png", "client_size": [1024, 640]},
+        "elements": [{"name": "Server 1", "kind": "button", "rect": [0.26, 0.31, 0.49, 0.1]}],
+        "moves": [{"via": {"click": {"element": "Server 1"}}, "to": "loading", "status": "tried"}],
+        **extra,
+    }
+
+
+def test_v1_file_no_screen_invalid(tmp_path: Path) -> None:
+    # /1 화면(OCR 조건·이동·요소·대표 스크린샷)은 출구 screen 참조에서 /0처럼 읽힌다. 스크린샷
+    # 파일이 없어도 판정에는 쓰지 않으므로 문제가 아니다
+    ws = make_workspace(tmp_path)
+    write_target(ws, "targets/a.target.json")
+    write_json(ws, "screens/lobby.screen.json", v1_screen())
+    assert screen_diags(check(ws, subgraph(ws))) == []
+    found = load_program(ws, SUB).screens["lobby"]
+    assert found.status == "ok" and found.screen is not None
+    assert found.screen.version == 1 and found.screen.targets == ("targets/a.target.json",)
+    # 확정 화면에 후보 전용 of, 판정 조건 없음 → screen_invalid
+    write_json(ws, "screens/lobby.screen.json", v1_screen(of="other"))
+    assert [d.code for d in screen_diags(check(ws, SUB))] == ["screen_invalid"]
+    no_detect = v1_screen()
+    del no_detect["detect"]
+    write_json(ws, "screens/lobby.screen.json", no_detect)
+    (diag,) = screen_diags(check(ws, SUB))
+    assert diag.code == "screen_invalid" and "판정 조건" in diag.message
+    # /1의 target도 없으면 /0과 같이 screen_invalid
+    bad = v1_screen()
+    bad["detect"]["all"][0] = {"$target": "targets/none.target.json"}
+    write_json(ws, "screens/lobby.screen.json", bad)
+    (diag,) = screen_diags(check(ws, SUB))
+    assert diag.code == "screen_invalid" and "none.target.json" in diag.message

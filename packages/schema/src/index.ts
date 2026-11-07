@@ -2,6 +2,7 @@
 export * as breakpoints from "./generated/breakpoints.js";
 export * as daemonRpc from "./generated/daemon-rpc.js";
 export * as events from "./generated/events.js";
+export * as explore from "./generated/explore.js";
 export * as graph from "./generated/graph.js";
 export * as local from "./generated/local.js";
 export * as nodeSchema from "./generated/node-schema.js";

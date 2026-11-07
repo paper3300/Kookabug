@@ -1,8 +1,128 @@
 {
   "$defs": {
+    "NormPoint": {
+      "description": "정규화 점 [x, y] (클라이언트 영역 기준 0~1)",
+      "items": {
+        "maximum": 1,
+        "minimum": 0,
+        "type": "number"
+      },
+      "maxItems": 2,
+      "minItems": 2,
+      "title": "NormPoint",
+      "type": "array"
+    },
+    "NormRect": {
+      "description": "정규화 사각형 [x, y, w, h] (클라이언트 영역 기준 0~1)",
+      "items": {
+        "maximum": 1,
+        "minimum": 0,
+        "type": "number"
+      },
+      "maxItems": 4,
+      "minItems": 4,
+      "title": "NormRect",
+      "type": "array"
+    },
+    "OcrCondition": {
+      "additionalProperties": false,
+      "description": "OCR 조건 (M7): 그 영역에서 읽은 글자에 text가 들어 있다 (공백·대소문자 무시)",
+      "properties": {
+        "ocr": {
+          "additionalProperties": false,
+          "properties": {
+            "match": {
+              "enum": ["contains"]
+            },
+            "rect": {
+              "$ref": "#/$defs/NormRect"
+            },
+            "text": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["rect", "text"],
+          "type": "object"
+        }
+      },
+      "required": ["ocr"],
+      "title": "OcrCondition",
+      "type": "object"
+    },
+    "Screen0": {
+      "additionalProperties": false,
+      "description": "M1 최소 형식: 판정 조건은 $target만",
+      "properties": {
+        "detect": {
+          "$ref": "#/$defs/ScreenDetect"
+        },
+        "format": {
+          "const": "kookabug.screen/0"
+        },
+        "title": {
+          "description": "사람이 읽는 화면 이름",
+          "type": "string"
+        }
+      },
+      "required": ["detect", "format"],
+      "title": "Screen0",
+      "type": "object"
+    },
+    "Screen1": {
+      "additionalProperties": false,
+      "description": "화면 지도 형식 (M7): OCR 조건·설명·UI 요소·이동·대표 스크린샷·출처. screens/의 확정 화면은 detect가 있어야 하고, of는 screens/_explored/의 후보만 쓴다",
+      "properties": {
+        "description": {
+          "maxLength": 2000,
+          "type": "string"
+        },
+        "detect": {
+          "$ref": "#/$defs/ScreenDetect1"
+        },
+        "elements": {
+          "items": {
+            "$ref": "#/$defs/ScreenElement"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        "format": {
+          "const": "kookabug.screen/1"
+        },
+        "kind": {
+          "enum": ["popup", "screen"]
+        },
+        "moves": {
+          "items": {
+            "$ref": "#/$defs/ScreenMove"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        "of": {
+          "$ref": "#/$defs/ScreenRef",
+          "description": "후보 전용: 이 후보를 합칠 확정 화면 ID"
+        },
+        "origin": {
+          "$ref": "#/$defs/ScreenOrigin"
+        },
+        "shot": {
+          "$ref": "#/$defs/ScreenShot"
+        },
+        "title": {
+          "maxLength": 200,
+          "type": "string"
+        }
+      },
+      "required": ["format"],
+      "title": "Screen1",
+      "type": "object"
+    },
     "ScreenCondition": {
       "additionalProperties": false,
-      "description": "조건 하나. M1은 찾기 대상($target)만",
+      "description": "찾기 대상 조건($target)",
       "properties": {
         "$target": {
           "description": "워크스페이스 루트 기준 *.target.json 경로 ('/' 구분)",
@@ -13,6 +133,18 @@
       "required": ["$target"],
       "title": "ScreenCondition",
       "type": "object"
+    },
+    "ScreenCondition1": {
+      "description": "조건 하나: $target 또는 ocr",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ScreenCondition"
+        },
+        {
+          "$ref": "#/$defs/OcrCondition"
+        }
+      ],
+      "title": "ScreenCondition1"
     },
     "ScreenDetect": {
       "additionalProperties": false,
@@ -36,25 +168,202 @@
       },
       "title": "ScreenDetect",
       "type": "object"
+    },
+    "ScreenDetect1": {
+      "additionalProperties": false,
+      "description": "ScreenDetect와 같고 조건에 ocr을 쓸 수 있다",
+      "minProperties": 1,
+      "properties": {
+        "all": {
+          "items": {
+            "$ref": "#/$defs/ScreenCondition1"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "none": {
+          "items": {
+            "$ref": "#/$defs/ScreenCondition1"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "title": "ScreenDetect1",
+      "type": "object"
+    },
+    "ScreenElement": {
+      "additionalProperties": false,
+      "description": "UI 요소 하나. 이름은 카드 안에서 겹치지 않는다",
+      "properties": {
+        "kind": {
+          "enum": ["button", "field", "list", "text"]
+        },
+        "name": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "rect": {
+          "$ref": "#/$defs/NormRect"
+        }
+      },
+      "required": ["kind", "name", "rect"],
+      "title": "ScreenElement",
+      "type": "object"
+    },
+    "ScreenMove": {
+      "additionalProperties": false,
+      "description": "이동 하나: via 입력으로 to 화면에 간다. tried면 to가 있어야 한다",
+      "properties": {
+        "note": {
+          "maxLength": 256,
+          "type": "string"
+        },
+        "status": {
+          "enum": ["tried", "untried"]
+        },
+        "to": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScreenRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "화면 ID 또는 같은 세션의 후보 키. untried면 null 가능"
+        },
+        "via": {
+          "$ref": "#/$defs/ScreenVia"
+        }
+      },
+      "required": ["status", "via"],
+      "title": "ScreenMove",
+      "type": "object"
+    },
+    "ScreenOrigin": {
+      "additionalProperties": false,
+      "description": "출처. 없으면 사람이 직접 쓴 화면",
+      "properties": {
+        "agent": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "at": {
+          "description": "UTC ISO 8601",
+          "type": "string"
+        },
+        "kind": {
+          "enum": ["explored"]
+        },
+        "session": {
+          "pattern": "^[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+          "type": "string"
+        }
+      },
+      "required": ["kind", "session"],
+      "title": "ScreenOrigin",
+      "type": "object"
+    },
+    "ScreenRef": {
+      "description": "화면 ID(파일 이름 줄기) 또는 후보 키",
+      "maxLength": 128,
+      "pattern": "^[^/\\\\]+$",
+      "title": "ScreenRef",
+      "type": "string"
+    },
+    "ScreenShot": {
+      "additionalProperties": false,
+      "description": "대표 스크린샷 (워크스페이스 루트 기준 PNG 경로, 찍을 때 클라이언트 크기·배율)",
+      "properties": {
+        "client_size": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "image": {
+          "pattern": "^[^\\\\]+\\.png$",
+          "type": "string"
+        },
+        "scale": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": ["client_size", "image"],
+      "title": "ScreenShot",
+      "type": "object"
+    },
+    "ScreenVia": {
+      "description": "이동 입력: 요소 클릭·점 클릭·키",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "click": {
+              "additionalProperties": false,
+              "properties": {
+                "element": {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": ["element"],
+              "type": "object"
+            }
+          },
+          "required": ["click"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "click": {
+              "additionalProperties": false,
+              "properties": {
+                "point": {
+                  "$ref": "#/$defs/NormPoint"
+                }
+              },
+              "required": ["point"],
+              "type": "object"
+            }
+          },
+          "required": ["click"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["key"],
+          "type": "object"
+        }
+      ],
+      "title": "ScreenVia"
     }
   },
   "$id": "urn:kookabug:screen:0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": false,
-  "description": "화면 판정 파일 (*.screen.json). 화면 ID는 파일 이름 줄기",
-  "properties": {
-    "detect": {
-      "$ref": "#/$defs/ScreenDetect"
+  "description": "화면 판정 파일 (*.screen.json). 화면 ID는 파일 이름 줄기. kookabug.screen/0(M1)·/1(M7 화면 지도)",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Screen0"
     },
-    "format": {
-      "const": "kookabug.screen/0"
-    },
-    "title": {
-      "description": "사람이 읽는 화면 이름",
-      "type": "string"
+    {
+      "$ref": "#/$defs/Screen1"
     }
-  },
-  "required": ["detect", "format"],
-  "title": "Screen",
-  "type": "object"
+  ],
+  "title": "Screen"
 }

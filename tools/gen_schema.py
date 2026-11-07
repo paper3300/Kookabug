@@ -47,6 +47,7 @@ KINDS = (
     "recorder-script",
     "recorder-fragment",
     "plugin-lock",
+    "explore",
 )
 
 MODELS_INIT = '''\

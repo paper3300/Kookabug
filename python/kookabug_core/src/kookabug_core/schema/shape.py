@@ -48,16 +48,19 @@ SchemaKind = Literal[
     "recorder-script",
     "recorder-fragment",
     "plugin-lock",
+    "explore",
 ]
 KINDS: tuple[SchemaKind, ...] = get_args(SchemaKind)
 FORMAT_TO_KIND: dict[str, SchemaKind] = {
     "kookabug.breakpoints/0": "breakpoints",
+    "kookabug.explore/0": "explore",
     "kookabug.graph/0": "graph",
     "kookabug.local/0": "local",
     "kookabug.lock/0": "plugin-lock",
     "kookabug.nodes/0": "node-schema",
     "kookabug.run/0": "run",
     "kookabug.screen/0": "screen",
+    "kookabug.screen/1": "screen",
     "kookabug.session/0": "session",
     "kookabug.target/0": "target",
     "kookabug.user-settings/0": "user-settings",
@@ -366,7 +369,15 @@ def _diagnose(
         case "format":
             why = str(error.cause) if error.cause else error.message
             return [diag("invalid_pin_type", why)]
-        case "minimum" | "maximum" | "minItems" | "maxItems" | "minLength" | "minProperties":
+        case (
+            "minimum"
+            | "maximum"
+            | "minItems"
+            | "maxItems"
+            | "minLength"
+            | "maxLength"
+            | "minProperties"
+        ):
             return [diag("out_of_range", _range_message(v, value))]
         case "uniqueItems":
             return [diag("duplicate_item", "배열에 같은 항목이 두 번 있다")]
@@ -397,5 +408,6 @@ def _range_message(keyword: str, limit: object) -> str:
         "minItems": f"항목이 {limit}개 이상이어야 한다",
         "maxItems": f"항목이 {limit}개 이하여야 한다",
         "minLength": f"{limit}글자 이상이어야 한다",
+        "maxLength": f"{limit}글자 이하여야 한다",
         "minProperties": f"키가 {limit}개 이상이어야 한다",
     }[keyword]

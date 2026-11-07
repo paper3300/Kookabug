@@ -1,0 +1,120 @@
+{
+  "$defs": {
+    "ExploreApproval": {
+      "additionalProperties": false,
+      "description": "\"이 탐색 동안 허용\" 감사 기록 하나 (값 없음)",
+      "properties": {
+        "arg": {
+          "description": "권한 인자 (control은 창 제목)",
+          "maxLength": 200,
+          "type": "string"
+        },
+        "at": {
+          "description": "UTC ISO 8601",
+          "type": "string"
+        },
+        "scope": {
+          "enum": ["session"]
+        },
+        "tool": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["at", "scope", "tool"],
+      "title": "ExploreApproval",
+      "type": "object"
+    }
+  },
+  "$id": "urn:kookabug:explore:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "에이전트 탐색 세션 기록 (screens/_explored/<세션 ID>/explore.json, M7)",
+  "properties": {
+    "agent": {
+      "additionalProperties": false,
+      "properties": {
+        "client": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["id"],
+      "type": "object"
+    },
+    "approvals": {
+      "items": {
+        "$ref": "#/$defs/ExploreApproval"
+      },
+      "type": "array"
+    },
+    "ended_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "UTC ISO 8601"
+    },
+    "format": {
+      "const": "kookabug.explore/0"
+    },
+    "goal": {
+      "maxLength": 1000,
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+      "type": "string"
+    },
+    "max_steps": {
+      "maximum": 1000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "promoted": {
+      "additionalProperties": {
+        "maxLength": 128,
+        "pattern": "^[^/\\\\]+$",
+        "type": "string"
+      },
+      "description": "승격한 후보 키 → 확정 화면 ID",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+      },
+      "type": "object"
+    },
+    "started_at": {
+      "description": "UTC ISO 8601",
+      "type": "string"
+    },
+    "status": {
+      "enum": ["active", "ended", "interrupted"]
+    },
+    "steps": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "title": {
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    },
+    "window": {
+      "maxLength": 200,
+      "type": "string"
+    }
+  },
+  "required": ["agent", "format", "id", "max_steps", "started_at", "status", "steps", "title"],
+  "title": "Explore",
+  "type": "object"
+}

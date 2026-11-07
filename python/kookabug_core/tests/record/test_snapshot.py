@@ -270,6 +270,49 @@ def test_screen_files_and_their_targets_copied(tmp_path: Path) -> None:
     assert run(snap.program).verdict == "pass"
 
 
+def test_snapshot_copies_detect_targets_only(tmp_path: Path) -> None:
+    # /1 화면 (M7 3.1): detect의 target만 따라간다. 대표 스크린샷·UI 요소·이동의 to 화면·OCR 조건은
+    # 실행에 쓰지 않으므로 복사하지 않는다
+    root = tmp_path / "ws"
+    ws = make_workspace(root)
+    write_target(ws, "targets/lobby/list.target.json")
+    write_target(ws, "targets/common/loading.target.json")
+    (root / "screens").mkdir()
+    (root / "screens" / "lobby.shot.png").write_bytes(b"\x89PNG shot")
+    screen = {
+        "format": "kookabug.screen/1",
+        "detect": {
+            "all": [
+                target("targets/lobby/list.target.json"),
+                {"ocr": {"rect": [0.3, 0.15, 0.4, 0.08], "text": "서버 선택"}},
+            ],
+            "none": [target("targets/common/loading.target.json")],
+        },
+        "shot": {"image": "screens/lobby.shot.png", "client_size": [1024, 640]},
+        "moves": [{"via": {"key": "enter"}, "to": "loading", "status": "tried"}],
+    }
+    write_json(ws, "screens/lobby.screen.json", screen)
+    write_json(ws, "screens/loading.screen.json", {**screen, "moves": []})  # to 화면
+    interface = {"exits": {"done": {"kind": "ok", "screen": "lobby"}}}
+    sub_graph = GraphBuilder("subgraph", interface=interface)
+    sub_graph.entry("n_exit").exit("n_exit", "done").write(ws, "subgraphs/a.graph.json")
+    main(call("subgraphs/a.graph.json")).write(ws, TEST)
+
+    snap = snapshot(ws, tmp_path / "snap")
+    assert files_under(snap.root) == {
+        WORKSPACE_FILE,
+        TEST,
+        "subgraphs/a.graph.json",
+        "screens/lobby.screen.json",
+        "targets/lobby/list.target.json",
+        "targets/lobby/list.png",
+        "targets/common/loading.target.json",
+        "targets/common/loading.png",
+    }
+    assert snap.program.screens["lobby"].status == "ok"
+    assert validate(snap.program) == []
+
+
 def test_reference_missing_in_original_is_validation_error_not_unstable(tmp_path: Path) -> None:
     root = tmp_path / "ws"
     ws = make_workspace(root)
