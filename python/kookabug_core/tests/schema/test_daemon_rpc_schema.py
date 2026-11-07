@@ -121,6 +121,8 @@ TOOLS = {
     "screens.discard": "ui_only",
     "screens.layout_get": "ui_only",
     "screens.layout_set": "ui_only",
+    # M7 B4 이동 그래프 (조회, 렌더러 화면 지도 탭)
+    "screens.map": "kb_screen_list",
 }
 AGENT_ONLY_B3 = {"control.click", "control.key", "control.type", "app.launch"}
 AGENT_ONLY_M7 = {"screens.identify", "screens.save", "explore.start", "explore.end"}
@@ -188,6 +190,7 @@ def test_notification_table() -> None:
         "run.ended",
         "run.event",
         "run.lagged",
+        "screens.changed",  # M7 B4 화면 지도 파일 변경 (ui 연결에만)
         "workspace.changed",
     ]
 

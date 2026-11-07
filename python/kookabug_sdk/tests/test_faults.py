@@ -237,7 +237,10 @@ def test_points_table_matches_plan() -> None:
         "ocr.before_load",
         # M6: 플러그인 설치 거래 단계 (이벤트 = 단계 이름, 역할 plugin)
         "plugins.stage",
+        # M7 B4 화면 지도 승격 거래 단계 (daemon·CLI 모두 감독자)
+        "screens.stage",
     }
     assert _faults.POINTS["plugins.stage"] == frozenset({"plugin"})
+    assert _faults.POINTS["screens.stage"] == frozenset({"supervisor"})
     assert _faults.POINTS["journal.partial_line"] == frozenset(_faults.ROLES)
     assert _faults.POINTS["daemon.after_lock"] == frozenset({"supervisor"})

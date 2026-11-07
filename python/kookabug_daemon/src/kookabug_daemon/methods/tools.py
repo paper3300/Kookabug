@@ -112,6 +112,8 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     "screens.get": "kb_screen_get",
     # M7 탐색 세션·화면 지도 저장·식별 (계획 3.4~3.6). 목록은 사람 화면용
     "screens.identify": "kb_screen_identify",
+    # M7 B4 이동 그래프 (계획 3.3, 3.8 — 조회, 썸네일은 사람에게만)
+    "screens.map": "kb_screen_list",
     "screens.save": "kb_screen_save",
     "explore.start": "kb_explore_start",
     "explore.end": "kb_explore_end",

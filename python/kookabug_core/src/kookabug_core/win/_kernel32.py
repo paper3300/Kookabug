@@ -98,6 +98,10 @@ CreateFileW = _fn(
 WriteFile = _fn(
     "WriteFile", BOOL, HANDLE, ctypes.c_char_p, DWORD, ctypes.POINTER(DWORD), ctypes.c_void_p
 )
+FlushFileBuffers = _fn("FlushFileBuffers", BOOL, HANDLE)
+GENERIC_WRITE: Final = 0x40000000
+OPEN_EXISTING: Final = 3
+FILE_FLAG_BACKUP_SEMANTICS: Final = 0x02000000
 
 
 def win_error(what: str, code: int | None = None) -> OSError:

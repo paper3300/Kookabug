@@ -3434,6 +3434,25 @@
           "required": ["params", "renderer", "result", "tool"],
           "type": "object"
         },
+        "screens.map": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/ScreensMapResult"
+            },
+            "tool": {
+              "const": "kb_screen_list"
+            }
+          },
+          "required": ["params", "renderer", "result", "tool"],
+          "type": "object"
+        },
         "screens.promote": {
           "additionalProperties": false,
           "properties": {
@@ -3799,6 +3818,7 @@
         "explore.start",
         "explore.end",
         "explore.list",
+        "screens.map",
         "screens.check",
         "screens.promote",
         "screens.discard",
@@ -4053,6 +4073,16 @@
           "required": ["params"],
           "type": "object"
         },
+        "screens.changed": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ScreensChangedParams"
+            }
+          },
+          "required": ["params"],
+          "type": "object"
+        },
         "workspace.changed": {
           "additionalProperties": false,
           "properties": {
@@ -4068,6 +4098,7 @@
         "agent.connections.changed",
         "agent.protect_corrupt",
         "explore.changed",
+        "screens.changed",
         "approval.requested",
         "approval.resolved",
         "debug.breakpoints.changed",
@@ -6281,7 +6312,8 @@
         "secret_unchecked",
         "screens_busy",
         "session_not_allowed",
-        "approval_cancelled"
+        "approval_cancelled",
+        "recovery_pending"
       ],
       "title": "RequestFailedCode",
       "type": "string"
@@ -6318,6 +6350,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "journals": {
+          "description": "M7 B4 recovery_pending: 남은 승격 거래 저널 ID",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "line": {
           "maximum": 9007199254740991,
           "minimum": 1,
@@ -6341,6 +6380,13 @@
         },
         "path": {
           "type": "string"
+        },
+        "paths": {
+          "description": "M7 B4 revision_conflict·recovery_pending: 걸린 화면 지도 파일들 (워크스페이스 기준)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "plugin_error": {
           "$ref": "#/$defs/PluginErrorInfo"
@@ -7273,6 +7319,159 @@
       "title": "RunSummary",
       "type": "object"
     },
+    "ScreenMapCard": {
+      "additionalProperties": false,
+      "description": "화면 지도 카드: 확정 화면(node = ID) 또는 탐색 후보(node = x:<세션>/<키>)",
+      "properties": {
+        "counts": {
+          "additionalProperties": false,
+          "properties": {
+            "elements": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "moves": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": ["elements", "moves"],
+          "type": "object"
+        },
+        "detect_text": {
+          "description": "판정 조건 한 줄 (image(\"이름\") && !image(\"이름\") && text(\"글자\"))",
+          "type": "string"
+        },
+        "elements": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "rect": {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 4,
+                "minItems": 4,
+                "type": "array"
+              }
+            },
+            "required": ["kind", "name", "rect"],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "explored_adds": {
+          "description": "확정 카드: 이 화면에 합칠 탐색 후보(of) 수 — \"탐색 추가 N\" 배지",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "incomplete": {
+          "description": "후보: 판정 조건도 합칠 화면도 없음 (승격 불가, 사람이 채운다)",
+          "type": "boolean"
+        },
+        "key": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": ["popup", "screen"]
+        },
+        "node": {
+          "type": "string"
+        },
+        "of": {
+          "type": ["null", "string"]
+        },
+        "origin": {
+          "type": ["null", "object"]
+        },
+        "path": {
+          "type": "string"
+        },
+        "problem": {
+          "type": ["null", "string"]
+        },
+        "promotable": {
+          "type": "boolean"
+        },
+        "session": {
+          "type": "string"
+        },
+        "state": {
+          "enum": ["confirmed", "explored"]
+        },
+        "thumb": {
+          "description": "대표 스크린샷 썸네일 캐시 이름 (사람 연결만 — 에이전트는 늘 null)",
+          "type": ["null", "string"]
+        },
+        "title": {
+          "type": ["null", "string"]
+        }
+      },
+      "required": [
+        "counts",
+        "detect_text",
+        "elements",
+        "kind",
+        "node",
+        "origin",
+        "path",
+        "problem",
+        "state",
+        "thumb",
+        "title"
+      ],
+      "title": "ScreenMapCard",
+      "type": "object"
+    },
+    "ScreenMapEdge": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "pending": {
+          "description": "확인 전 간선 (of 후보의 이동)",
+          "type": "boolean"
+        },
+        "sources": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "status": {
+          "enum": ["tried", "untried"]
+        },
+        "to": {
+          "type": ["null", "string"]
+        },
+        "unresolved": {
+          "description": "to를 찾지 못한 이름 (to는 null)",
+          "type": "string"
+        },
+        "via": {
+          "type": "object"
+        }
+      },
+      "required": ["from", "label", "sources", "status", "to", "via"],
+      "title": "ScreenMapEdge",
+      "type": "object"
+    },
     "ScreenReadTextParams": {
       "additionalProperties": false,
       "description": "screen.read_text (kb_ocr_read, M5): 정지 화면(창 캡처) 영역의 글자. rect를 빼면 전체. 녹화 세션 프레임은 recorder_frame, sensitive target이 보이는 영역과 겹치면 sensitive_region",
@@ -7289,13 +7488,40 @@
       "title": "ScreenReadTextParams",
       "type": "object"
     },
+    "ScreensChangedParams": {
+      "additionalProperties": false,
+      "description": "M7: screens/ 아래 화면 지도 파일이 바뀜 (ui 연결에만). 화면 지도 탭은 screens.map을 다시 부른다",
+      "properties": {
+        "revision": {
+          "type": "string"
+        }
+      },
+      "required": ["revision"],
+      "title": "ScreensChangedParams",
+      "type": "object"
+    },
     "ScreensCheckParams": {
       "additionalProperties": false,
-      "description": "screens.check (사람만, M7 3.7): 후보 하나를 승격하기 전에 확인. 처리기는 B4",
+      "description": "screens.check (사람만, M7 3.7): 후보 하나를 승격하기 전에 확인 (쓰지 않음). 승격과 같은 mode·id·folder·replace_*를 주면 그 승격이 고칠 파일의 revision을 준다",
       "properties": {
+        "folder": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
         "key": {
           "pattern": "^[a-z][a-z0-9_]{0,63}$",
           "type": "string"
+        },
+        "mode": {
+          "enum": ["merge", "new"]
+        },
+        "replace_detect": {
+          "type": "boolean"
+        },
+        "replace_shot": {
+          "type": "boolean"
         },
         "session": {
           "minLength": 1,
@@ -7309,9 +7535,28 @@
     "ScreensCheckResult": {
       "additionalProperties": false,
       "properties": {
+        "code": {
+          "description": "승격할 수 없을 때 그 이유의 오류 코드 (screen_exists·validation_failed·not_found·exists)",
+          "type": "string"
+        },
+        "id": {
+          "description": "승격될 화면 ID (new는 새 ID, merge는 합칠 화면)",
+          "type": "string"
+        },
         "ok": {
           "description": "후보 판정 조건이 자기 스크린샷에서 맞고 승격을 막는 것이 없다",
           "type": "boolean"
+        },
+        "path": {
+          "description": "승격 뒤 화면 파일 (워크스페이스 기준)",
+          "type": "string"
+        },
+        "problems": {
+          "description": "승격을 막는 것 (있으면 ok는 false)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "revisions": {
           "additionalProperties": {
@@ -7320,6 +7565,10 @@
           "description": "승격이 고칠 파일 → 지금 revision (없는 파일은 null). screens.promote의 base_revisions로 그대로 넘긴다",
           "type": "object"
         },
+        "shot": {
+          "description": "후보 판정 조건을 그 대표 스크린샷에서 평가한 결과 (matched·not_matched·unknown·none = 스크린샷 없음)",
+          "enum": ["matched", "none", "not_matched", "unknown"]
+        },
         "warnings": {
           "items": {
             "type": "string"
@@ -7327,7 +7576,7 @@
           "type": "array"
         }
       },
-      "required": ["ok", "revisions", "warnings"],
+      "required": ["ok", "problems", "revisions", "warnings"],
       "title": "ScreensCheckResult",
       "type": "object"
     },
@@ -7542,6 +7791,40 @@
       "title": "ScreensListResult",
       "type": "object"
     },
+    "ScreensMapResult": {
+      "additionalProperties": false,
+      "description": "screens.map (kb_screen_list, M7 3.3): 화면 지도 카드·이동 그래프·탐색 세션",
+      "properties": {
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/ScreenMapEdge"
+          },
+          "type": "array"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "screens": {
+          "items": {
+            "$ref": "#/$defs/ScreenMapCard"
+          },
+          "type": "array"
+        },
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/ExploreSessionInfo"
+          },
+          "type": "array"
+        },
+        "start": {
+          "description": "배치 시작 화면 (들어오는 tried 간선이 없는 확정 화면 중 첫째)",
+          "type": ["null", "string"]
+        }
+      },
+      "required": ["edges", "revision", "screens", "sessions", "start"],
+      "title": "ScreensMapResult",
+      "type": "object"
+    },
     "ScreensPromoteParams": {
       "additionalProperties": false,
       "description": "screens.promote (사람만, M7 3.7): 후보를 확정 화면으로 옮기거나(new) 기존 화면에 합친다(merge). screens.lock 안 저널 거래. 처리기는 B4",
@@ -7594,12 +7877,21 @@
           "description": "커밋은 됐고 마무리(후보 지우기·explore.json)가 남았다 — 다음 잠금 때 끝낸다",
           "type": "boolean"
         },
+        "id": {
+          "type": "string"
+        },
         "path": {
           "description": "승격된 화면 파일 (워크스페이스 기준)",
           "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
-      "required": ["cleanup_pending", "path"],
+      "required": ["cleanup_pending", "id", "path", "warnings"],
       "title": "ScreensPromoteResult",
       "type": "object"
     },

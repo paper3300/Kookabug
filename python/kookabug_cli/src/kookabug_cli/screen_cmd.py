@@ -3,6 +3,8 @@
     kookabug screen test <화면 ID|*.screen.json> (--window 제목 | --hwnd N | --image PNG)
                          [--workspace DIR] [--json]
     kookabug screen list [--explored] [--workspace DIR] [--json]
+    kookabug screen promote <세션>/<키> [--id ID] [--merge] [--replace-shot] [--replace-detect]
+                            [--folder F] [--title T] [--workspace DIR] [--json]
 
 `test`는 화면 판정 파일의 조건(`detect.all`·`detect.none` — target과 OCR 조건)을 프레임 한 장에서
 보고 조건별 결과를 출력한다. 종료 코드 `0` 그 화면이 맞음, `1` 아님, `3` 판정 불가(확인하지 않은
@@ -138,6 +140,10 @@ def run(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
         return _run_list(args, out, err)
     if args.action == "protect":
         return _run_protect(args, out, err)
+    if args.action == "promote":
+        return _run_promote(args, out, err)
+    if args.action == "recover":
+        return _run_recover(args, out, err)
     report: dict[str, Any] = {"command": "screen test", "screen": args.screen}
 
     def finish(code: int, error: str | None = None, error_code: str | None = None) -> int:
@@ -376,3 +382,117 @@ def _run_protect(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
         except DocumentError as exc:
             return finish(EXIT_USAGE, f"오류: {exc}")
     return finish(0, f"비밀값 키 {len(keys)}개를 지웠다 (창 보호 기록은 그대로)", cleared=len(keys))
+
+
+# ---------------------------------------------------------------- promote (M7 3.7·3.10)
+
+EXIT_REFUSED = 1
+"""승격하지 않았다 (이미 있는 ID·판정 조건 없음·바뀜·잠금 사용 중 등)."""
+
+
+def _run_promote(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
+    """`screen promote <세션>/<키>`: 탐색 후보를 확정 화면으로 옮기거나 합친다 (사람만). daemon과
+    같은 잠금·거래(`kookabug_core.screen_promote`)를 쓴다. 확인(check)으로 받은 revision 그대로
+    승격하므로 그 사이 바뀌면 `revision_conflict`. 시작 때 남은 거래를 복구한다."""
+    from kookabug_core.screen_promote import PromoteError, PromoteRequest, check, promote
+    from kookabug_sdk import _faults
+
+    report: dict[str, Any] = {"command": "screen promote", "candidate": args.candidate}
+
+    def finish(code: int, text: str, **extra: Any) -> int:
+        report.update(exit_code=code, message=text, **extra)
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False), file=out)
+        else:
+            print(text, file=out if code == 0 else err)
+        return code
+
+    if AGENT_ENV in os.environ:
+        return finish(EXIT_DENIED, "승격은 사람만 한다 (KOOKABUG_AGENT)", error_code="agent_only")
+    session, _, key = str(args.candidate).replace("\\", "/").partition("/")
+    if not session or not key:
+        return finish(EXIT_USAGE, "후보는 <세션 ID>/<키> 형식이다", error_code="usage")
+    try:
+        ws = _workspace(args.workspace, Path.cwd())
+    except WorkspaceError as exc:
+        return finish(EXIT_USAGE, f"오류: {exc}")
+    _faults.set_role("supervisor")  # 검사의 실패 주입 (규칙이 없으면 아무것도 안 함)
+    request = PromoteRequest(
+        session=session,
+        key=key,
+        mode="merge" if args.merge else "new",
+        id=args.id,
+        title=args.title,
+        folder=args.folder,
+        replace_shot=args.replace_shot,
+        replace_detect=args.replace_detect,
+    )
+    try:
+        checked = check(ws.root, request)
+        if not checked["ok"]:
+            return finish(
+                EXIT_REFUSED,
+                "승격하지 않았다: " + "; ".join(checked["problems"]),
+                error_code=checked.get("code"),
+                warnings=checked["warnings"],
+            )
+        result = promote(ws.root, _with_revisions(request, checked["revisions"]))
+    except PromoteError as exc:
+        return finish(EXIT_REFUSED, f"승격하지 않았다: {exc.message}", error_code=exc.code)
+    report.update(result)
+    text = f"{session}/{key} → {result['path']}"
+    if result["cleanup_pending"]:
+        text += " (마무리는 다음 화면 지도 작업 때 끝난다)"
+    for warning in result["warnings"]:
+        text += f"\n  경고: {warning}"
+    return finish(0, text)
+
+
+def _run_recover(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
+    """`screen recover [--show]`: 남은 승격 거래 저널을 복구하고(기본) 남은 것을 보인다. `--show`면
+    바꾸지 않고 보이기만. 저널을 억지로 지우는 옵션은 없다 — 저널 단계별 안내(`guide`)대로 사람이
+    정리하면(커밋 뒤면 `explore.json`의 `promoted`, 아니면 바뀐 파일을 원래 바이트로) 다음 복구가
+    끝낸다. 사람만."""
+    from kookabug_core.screen_promote import PromoteError, pending, recover_locked
+
+    report: dict[str, Any] = {"command": "screen recover"}
+
+    def finish(code: int, text: str, **extra: Any) -> int:
+        report.update(exit_code=code, message=text, **extra)
+        if args.json:
+            print(json.dumps(report, ensure_ascii=False), file=out)
+        else:
+            print(text, file=out if code == 0 else err)
+        return code
+
+    if AGENT_ENV in os.environ:
+        return finish(
+            EXIT_DENIED, "화면 지도 복구는 사람만 한다 (KOOKABUG_AGENT)", error_code="agent_only"
+        )
+    try:
+        ws = _workspace(args.workspace, Path.cwd())
+    except WorkspaceError as exc:
+        return finish(EXIT_USAGE, f"오류: {exc}")
+    warnings: list[str] = []
+    if not args.show:
+        try:
+            warnings = recover_locked(ws.root)
+        except PromoteError as exc:
+            return finish(EXIT_REFUSED, f"복구하지 않았다: {exc.message}", error_code=exc.code)
+    left = pending(ws.root)
+    if not left:
+        return finish(0, "남은 승격 거래가 없다", journals=[], warnings=warnings)
+    lines = [f"남은 승격 거래 {len(left)}개 — 안내대로 정리하면 다음 화면 지도 작업 때 풀린다:"]
+    for entry in left:
+        lines.append(f"  {entry['txid']} ({entry['phase']})")
+        lines.append(f"    할 일: {entry['guide']}")
+        lines.extend(f"    파일: {p}" for p in entry["paths"])
+        lines.extend(f"    원래 바이트: {p} ← {b}" for p, b in entry["backups"].items())
+        lines.extend(f"    경고: {w}" for w in entry["warnings"])
+    return finish(EXIT_REFUSED, "\n".join(lines), journals=left, warnings=warnings)
+
+
+def _with_revisions(request: Any, revisions: Mapping[str, str | None]) -> Any:
+    import dataclasses
+
+    return dataclasses.replace(request, base_revisions=dict(revisions))  # pyright: ignore[reportUnknownVariableType]

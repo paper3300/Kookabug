@@ -83,6 +83,8 @@ export const RENDERER_METHODS: ReadonlySet<string> = new Set([
   "plugins.cancel",
   // M7 탐색 세션 목록 (사람 화면용 — daemon이 agent 연결을 거부한다)
   "explore.list",
+  // M7 B4 이동 그래프 (화면 지도 탭)
+  "screens.map",
   // M7 화면 지도 사람 전용 (승격·버리기·확인·카드 배치 — daemon이 agent 연결을 거부한다)
   "screens.check",
   "screens.promote",
@@ -116,6 +118,8 @@ export const RENDERER_EVENTS: ReadonlySet<string> = new Set([
   // M7 에이전트 보호 기록 손상 알림·탐색 세션 변경 (ui 연결에만, 화면 표시는 B5)
   "agent.protect_corrupt",
   "explore.changed",
+  // M7 B4 화면 지도 파일 변경 (ui 연결에만)
+  "screens.changed",
   // M6 B4 플러그인 작업 진행·끝(ui 연결에만), 잠금 변경
   "plugins.progress",
   "plugins.done",

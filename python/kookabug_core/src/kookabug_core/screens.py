@@ -32,6 +32,7 @@ __all__ = [
     "EXPLORE_FILE",
     "KEY_PATTERN",
     "MISPLACED",
+    "RESERVED_NAMES",
     "SCREENS_DIR",
     "SESSION_PATTERN",
     "SUFFIX",
@@ -172,9 +173,22 @@ def screen_id(path: str | Path) -> str:
     return name[: -len(SUFFIX)]
 
 
+RESERVED_NAMES: Final = frozenset(
+    {
+        "con",
+        "prn",
+        "aux",
+        "nul",
+        *(f"com{n}" for n in range(1, 10)),
+        *(f"lpt{n}" for n in range(1, 10)),
+    }
+)
+"""Windows 예약 장치 이름 — 파일 이름 줄기로 쓰면 그 장치를 연다 (M7 B4)."""
+
+
 def is_screen_key(text: str) -> bool:
-    """새 화면 ID·후보 키 규칙에 맞는가."""
-    return KEY_PATTERN.fullmatch(text) is not None
+    """새 화면 ID·후보 키 규칙에 맞는가 (Windows 예약 장치 이름은 안 된다)."""
+    return KEY_PATTERN.fullmatch(text) is not None and text not in RESERVED_NAMES
 
 
 def _parts(rel: str) -> list[str]:

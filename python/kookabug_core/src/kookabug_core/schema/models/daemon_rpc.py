@@ -1475,6 +1475,7 @@ class RequestFailedCode(
             "screens_busy",
             "session_not_allowed",
             "approval_cancelled",
+            "recovery_pending",
         ]
     ]
 ):
@@ -1565,6 +1566,7 @@ class RequestFailedCode(
             "screens_busy",
             "session_not_allowed",
             "approval_cancelled",
+            "recovery_pending",
         ],
         Field(
             description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 비밀값 — data.field), secret_unchecked(비밀값 검사 불가 — 키를 못 읽음·보호 기록 손상), screens_busy(화면 지도 잠금)",
@@ -1823,6 +1825,77 @@ class FailurePath(RootModel[list[str]]):
     root: Annotated[list[str], Field(description="실패 위치 호출 경로 (노드 ID)", min_length=1)]
 
 
+class Counts(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    elements: Annotated[int, Field(ge=0)]
+    moves: Annotated[int, Field(ge=0)]
+
+
+class Element(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: str
+    name: str
+    rect: Annotated[list[float], Field(max_length=4, min_length=4)]
+
+
+class ScreenMapCard(BaseModel):
+    """
+    화면 지도 카드: 확정 화면(node = ID) 또는 탐색 후보(node = x:<세션>/<키>)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    counts: Counts
+    detect_text: Annotated[
+        str, Field(description='판정 조건 한 줄 (image("이름") && !image("이름") && text("글자"))')
+    ]
+    elements: list[Element]
+    explored_adds: Annotated[
+        int | None,
+        Field(description='확정 카드: 이 화면에 합칠 탐색 후보(of) 수 — "탐색 추가 N" 배지', ge=0),
+    ] = None
+    id: str | None = None
+    incomplete: Annotated[
+        bool | None,
+        Field(description="후보: 판정 조건도 합칠 화면도 없음 (승격 불가, 사람이 채운다)"),
+    ] = None
+    key: str | None = None
+    kind: Literal["popup", "screen"]
+    node: str
+    of: str | None = None
+    origin: dict[str, Any] | None
+    path: str
+    problem: str | None
+    promotable: bool | None = None
+    session: str | None = None
+    state: Literal["confirmed", "explored"]
+    thumb: Annotated[
+        str | None,
+        Field(description="대표 스크린샷 썸네일 캐시 이름 (사람 연결만 — 에이전트는 늘 null)"),
+    ]
+    title: str | None
+
+
+class ScreenMapEdge(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    from_: Annotated[str, Field(alias="from")]
+    label: str
+    note: str | None = None
+    pending: Annotated[bool | None, Field(description="확인 전 간선 (of 후보의 이동)")] = None
+    sources: list[dict[str, Any]]
+    status: Literal["tried", "untried"]
+    to: str | None
+    unresolved: Annotated[str | None, Field(description="to를 찾지 못한 이름 (to는 null)")] = None
+    via: dict[str, Any]
+
+
 class ScreenReadTextParams(BaseModel):
     """
     screen.read_text (kb_ocr_read, M5): 정지 화면(창 캡처) 영역의 글자. rect를 빼면 전체. 녹화 세션 프레임은 recorder_frame, sensitive target이 보이는 영역과 겹치면 sensitive_region
@@ -1835,15 +1908,31 @@ class ScreenReadTextParams(BaseModel):
     rect: Rect | None = None
 
 
-class ScreensCheckParams(BaseModel):
+class ScreensChangedParams(BaseModel):
     """
-    screens.check (사람만, M7 3.7): 후보 하나를 승격하기 전에 확인. 처리기는 B4
+    M7: screens/ 아래 화면 지도 파일이 바뀜 (ui 연결에만). 화면 지도 탭은 screens.map을 다시 부른다
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
+    revision: str
+
+
+class ScreensCheckParams(BaseModel):
+    """
+    screens.check (사람만, M7 3.7): 후보 하나를 승격하기 전에 확인 (쓰지 않음). 승격과 같은 mode·id·folder·replace_*를 주면 그 승격이 고칠 파일의 revision을 준다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    folder: str | None = None
+    id: str | None = None
     key: Annotated[str, Field(pattern="^[a-z][a-z0-9_]{0,63}$")]
+    mode: Literal["merge", "new"] | None = None
+    replace_detect: bool | None = None
+    replace_shot: bool | None = None
     session: Annotated[str, Field(min_length=1)]
 
 
@@ -1851,15 +1940,32 @@ class ScreensCheckResult(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    code: Annotated[
+        str | None,
+        Field(
+            description="승격할 수 없을 때 그 이유의 오류 코드 (screen_exists·validation_failed·not_found·exists)"
+        ),
+    ] = None
+    id: Annotated[
+        str | None, Field(description="승격될 화면 ID (new는 새 ID, merge는 합칠 화면)")
+    ] = None
     ok: Annotated[
         bool, Field(description="후보 판정 조건이 자기 스크린샷에서 맞고 승격을 막는 것이 없다")
     ]
+    path: Annotated[str | None, Field(description="승격 뒤 화면 파일 (워크스페이스 기준)")] = None
+    problems: Annotated[list[str], Field(description="승격을 막는 것 (있으면 ok는 false)")]
     revisions: Annotated[
         dict[str, str | None],
         Field(
             description="승격이 고칠 파일 → 지금 revision (없는 파일은 null). screens.promote의 base_revisions로 그대로 넘긴다"
         ),
     ]
+    shot: Annotated[
+        Literal["matched", "none", "not_matched", "unknown"] | None,
+        Field(
+            description="후보 판정 조건을 그 대표 스크린샷에서 평가한 결과 (matched·not_matched·unknown·none = 스크린샷 없음)"
+        ),
+    ] = None
     warnings: list[str]
 
 
@@ -1957,6 +2063,24 @@ class ScreensListParams(BaseModel):
     under: str | None = None
 
 
+class ScreensMapResult(BaseModel):
+    """
+    screens.map (kb_screen_list, M7 3.3): 화면 지도 카드·이동 그래프·탐색 세션
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    edges: list[ScreenMapEdge]
+    revision: str
+    screens: list[ScreenMapCard]
+    sessions: list[ExploreSessionInfo]
+    start: Annotated[
+        str | None,
+        Field(description="배치 시작 화면 (들어오는 tried 간선이 없는 확정 화면 중 첫째)"),
+    ]
+
+
 class ScreensPromoteParams(BaseModel):
     """
     screens.promote (사람만, M7 3.7): 후보를 확정 화면으로 옮기거나(new) 기존 화면에 합친다(merge). screens.lock 안 저널 거래. 처리기는 B4
@@ -1990,7 +2114,9 @@ class ScreensPromoteResult(BaseModel):
             description="커밋은 됐고 마무리(후보 지우기·explore.json)가 남았다 — 다음 잠금 때 끝낸다"
         ),
     ]
+    id: str
     path: Annotated[str, Field(description="승격된 화면 파일 (워크스페이스 기준)")]
+    warnings: list[str]
 
 
 class ScreensSaveCondition1(BaseModel):
@@ -2034,7 +2160,7 @@ class Detect(BaseModel):
     none: list[ScreensSaveCondition] | None = None
 
 
-class Element(BaseModel):
+class Element1(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
@@ -3300,6 +3426,16 @@ class ScreensLayoutSet(BaseModel):
     tool: Literal["ui_only"]
 
 
+class ScreensMap(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[True]
+    result: ScreensMapResult
+    tool: Literal["kb_screen_list"]
+
+
 class ScreensPromote(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -3457,6 +3593,13 @@ class RunLagged(BaseModel):
         extra="forbid",
     )
     params: RunLaggedParams
+
+
+class ScreensChanged(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: ScreensChangedParams
 
 
 class PermissionsLayer(BaseModel):
@@ -3942,11 +4085,20 @@ class RequestFailedData(BaseModel):
         int | None,
         Field(description="patch_invalid: 틀린 연산의 순번 (0부터)", ge=0, le=9007199254740991),
     ] = None
+    journals: Annotated[
+        list[str] | None, Field(description="M7 B4 recovery_pending: 남은 승격 거래 저널 ID")
+    ] = None
     line: Annotated[int | None, Field(ge=1, le=9007199254740991)] = None
     message: str | None = None
     op_id: str | None = None
     owner: LeaseOwner | None = None
     path: str | None = None
+    paths: Annotated[
+        list[str] | None,
+        Field(
+            description="M7 B4 revision_conflict·recovery_pending: 걸린 화면 지도 파일들 (워크스페이스 기준)"
+        ),
+    ] = None
     plugin_error: PluginErrorInfo | None = None
     protocol: Annotated[int | None, Field(ge=1, le=9007199254740991)] = None
     reason: Annotated[
@@ -4289,7 +4441,7 @@ class ScreensSaveParams(BaseModel):
     )
     description: str | None = None
     detect: Detect | None = None
-    elements: list[Element] | None = None
+    elements: list[Element1] | None = None
     frame_id: Annotated[str, Field(min_length=1)]
     key: Annotated[str, Field(pattern="^[a-z][a-z0-9_]{0,63}$")]
     kind: Literal["popup", "screen"] | None = None
@@ -4951,6 +5103,7 @@ class Notifications(BaseModel):
     run_ended: Annotated[RunEnded, Field(alias="run.ended")]
     run_event: Annotated[RunEvent, Field(alias="run.event")]
     run_lagged: Annotated[RunLagged, Field(alias="run.lagged")]
+    screens_changed: Annotated[ScreensChanged, Field(alias="screens.changed")]
     workspace_changed: Annotated[WorkspaceChanged, Field(alias="workspace.changed")]
 
 
@@ -5440,6 +5593,7 @@ class Methods(BaseModel):
     screens_layout_get: Annotated[ScreensLayoutGet, Field(alias="screens.layout_get")]
     screens_layout_set: Annotated[ScreensLayoutSet, Field(alias="screens.layout_set")]
     screens_list: Annotated[ScreensList, Field(alias="screens.list")]
+    screens_map: Annotated[ScreensMap, Field(alias="screens.map")]
     screens_promote: Annotated[ScreensPromote, Field(alias="screens.promote")]
     screens_save: Annotated[ScreensSave, Field(alias="screens.save")]
     secrets_create: Annotated[SecretsCreate, Field(alias="secrets.create")]

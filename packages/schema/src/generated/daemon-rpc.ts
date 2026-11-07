@@ -232,7 +232,8 @@ export type RequestFailedCode =
   | "secret_unchecked"
   | "screens_busy"
   | "session_not_allowed"
-  | "approval_cancelled";
+  | "approval_cancelled"
+  | "recovery_pending";
 /**
  * 플러그인 작업 ID (= 설치 거래 ID, 작업 로그 이름)
  *
@@ -973,11 +974,19 @@ export interface RequestFailedData {
    * patch_invalid: 틀린 연산의 순번 (0부터)
    */
   index?: number;
+  /**
+   * M7 B4 recovery_pending: 남은 승격 거래 저널 ID
+   */
+  journals?: string[];
   line?: number | null;
   message?: string;
   op_id?: string;
   owner?: LeaseOwner | null;
   path?: string;
+  /**
+   * M7 B4 revision_conflict·recovery_pending: 걸린 화면 지도 파일들 (워크스페이스 기준)
+   */
+  paths?: string[];
   plugin_error?: PluginErrorInfo;
   protocol?: number;
   /**
@@ -2110,6 +2119,12 @@ export interface Methods {
     params: ScreensListParams;
     renderer: false;
     result: ScreensListResult;
+    tool: "kb_screen_list";
+  };
+  "screens.map": {
+    params: EmptyParams;
+    renderer: true;
+    result: ScreensMapResult;
     tool: "kb_screen_list";
   };
   "screens.promote": {
@@ -3403,13 +3418,18 @@ export interface TargetReadTextResult {
   text: string;
 }
 /**
- * screens.check (사람만, M7 3.7): 후보 하나를 승격하기 전에 확인. 처리기는 B4
+ * screens.check (사람만, M7 3.7): 후보 하나를 승격하기 전에 확인 (쓰지 않음). 승격과 같은 mode·id·folder·replace_*를 주면 그 승격이 고칠 파일의 revision을 준다
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "ScreensCheckParams".
  */
 export interface ScreensCheckParams {
+  folder?: string;
+  id?: string;
   key: string;
+  mode?: "merge" | "new";
+  replace_detect?: boolean;
+  replace_shot?: boolean;
   session: string;
 }
 /**
@@ -3418,15 +3438,35 @@ export interface ScreensCheckParams {
  */
 export interface ScreensCheckResult {
   /**
+   * 승격할 수 없을 때 그 이유의 오류 코드 (screen_exists·validation_failed·not_found·exists)
+   */
+  code?: string;
+  /**
+   * 승격될 화면 ID (new는 새 ID, merge는 합칠 화면)
+   */
+  id?: string;
+  /**
    * 후보 판정 조건이 자기 스크린샷에서 맞고 승격을 막는 것이 없다
    */
   ok: boolean;
+  /**
+   * 승격 뒤 화면 파일 (워크스페이스 기준)
+   */
+  path?: string;
+  /**
+   * 승격을 막는 것 (있으면 ok는 false)
+   */
+  problems: string[];
   /**
    * 승격이 고칠 파일 → 지금 revision (없는 파일은 null). screens.promote의 base_revisions로 그대로 넘긴다
    */
   revisions: {
     [k: string]: null | string | undefined;
   };
+  /**
+   * 후보 판정 조건을 그 대표 스크린샷에서 평가한 결과 (matched·not_matched·unknown·none = 스크린샷 없음)
+   */
+  shot?: "matched" | "none" | "not_matched" | "unknown";
   warnings: string[];
 }
 /**
@@ -3552,6 +3592,98 @@ export interface ScreensListResult {
   }[];
 }
 /**
+ * screens.map (kb_screen_list, M7 3.3): 화면 지도 카드·이동 그래프·탐색 세션
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensMapResult".
+ */
+export interface ScreensMapResult {
+  edges: ScreenMapEdge[];
+  revision: string;
+  screens: ScreenMapCard[];
+  sessions: ExploreSessionInfo[];
+  /**
+   * 배치 시작 화면 (들어오는 tried 간선이 없는 확정 화면 중 첫째)
+   */
+  start: null | string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreenMapEdge".
+ */
+export interface ScreenMapEdge {
+  from: string;
+  label: string;
+  note?: string;
+  /**
+   * 확인 전 간선 (of 후보의 이동)
+   */
+  pending?: boolean;
+  sources: {
+    [k: string]: unknown | undefined;
+  }[];
+  status: "tried" | "untried";
+  to: null | string;
+  /**
+   * to를 찾지 못한 이름 (to는 null)
+   */
+  unresolved?: string;
+  via: {
+    [k: string]: unknown | undefined;
+  };
+}
+/**
+ * 화면 지도 카드: 확정 화면(node = ID) 또는 탐색 후보(node = x:<세션>/<키>)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreenMapCard".
+ */
+export interface ScreenMapCard {
+  counts: {
+    elements: number;
+    moves: number;
+  };
+  /**
+   * 판정 조건 한 줄 (image("이름") && !image("이름") && text("글자"))
+   */
+  detect_text: string;
+  elements: {
+    kind: string;
+    name: string;
+    /**
+     * @minItems 4
+     * @maxItems 4
+     */
+    rect: [number, number, number, number];
+  }[];
+  /**
+   * 확정 카드: 이 화면에 합칠 탐색 후보(of) 수 — "탐색 추가 N" 배지
+   */
+  explored_adds?: number;
+  id?: string;
+  /**
+   * 후보: 판정 조건도 합칠 화면도 없음 (승격 불가, 사람이 채운다)
+   */
+  incomplete?: boolean;
+  key?: string;
+  kind: "popup" | "screen";
+  node: string;
+  of?: null | string;
+  origin: null | {
+    [k: string]: unknown | undefined;
+  };
+  path: string;
+  problem: null | string;
+  promotable?: boolean;
+  session?: string;
+  state: "confirmed" | "explored";
+  /**
+   * 대표 스크린샷 썸네일 캐시 이름 (사람 연결만 — 에이전트는 늘 null)
+   */
+  thumb: null | string;
+  title: null | string;
+}
+/**
  * screens.promote (사람만, M7 3.7): 후보를 확정 화면으로 옮기거나(new) 기존 화면에 합친다(merge). screens.lock 안 저널 거래. 처리기는 B4
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -3583,10 +3715,12 @@ export interface ScreensPromoteResult {
    * 커밋은 됐고 마무리(후보 지우기·explore.json)가 남았다 — 다음 잠금 때 끝낸다
    */
   cleanup_pending: boolean;
+  id: string;
   /**
    * 승격된 화면 파일 (워크스페이스 기준)
    */
   path: string;
+  warnings: string[];
 }
 /**
  * screens.save (kb_screen_save, M7 3.5): 자기 탐색 세션 폴더의 후보 카드 하나를 저장·갱신. 글자 필드는 비밀값 검사(3.5b)를 지난다
@@ -4097,6 +4231,9 @@ export interface Notifications {
   "run.lagged": {
     params: RunLaggedParams;
   };
+  "screens.changed": {
+    params: ScreensChangedParams;
+  };
   "workspace.changed": {
     params: WorkspaceChangedParams;
   };
@@ -4183,6 +4320,15 @@ export interface RunEventParams {
  */
 export interface RunLaggedParams {
   run_id: RunId;
+}
+/**
+ * M7: screens/ 아래 화면 지도 파일이 바뀜 (ui 연결에만). 화면 지도 탭은 screens.map을 다시 부른다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensChangedParams".
+ */
+export interface ScreensChangedParams {
+  revision: string;
 }
 /**
  * 1초 폴링으로 바뀐 파일 (mtime·크기)

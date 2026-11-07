@@ -89,6 +89,9 @@ POINTS: Final[dict[str, frozenset[Role]]] = {
     "target.before_commit": _SUPERVISOR,
     # 플러그인 설치 거래의 단계 (M6 계획 3.5, 이벤트 = 단계 이름: `kookabug_core.plugins.STAGES`)
     "plugins.stage": frozenset({"plugin"}),
+    # 화면 지도 승격 거래의 단계 (M7 계획 3.7·R4, 이벤트 = 단계 이름:
+    # `kookabug_core.screen_promote.STAGES`). daemon·CLI 모두 감독자 역할로 지난다
+    "screens.stage": _SUPERVISOR,
 }
 
 _POLL_S: Final = 0.01

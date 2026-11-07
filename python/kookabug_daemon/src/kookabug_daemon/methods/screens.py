@@ -14,6 +14,7 @@ from typing import Any, Final
 
 from kookabug_core.canonical import loads_strict
 from kookabug_core.screens import EXPLORED_DIR, SCREENS_DIR, SUFFIX, ScreenFileError, parse_screen
+from kookabug_core.workspace import Workspace
 from kookabug_daemon.documents import resolve_path
 from kookabug_daemon.frames import EditorFrame
 from kookabug_daemon.methods import Call, MethodSpec
@@ -153,9 +154,216 @@ async def _identify_handler(call: Call) -> dict[str, Any]:
     return await asyncio.to_thread(_identify, call)
 
 
+# ------------------------------------------------------- M7 B4 지도·확인·승격·버리기 (3.3·3.7)
+
+THUMB_SIDE: Final = 320
+"""썸네일 긴 변 (사람 화면 카드)."""
+
+
+def _thumb(call: Call) -> Any:
+    """대표 스크린샷 경로 → 편집기 캐시의 썸네일 이름 (사람 연결만, C8). 에이전트는 None."""
+    if call.principal.kind == "agent":
+        return None
+    root: Path = call.daemon.root
+    cache = call.daemon.image_cache
+
+    def make(rel: str) -> str | None:
+        import hashlib
+
+        try:
+            path = resolve_path(root, rel).path
+            stat = path.stat()
+        except RequestFailed, InvalidParams, OSError:
+            return None
+        stamp = f"{rel}|{stat.st_size}|{stat.st_mtime_ns}".encode()
+        name = f"map_{hashlib.sha256(stamp).hexdigest()[:24]}.png"
+        if cache.path_of(name).is_file():
+            return name
+        try:
+            cache.put(name, _shrink(path.read_bytes()))
+        except Exception:  # 깨진 PNG·캐시 쓰기 실패: 썸네일 없이
+            return None
+        return name
+
+    return make
+
+
+def _shrink(data: bytes) -> bytes:
+    import cv2
+    import numpy as np
+
+    from kookabug_platform.frames import encode_png
+
+    pixels = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if pixels is None:
+        raise ValueError("PNG가 아니다")
+    height, width = pixels.shape[:2]
+    side = max(width, height)
+    if side > THUMB_SIDE:
+        scale = THUMB_SIDE / side
+        size = (max(1, round(width * scale)), max(1, round(height * scale)))
+        pixels = cv2.resize(pixels, size, interpolation=cv2.INTER_AREA)
+    return encode_png(np.asarray(pixels, dtype=np.uint8))
+
+
+def _map(call: Call) -> dict[str, Any]:
+    from kookabug_core.screen_map import build_map
+
+    root = call.daemon.root
+    sessions = call.daemon.explore.listing(Workspace.open(root))
+    return build_map(root, sessions=sessions, thumb=_thumb(call))
+
+
+def _request(call: Call) -> Any:
+    from kookabug_core.screen_promote import PromoteRequest
+
+    p = call.params
+    return PromoteRequest(
+        session=str(p["session"]),
+        key=str(p["key"]),
+        mode=p.get("mode", "new"),
+        id=p.get("id"),
+        title=p.get("title"),
+        description=p.get("description"),
+        folder=p.get("folder"),
+        replace_shot=bool(p.get("replace_shot", False)),
+        replace_detect=bool(p.get("replace_detect", False)),
+        base_revisions=dict(p.get("base_revisions") or {}),
+    )
+
+
+def _failed(exc: Any) -> RequestFailed:
+    return RequestFailed(exc.code, exc.message, **exc.fields)
+
+
+def _check(call: Call) -> dict[str, Any]:
+    from kookabug_core.screen_promote import PromoteError, check
+
+    try:
+        result = check(call.daemon.root, _request(call))
+    except PromoteError as exc:
+        raise _failed(exc) from exc
+    if result["ok"]:
+        _check_images(call, result)
+    return result
+
+
+def _check_images(call: Call, result: dict[str, Any]) -> None:
+    """후보 판정 조건을 그 대표 스크린샷(기록 크기로 되돌림)에서 평가 — 맞아야 한다. 스크린샷 있는
+    확정 화면에서도 평가해 맞으면 경고 (같은 화면일 수 있다)."""
+    from kookabug_core.screens import ScreenDef, ScreenFileError, read_screen_file, screen_index
+
+    root: Path = call.daemon.root
+    session, key = str(call.params["session"]), str(call.params["key"])
+    rel = f"{SCREENS_DIR}/{EXPLORED_DIR}/{session}/{key}{SUFFIX}"
+    try:
+        candidate = read_screen_file(resolve_path(root, rel).path, rel)
+    except ScreenFileError, RequestFailed, InvalidParams:
+        return
+    if not candidate.detect():
+        result["shot"] = "none"
+        return
+    try:
+        from kookabug_daemon.screen_save import _loader, _reader  # pyright: ignore[reportPrivateUsage]
+
+        load, reader = _loader(root), _reader(call.daemon)
+    except Exception as exc:  # 플랫폼 없음: 이미지 확인 없이
+        result["warnings"].append(
+            f"판정 조건을 스크린샷에서 확인하지 못했다 ({type(exc).__name__})"
+        )
+        return
+
+    def evaluate(screen: ScreenDef, shot_rel: str, size: tuple[int, int]) -> str | None:
+        from kookabug_platform.screens import evaluate_screen
+        from kookabug_platform.vision import FrameMeta, Vision
+
+        try:
+            pixels = _restore(resolve_path(root, shot_rel).path.read_bytes(), size)
+            meta = FrameMeta(size, 96, backend="editor")
+            return evaluate_screen(screen, load, pixels, meta, Vision(), ocr=reader).state
+        except Exception:
+            return None
+
+    if candidate.shot is None:
+        result["shot"] = "none"
+        result["warnings"].append("대표 스크린샷이 없어 판정 조건을 확인하지 못했다")
+    else:
+        state = evaluate(candidate, candidate.shot.image, candidate.shot.client_size)
+        result["shot"] = state or "unknown"
+        if state == "not_matched":
+            result["ok"] = False
+            result["problems"].append("후보 판정 조건이 자기 대표 스크린샷에서 맞지 않는다")
+        elif state != "matched":
+            result["warnings"].append("후보 판정 조건을 자기 대표 스크린샷에서 확인하지 못했다")
+    for sid, paths in sorted(screen_index(Workspace.open(root)).items()):
+        if len(paths) != 1:
+            continue
+        try:
+            other = read_screen_file(resolve_path(root, paths[0]).path, paths[0])
+        except ScreenFileError, RequestFailed, InvalidParams:
+            continue
+        if other.shot is None or (sid == result.get("id") and call.params.get("mode") == "merge"):
+            continue
+        if evaluate(candidate, other.shot.image, other.shot.client_size) == "matched":
+            result["warnings"].append(f"후보 판정 조건이 확정 화면 '{sid}'의 스크린샷에서도 맞는다")
+
+
+def _restore(data: bytes, size: tuple[int, int]) -> Any:
+    import cv2
+    import numpy as np
+
+    pixels = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if pixels is None:
+        raise ValueError("PNG가 아니다")
+    if (pixels.shape[1], pixels.shape[0]) != size:
+        pixels = cv2.resize(pixels, size, interpolation=cv2.INTER_LINEAR)
+    return np.asarray(pixels, dtype=np.uint8)
+
+
+def _promote(call: Call) -> dict[str, Any]:
+    from kookabug_core.screen_promote import PromoteError, promote
+
+    try:
+        result = promote(call.daemon.root, _request(call))
+    except PromoteError as exc:
+        raise _failed(exc) from exc
+    call.daemon.explore.changed()
+    call.daemon.screens_changed()
+    return result
+
+
+def _discard(call: Call) -> dict[str, Any]:
+    from kookabug_core.screen_promote import PromoteError, discard
+
+    key = call.params.get("key")
+    try:
+        removed = discard(
+            call.daemon.root,
+            str(call.params["session"]),
+            None if key is None else str(key),
+            active=call.daemon.explore.live_ids(),
+        )
+    except PromoteError as exc:
+        raise _failed(exc) from exc
+    call.daemon.explore.changed()
+    call.daemon.screens_changed()
+    return {"removed": removed}
+
+
+def _threaded(fn: Any) -> Any:
+    async def handler(call: Call) -> dict[str, Any]:
+        return await asyncio.to_thread(fn, call)
+
+    return handler
+
+
 METHODS: Final = {
     "screens.list": MethodSpec(_list_handler, _list_arg),
     "screens.get": MethodSpec(_get_handler, _path_arg),
     "screens.save": MethodSpec(_save_handler),
     "screens.identify": MethodSpec(_identify_handler),
+    "screens.map": MethodSpec(_threaded(_map)),
+    "screens.check": MethodSpec(_threaded(_check)),
+    "screens.promote": MethodSpec(_threaded(_promote)),
+    "screens.discard": MethodSpec(_threaded(_discard)),
 }

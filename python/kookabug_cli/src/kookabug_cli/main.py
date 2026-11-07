@@ -6,6 +6,7 @@
     kookabug target test <target.json> (--window 제목 | --hwnd N | --image PNG) ...  (target_cmd)
     kookabug screen test <ID|파일> (--window 제목 | --hwnd N | --image PNG) ...       (screen_cmd)
     kookabug screen list [--explored] [--workspace DIR] [--json]                     (screen_cmd)
+    kookabug screen promote <세션>/<키> [--id ID] [--merge] [--replace-shot] ...      (screen_cmd)
     kookabug doctor [--profile headless|desktop] [--json]                            (doctor_cmd)
     kookabug daemon [--workspace DIR] [--idle-timeout-s 600] [--json]                (daemon_cmd)
     kookabug plugin add|remove|list|verify|gc ...                                    (plugin_cmd)
@@ -250,6 +251,44 @@ def build_parser() -> argparse.ArgumentParser:
         "--workspace", metavar="DIR", help="워크스페이스 루트 (기본: 현재 폴더에서 위로 찾는다)"
     )
     screen_protect.add_argument("--json", action="store_true", help="결과 JSON 한 개만 출력한다")
+    screen_promote = screen_commands.add_parser(
+        "promote",
+        help="탐색 후보를 확정 화면으로 옮기거나 합친다 (사람만)",
+        description="screens/_explored/<세션>/<키> 후보를 screens/로 옮기거나(기본) 확정 화면에 "
+        "합친다(--merge). daemon과 같은 잠금·거래 (0 성공, 1 승격하지 않음, 5 에이전트가 부름, "
+        "6 사용법·환경 오류)",
+    )
+    screen_promote.add_argument("candidate", metavar="세션/키", help="후보 (<세션 ID>/<키>)")
+    screen_promote.add_argument(
+        "--id", help="새 화면 ID (기본: 키) — --merge면 합칠 화면 ID (기본: 후보의 of)"
+    )
+    screen_promote.add_argument(
+        "--merge", action="store_true", help="확정 화면에 이동·요소를 더한다"
+    )
+    screen_promote.add_argument(
+        "--replace-shot", action="store_true", help="합칠 때 대표 스크린샷을 후보 것으로 바꾼다"
+    )
+    screen_promote.add_argument(
+        "--replace-detect", action="store_true", help="합칠 때 판정 조건을 후보 것으로 바꾼다"
+    )
+    screen_promote.add_argument("--folder", help="새 화면을 둘 screens/ 아래 폴더")
+    screen_promote.add_argument("--title", help="새 화면 제목 (기본: 후보 제목)")
+    screen_promote.add_argument(
+        "--workspace", metavar="DIR", help="워크스페이스 루트 (기본: 현재 폴더에서 위로 찾는다)"
+    )
+    screen_promote.add_argument("--json", action="store_true", help="결과 JSON 한 개만 출력한다")
+    screen_recover = screen_commands.add_parser(
+        "recover",
+        help="남은 화면 지도 승격 거래를 복구하고 남은 것을 보인다 (사람만)",
+        description="끝나지 않은 승격 저널(.kookabug/screens-tx/)을 복구하고, 그래도 남은 "
+        "파일·원래 바이트 위치·경고를 보인다. 저널을 억지로 지우지 않는다 (0 남은 것 없음, 1 남음, "
+        "5 에이전트가 부름, 6 사용법·환경 오류)",
+    )
+    screen_recover.add_argument("--show", action="store_true", help="복구하지 않고 보이기만 한다")
+    screen_recover.add_argument(
+        "--workspace", metavar="DIR", help="워크스페이스 루트 (기본: 현재 폴더에서 위로 찾는다)"
+    )
+    screen_recover.add_argument("--json", action="store_true", help="결과 JSON 한 개만 출력한다")
 
     doctor = commands.add_parser(
         "doctor",

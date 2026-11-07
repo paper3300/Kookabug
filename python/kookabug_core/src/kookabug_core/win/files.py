@@ -11,7 +11,27 @@ import os
 
 from kookabug_core.win import _kernel32 as k
 
-__all__ = ["append_bytes"]
+__all__ = ["append_bytes", "flush_dir"]
+
+
+def flush_dir(path: str | os.PathLike[str]) -> None:
+    """폴더 항목(이름 바꾸기·만들기)을 디스크에 내린다 (`FlushFileBuffers` — 폴더 핸들은
+    `FILE_FLAG_BACKUP_SEMANTICS`로 연다). 실패하면 `OSError`."""
+    handle = k.CreateFileW(
+        os.fspath(path),
+        k.GENERIC_WRITE,
+        k.FILE_SHARE_ALL,
+        None,
+        k.OPEN_EXISTING,
+        k.FILE_FLAG_BACKUP_SEMANTICS,
+        None,
+    )
+    if handle is None or handle == k.INVALID_HANDLE_VALUE:
+        raise k.win_error(f"CreateFileW({os.fspath(path)})")
+    try:
+        k.check(k.FlushFileBuffers(handle), "FlushFileBuffers")
+    finally:
+        k.CloseHandle(handle)
 
 
 def append_bytes(path: str | os.PathLike[str], data: bytes) -> None:

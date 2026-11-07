@@ -110,6 +110,10 @@ class DaemonContext(Protocol):
         """에이전트 탐색 세션 (M7 3.4)."""
         ...
 
+    def screens_changed(self) -> None:
+        """화면 지도 파일이 바뀌었다: 사람 연결에 `screens.changed` (어느 스레드에서나, M7 B4)."""
+        ...
+
     def connection_name(self, connection: int) -> str:
         """그 연결의 `client.name` (끝난 연결이면 빈 글자)."""
         ...

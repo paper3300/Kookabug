@@ -411,6 +411,21 @@ def _commit(
     session_parts = (SCREENS_DIR, EXPLORED_DIR, session.id)
     folder = plain_path(root, session_parts)
     path = plain_path(root, (*session_parts, f"{key}{SUFFIX}"), within=folder)
+    # 끝나지 않은 승격 저널이 있으면 쓰지 않는다 (B4 검수 High 1 — 승격·버리기와 같은 확인)
+    from kookabug_core.screen_promote import PromoteError, ensure_clear
+
+    try:
+        ensure_clear(root)
+    except PromoteError as exc:
+        raise RequestFailed(exc.code, exc.message, **exc.fields) from exc
+    # 잠금 밖 준비 동안 사람이 같은 키를 확정 화면으로 승격했을 수 있다 (CLI·daemon 승격, R4):
+    # 잠금 안에서 다시 본다
+    confirmed = screen_index(Workspace.open(root))
+    if key in confirmed:
+        raise RequestFailed("screen_exists", f"확정 화면 '{key}'이(가) 이미 있다 (다른 키를 쓴다)")
+    of = params.get("of")
+    if of is not None and of not in confirmed:
+        raise _bad(f"of {of!r}은(는) 확정 화면 ID가 아니다")
     old: dict[str, Any] = {}
     if path.is_file():
         try:

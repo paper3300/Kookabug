@@ -71,6 +71,8 @@ test("test_method_table_tools_and_internal_methods", () => {
     "run.ended",
     "run.event",
     "run.lagged",
+    // M7 B4 화면 지도 파일 변경 (ui 연결에만)
+    "screens.changed",
     "workspace.changed",
   ]);
 });

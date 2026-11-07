@@ -199,6 +199,25 @@ def _read_or_none(path: Path) -> bytes | None:
         return None
 
 
+def _screens_revision(root: Path) -> str:
+    """`screens/` 아래 파일들의 (경로, 크기, 수정 시각) 표지 — 링크·정션 폴더는 따라가지 않는다."""
+    import hashlib
+
+    digest = hashlib.sha256()
+    base = root / "screens"
+    for dirpath, dirnames, filenames in os.walk(base):
+        here = Path(dirpath)
+        dirnames[:] = sorted(
+            d for d in dirnames if not (here / d).is_symlink() and not (here / d).is_junction()
+        )
+        for name in sorted(filenames):
+            with contextlib.suppress(OSError):
+                stat = (here / name).stat()
+                rel = (here / name).relative_to(root).as_posix()
+                digest.update(f"{rel}|{stat.st_size}|{stat.st_mtime_ns}\n".encode())
+    return digest.hexdigest()[:16]
+
+
 def _env_state(root: Path, data: bytes | None) -> str:
     """잠금 환경들의 지금 상태 표지 (깨짐·없음 알아채기). 잠금이 없거나 읽을 수 없으면 빈 것."""
     try:
@@ -389,6 +408,25 @@ class Daemon:
     def connections_changed(self) -> None:
         self._idle_since = None
 
+    def _recover_screens(self) -> None:
+        from kookabug_core.screen_promote import PromoteError, recover_locked
+
+        try:
+            for warning in recover_locked(self.root):
+                log.warning("화면 지도 복구: %s", warning)
+        except PromoteError as exc:  # CLI가 잠금을 쥐고 있다: 다음 승격·버리기 때 한다
+            log.warning("화면 지도 복구를 미뤘다: %s", exc.message)
+
+    def screens_changed(self) -> None:
+        """화면 지도 파일이 바뀌었다 (승격·버리기·감시): 사람 연결에 `screens.changed{revision}`.
+        어느 스레드에서나 — 디스크 확인은 따로 스레드에서 한다."""
+
+        def work() -> None:
+            revision = _screens_revision(self.root)
+            self.post(lambda: self.notify_ui("screens.changed", {"revision": revision}))
+
+        threading.Thread(target=work, name="screens-changed", daemon=True).start()
+
     def _explore_changed(self) -> None:
         """탐색 세션·후보가 바뀌었다: ui 연결에 목록을 알린다 (`explore.changed`)."""
         sessions = self.explore.listing(Workspace.open(self.root))
@@ -520,6 +558,8 @@ class Daemon:
         """감시 결과를 알린다 (이벤트 루프 안). 문서 변경은 감시가 정한 연결에만 보낸다."""
         if LOCK_FILE in paths:
             self.plugins_lock_check()
+        if any(in_screens(p) for p in paths):
+            self.screens_changed()  # 사람 화면 지도 탭이 다시 읽는다 (M7 B4)
         if paths:
             # agent 연결에는 screens/ 경로를 알리지 않는다 (화면 지도는 screens.*로만, M5 3.5 H4)
             hidden = [p for p in paths if not in_screens(p)]
@@ -589,6 +629,8 @@ class Daemon:
             await asyncio.to_thread(RecorderStore.clear_all, self.root)
             # 에이전트 보호 기록 (M7 R1): 재시작 뒤에도 비밀값을 넣은 창은 계속 보호한다
             await asyncio.to_thread(self.guard.load)
+            # 남은 화면 지도 승격 거래를 끝낸다 (M7 3.7 — 커밋이면 앞으로, 아니면 뒤로)
+            await asyncio.to_thread(self._recover_screens)
             async with self.transport.serve() as server:
                 port = self.transport.bound(server)
                 await asyncio.to_thread(_faults.fault_point, "daemon.before_session_publish")
