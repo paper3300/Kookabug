@@ -140,16 +140,15 @@ def test_human_only_screen_methods_agent_denied(tmp_path: Path, preset: str) -> 
         for method, params in HUMAN_ONLY.items():
             error = refused(agent, method, params)
             assert error.kind == "permission_denied", (method, error)
-        # 사람은 판정 없이 처리기까지 간다 (없는 세션이라 not_found) — 카드 배치는 B5 처리기
-        # (그 전에는 method_not_found)
-        for method in sorted(HUMAN_SCREEN_METHODS - {"screens.check"}):
-            error = refused(ui, method, HUMAN_ONLY[method])
-            if method.startswith("screens.layout_"):
-                assert error.code == -32601, (method, error)
-            else:
-                assert error.kind == "not_found", (method, error)
+        # 사람은 같은 정상 params로 판정 없이 처리기까지 간다 (없는 세션이라 not_found, 배치는 B5)
+        for method in ("screens.promote", "screens.discard"):
+            assert refused(ui, method, HUMAN_ONLY[method]).kind == "not_found", method
         checked = ui.call("screens.check", HUMAN_ONLY["screens.check"])
         assert (checked["ok"], checked["code"]) == (False, "not_found")
+        assert ui.call("screens.layout_get", {}) == {"layout": {}, "revision": None}
+        saved = ui.call("screens.layout_set", HUMAN_ONLY["screens.layout_set"])
+        assert saved["layout"] == {"positions": {}} and saved["revision"]
+        ui.call("screens.layout_set", {"layout": {}, "base_revision": saved["revision"]})
         # 화면 지도 파일은 그대로 (승격·버리기 없음)
         assert not (game.root / "screens" / "title.screen.json").exists()
     # MCP 도구 어디에도 이 메서드를 부르는 길이 없다

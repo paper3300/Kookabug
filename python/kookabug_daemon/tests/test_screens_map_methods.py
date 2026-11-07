@@ -83,6 +83,35 @@ def test_map_agent_has_no_thumbs(ws: Path, daemon: ThreadDaemon) -> None:
     assert mine["edges"] == human["edges"]
 
 
+def test_layout_saved_with_revision(ws: Path, daemon: ThreadDaemon) -> None:
+    """B5 카드 배치 `.kookabug/screen-map.json`: revision 대조, 형식 검사, 에이전트 불가."""
+    with daemon.client() as ui, daemon.client(AGENT) as agent:
+        empty = ui.call("screens.layout_get", {})
+        assert empty == {"layout": {}, "revision": None}
+        layout = {
+            "positions": {"lobby": [10, 20.5], f"x:{SESSION}/upgrade": [300, 40]},
+            "zoom": 0.7,
+        }
+        saved = ui.call("screens.layout_set", {"layout": layout, "base_revision": None})
+        assert saved["layout"] == layout and saved["revision"]
+        assert ui.call("screens.layout_get", {}) == saved
+        stale = refused(ui, "screens.layout_set", {"layout": {}, "base_revision": None})
+        assert stale.kind == "revision_conflict"
+        bad = refused(
+            ui,
+            "screens.layout_set",
+            {"layout": {"positions": {"a": [1]}}, "base_revision": saved["revision"]},
+        )
+        assert bad.code == -32602
+        for method, params in (
+            ("screens.layout_get", {}),
+            ("screens.layout_set", {"layout": {}, "base_revision": saved["revision"]}),
+        ):
+            assert refused(agent, method, params).kind == "permission_denied"
+    body = json.loads((ws / ".kookabug" / "screen-map.json").read_text(encoding="utf-8"))
+    assert body == {"format": "kookabug.screen-map/0", "layout": layout}
+
+
 def test_check_promote_discard_human_only(ws: Path, daemon: ThreadDaemon) -> None:
     with daemon.client() as ui, daemon.client(AGENT) as agent:
         params = {"session": SESSION, "key": "result", "id": "upgrade_result"}

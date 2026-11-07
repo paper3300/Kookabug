@@ -57,7 +57,8 @@ def test_edges_from_confirmed_candidates_runs(tmp_path: Path) -> None:
     up = edge(data, f"{X}/upgrade", f"{X}/result", "강화 버튼")
     assert up["status"] == "tried" and up["sources"] == [{"kind": "explored", "session": SESSION}]
     assert edge(data, f"{X}/upgrade", "lobby", "키 esc")["status"] == "tried"
-    untried = edge(data, f"{X}/upgrade", None, "점 (0.50, 0.90)")
+    untried = edge(data, f"{X}/upgrade", None, "점 클릭")
+    assert untried["via"] == {"click": {"point": [0.5, 0.9]}}
     assert (
         untried["status"] == "untried" and untried["note"] == "구매" and "unresolved" not in untried
     )
@@ -87,6 +88,10 @@ def test_of_candidate_badges_confirmed(tmp_path: Path) -> None:
     assert f"{X}/bag" not in nodes
     assert nodes["old"]["explored_adds"] == 1
     assert nodes["lobby"]["explored_adds"] == 0
+    # 뷰어의 "확인 전" 묶음이 합치기·버리기에 쓰는 목록 (B5)
+    (merge,) = data["merges"]
+    assert (merge["node"], merge["of"], merge["title"]) == (f"{X}/bag", "old", "가방")
+    assert merge["counts"] == {"moves": 2, "elements": 1}
     # 그 이동은 확정 카드에서 나가는 "확인 전" 간선
     pending = edge(data, "old", "lobby", "닫기")
     assert pending["pending"] is True

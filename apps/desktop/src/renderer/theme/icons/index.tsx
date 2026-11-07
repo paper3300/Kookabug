@@ -72,6 +72,16 @@ export function ExplorerIcon(props: IconProps) {
   );
 }
 
+/** 액티비티 바 "화면 지도" (시안 ScreenMap 둘째 아이콘 — 접힌 지도) */
+export function MapIcon(props: IconProps) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true" {...props}>
+      <path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z" />
+      <path d="M9 4v14M15 6v14" />
+    </svg>
+  );
+}
+
 /** 액티비티 바 "실행 기록" (시안 RunViewer) */
 export function HistoryIcon(props: IconProps) {
   return (

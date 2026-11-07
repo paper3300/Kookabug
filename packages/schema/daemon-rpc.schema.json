@@ -7338,6 +7338,10 @@
           "required": ["elements", "moves"],
           "type": "object"
         },
+        "description": {
+          "description": "M7 B5: 화면 설명 (사이드바 선택 섹션)",
+          "type": "string"
+        },
         "detect_text": {
           "description": "판정 조건 한 줄 (image(\"이름\") && !image(\"이름\") && text(\"글자\"))",
           "type": "string"
@@ -7798,6 +7802,51 @@
         "edges": {
           "items": {
             "$ref": "#/$defs/ScreenMapEdge"
+          },
+          "type": "array"
+        },
+        "merges": {
+          "description": "M7 B5: 카드로 그리지 않는 합치기 후보(of) — 확정 카드의 \"탐색 추가 N\"과 \"확인 전\" 묶음",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "counts": {
+                "additionalProperties": false,
+                "properties": {
+                  "elements": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "moves": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": ["elements", "moves"],
+                "type": "object"
+              },
+              "key": {
+                "type": "string"
+              },
+              "node": {
+                "type": "string"
+              },
+              "of": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "session": {
+                "type": "string"
+              },
+              "title": {
+                "type": ["null", "string"]
+              }
+            },
+            "required": ["counts", "key", "node", "of", "path", "session", "title"],
+            "title": "ScreenMapMerge",
+            "type": "object"
           },
           "type": "array"
         },

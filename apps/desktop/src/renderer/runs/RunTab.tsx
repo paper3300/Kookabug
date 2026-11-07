@@ -19,7 +19,7 @@ import { NodeStats } from "./NodeStats";
 import { runTabTitle, shortIdOf } from "./open";
 import { reproduce, reproduceNotice } from "./reproduce";
 import { findStep, runIndexModel, useRunIndex, type RunIndex, type RunViewState } from "./runIndexStore";
-import { formatBytes, formatDuration } from "./runListStore";
+import { formatBytes, formatDuration, recordOverrideText } from "./runListStore";
 import css from "./runs.module.css";
 import { Timeline } from "./Timeline";
 
@@ -118,6 +118,11 @@ function Head({ view, shortId, typeTitle }: { view: RunViewState; shortId: strin
         <div className={css.headMeta} data-part="run-meta">
           {headMeta(index).join(" · ")}
         </div>
+        {recordOverrideText(index.run) !== null && (
+          <div className={css.headMeta} data-part="run-record-override">
+            {recordOverrideText(index.run)}
+          </div>
+        )}
       </div>
       <div className={css.headSpacer} />
       <button

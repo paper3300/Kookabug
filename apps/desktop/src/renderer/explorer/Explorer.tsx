@@ -2,6 +2,7 @@
 // targets/ 머리에 "새 찾기 대상" 단추 (M4 T11): 이름을 묻고 새 TARGET 탭
 import { useMemo } from "react";
 import { newTargetInteractive } from "../target/newTarget";
+import { openScreenFile } from "../screens/open";
 import { openFileTab, openTab, useTabs } from "../store/tabs";
 import { toggleExpanded, useUi } from "../store/ui";
 import { useWorkspace } from "../store/workspace";
@@ -40,6 +41,9 @@ export function Explorer() {
     }
     if (isOpenable({ type: "file", kind: node.kind ?? undefined })) {
       openTab({ path: node.path, kind: node.kind as "graph" | "target", graphKind: node.graphKind });
+    } else if (node.path.toLowerCase().endsWith(".screen.json")) {
+      // 화면 판정 파일은 지도 탭에서 그 카드를 고른다 (원문은 사이드바 "원문 보기", M7 3.14)
+      void openScreenFile(node.path);
     } else {
       // 전용 편집기가 없는 파일은 읽기 전용 보기 탭 (다듬기 P1-B)
       openFileTab(node.path);

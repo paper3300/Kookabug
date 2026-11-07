@@ -43,6 +43,7 @@ import {
   type Chip,
 } from "./agentStore";
 import { runChip, nodeChip } from "./chips";
+import { activeSession, useMap } from "../screens/mapStore";
 
 const PRESETS: [string, string][] = [
   ["graph_author", "그래프 작성 — 읽기 + 편집은 확인 후"],
@@ -147,7 +148,11 @@ export function ApprovalCardView({ card, external }: { card: ApprovalState; exte
       </div>
       {open && r.session !== null && (
         <div className={css.cardNote} data-part="session-scope">
-          이 탐색 동안 허용하면 탐색 &lsquo;{r.session.title}&rsquo;이 끝날 때까지{" "}
+          이 탐색 동안 허용하면 탐색 &lsquo;{r.session.title}&rsquo;
+          <span className={css.cardNoteMuted} data-part="session-title-note">
+            {" "}(에이전트가 붙인 이름)
+          </span>
+          이 끝날 때까지{" "}
           {isControlTool(r.tool) ? `창 '${r.arg}'의 같은 조작` : "같은 도구"}을(를) 다시 묻지 않아요 (저장하지 않음)
         </div>
       )}
@@ -431,6 +436,7 @@ function Footer() {
   const permissions = useAgent((s) => s.permissions);
   const connections = useAgent((s) => s.connections);
   const mine = session === null ? undefined : connections.find((c) => c.id === `panel:${session.id}`);
+  const explore = useMap((s) => activeSession(s.sessions));
   return (
     <div className={css.footer} data-part="agent-footer">
       <span className={css.online}>
@@ -440,9 +446,15 @@ function Footer() {
       <button type="button" className={css.footerLink} data-part="footer-preset" onClick={openSettingsTab}>
         권한: {presetLabel(effectivePreset(permissions))}
       </button>
-      <span className={css.footerRight} data-part="footer-toolsets">
-        MCP 툴셋 {mine?.toolsets.length ?? 0}
-      </span>
+      {explore !== null ? (
+        <span className={css.footerRight} data-part="footer-steps" title={`탐색 '${explore.title}' 스텝 예산`}>
+          스텝 {explore.steps} / {explore.max_steps}
+        </span>
+      ) : (
+        <span className={css.footerRight} data-part="footer-toolsets">
+          MCP 툴셋 {mine?.toolsets.length ?? 0}
+        </span>
+      )}
     </div>
   );
 }

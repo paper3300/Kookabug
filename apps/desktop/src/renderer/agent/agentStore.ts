@@ -8,6 +8,7 @@ import { create } from "zustand";
 import type { AgentEvent, AgentSessionEvent } from "../../preload/bridge";
 import type { AgentPermissionOption } from "../../main/acp/events";
 import { client, toRpcError } from "../rpc/client";
+import { noteAllowSession } from "../screens/mapStore";
 
 export type ApprovalRequest = NotificationParamsOf<"approval.requested">;
 export type ApprovalVerdict = NotificationParamsOf<"approval.resolved">["verdict"];
@@ -18,7 +19,7 @@ export type PermissionsInfo = ResultOf<"permissions.get">;
 
 /** 입력창 @칩: 화면에는 label, 보낼 때는 text를 글 앞에 붙인다 */
 export interface Chip {
-  kind: "run" | "node";
+  kind: "run" | "node" | "screen";
   label: string;
   text: string;
 }
@@ -322,6 +323,9 @@ function onApprovalRequested(request: ApprovalRequest): void {
 }
 
 function onApprovalResolved(p: NotificationParamsOf<"approval.resolved">): void {
+  // "이 탐색 동안 허용": 상태 바 "입력 도구: 이 탐색 동안 허용됨" (그 세션이 끝나면 사라진다)
+  const session = useAgent.getState().approvals.get(p.id)?.request.session ?? null;
+  if (p.verdict === "allow_session" && session !== null) noteAllowSession(session.id);
   useAgent.setState((s) => {
     const card = s.approvals.get(p.id);
     if (card === undefined) return s;

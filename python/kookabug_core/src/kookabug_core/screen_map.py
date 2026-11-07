@@ -289,7 +289,7 @@ def _via(move: ScreenMove) -> tuple[dict[str, Any], str]:
         return {"click": {"element": move.element}}, move.element
     if move.point is not None:
         x, y = move.point
-        return {"click": {"point": [x, y]}}, f"점 ({x:.2f}, {y:.2f})"
+        return {"click": {"point": [x, y]}}, "점 클릭"  # 좌표는 via에 (사람에게는 이름표만)
     return {"key": move.key}, f"키 {move.key}"
 
 
@@ -401,6 +401,7 @@ def build_map(
             data = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(data, dict) and isinstance(data.get("promoted"), dict):
                 promoted[session] = {str(k): str(v) for k, v in data["promoted"].items()}
+    merges: list[dict[str, Any]] = []
     keys: dict[str, set[str]] = {}
     for c in candidates:
         if (
@@ -417,6 +418,18 @@ def build_map(
         if screen is not None and screen.of is not None and screen.of in confirmed:
             confirmed[screen.of]["explored_adds"] += 1
             defs.append((screen.of, screen, {"session": c.session, "key": c.key, "of": True}))
+            # 카드로 그리지 않는 합치기 후보 — 뷰어의 "확인 전" 묶음이 합치기·버리기에 쓴다
+            merges.append(
+                {
+                    "node": f"x:{c.session}/{c.key}",
+                    "key": c.key,
+                    "session": c.session,
+                    "of": screen.of,
+                    "path": c.path,
+                    "title": screen.title,
+                    "counts": {"moves": len(screen.moves), "elements": len(screen.elements)},
+                }
+            )
             continue
         node = f"x:{c.session}/{c.key}"
         card = {
@@ -494,6 +507,7 @@ def build_map(
         "edges": edge_list,
         "sessions": [dict(s) for s in sessions],
         "start": start,
+        "merges": merges,
     }
     digest = hashlib.sha256(
         json.dumps(body, sort_keys=True, ensure_ascii=False).encode()
@@ -505,6 +519,8 @@ def _fill(
     card: dict[str, Any], screen: ScreenDef, thumb: Callable[[str], str | None] | None
 ) -> None:
     card["title"] = screen.title
+    if screen.description is not None:
+        card["description"] = screen.description
     card["kind"] = screen.kind
     card["origin"] = _origin(screen)
     card["detect_text"] = detect_text(screen)

@@ -246,6 +246,17 @@
 }
 
 /* 플러그인 준비 필요·조건 다름 배지 (M6 B5): 실행 기록 배지 모양에 경고색 */
+/* 화면 지도 아이콘의 "탐색 중" 보라 점 (M7 B5, 시안 ScreenMap) */
+.activityExploreDot {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--kb-map-explored);
+}
+
 .activityButton .activityBadgeWarn {
   background: var(--kb-status-warn);
   color: var(--kb-badge-fg);
@@ -828,6 +839,13 @@
   background: var(--kb-statusbar-recording-bg);
   color: var(--kb-statusbar-fg);
   border-top-color: var(--kb-statusbar-recording-bg);
+}
+
+/* 상태 바 Agent 탐색 중 (보라, 시안 ScreenMap) — 실행 파랑·녹화 빨강이 먼저 (클래스는 하나만 붙인다) */
+.statusbarExploring {
+  background: var(--kb-statusbar-agent-bg);
+  color: var(--kb-statusbar-fg);
+  border-top-color: var(--kb-statusbar-agent-bg);
 }
 
 /* 시안 Main 상태 바 맨 앞 "▶ 실행 중" 칸 */

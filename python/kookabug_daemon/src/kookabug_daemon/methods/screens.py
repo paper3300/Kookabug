@@ -350,6 +350,105 @@ def _discard(call: Call) -> dict[str, Any]:
     return {"removed": removed}
 
 
+# ------------------------------------------------------- M7 B5 카드 배치 (3.8, 사람만)
+
+LAYOUT_FILE: Final = (".kookabug", "screen-map.json")
+LAYOUT_FORMAT: Final = "kookabug.screen-map/0"
+LAYOUT_MAX_BYTES: Final = 1024 * 1024
+
+
+def _layout_revision(data: bytes | None) -> str | None:
+    import hashlib
+
+    return None if data is None else hashlib.sha256(data).hexdigest()[:16]
+
+
+def _layout_read(root: Path) -> tuple[dict[str, Any], bytes | None]:
+    path = root.joinpath(*LAYOUT_FILE)
+    try:
+        data = path.read_bytes()
+    except FileNotFoundError:
+        return {}, None
+    except OSError as exc:
+        raise RequestFailed("io_error", str(exc), message=str(exc)) from exc
+    try:
+        value = loads_strict(data.decode("utf-8"))
+    except UnicodeDecodeError, ValueError:
+        return (
+            {},
+            data,
+        )  # 깨진 배치는 빈 배치로 본다 (다음 저장이 덮는다 — revision은 그대로 맞춘다)
+    layout = value.get("layout") if isinstance(value, dict) else None
+    return (layout if isinstance(layout, dict) else {}), data
+
+
+def _check_layout(layout: Any) -> dict[str, Any]:
+    """카드 자리 `{positions: {노드: [x, y]}, zoom?}`만 받는다."""
+    if not isinstance(layout, dict) or set(layout) - {"positions", "zoom"}:
+        raise InvalidParams("layout은 {positions, zoom?}이다")
+    positions = layout.get("positions", {})
+    if not isinstance(positions, dict):
+        raise InvalidParams("layout.positions는 노드 → [x, y]다")
+    for node, xy in positions.items():
+        ok = (
+            isinstance(node, str)
+            and 0 < len(node) <= 200
+            and isinstance(xy, list)
+            and len(xy) == 2
+            and all(
+                isinstance(v, int | float) and not isinstance(v, bool) and abs(v) < 1e6 for v in xy
+            )
+        )
+        if not ok:
+            raise InvalidParams(f"layout.positions[{node!r}]는 [x, y] 숫자다")
+    zoom = layout.get("zoom")
+    if zoom is not None and (
+        isinstance(zoom, bool) or not isinstance(zoom, int | float) or not 0.1 <= zoom <= 4
+    ):
+        raise InvalidParams("layout.zoom은 0.1~4다")
+    return {"positions": positions, **({"zoom": zoom} if zoom is not None else {})}
+
+
+def _layout_get(call: Call) -> dict[str, Any]:
+    layout, data = _layout_read(call.daemon.root)
+    return {"layout": layout, "revision": _layout_revision(data)}
+
+
+def _layout_set(call: Call) -> dict[str, Any]:
+    import json
+
+    from kookabug_core.documents import DocumentError, write_atomic
+
+    root: Path = call.daemon.root
+    layout = _check_layout(call.params["layout"])
+    body = json.dumps({"format": LAYOUT_FORMAT, "layout": layout}, ensure_ascii=False).encode(
+        "utf-8"
+    )
+    if len(body) > LAYOUT_MAX_BYTES:
+        raise InvalidParams("화면 지도 배치가 너무 크다")
+    path = root.joinpath(*LAYOUT_FILE)
+    _, current = _layout_read(root)
+    base = call.params.get("base_revision")
+    if base != _layout_revision(current):
+        raise RequestFailed(
+            "revision_conflict",
+            "화면 지도 배치가 다른 곳에서 바뀌었다",
+            revision=_layout_revision(current),
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    def unchanged() -> None:
+        now = path.read_bytes() if path.exists() else None
+        if _layout_revision(now) != _layout_revision(current):
+            raise RequestFailed("revision_conflict", "화면 지도 배치가 다른 곳에서 바뀌었다")
+
+    try:
+        write_atomic(path, body, before_replace=unchanged)
+    except DocumentError as exc:
+        raise RequestFailed("io_error", str(exc), message=str(exc)) from exc
+    return {"layout": layout, "revision": _layout_revision(body)}
+
+
 def _threaded(fn: Any) -> Any:
     async def handler(call: Call) -> dict[str, Any]:
         return await asyncio.to_thread(fn, call)
@@ -366,4 +465,6 @@ METHODS: Final = {
     "screens.check": MethodSpec(_threaded(_check)),
     "screens.promote": MethodSpec(_threaded(_promote)),
     "screens.discard": MethodSpec(_threaded(_discard)),
+    "screens.layout_get": MethodSpec(_threaded(_layout_get)),
+    "screens.layout_set": MethodSpec(_threaded(_layout_set)),
 }

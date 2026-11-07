@@ -11,6 +11,7 @@ import { RecTab } from "../recorder/RecTab";
 import { RunToolbar } from "../run/Toolbar";
 import { RunTab } from "../runs/RunTab";
 import { PermissionsView } from "../settings/PermissionsView";
+import { ScreenMapTab } from "../screens/ScreenMapTab";
 import { TargetEditor } from "../target/TargetEditor";
 import { targetDirty, useTargets } from "../target/targetStore";
 import { useRun } from "../run/runStore";
@@ -104,6 +105,8 @@ function Breadcrumb() {
             ? [name, "설정", "에이전트 권한"]
             : tab?.kind === "plugin"
               ? [name, "플러그인", tab.title]
+            : tab?.kind === "map"
+              ? [name, "화면 지도"]
             : tab?.preview === true
               ? [name, "승인 미리보기", tab.title]
               : [name, ...active.split("/")];
@@ -223,6 +226,8 @@ export function Editor({ children }: { children?: ReactNode }) {
           <PermissionsView />
         ) : activeTab?.kind === "plugin" ? (
           <PluginDetail key={active} id={active.slice(PLUGIN_TAB_PREFIX.length)} />
+        ) : activeTab?.kind === "map" ? (
+          <ScreenMapTab />
         ) : (
           <div className={css.canvas} data-part="canvas" data-path={active} />
         )}

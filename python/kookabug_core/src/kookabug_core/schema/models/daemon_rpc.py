@@ -1851,6 +1851,9 @@ class ScreenMapCard(BaseModel):
         extra="forbid",
     )
     counts: Counts
+    description: Annotated[
+        str | None, Field(description="M7 B5: 화면 설명 (사이드바 선택 섹션)")
+    ] = None
     detect_text: Annotated[
         str, Field(description='판정 조건 한 줄 (image("이름") && !image("이름") && text("글자"))')
     ]
@@ -2063,6 +2066,19 @@ class ScreensListParams(BaseModel):
     under: str | None = None
 
 
+class ScreenMapMerge(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    counts: Counts
+    key: str
+    node: str
+    of: str
+    path: str
+    session: str
+    title: str | None
+
+
 class ScreensMapResult(BaseModel):
     """
     screens.map (kb_screen_list, M7 3.3): 화면 지도 카드·이동 그래프·탐색 세션
@@ -2072,6 +2088,12 @@ class ScreensMapResult(BaseModel):
         extra="forbid",
     )
     edges: list[ScreenMapEdge]
+    merges: Annotated[
+        list[ScreenMapMerge] | None,
+        Field(
+            description='M7 B5: 카드로 그리지 않는 합치기 후보(of) — 확정 카드의 "탐색 추가 N"과 "확인 전" 묶음'
+        ),
+    ] = None
     revision: str
     screens: list[ScreenMapCard]
     sessions: list[ExploreSessionInfo]

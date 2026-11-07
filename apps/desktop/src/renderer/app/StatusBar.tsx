@@ -19,6 +19,7 @@ import { useWorkspace } from "../store/workspace";
 import { DotIcon, LockIcon, PlayIcon } from "../theme/icons";
 import { attentionCount } from "../plugins/model";
 import { usePlugins } from "../plugins/pluginStore";
+import { activeSession, elapsedText, inputToolText, mapSummary, useMap } from "../screens/mapStore";
 import { showSide } from "./Sidebar";
 import css from "./shell.module.css";
 
@@ -144,6 +145,43 @@ function VideoPolicy() {
   );
 }
 
+/** Agent 탐색 중 (보라, 시안 ScreenMap): "Agent 탐색 중 · m:ss" */
+function Exploring({ startedAt }: { startedAt: string }) {
+  const now = useNow(true, 1000);
+  return (
+    <span className={css.statusItem} data-part="explore-status">
+      Agent 탐색 중 · {elapsedText(startedAt, now)}
+    </span>
+  );
+}
+
+/** 화면 지도 탭 앞이면 "화면 N · 이동 M · 미탐색 K" */
+function MapCounts() {
+  const onMap = useTabs((s) => s.tabs.some((t) => t.path === s.active && t.kind === "map"));
+  const map = useMap((s) => s.map);
+  if (!onMap || map === null) return null;
+  const n = mapSummary(map);
+  return (
+    <span className={css.statusItem} data-part="map-counts">
+      화면 {n.screens} · 이동 {n.moves} · 미탐색 {n.untried}
+    </span>
+  );
+}
+
+/** 오른쪽 "입력 도구: 확인 후 실행 / 바로 실행 / 이 탐색 동안 허용됨" (탐색 중이거나 지도 탭 앞) */
+function InputTool({ session }: { session: string | null }) {
+  const onMap = useTabs((s) => s.tabs.some((t) => t.path === s.active && t.kind === "map"));
+  const verdict = useAgent((s) => s.permissions?.tools.find((t) => t.tool === "kb_input_click")?.final ?? null);
+  const allowed = useMap((s) => session !== null && s.allowedSessions.includes(session));
+  const text = inputToolText(verdict, allowed);
+  if (text === null || (session === null && !onMap)) return null;
+  return (
+    <span className={css.statusItem} data-part="input-tool">
+      {text}
+    </span>
+  );
+}
+
 /** "에이전트 N" (U6: MCP는 stdio라 포트가 없다 — 붙은 agent 연결 수). 누르면 에이전트 패널 */
 function Agents() {
   const connections = useAgent((s) => s.connections);
@@ -187,6 +225,9 @@ export function StatusBar() {
   const running = useRun((s) => s.current?.phase === "running");
   const lease = useRun((s) => s.lease);
   const rec = useRecorderStatus();
+  const explore = useMap((s) => activeSession(s.sessions));
+  // 실행 파랑·녹화 빨강이 먼저, 그다음 Agent 탐색 보라 (시안 ScreenMap)
+  const exploring = explore !== null && !running && !rec.recording;
   const [label, tone] = CONNECTION[daemon.status];
   const runtime = info?.runtime;
   const capture = runtime ? `캡처 ${runtime.capture ? runtime.capture.toUpperCase() : "없음"}` : null;
@@ -194,11 +235,16 @@ export function StatusBar() {
   return (
     <footer
       aria-label="상태 바"
-      className={`${css.statusbar} ${rec.recording ? css.statusbarRecording : running ? css.statusbarRunning : ""}`}
+      className={`${css.statusbar} ${
+        rec.recording ? css.statusbarRecording : running ? css.statusbarRunning : exploring ? css.statusbarExploring : ""
+      }`}
       data-part="statusbar"
       data-running={running}
       data-recording={rec.recording}
+      data-exploring={exploring}
     >
+      {exploring && explore !== null && <Exploring startedAt={explore.started_at} />}
+      <MapCounts />
       {rec.items?.left.map((text, i) => (
         <span key={i} className={css.statusItem} data-part={i === 0 ? "rec-status" : "rec-status-item"}>
           {i === 0 && rec.recording && <DotIcon />}
@@ -231,6 +277,7 @@ export function StatusBar() {
       ))}
       <VideoPolicy />
       <Retention />
+      {!rec.recording && <InputTool session={explore?.id ?? null} />}
       {runtime && !rec.recording && (
         <>
           <span className={css.statusItem} title={runtime.ocr ?? undefined}>

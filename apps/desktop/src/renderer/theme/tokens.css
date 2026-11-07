@@ -225,6 +225,29 @@
   --kb-perm-ask: #e2c08d;
   --kb-perm-deny: #f48771;
   --kb-settings-modified: #0078d4;
+  /* 화면 지도 (M7 B5, 시안 ScreenMap) */
+  --kb-map-explored: #c5b3eb;
+  --kb-map-run: #f0883e;
+  --kb-map-manual: #9d9d9d;
+  --kb-map-edge: #555555;
+  --kb-map-edge-active: #4daafc;
+  --kb-map-card-bg: #252526;
+  --kb-map-card-border: #3c3c3c;
+  --kb-map-card-title: #e7e7e7;
+  --kb-map-thumb-bg: #141414;
+  --kb-map-thumb-block: #222222;
+  --kb-map-label-bg: #252526;
+  --kb-map-label-fg: #bbbbbb;
+  --kb-map-selected: #0078d4;
+  --kb-map-chip-button-bg: #4a3b1c;
+  --kb-map-chip-button-fg: #e2c08d;
+  --kb-map-chip-text-bg: #1b3a57;
+  --kb-map-chip-text-fg: #7cc0ff;
+  --kb-map-chip-field-bg: #1e3d2f;
+  --kb-map-chip-field-fg: #a8e0a5;
+  --kb-map-chip-list-bg: #333333;
+  --kb-map-chip-list-fg: #cccccc;
+  --kb-statusbar-agent-bg: #68217a;
 }
 
 :root[data-theme="light"] {
@@ -440,6 +463,29 @@
   --kb-perm-ask: #8a6d00;
   --kb-perm-deny: #c4314b;
   --kb-settings-modified: #005fb8;
+  /* 화면 지도 (M7 B5) */
+  --kb-map-explored: #7d5bbf;
+  --kb-map-run: #b85c00;
+  --kb-map-manual: #8a8a8a;
+  --kb-map-edge: #b0b0b0;
+  --kb-map-edge-active: #005fb8;
+  --kb-map-card-bg: #ffffff;
+  --kb-map-card-border: #d6d6d6;
+  --kb-map-card-title: #1f1f1f;
+  --kb-map-thumb-bg: #f0f0f0;
+  --kb-map-thumb-block: #e0e0e0;
+  --kb-map-label-bg: #ffffff;
+  --kb-map-label-fg: #555555;
+  --kb-map-selected: #005fb8;
+  --kb-map-chip-button-bg: #f5e7c8;
+  --kb-map-chip-button-fg: #6b4e00;
+  --kb-map-chip-text-bg: #dcebf9;
+  --kb-map-chip-text-fg: #0b4f8a;
+  --kb-map-chip-field-bg: #dcf2df;
+  --kb-map-chip-field-fg: #1e6b2d;
+  --kb-map-chip-list-bg: #e8e8e8;
+  --kb-map-chip-list-fg: #3b3b3b;
+  --kb-statusbar-agent-bg: #68217a;
 }
 
 /* 글꼴·치수 (시안 Main: 본문 13px, 작은 글자 11px, 고정폭 12px) */

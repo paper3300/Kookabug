@@ -3599,6 +3599,10 @@ export interface ScreensListResult {
  */
 export interface ScreensMapResult {
   edges: ScreenMapEdge[];
+  /**
+   * M7 B5: 카드로 그리지 않는 합치기 후보(of) — 확정 카드의 "탐색 추가 N"과 "확인 전" 묶음
+   */
+  merges?: ScreenMapMerge[];
   revision: string;
   screens: ScreenMapCard[];
   sessions: ExploreSessionInfo[];
@@ -3632,6 +3636,18 @@ export interface ScreenMapEdge {
     [k: string]: unknown | undefined;
   };
 }
+export interface ScreenMapMerge {
+  counts: {
+    elements: number;
+    moves: number;
+  };
+  key: string;
+  node: string;
+  of: string;
+  path: string;
+  session: string;
+  title: null | string;
+}
 /**
  * 화면 지도 카드: 확정 화면(node = ID) 또는 탐색 후보(node = x:<세션>/<키>)
  *
@@ -3643,6 +3659,10 @@ export interface ScreenMapCard {
     elements: number;
     moves: number;
   };
+  /**
+   * M7 B5: 화면 설명 (사이드바 선택 섹션)
+   */
+  description?: string;
   /**
    * 판정 조건 한 줄 (image("이름") && !image("이름") && text("글자"))
    */

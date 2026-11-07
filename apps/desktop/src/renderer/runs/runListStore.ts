@@ -46,6 +46,13 @@ export function badgesOf(run: RunSummary): Badge[] {
   return out;
 }
 
+/** 에이전트 제어 실행의 기록 강제 (M7 R2, run.json record_override): 기록 뷰어 머리 줄로 사람에게 알린다 */
+export function recordOverrideText(run: unknown): string | null {
+  const override = (run as { record_override?: { by?: unknown } } | null | undefined)?.record_override;
+  if (override?.by !== "agent_control") return null;
+  return "에이전트 제어 실행 · 이미지 기록 없음 · 비밀값 가림";
+}
+
 /** 경과 글 (3분 08초, 12.4초) */
 export function formatDuration(ms: number): string {
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}초`;

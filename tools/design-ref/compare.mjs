@@ -61,6 +61,11 @@ export const SCREENS = {
   "panel-acp-permission": { dark: "Main" },
   "agent-judge": { dark: "Main" },
   "runviewer-analyze": { dark: "RunViewer" },
+  // 화면 지도(사이드바 화면 목록·선택·확인 전, MAP 탭 카드·간선·범례·확대, 상태 바), M7 B5. 시안 ScreenMap은 다크뿐이라
+  // 라이트 앱 화면도 다크 시안과 나란히 본다(배치·요소 대조). 승격 대화 상자·보호 카드는 시안에 없는 상태
+  screenmap: { dark: "ScreenMap", light: "ScreenMap" },
+  "screenmap-promote": { dark: "ScreenMap" },
+  "screenmap-protected": { dark: "ScreenMap" },
 };
 
 function pngSize(file) {

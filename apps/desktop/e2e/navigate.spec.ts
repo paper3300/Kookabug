@@ -153,11 +153,24 @@ test("test_double_click_while_paused_keeps_pause_highlight", async () => {
 });
 
 test("test_explorer_opens_read_only_file_view_tabs", async () => {
-  s = await openEditor({ "tests/notes.txt": "첫 줄\n둘째 줄\n", "AGENTS.md": "# 에이전트 안내\n" });
+  s = await openEditor({
+    "tests/notes.txt": "첫 줄\n둘째 줄\n",
+    "AGENTS.md": "# 에이전트 안내\n",
+    // screens/ 밖의 화면 파일 (문서 예제 등): 지도에 카드가 없다
+    "tests/example.screen.json": '{"format": "kookabug.screen/0", "title": "예제", "detect": {"all": []}}',
+  });
   const { page, workspace } = s;
 
-  // 화면 지도: SCREEN 탭, 들여쓰기·구문 색
+  // 지도에 카드가 없는 화면 파일은 원문 보기 탭 (이전 동작, B5 검수 Mid 1)
+  await clickTree(page, "tests/example.screen.json");
+  await expect(activeTab(page)).toHaveAttribute("data-kind", "SCREEN");
+  await expect(page.locator('[role="tab"][data-kind="MAP"]')).toHaveCount(0);
+
+  // 화면 판정 파일: 지도 탭에서 그 카드를 고르고(M7 B5), "원문 보기"가 SCREEN 탭 (들여쓰기·구문 색)
   await clickTree(page, "screens/lobby.screen.json");
+  await expect(activeTab(page)).toHaveAttribute("data-kind", "MAP");
+  await expect(page.locator('[data-part="map-card"][data-node="lobby"]')).toHaveAttribute("data-selected", "true");
+  await page.locator('[data-part="map-toolbar-raw"]').click();
   await expect(activeTab(page)).toHaveAttribute("data-kind", "SCREEN");
   await expect(activeTab(page)).toContainText("lobby.screen.json");
   const screen = fileView(page, "screens/lobby.screen.json");

@@ -4,7 +4,7 @@ import { create } from "zustand";
 export type PanelTab = "problems" | "output" | "runlog" | "result";
 
 /** 사이드바 보기 (액티비티 바): 탐색기·실행 기록 (M3 T10)·녹화 (M4 T9)·플러그인 (M6 B5) */
-export type SideView = "explorer" | "runs" | "recorder" | "plugins";
+export type SideView = "explorer" | "screens" | "runs" | "recorder" | "plugins";
 
 interface UiState {
   quickOpen: boolean;
@@ -40,7 +40,9 @@ export const useUi = create<UiState>(() => ({
 
 /** 하단 패널 펼침을 정하는 쪽: 정지 화면 탭(REC·TARGET)·설정 탭(시안 Permissions — 하단 패널 없음)인가 */
 export function panelSide(kind: string | undefined): "panelOpenEditor" | "panelOpenOther" {
-  return kind === "rec" || kind === "target" || kind === "settings" || kind === "plugin" ? "panelOpenEditor" : "panelOpenOther";
+  return kind === "rec" || kind === "target" || kind === "settings" || kind === "plugin" || kind === "map"
+    ? "panelOpenEditor"
+    : "panelOpenOther";
 }
 
 export function toggleExpanded(path: string, current: ReadonlySet<string>): void {

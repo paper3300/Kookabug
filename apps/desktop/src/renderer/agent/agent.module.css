@@ -189,6 +189,12 @@
   overflow-wrap: anywhere;
 }
 
+/* 에이전트가 정한 글자 표시 (세션 제목 — 사람을 오도할 수 있다, B3 검수) */
+.cardNoteMuted {
+  font-style: italic;
+  opacity: 0.8;
+}
+
 .cardButtons {
   display: flex;
   flex-wrap: wrap;

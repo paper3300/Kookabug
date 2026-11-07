@@ -16,7 +16,9 @@ import { RecorderSidebar } from "../recorder/RecorderSidebar";
 import { attentionCount } from "../plugins/model";
 import { PluginsSidebar } from "../plugins/PluginsSidebar";
 import { reloadPlugins, usePlugins } from "../plugins/pluginStore";
-import { ChevronDownIcon, ChevronRightIcon, ExplorerIcon, HistoryIcon, PluginIcon, RecordIcon } from "../theme/icons";
+import { ChevronDownIcon, ChevronRightIcon, ExplorerIcon, HistoryIcon, MapIcon, PluginIcon, RecordIcon } from "../theme/icons";
+import { activeSession, loadMap, useMap } from "../screens/mapStore";
+import { ScreenSidebar } from "../screens/ScreenSidebar";
 import css from "./shell.module.css";
 
 export function showSide(view: SideView): void {
@@ -26,6 +28,7 @@ export function showSide(view: SideView): void {
     void runListModel.reload();
   }
   if (view === "plugins") void reloadPlugins();
+  if (view === "screens") void loadMap();
 }
 
 export function ActivityBar() {
@@ -33,6 +36,7 @@ export function ActivityBar() {
   const failures = useRunList((s) => failuresSince(s.runs, s.seenAt));
   const badge = view === "runs" ? 0 : failures;
   const pluginAttention = usePlugins((s) => attentionCount(s.list));
+  const exploring = useMap((s) => activeSession(s.sessions) !== null);
   return (
     <nav aria-label="작업 영역" className={css.activitybar}>
       <button
@@ -43,6 +47,17 @@ export function ActivityBar() {
         onClick={() => showSide("explorer")}
       >
         <ExplorerIcon />
+      </button>
+      <button
+        type="button"
+        aria-label={exploring ? "화면 지도, 에이전트 탐색 중" : "화면 지도"}
+        aria-pressed={view === "screens"}
+        className={css.activityButton}
+        data-part="activity-screens"
+        onClick={() => showSide("screens")}
+      >
+        <MapIcon />
+        {exploring && <span className={css.activityExploreDot} data-part="activity-explore-dot" />}
       </button>
       <button
         type="button"
@@ -159,6 +174,18 @@ export function Sidebar() {
       <aside aria-label="사이드바" className={css.sidebar}>
         <div className={css.sidebarInner} data-part="sidebar" data-view="plugins">
           <PluginsSidebar />
+        </div>
+      </aside>
+    );
+  }
+  if (view === "screens") {
+    return (
+      <aside aria-label="사이드바" className={css.sidebar}>
+        <div className={css.sidebarInner} data-part="sidebar" data-view="screens">
+          <div className={css.sidebarHeader} data-part="sidebar-header">
+            <span>화면 지도</span>
+          </div>
+          <ScreenSidebar />
         </div>
       </aside>
     );

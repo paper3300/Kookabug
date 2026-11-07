@@ -29,7 +29,7 @@ export function fileBadgeText(path: string): string {
 export interface EditorTab {
   /** 파일 탭은 워크스페이스 기준 경로, RUN 탭은 `run:<run_id>` */
   path: string;
-  kind: "graph" | "target" | "run" | "file" | "rec" | "settings" | "plugin";
+  kind: "graph" | "target" | "run" | "file" | "rec" | "settings" | "plugin" | "map";
   graphKind: TreeEntry["graph_kind"] | null;
   title: string;
   /** RUN 탭의 실행, 스냅샷 그래프 탭이면 그 그래프를 돈 실행 */
@@ -201,6 +201,7 @@ export function tabBadge(
   tab: Pick<EditorTab, "kind" | "graphKind"> & { snapshot?: boolean; preview?: boolean; path?: string },
 ): { text: string; tone: "test" | "target" | "run" | "file" | "rec" } {
   if (tab.kind === "settings") return { text: "SETTINGS", tone: "file" };
+  if (tab.kind === "map") return { text: "MAP", tone: "target" };
   if (tab.kind === "plugin") return { text: "PLUGIN", tone: "file" };
   if (tab.preview === true) return { text: "PREVIEW", tone: "run" };
   if (tab.kind === "target") return { text: "TARGET", tone: "target" };
