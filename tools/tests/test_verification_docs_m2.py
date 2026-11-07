@@ -62,6 +62,8 @@ M5_SCREENS: Final = frozenset(
     | {"runviewer-analyze"}
 )
 """M5에서 늘린 비교 화면 (M5 계획 B4·B5). M5 절차서 D3가 맡는다."""
+M7_SCREENS: Final = frozenset({"screenmap", "screenmap-promote", "screenmap-protected"})
+"""M7에서 늘린 비교 화면 (M7 계획 B5). M7 절차서 H3가 맡는다."""
 
 
 NO_DESIGN_SHOTS: Final = frozenset({"plugins.spec.ts", "plugin-widget.spec.ts"})
@@ -83,7 +85,8 @@ def compare_screens(shots: Path | None = None) -> list[str]:
         assert found is not None, spec
         shot.update(found.group(1).split())
     assert shot <= set(ids), shot - set(ids)
-    return [i for i in ids if i in shot and i not in M3_SCREENS | M4_SCREENS | M5_SCREENS]
+    later = M3_SCREENS | M4_SCREENS | M5_SCREENS | M7_SCREENS
+    return [i for i in ids if i in shot and i not in later]
 
 
 def test_sections_and_result_rows_match() -> None:

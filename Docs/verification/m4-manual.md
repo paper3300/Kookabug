@@ -94,10 +94,10 @@ Copy-Item build\ui-compare\recorder*.png, build\ui-compare\target-ext*.png "$ev\
 $w = "$kb\sample-rpg"
 Get-ChildItem -Recurse "$w\tests", "$w\targets", "$w\.kookabug\logs", "$w\.kookabug\cache\recorder" -ErrorAction SilentlyContinue |
   Where-Object { -not $_.PSIsContainer } | Select-String -SimpleMatch -Pattern "sample-pass-01", "pass-01" | Tee-Object "$ev\h1_grep.txt"
-Get-ChildItem -Recurse "$w\targets" | Where-Object Name -match "pass" | Tee-Object -Append "$ev\h1_grep.txt"
+Get-ChildItem -Recurse "$w\targets\rec\rec_h1" | Where-Object { $_.Name -like "*sample-pass*" -or $_.Name -like "*pass-0*" } | Tee-Object -Append "$ev\h1_grep.txt"
 ```
 
-- 기대 결과: 두 명령 모두 아무것도 찾지 못함. `targets\rec\rec_h1\`의 PNG를 열어 비밀번호 칸 글자가 보이는 그림이 없는지 눈으로 본다. `.kookabug\cache\recorder\`는 비어 있다
+- 기대 결과: 두 명령 모두 아무것도 찾지 못함. 파일 이름 검색은 이번 녹화의 찾기 대상 폴더만, 비밀번호 조각 그대로 찾는다(예제의 `password_field.png` 같은 이름은 잡지 않는다). `targets\rec\rec_h1\`의 PNG를 열어 비밀번호 칸 글자가 보이는 그림이 없는지 눈으로 본다. `.kookabug\cache\recorder\`는 비어 있다
 
 ### H2 녹화 중 실행 거부·입력 지연
 

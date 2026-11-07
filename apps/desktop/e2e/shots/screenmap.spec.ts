@@ -2,7 +2,8 @@
 //   screenmap-<테마>          사이드바(화면 목록·선택·확인 전)·지도 탭(카드·간선·범례·확대)·상태 바
 //   screenmap-promote-dark   승격 대화 상자 (확인 결과)
 //   screenmap-protected-dark 보호로 스크린샷 없는 후보 선택 (판정 조건 없음 안내)
-// 결과 build/ui-shots/<이름>.png → node tools/design-ref/compare.mjs screenmap, 사본 .orchestration/M7/shots/B5/
+// 결과 build/ui-shots/<이름>.png, 사본 .orchestration/M7/shots/B5/
+// node tools/design-ref/compare.mjs screenmap screenmap-promote screenmap-protected
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";

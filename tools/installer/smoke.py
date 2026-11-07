@@ -992,6 +992,11 @@ class _McpPipe:
                 return reply["result"]
 
 
+SCREENS_TOOLS: Final = frozenset(
+    {"kb_screen_identify", "kb_screen_save", "kb_explore_start", "kb_explore_end"}
+)
+
+
 def mcp_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
     """설치본 MCP (M5): 예제 워크스페이스 사본에 설치본 daemon(짧은 유휴 종료)을 띄우고, 설치본
     `kookabug mcp --unattended --agent-id`로 붙어 initialize·tools/list·`kb_project_info`.
@@ -1040,6 +1045,11 @@ def mcp_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
             pipe.send("notifications/initialized", notify=True)
             tools = sorted(t["name"] for t in pipe.request("tools/list")["tools"])
             info = pipe.request("tools/call", {"name": "kb_project_info", "arguments": {}})
+            # M7: screens 툴셋을 켜면 탐색·화면 지도 도구가 보인다
+            pipe.request(
+                "tools/call", {"name": "kb_toolset_enable", "arguments": {"toolsets": ["screens"]}}
+            )
+            screens_tools = {t["name"] for t in pipe.request("tools/list")["tools"]}
             assert mcp.stdin is not None
             mcp.stdin.close()
             code = mcp.wait(30)
@@ -1055,6 +1065,7 @@ def mcp_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
             and init.get("protocolVersion") == "2025-06-18"
             and "kb_project_info" in tools
             and "kb_graph_patch" not in tools  # 기본 툴셋은 core만
+            and screens_tools >= SCREENS_TOOLS
             and info.get("isError") is False
             and principal == expected
             and code == 0
@@ -1064,7 +1075,7 @@ def mcp_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
         )
         detail = (
             f"daemon {started.get('status')}, 판 {init.get('protocolVersion')}, "
-            f"도구 {len(tools)}개, "
+            f"도구 {len(tools)}개, screens 툴셋 뒤 {len(screens_tools)}개, "
             f"주체 {principal}, mcp 종료 코드 {code}, agent-host --help {host.returncode}, "
             f"남은 프로세스 {left or '없음'}"
         )
@@ -1079,6 +1090,67 @@ def mcp_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
         for proc in (mcp, daemon):
             if proc is not None and proc.poll() is None:
                 proc.kill()
+        shutil.rmtree(base, ignore_errors=True)
+
+
+SCREEN_ID: Final = "smoke_login"
+SCREEN_TITLE_RECT: Final = [300 / 1024, 95 / 640, 424 / 1024, 50 / 640]
+"""예제 로그인 화면 제목 줄 (정규화) — OCR 조건 "로그인"."""
+
+
+def screen_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
+    """설치본 화면 판정 (M7): 예제 워크스페이스 사본에 `/1` 화면(OCR 조건 + target 조건)을 두고 설치
+    트리 `kookabug screen test --image <예제 프레임> --json`. 로그인 프레임은 맞음(0, OCR 조건이
+    실제로 읽혀 맞음), 로비 프레임은 아님(1). 설치 OCR 모델·엔진을 쓴다(새 의존성 없음)."""
+    base = Path(tempfile.mkdtemp(prefix="kb-screen-"))
+    try:
+        workspace = base / "ws"
+        shutil.copytree(
+            root / WORKSPACE, workspace, ignore=shutil.ignore_patterns(".kookabug", "runs")
+        )
+        screen = {
+            "format": "kookabug.screen/1",
+            "title": "스모크 로그인",
+            "detect": {
+                "all": [
+                    {"ocr": {"rect": SCREEN_TITLE_RECT, "text": "로그인"}},
+                    {"$target": "targets/login/login_button.target.json"},
+                ]
+            },
+        }
+        path = workspace / "screens" / f"{SCREEN_ID}.screen.json"
+        path.write_text(json.dumps(screen, ensure_ascii=False), encoding="utf-8")
+        frames = root / build.EXAMPLES / "frames"
+        results: dict[str, tuple[int, dict[str, Any]]] = {}
+        for frame in ("login", "lobby"):
+            proc = run_cli(
+                root,
+                env,
+                ["screen", "test", SCREEN_ID, "--image", str(frames / f"{frame}.png"), "--json"],
+                cwd=workspace,
+            )
+            try:
+                results[frame] = (proc.returncode, json.loads(proc.stdout))
+            except ValueError:
+                return False, f"{frame}: JSON이 아니다 ({proc.returncode}): {proc.stderr[-1500:]}"
+        code, body = results["login"]
+        ocr = next((c for c in body.get("conditions", []) if c.get("condition") == "ocr"), {})
+        miss_code, miss = results["lobby"]
+        ok = (
+            code == 0
+            and body.get("matched") is True
+            and ocr.get("ok") is True
+            and ocr.get("visible") is True
+            and miss_code == 1
+            and miss.get("matched") is False
+        )
+        return ok, (
+            f"로그인 프레임 종료 코드 {code}·OCR 조건 {ocr.get('ok')}, "
+            f"로비 프레임 종료 코드 {miss_code}"
+        )
+    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        return False, f"화면 스모크 실패: {exc!r}"
+    finally:
         shutil.rmtree(base, ignore_errors=True)
 
 
@@ -1206,6 +1278,7 @@ def smoke_installed(report: SmokeReport) -> None:
     report.step("cli.video", lambda: video_step(root, env))
     report.step("recorder.hook", lambda: recorder_step(root, env))
     report.step("cli.mcp", lambda: mcp_step(root, env))
+    report.step("cli.screen", lambda: screen_step(root, env))
     report.step("cli.plugin", lambda: plugin_step(root, env))
     report.step("app.smoke", lambda: app_step(root, env))
     report.step("dll.check", lambda: dll_step(root))

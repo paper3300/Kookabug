@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { REPO_ROOT } from "./app";
-import { closeRunApp, openRunApp, prepareRunWorkspace, runEnv, type RunSession } from "./run";
+import { closeRunApp, openRunApp, prepareRunWorkspace, runEnv, type RunSession, type RunWorkspace } from "./run";
 
 const PYTHON = path.join(REPO_ROOT, ".venv", "Scripts", "python.exe");
 const FAKE_AGENT = path.join(REPO_ROOT, "tools", "kb_testing", "fake_acp_agent.py");
@@ -26,10 +26,13 @@ export interface AgentOptions {
   /** 사용자 설정 settings.json (없으면 PANEL_AGENT 하나) */
   settings?: Record<string, unknown> | null;
   scaleFactor?: number;
+  /** 앱을 띄우기 전에 워크스페이스·가짜 게임 사양을 고친다 (M7 탐색: 게임이 떠 있음·explorer 권한) */
+  prepare?: (ws: RunWorkspace) => void;
 }
 
 export async function openAgentApp(options: AgentOptions = {}): Promise<AgentSession> {
   const ws = prepareRunWorkspace();
+  options.prepare?.(ws);
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "kb-agent-"));
   const userDir = path.join(base, "user");
   fs.mkdirSync(userDir);
