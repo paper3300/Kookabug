@@ -41,6 +41,10 @@ def layout_tree(root: Path) -> Path:
             "bin/kookabug.exe": b"MZ",
             "ocr-models/model.onnx": b"x",
             "examples/sample-game/README.md": "x",
+            # M6: 동봉 uv(PATH 밖)·SDK wheel·예제 플러그인
+            build.TOOLS_UV: b"MZ",
+            f"{build.PLUGIN_SDK}/kookabug_sdk-0.1.0-py3-none-any.whl": b"PK",
+            f"{build.EXAMPLE_PLUGINS}/kookabug_plugin_sample-0.1.0-py3-none-any.whl": b"PK",
             "licenses/LICENSE.txt": "Apache License",
             build.FFMPEG_SOURCE_IN_INSTALL: "src",
             "VERSION": "0.1.0.dev0\n",

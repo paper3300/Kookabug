@@ -19,7 +19,8 @@
    PC면 `unavailable`과 이유 — 실행은 그대로 통과), 녹화기(M4: 훅 프로세스가 설치 트리 Python으로
    떠 `hook.hello`까지, 입력 없이), MCP(M5: 예제 사본에 설치본 daemon을 띄우고 `kookabug mcp
    --unattended --agent-id <ID>` → initialize·tools/list(기본 core만)·`kb_project_info`가 그 주체를
-   사람 없음으로 돌려줌, `kookabug agent-host --help`)
+   사람 없음으로 돌려줌, `kookabug agent-host --help`), 플러그인(M6: PATH에 uv 없이 설치 트리의
+   예제 wheel을 동봉 uv로 `plugin add` → `verify` → 예제 그래프 실행 → `remove` → `gc`)
 5. 앱 스모크: 예제 워크스페이스 사본으로 `Kookabug.exe --smoke` (daemon 띄우기·session.hello·
    graph.open·graph.save 무수정 wrote: false·daemon.shutdown, 종료 코드 0). 끝난 뒤 설치 폴더에서
    돌던 프로세스(daemon)가 남지 않는다
@@ -37,6 +38,7 @@ import contextlib
 import ctypes
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -98,7 +100,12 @@ CLEARED_ENV: Final = (
     "KOOKABUG_CLI",
     "KOOKABUG_DAEMON_ARGS",
     "KOOKABUG_E2E_HOOKS",
+    "KOOKABUG_AGENT",
+    "KOOKABUG_FAULTS",
+    *(PLUGIN_OVERRIDES := ("KOOKABUG_UV", "KOOKABUG_SDK_WHEEL", "KOOKABUG_PLUGIN_DEBUG")),
 )
+"""`PLUGIN_OVERRIDES`: 플러그인 개발용 재정의 (uv·SDK wheel). 남아 있으면 설치본이 동봉 uv·SDK 대신
+그것을 쓴다 — 설치 스모크는 반드시 지우고, `env.python_free`가 남았는지도 본다 (B7 검수 H1)."""
 
 
 @dataclass
@@ -172,10 +179,19 @@ def check_env(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
     path = env["PATH"]
     found = {name: shutil.which(name, path=path) for name in ("python", "python3", "py", "uv")}
     leaked = {k: v for k, v in found.items() if v is not None}
+    overrides = sorted(k for k in env if k.upper() in PLUGIN_OVERRIDES)
     kookabug = shutil.which("kookabug", path=path)
     expected = root / build.BIN / build.LAUNCHER
-    ok = not leaked and kookabug is not None and Path(kookabug).resolve() == expected.resolve()
-    return ok, f"kookabug={kookabug}, 남은 Python·uv={leaked or '없음'}"
+    ok = (
+        not leaked
+        and not overrides
+        and kookabug is not None
+        and Path(kookabug).resolve() == expected.resolve()
+    )
+    return ok, (
+        f"kookabug={kookabug}, 남은 Python·uv={leaked or '없음'}, "
+        f"플러그인 재정의={overrides or '없음'}"
+    )
 
 
 def run_cli(
@@ -1066,6 +1082,102 @@ def mcp_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
         shutil.rmtree(base, ignore_errors=True)
 
 
+PLUGIN_GRAPH: Final = "sample_reverse.graph.json"
+
+
+_LOG_EXE: Final = re.compile(r"^\$ (.+?\.exe)(?=\s|$)", re.IGNORECASE | re.MULTILINE)
+
+
+def bundled_uv_used(log_text: str, root: Path) -> bool:
+    """작업 로그(`$ <명령>` 줄)가 부른 uv 실행 파일이 **모두 이 설치 루트의
+    `tools\\uv\\uv.exe`와 같은 파일**인가 (하나 이상). 경로는 짧은 이름(8.3)·대소문자가 달라도
+    파일 동일성으로 본다 — 다른 설치 트리의 같은 접미사·외부 재정의(`KOOKABUG_UV`)는 통과하지
+    않는다 (B7 검수 H1)."""
+    bundled = root / build.TOOLS_UV
+    if not bundled.is_file():
+        return False
+    used = [Path(m) for m in _LOG_EXE.findall(log_text) if Path(m).name.lower() == "uv.exe"]
+
+    def same(path: Path) -> bool:
+        try:
+            return os.path.samefile(path, bundled)
+        except OSError:
+            return False
+
+    return bool(used) and all(same(p) for p in used)
+
+
+def plugin_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
+    """설치본 플러그인 (M6 3.12): PATH에 uv가 없는 환경에서 임시 워크스페이스에 설치 트리의 예제
+    wheel을 `plugin add --yes` → `plugin verify` → 예제 그래프 `kookabug run`(pass) → `plugin remove
+    --yes` → `plugin gc --yes`. 설치 거래가 동봉 uv(`tools\\uv\\uv.exe`)를 썼는지 작업 로그로 본다.
+    uv 캐시는 임시 `LOCALAPPDATA`(이 PC의 실제 캐시를 쓰지 않음). 인덱스가 필요 없다
+    (의존성이 SDK뿐)."""
+    plugins = root / build.EXAMPLE_PLUGINS
+    wheels = sorted(plugins.glob("kookabug_plugin_sample-*.whl"))
+    if len(wheels) != 1 or not (plugins / PLUGIN_GRAPH).is_file():
+        return (
+            False,
+            f"예제 플러그인 wheel·그래프가 없다: {sorted(p.name for p in plugins.glob('*'))}",
+        )
+    if (plugins / ".gitignore").exists():
+        return False, "examples/plugins에 uv build가 쓴 .gitignore가 남았다"
+    base = Path(tempfile.mkdtemp(prefix="kb-plugin-"))
+    try:
+        workspace = base / "ws"
+        (workspace / "tests").mkdir(parents=True)
+        (workspace / "kookabug.json").write_text(
+            json.dumps({"format": "kookabug.workspace/0"}), encoding="utf-8"
+        )
+        shutil.copy2(plugins / PLUGIN_GRAPH, workspace / "tests" / PLUGIN_GRAPH)
+        (base / "appdata").mkdir()
+        local = {**env, "LOCALAPPDATA": str(base / "appdata")}
+        steps: list[str] = []
+
+        def cli(*args: str) -> dict[str, Any]:
+            proc = run_cli(root, local, args, cwd=workspace)
+            steps.append(
+                f"{args[0]} {args[1] if len(args) > 1 else ''}".strip() + f"={proc.returncode}"
+            )
+            if proc.returncode != 0:
+                tail = f"{proc.stdout[-800:]} {proc.stderr[-800:]}"
+                raise RuntimeError(f"{' '.join(args)}: 종료 코드 {proc.returncode} {tail}")
+            return json.loads(proc.stdout)
+
+        added = cli("plugin", "add", str(wheels[0]), "--yes", "--json")
+        logs = "\n".join(
+            p.read_text("utf-8", errors="replace")
+            for p in (workspace / ".kookabug" / "plugins" / "logs").glob("*.log")
+        )
+        bundled = bundled_uv_used(logs, root)
+        verified = cli("plugin", "verify", "--json")
+        run = cli("run", f"tests/{PLUGIN_GRAPH}", "--json")
+        cli("plugin", "remove", "sample", "--yes", "--json")
+        cli("plugin", "gc", "--yes", "--json")
+        lock = json.loads((workspace / "kookabug.lock").read_text(encoding="utf-8"))
+        envs = workspace / ".kookabug" / "plugins" / "envs"
+        left_envs = sorted(p.name for p in envs.iterdir()) if envs.is_dir() else []
+        left_wheels = list((workspace / "plugins" / "wheels").glob("*/*.whl"))
+        ok = (
+            added.get("ok") is True
+            and bundled
+            and verified.get("ok") is True
+            and run.get("verdict") == "pass"
+            and lock.get("plugins") == []
+            and not left_envs
+            and not left_wheels
+        )
+        detail = (
+            f"{', '.join(steps)}; 동봉 uv 사용 {bundled}, 실행 {run.get('verdict')}, "
+            f"gc 뒤 환경 {left_envs or '없음'}, wheel {len(left_wheels)}개"
+        )
+        return ok, detail
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        return False, f"플러그인 스모크 실패: {exc!r}"
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
 def dll_step(root: Path) -> tuple[bool, str]:
     report = dllcheck.check_tree(root)
     if report.problems:
@@ -1094,6 +1206,7 @@ def smoke_installed(report: SmokeReport) -> None:
     report.step("cli.video", lambda: video_step(root, env))
     report.step("recorder.hook", lambda: recorder_step(root, env))
     report.step("cli.mcp", lambda: mcp_step(root, env))
+    report.step("cli.plugin", lambda: plugin_step(root, env))
     report.step("app.smoke", lambda: app_step(root, env))
     report.step("dll.check", lambda: dll_step(root))
 

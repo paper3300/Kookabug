@@ -2,7 +2,7 @@
 // 색 고르기·탐침 노드가 있는 그래프. 탐침 config에는 시도할 주소를 넣어 둔다 (탐침 위젯이 결과를 값으로 써 넣는다)
 import fs from "node:fs";
 import path from "node:path";
-import { expect, type FrameLocator, type Page } from "@playwright/test";
+import { expect, type Frame, type FrameLocator, type Page } from "@playwright/test";
 import { openGraph, selectOnly } from "./editor";
 import { pluginWorkspace, preinstall, type PluginWorld } from "./plugins";
 
@@ -83,6 +83,20 @@ export async function openWidgetNode(page: Page, node: string, graph = WIDGET_GR
 
 export function widgetBox(page: Page, widget: string) {
   return page.locator(`[data-part="plugin-widget"][data-widget="${widget}"]`);
+}
+
+/**
+ * `data-ready=true`인 그 위젯 iframe의 살아 있는 프레임. 못 찾으면 **실패**한다 — 보안 단언이 프레임이 없어
+ * 조용히 건너뛰지 않게 (B7 검수 H2)
+ */
+export async function liveWidgetFrame(page: Page, widget: string): Promise<Frame> {
+  const box = widgetBox(page, widget);
+  await expect(box).toHaveAttribute("data-ready", "true", { timeout: 15_000 });
+  const handle = await box.locator("iframe").elementHandle();
+  const frame = handle === null ? null : await handle.contentFrame();
+  if (frame === null) throw new Error(`${widget} 위젯 프레임이 없다`);
+  expect(frame.url()).toMatch(/^kbplugin:\/\/[a-z0-9-]+-[0-9a-f]{12}\/__widget\.html\?/);
+  return frame;
 }
 
 export function widgetFrame(page: Page, widget: string): FrameLocator {

@@ -64,14 +64,21 @@ M5_SCREENS: Final = frozenset(
 """M5에서 늘린 비교 화면 (M5 계획 B4·B5). M5 절차서 D3가 맡는다."""
 
 
-def compare_screens() -> list[str]:
+NO_DESIGN_SHOTS: Final = frozenset({"plugins.spec.ts", "plugin-widget.spec.ts"})
+"""비교할 시안 PNG가 없는 샷 시나리오 (M6 U1 — 확정 시안 없음). 이 파일들만 `compare.mjs` 머리
+규칙에서 뺀다 — 다른 샷은 문구와 무관하게 머리 검사를 그대로 받는다 (B7 검수 M1)."""
+
+
+def compare_screens(shots: Path | None = None) -> list[str]:
     """`compare.mjs`의 SCREENS 중 앱 스크린샷 시나리오가 있는 M2 화면 id, SCREENS 순서.
     시나리오(`shots/*.spec.ts`)는 머리 주석에 `compare.mjs <id…>`를 적는다."""
     text = COMPARE.read_text(encoding="utf-8")
     body = text[text.index("export const SCREENS = {") : text.index("};", text.index("SCREENS"))]
     ids = re.findall(r'^\s{2}"?([a-z-]+)"?:', body, re.MULTILINE)
     shot: set[str] = set()
-    for spec in SHOTS.glob("*.spec.ts"):
+    for spec in (SHOTS if shots is None else shots).glob("*.spec.ts"):
+        if spec.name in NO_DESIGN_SHOTS:  # 확정 시안이 없는 화면 (M6 플러그인 — 사람이 본다)
+            continue
         found = re.search(r"compare\.mjs ([a-z -]+)$", spec.read_text(encoding="utf-8"), re.M)
         assert found is not None, spec
         shot.update(found.group(1).split())
@@ -102,6 +109,29 @@ def test_compare_set_same_in_manual_ci_and_tool() -> None:
     in_table = re.findall(r"^\| V\d+ \| [^|]*\(`([a-z-]+)`\)", manual(), re.MULTILINE)
     assert in_table == screens
     assert f"마지막 줄 `{2 * len(screens)}`" in manual()
+
+
+def test_no_design_exemption_only_for_named_shots(tmp_path: Path) -> None:
+    """시안 없음 예외는 M6 플러그인 샷 두 파일 이름에만. 다른 샷이 머리를 잃으면 "시안 없음" 문구를
+    더해도 실패한다 (B7 검수 M1 재현)."""
+    import shutil
+
+    shots = tmp_path / "shots"
+    shutil.copytree(SHOTS, shots)
+    assert {p.name for p in shots.glob("plugin*.spec.ts")} == NO_DESIGN_SHOTS
+    compare_screens(shots)  # 지금 그대로는 통과
+    target = shots / "agent-judge.spec.ts"
+    body = "\n".join(
+        line
+        for line in target.read_text(encoding="utf-8").splitlines()
+        if "compare.mjs agent-judge" not in line
+    )
+    target.write_text(body, encoding="utf-8")
+    with pytest.raises(AssertionError):
+        compare_screens(shots)
+    target.write_text("// 비교할 시안 PNG 없음\n" + body, encoding="utf-8")
+    with pytest.raises(AssertionError):
+        compare_screens(shots)
 
 
 def test_referenced_files_exist() -> None:

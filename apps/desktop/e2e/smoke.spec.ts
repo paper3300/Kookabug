@@ -147,10 +147,18 @@ test("test_iframe_cannot_call_ipc", async () => {
     frame.src = "app://app/index.html";
     document.body.append(frame);
     await new Promise((r) => frame.addEventListener("load", r, { once: true }));
-    const w = frame.contentWindow as (Window & { kookabug?: unknown }) | null;
-    return { bridge: typeof w?.kookabug, require: typeof (w as unknown as { require?: unknown }).require };
+    try {
+      const w = frame.contentWindow as (Window & { kookabug?: unknown }) | null;
+      return { bridge: typeof w?.kookabug, require: typeof (w as unknown as { require?: unknown }).require };
+    } catch {
+      // M6: 하위 프레임 이동은 위젯 껍데기 처음 적재만 허용(will-frame-navigate) — app:// 문서를 싣지 못해 다른 출처(오류 문서)가 된다
+      return { bridge: "blocked", require: "blocked" };
+    }
   });
-  expect(inFrame).toEqual({ bridge: "undefined", require: "undefined" });
+  expect([
+    { bridge: "undefined", require: "undefined" },
+    { bridge: "blocked", require: "blocked" },
+  ]).toContainEqual(inFrame);
 
   // 주 프로세스 검사: 실제 하위 프레임(WebFrameMain)을 발신자로 넣으면 IPC 처리기가 거부한다
   const verdict = await app.evaluate(async ({ BrowserWindow, ipcMain }) => {

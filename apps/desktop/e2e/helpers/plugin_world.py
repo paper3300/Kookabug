@@ -22,6 +22,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import Any
 
 REPO = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO / "tools"))
@@ -39,6 +40,13 @@ from kb_testing.plugin_index import IndexServer  # noqa: E402
 
 def _broken_import() -> bytes:
     return b'raise RuntimeError("broken_import fixture")\n'
+
+
+def _secret_widget(schema: dict[str, Any]) -> None:
+    for node in schema["nodes"]:
+        for decl in (node.get("config") or {}).values():
+            if "ui" in decl:
+                decl["type"] = "secret"
 
 
 def serve(root: Path) -> None:
@@ -61,6 +69,10 @@ def serve(root: Path) -> None:
         ),
         # 위젯 격리 탐침 (B6): 네트워크·다른 플러그인 자원·프레임 이동을 시도한다
         "widget_probe": plugin_wheel(PLUGINS / "widget_probe", root / "wheels" / "widget_probe"),
+        # 비밀값 타입 항목에 위젯을 단 스키마 (SDK 빌드는 거부해 빌드 뒤 고친다) — 설치 거부
+        "widget_secret": plugin_wheel(
+            SAMPLE, root / "wheels" / "widget_secret", schema_edit=_secret_widget
+        ),
     }
     with IndexServer(files) as index:
         world = {

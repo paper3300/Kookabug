@@ -21,6 +21,7 @@ import { toolbar } from "./helpers/run";
 import {
   configField,
   focusApp,
+  liveWidgetFrame,
   NONCE_ZERO,
   openWidgetNode,
   PROBE_GRAPH,
@@ -104,6 +105,14 @@ test("es module widget loads and edits config", async () => {
   await expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
   const src = (await iframe.getAttribute("src")) ?? "";
   expect(src).toMatch(new RegExp(`^kbplugin://${ww().hosts.sample}/__widget\\.html\\?w=sample\\.color&s=[0-9a-f]{32}$`));
+  // 살아 있는 위젯 프레임에는 앱 다리·Node·프로세스가 없다
+  const live = await liveWidgetFrame(page, "sample.color");
+  expect(
+    await live.evaluate(() => {
+      const g = window as unknown as Record<string, unknown>;
+      return [typeof g.kookabug, typeof g.require, typeof g.process];
+    }),
+  ).toEqual(["undefined", "undefined", "undefined"]);
   // ES 모듈(index.js → ./kookabug-ui.js)이 실려 init 값을 그렸다
   const frame = widgetFrame(page, "sample.color");
   const text = frame.getByRole("textbox", { name: "색 코드" });
@@ -186,9 +195,9 @@ test("readOnly while running", async () => {
   await expect(toolbar(page)).toHaveAttribute("data-phase", "running", { timeout: 60_000 });
   // 실행 중: 위젯이 읽기 전용을 받고, 위젯이 억지로 보낸 change도 버린다
   await expect(text).toBeDisabled();
-  const iframe = page.frames().find((f) => f.url().startsWith(`kbplugin://${ww().hosts.sample}/`));
-  expect(iframe).toBeDefined();
-  await iframe!.evaluate(() => {
+  const iframe = await liveWidgetFrame(page, "sample.color");
+  expect(iframe.url().startsWith(`kbplugin://${ww().hosts.sample}/`)).toBe(true);
+  await iframe.evaluate(() => {
     const session = new URLSearchParams(location.search).get("s");
     window.parent.postMessage({ kb: "change", session, value: "#000000" }, "*");
   });
@@ -203,8 +212,8 @@ test("env turned broken by verify refuses new widget requests", async () => {
   test.setTimeout(240_000);
   const page = await open();
   await openWidgetNode(page, "n_color");
-  await expect(widgetBox(page, "sample.color")).toHaveAttribute("data-ready", "true", { timeout: 15_000 });
-  const frame = page.frames().find((f) => f.url().startsWith(`kbplugin://${ww().hosts.sample}/`))!;
+  const frame = await liveWidgetFrame(page, "sample.color");
+  expect(frame.url().startsWith(`kbplugin://${ww().hosts.sample}/`)).toBe(true);
   const importLate = () =>
     frame.evaluate(async () => {
       try {

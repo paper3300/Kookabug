@@ -178,8 +178,8 @@ kookabug-plugin-sample/
 ├─ src/kookabug_plugin_sample/
 │  ├─ __init__.py
 │  ├─ nodes.py
-│  └─ kookabug.schema.json         `kookabug-sdk build`가 만든다. 배포에 포함
-├─ ui/                             (선택) UI 확장 JS
+│  ├─ kookabug.schema.json         `kookabug-sdk build`가 만든다. 배포에 포함
+│  └─ ui/                          (선택) UI 확장 JS — 패키지 안, 진입 index.js (M6)
 └─ tests/test_nodes.py
 ```
 
@@ -201,6 +201,9 @@ min_core = "0.1.0"
 - `permissions` 후보: `capture`, `input`, `process`, `filesystem`, `network`, `secrets`. 설치 화면에 표시한다. 노드의 `effects`는 여기에 있어야 한다
 - 노드 스키마는 `src/<최상위 패키지>/kookabug.schema.json`에 만든다 (최상위 패키지 = `modules` 첫 항목의 첫 이름). 모듈 디렉터리 안에 있으므로 빌드 백엔드가 **uv_build면** 설정 없이 wheel에 들어간다. setuptools 등 다른 백엔드는 package-data 같은 데이터 파일 포함 설정이 따로 필요하다. 설치된 스키마는 `kookabug_sdk.schema.load_installed("<패키지>")`(`importlib.resources`)로 읽는다
 - 의존성은 `dependencies`로 선언하고 uv로 설치한다. venv는 기본 공유, 충돌하면 그 플러그인만 격리 venv. 워커 프로세스는 venv와 별개로 **실행마다 새로** 띄운다 → [[구현 계획 v0]] 3장
+- (M6) `[tool.kookabug]`에 `isolation`(`auto` 기본·`shared`·`isolated`)·`ui`(패키지 안 상대 폴더, 위젯을 쓰면 필수)를 더 쓸 수 있다. 빌드 결과의 머리 `plugin`은 `{id, title, version, modules, permissions, min_core, isolation, ui}`(선언한 것만, 형식 `kookabug.nodes/0` 그대로)이고 설치는 이 머리의 `modules`로 워커를 띄운다(배포판·패키지 이름에서 추정하지 않음). `kookabug_sdk.schema.schema_digest(문서)` = `{plugin, nodes(type 순)}`의 정규 JSON sha256 — 설치 때(wheel 안 파일)와 실행 때(워커 hello)에 같은 함수로 대조한다
+- (M6) 의존성은 **wheel이 있는 것만**(sdist만 있으면 설치 거부 — 다른 PC 재현을 보장할 수 없다). 플러그인 wheel 자체는 순수 Python을 권한다(워크스페이스에 커밋된다). git·폴더 원천은 설치가 승인 뒤 `kookabug-sdk build`로 스키마를 만들고 `uv build`로 wheel을 만든다 — `[project].dependencies`는 정적이어야 한다(`dynamic`이면 거부)
+- (M6) **인스펙터 위젯**: `Config(str, ..., ui=Widget("color"))`면 그 config 칸을 플러그인 위젯 `<id>.color`가 고친다(스키마 `config.<이름>.ui.widget`). 비밀값 타입 항목에 위젯을 달면 빌드 오류(설치·앱도 거부). 한 플러그인의 위젯은 모두 `ui/index.js`가 `init`의 위젯 ID로 나눠 그리고, `@kookabug/ui-sdk`(MIT, `packages/ui-sdk`)의 `defineWidget({onInit, onValue}) → {setValue, setHeight}`를 `ui/` 폴더에 **사본**으로 넣어 쓴다(위젯은 샌드박스 iframe에서 자기 `ui/` 폴더 파일만 읽는다 — 네트워크·파일·앱 RPC 없음). 입력 핀 위젯은 MVP 뒤
 
 **워커에서 실행될 때**
 
@@ -217,9 +220,9 @@ min_core = "0.1.0"
 
 | 명령 | 하는 일 |
 |---|---|
-| `kookabug-sdk new` | 플러그인 템플릿 생성 |
-| `kookabug-sdk build [프로젝트]` | `[tool.kookabug].modules`를 import해 `src/<패키지>/kookabug.schema.json` 생성. 출구·타입·재시도·효과 선언 오류 검사. 같은 코드면 같은 바이트(키 정렬, 노드는 type 순) |
-| `kookabug-sdk dev` | 실행 중인 Kookabug에 연결해 핫 리로드 (`.hotreload` 마커 방식) |
+| `kookabug-sdk new <폴더> --id <id> [--title] [--ui]` | 플러그인 틀 생성 (M6): src 레이아웃, 패키지 `kookabug_plugin_<id>`, 진입 `<패키지>.nodes`, 순수 노드 하나, SDK 범위 `>=0.N,<0.N+1`. `--ui`면 위젯 노드와 `ui/index.js`·ui-sdk 사본 |
+| `kookabug-sdk build [프로젝트]` | `[tool.kookabug].modules`를 import해 `src/<패키지>/kookabug.schema.json` 생성. 출구·타입·재시도·효과 선언 오류 검사(위젯: `ui` 폴더 필요·비밀값 금지). 같은 코드면 같은 바이트(키 정렬, 노드는 type 순) |
+| `kookabug-sdk dev` | 실행 중인 Kookabug에 연결해 핫 리로드 (`.hotreload` 마커 방식) — **MVP 뒤** (M6에서 미룸. 지금은 앱·CLI의 개발 모듈 `--plugin-module`이 사람 전용 개발 경로) |
 | `kookabug-sdk test` | pytest + 가짜 `ctx`. 스크린샷 파일을 캡처 결과로 주입 |
 
 ## 노드 테스트
@@ -250,6 +253,11 @@ def test_wait_image_found():
 - 입력·출구·출력 의미가 바뀌면 `version`을 올린다. 그래프는 노드마다 `version`을 기록한다
 - 플러그인은 옛 버전 그래프를 새 버전으로 옮기는 함수를 줄 수 있다: `@node(..., migrations={1: migrate_v1})`
 - 옮기지 못하면 실행 전 검증에서 막고, 옛 버전 플러그인으로 실행하라고 안내한다
+
+## 판 정책 (M6)
+
+- `kookabug-sdk`(PyPI)·`@kookabug/ui-sdk`(npm)는 0.x 동안 **소판이 호환 경계**다. 플러그인은 `kookabug-sdk>=0.N,<0.N+1`로 의존한다. 앱은 SDK 하나를 동봉하고(`<앱>\plugin-sdk\`) 플러그인 환경도 그 판을 쓴다. 앱의 SDK가 바뀌면 옛 잠금은 `plugin_env_stale` → 사람이 `relock`
+- 게시 절차·명령은 `python/kookabug_sdk/RELEASING.md`(게시는 사람)
 
 ## 이후 버전
 
