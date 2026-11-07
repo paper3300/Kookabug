@@ -1,0 +1,53 @@
+{
+  "description": "예제 게임 SampleRPG 탐색 각본 (M7 3.13). 좌표는 클라이언트 물리 픽셀(1024x640). 비밀값은 키 이름만 — 값은 실행 환경의 비밀값 제공자",
+  "window": "SampleRPG",
+  "title": "예제 게임 탐색",
+  "goal": "타이틀부터 월드·인벤토리까지 화면과 이동을 모은다",
+  "max_steps": 60,
+  "steps": [
+    {"see": "new", "key": "title", "save": {"title": "타이틀", "kind": "screen",
+      "detect": {"all": [{"image": [412, 380, 200, 64]}]},
+      "elements": [{"name": "시작", "kind": "button", "rect": [412, 380, 200, 64]}]}},
+    {"act": "kb_input_click", "args": {"point": [512, 412]}, "from": "title", "via": {"click": {"element": "시작"}}},
+
+    {"see": "new", "key": "login", "save": {"title": "로그인", "kind": "screen",
+      "detect": {"all": [{"ocr": [300, 95, 424, 50], "text": "로그인"}, {"image": [300, 205, 95, 50]}]},
+      "elements": [
+        {"name": "계정", "kind": "field", "rect": [400, 205, 320, 50]},
+        {"name": "비밀번호", "kind": "field", "rect": [400, 285, 320, 50]},
+        {"name": "로그인 버튼", "kind": "button", "rect": [432, 380, 160, 56]}]}},
+    {"act": "kb_input_click", "args": {"point": [512, 408]}, "from": "login", "via": {"click": {"element": "로그인 버튼"}}},
+
+    {"see": "new", "key": "login_error", "save": {"title": "로그인 오류", "kind": "popup",
+      "detect": {"all": [{"image": [262, 170, 500, 190]}]}}},
+    {"act": "kb_input_key", "args": {"keys": "esc"}, "from": "login_error", "via": {"key": "esc"}},
+    {"see": "known", "key": "login"},
+
+    {"act": "kb_input_click", "args": {"point": [560, 230]}},
+    {"act": "kb_input_type", "args": {"secret": "acc.id"}},
+    {"see": "protected", "reason": "secret_field", "try_save": "login"},
+    {"act": "kb_input_click", "args": {"point": [560, 310]}},
+    {"act": "kb_input_type", "args": {"secret": "acc.pw"}},
+    {"see": "protected", "reason": "secret_field"},
+    {"act": "kb_input_click", "args": {"point": [512, 408]}, "from": "login", "via": {"click": {"element": "로그인 버튼"}}},
+
+    {"see": "new", "key": "lobby", "save": {"title": "서버 선택", "kind": "screen",
+      "detect": {"all": [{"ocr": [300, 90, 424, 60], "text": "서버 선택"}]},
+      "elements": [{"name": "Server 1", "kind": "list", "rect": [262, 200, 500, 64]}]}},
+    {"act": "kb_input_click", "args": {"point": [512, 232]}},
+    {"see": "known", "key": "lobby"},
+    {"act": "kb_input_click", "args": {"point": [512, 450]}, "from": "lobby", "via": {"click": {"point": [512, 450]}}},
+
+    {"see": "protected", "reason": "secret_field", "save_bare": {"key": "loading", "title": "로딩", "kind": "screen"}},
+    {"wait": "change", "from": "loading", "max_captures": 8},
+
+    {"see": "new", "key": "world", "save": {"title": "월드", "kind": "screen",
+      "detect": {"all": [{"image": [300, 200, 300, 200]}, {"ocr": [20, 20, 240, 52], "text": "Gold"}]},
+      "moves": [{"via": {"key": "m"}, "to": null, "status": "untried", "note": "지도 — 아직 안 가 봄"}]}},
+    {"act": "kb_input_key", "args": {"keys": "i"}, "from": "world", "via": {"key": "i"}},
+
+    {"see": "protected", "reason": "secret_field", "save_bare": {"key": "inventory", "title": "인벤토리", "kind": "popup"}},
+    {"act": "kb_input_key", "args": {"keys": "esc"}, "from": "inventory", "via": {"key": "esc"}},
+    {"see": "known", "key": "world"}
+  ]
+}

@@ -309,6 +309,71 @@ class ExitShape(BaseModel):
     outputs: list[str]
 
 
+class ExploreCounts(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    moves: Annotated[int, Field(ge=0)]
+    screens: Annotated[int, Field(ge=0)]
+    untried: Annotated[int, Field(ge=0)]
+
+
+class ExploreEndParams(BaseModel):
+    """
+    explore.end (kb_explore_end): 이 연결의 탐색 세션을 끝낸다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+
+class ExploreEndResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    counts: ExploreCounts
+    session: str
+
+
+class ExploreListParams(BaseModel):
+    """
+    explore.list (사람 화면용): screens/_explored/의 탐색 세션들
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+
+class ExploreSessionInfo(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    agent: str
+    counts: ExploreCounts
+    id: str
+    max_steps: Annotated[int, Field(ge=1)]
+    started_at: str
+    status: Literal["active", "ended", "interrupted"]
+    steps: Annotated[int, Field(ge=0)]
+    title: str
+
+
+class ExploreStartParams(BaseModel):
+    """
+    explore.start (kb_explore_start, M7 3.4): 탐색 세션 (에이전트 연결마다 하나)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    goal: str | None = None
+    max_steps: Annotated[int | None, Field(ge=1, le=1000)] = None
+    title: Annotated[str, Field(min_length=1)]
+    window: str | None = None
+
+
 class AgentImage(BaseModel):
     """
     agent 연결의 target.capture만 (M5 kb_screen_capture): 긴 변 1568·1 MiB 이하 PNG를 .kookabug/cache/agent/<cache>에 썼다 (읽은 쪽이 지운다)
@@ -638,6 +703,16 @@ class DebugBreakpointsSet(BaseModel):
     renderer: Literal[True]
     result: BreakpointsResult
     tool: Literal["ui_only"]
+
+
+class ExploreEnd(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: ExploreEndParams
+    renderer: Literal[False]
+    result: ExploreEndResult
+    tool: Literal["kb_explore_end"]
 
 
 class GraphClose(BaseModel):
@@ -1374,6 +1449,15 @@ class RequestFailedCode(
             "op_not_found",
             "frame_protected",
             "protect_record_failed",
+            "agent_only",
+            "explore_active",
+            "explore_not_active",
+            "explore_budget_exhausted",
+            "screen_exists",
+            "detect_not_matching",
+            "secret_in_text",
+            "secret_unchecked",
+            "screens_busy",
         ]
     ]
 ):
@@ -1453,9 +1537,18 @@ class RequestFailedCode(
             "op_not_found",
             "frame_protected",
             "protect_record_failed",
+            "agent_only",
+            "explore_active",
+            "explore_not_active",
+            "explore_budget_exhausted",
+            "screen_exists",
+            "detect_not_matching",
+            "secret_in_text",
+            "secret_unchecked",
+            "screens_busy",
         ],
         Field(
-            description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다)",
+            description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 비밀값 — data.field), secret_unchecked(비밀값 검사 불가 — 키를 못 읽음·보호 기록 손상), screens_busy(화면 지도 잠금)",
             title="RequestFailedCode",
         ),
     ]
@@ -1723,6 +1816,50 @@ class ScreenReadTextParams(BaseModel):
     rect: Rect | None = None
 
 
+class ScreensIdentifyMatch(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: str | None = None
+    key: str | None = None
+    node: str
+    state: Literal["confirmed", "explored"]
+    title: str | None
+
+
+class ScreensIdentifyParams(BaseModel):
+    """
+    screens.identify (kb_screen_identify, M7 3.6): 정지 화면이 어느 화면인지 (확정 화면 + 자기 탐색 세션 후보)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    frame_id: Annotated[str, Field(min_length=1)]
+
+
+class Problem(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    node: str
+    problem: str
+
+
+class ScreensIdentifyResult(BaseModel):
+    """
+    matches 맞는 화면, unknown 확인하지 못한 조건이 남은 화면(보호 프레임의 OCR 조건 등). 읽은 글자는 넣지 않는다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    checked: Annotated[int, Field(ge=0)]
+    matches: list[ScreensIdentifyMatch]
+    problems: list[Problem]
+    unknown: list[ScreensIdentifyMatch]
+
+
 class ScreensListParams(BaseModel):
     """
     screens.list (kb_screen_list, M5): under(screens/ 기준 또는 워크스페이스 기준 폴더) 아래 화면 지도
@@ -1732,6 +1869,124 @@ class ScreensListParams(BaseModel):
         extra="forbid",
     )
     under: str | None = None
+
+
+class ScreensSaveCondition1(BaseModel):
+    """
+    image = 이 영역을 잘라 이미지 조건으로, ocr = 이 영역에 text가 있어야 (프레임 물리 픽셀)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    image: Rect
+
+
+class ScreensSaveCondition2(BaseModel):
+    """
+    image = 이 영역을 잘라 이미지 조건으로, ocr = 이 영역에 text가 있어야 (프레임 물리 픽셀)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    ocr: Rect
+    text: Annotated[str, Field(min_length=1)]
+
+
+class ScreensSaveCondition(RootModel[ScreensSaveCondition1 | ScreensSaveCondition2]):
+    root: Annotated[
+        ScreensSaveCondition1 | ScreensSaveCondition2,
+        Field(
+            description="image = 이 영역을 잘라 이미지 조건으로, ocr = 이 영역에 text가 있어야 (프레임 물리 픽셀)",
+            title="ScreensSaveCondition",
+        ),
+    ]
+
+
+class Detect(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    all: list[ScreensSaveCondition] | None = None
+    none: list[ScreensSaveCondition] | None = None
+
+
+class Element(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["button", "field", "list", "text"]
+    name: Annotated[str, Field(min_length=1)]
+    rect: Rect
+
+
+class AlsoMatch(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    node: str
+    title: str | None
+
+
+class Click(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    element: Annotated[str, Field(min_length=1)]
+
+
+class ScreensSaveVia1(BaseModel):
+    """
+    이동 입력: 요소 클릭·점 클릭(프레임 물리 픽셀)·키
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    click: Click
+
+
+class PointItem2(RootModel[int]):
+    root: Annotated[int, Field(ge=0, le=9007199254740991)]
+
+
+class Click1(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    point: Annotated[list[PointItem2], Field(max_length=2, min_length=2)]
+
+
+class ScreensSaveVia2(BaseModel):
+    """
+    이동 입력: 요소 클릭·점 클릭(프레임 물리 픽셀)·키
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    click: Click1
+
+
+class ScreensSaveVia3(BaseModel):
+    """
+    이동 입력: 요소 클릭·점 클릭(프레임 물리 픽셀)·키
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    key: Annotated[str, Field(min_length=1)]
+
+
+class ScreensSaveVia(RootModel[ScreensSaveVia1 | ScreensSaveVia2 | ScreensSaveVia3]):
+    root: Annotated[
+        ScreensSaveVia1 | ScreensSaveVia2 | ScreensSaveVia3,
+        Field(
+            description="이동 입력: 요소 클릭·점 클릭(프레임 물리 픽셀)·키", title="ScreensSaveVia"
+        ),
+    ]
 
 
 class SecretKey(RootModel[str]):
@@ -1890,6 +2145,8 @@ class ToolName(
     RootModel[
         Literal[
             "kb_app_launch",
+            "kb_explore_end",
+            "kb_explore_start",
             "kb_graph_create",
             "kb_graph_get",
             "kb_graph_list",
@@ -1911,7 +2168,9 @@ class ToolName(
             "kb_run_status",
             "kb_screen_capture",
             "kb_screen_get",
+            "kb_screen_identify",
             "kb_screen_list",
+            "kb_screen_save",
             "kb_target_create",
             "kb_toolset_enable",
             "ui_only",
@@ -1921,6 +2180,8 @@ class ToolName(
     root: Annotated[
         Literal[
             "kb_app_launch",
+            "kb_explore_end",
+            "kb_explore_start",
             "kb_graph_create",
             "kb_graph_get",
             "kb_graph_list",
@@ -1942,7 +2203,9 @@ class ToolName(
             "kb_run_status",
             "kb_screen_capture",
             "kb_screen_get",
+            "kb_screen_identify",
             "kb_screen_list",
+            "kb_screen_save",
             "kb_target_create",
             "kb_toolset_enable",
             "ui_only",
@@ -2303,6 +2566,33 @@ class CropRef(BaseModel):
     rect: Rect
 
 
+class ExploreChangedParams(BaseModel):
+    """
+    M7: 탐색 세션·후보가 바뀜 (ui 연결에만)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    sessions: list[ExploreSessionInfo]
+
+
+class ExploreListResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    sessions: list[ExploreSessionInfo]
+
+
+class ExploreStartResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    folder: WorkspacePath
+    max_steps: Annotated[int, Field(ge=1)]
+    session: str
+
+
 class GraphChangedParams(BaseModel):
     """
     열린 문서의 디스크 revision이 바뀜 (파일이 없어졌으면 null)
@@ -2632,6 +2922,26 @@ class ControlType(BaseModel):
     tool: Literal["kb_input_type"]
 
 
+class ExploreList(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: ExploreListParams
+    renderer: Literal[True]
+    result: ExploreListResult
+    tool: Literal["ui_only"]
+
+
+class ExploreStart(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: ExploreStartParams
+    renderer: Literal[False]
+    result: ExploreStartResult
+    tool: Literal["kb_explore_start"]
+
+
 class GraphCheck(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -2812,6 +3122,16 @@ class ScreenReadText(BaseModel):
     tool: Literal["kb_ocr_read"]
 
 
+class ScreensIdentify(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: ScreensIdentifyParams
+    renderer: Literal[False]
+    result: ScreensIdentifyResult
+    tool: Literal["kb_screen_identify"]
+
+
 class SecretsCreate(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -2924,6 +3244,13 @@ class ApprovalRequested(BaseModel):
         extra="forbid",
     )
     params: ApprovalRequest
+
+
+class ExploreChanged(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: ExploreChangedParams
 
 
 class GraphChanged(BaseModel):
@@ -3415,7 +3742,7 @@ class Request(BaseModel):
 
 class RequestFailedData(BaseModel):
     """
-    error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message. M5 B3: approval_required → decision·reason. M6: plugin_failed → plugin_error, op_not_found → op_id. M7: frame_protected·sensitive_region → reason·message(안내)
+    error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message. M5 B3: approval_required → decision·reason. M6: plugin_failed → plugin_error, op_not_found → op_id. M7: frame_protected·sensitive_region → reason·message(안내), secret_in_text → field, secret_unchecked → reason(못 읽은 키 이름)
     """
 
     model_config = ConfigDict(
@@ -3430,6 +3757,9 @@ class RequestFailedData(BaseModel):
         ),
     ] = None
     diagnostics: list[Diagnostic] | None = None
+    field: Annotated[
+        str | None, Field(description="M7 secret_in_text: 비밀값이 든 글자 필드 이름 (값 없음)")
+    ] = None
     index: Annotated[
         int | None,
         Field(description="patch_invalid: 틀린 연산의 순번 (0부터)", ge=0, le=9007199254740991),
@@ -3759,6 +4089,48 @@ class ScreensListResult(BaseModel):
         extra="forbid",
     )
     screens: list[Screen]
+
+
+class Move(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    note: str | None = None
+    status: Literal["tried", "untried"]
+    to: str | None = None
+    via: ScreensSaveVia
+
+
+class ScreensSaveParams(BaseModel):
+    """
+    screens.save (kb_screen_save, M7 3.5): 자기 탐색 세션 폴더의 후보 카드 하나를 저장·갱신. 글자 필드는 비밀값 검사(3.5b)를 지난다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    description: str | None = None
+    detect: Detect | None = None
+    elements: list[Element] | None = None
+    frame_id: Annotated[str, Field(min_length=1)]
+    key: Annotated[str, Field(pattern="^[a-z][a-z0-9_]{0,63}$")]
+    kind: Literal["popup", "screen"] | None = None
+    moves: list[Move] | None = None
+    of: str | None = None
+    title: str | None = None
+
+
+class ScreensSaveResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    also_matches: list[AlsoMatch]
+    incomplete: Literal[True] | None = None
+    key: str
+    path: WorkspacePath
+    reason: Annotated[str | None, Field(description="shot omitted의 보호 사유")] = None
+    revision: str
+    shot: Literal["omitted", "saved"]
 
 
 class SessionHelloParams(BaseModel):
@@ -4252,6 +4624,16 @@ class ScreensList(BaseModel):
     tool: Literal["kb_screen_list"]
 
 
+class ScreensSave(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: ScreensSaveParams
+    renderer: Literal[False]
+    result: ScreensSaveResult
+    tool: Literal["kb_screen_save"]
+
+
 class SessionHello(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -4381,6 +4763,7 @@ class Notifications(BaseModel):
     debug_breakpoints_changed: Annotated[
         DebugBreakpointsChanged, Field(alias="debug.breakpoints.changed")
     ]
+    explore_changed: Annotated[ExploreChanged, Field(alias="explore.changed")]
     graph_changed: Annotated[GraphChanged, Field(alias="graph.changed")]
     lease_changed: Annotated[LeaseChanged, Field(alias="lease.changed")]
     plugins_changed: Annotated[PluginsChanged, Field(alias="plugins.changed")]
@@ -4810,6 +5193,9 @@ class Methods(BaseModel):
     daemon_shutdown: Annotated[DaemonShutdown, Field(alias="daemon.shutdown")]
     debug_breakpoints_get: Annotated[DebugBreakpointsGet, Field(alias="debug.breakpoints.get")]
     debug_breakpoints_set: Annotated[DebugBreakpointsSet, Field(alias="debug.breakpoints.set")]
+    explore_end: Annotated[ExploreEnd, Field(alias="explore.end")]
+    explore_list: Annotated[ExploreList, Field(alias="explore.list")]
+    explore_start: Annotated[ExploreStart, Field(alias="explore.start")]
     graph_check: Annotated[GraphCheck, Field(alias="graph.check")]
     graph_close: Annotated[GraphClose, Field(alias="graph.close")]
     graph_create: Annotated[GraphCreate, Field(alias="graph.create")]
@@ -4870,7 +5256,9 @@ class Methods(BaseModel):
     run_unsubscribe: Annotated[RunUnsubscribe, Field(alias="run.unsubscribe")]
     screen_read_text: Annotated[ScreenReadText, Field(alias="screen.read_text")]
     screens_get: Annotated[ScreensGet, Field(alias="screens.get")]
+    screens_identify: Annotated[ScreensIdentify, Field(alias="screens.identify")]
     screens_list: Annotated[ScreensList, Field(alias="screens.list")]
+    screens_save: Annotated[ScreensSave, Field(alias="screens.save")]
     secrets_create: Annotated[SecretsCreate, Field(alias="secrets.create")]
     secrets_list: Annotated[SecretsList, Field(alias="secrets.list")]
     session_hello: Annotated[SessionHello, Field(alias="session.hello")]

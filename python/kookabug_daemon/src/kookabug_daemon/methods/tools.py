@@ -96,6 +96,12 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     "screen.read_text": "kb_ocr_read",
     "screens.list": "kb_screen_list",
     "screens.get": "kb_screen_get",
+    # M7 탐색 세션·화면 지도 저장·식별 (계획 3.4~3.6). 목록은 사람 화면용
+    "screens.identify": "kb_screen_identify",
+    "screens.save": "kb_screen_save",
+    "explore.start": "kb_explore_start",
+    "explore.end": "kb_explore_end",
+    "explore.list": UI_ONLY,
     "run.start": "kb_run_start",
     "run.cancel": "kb_run_cancel",
     "run.status": "kb_run_status",
@@ -164,6 +170,8 @@ AGENT_DENIED: Final = frozenset(
         "agents.set",
         # 에이전트는 플러그인을 설치·제거·준비하지 못한다 (M6 3.9, 사람 확인으로도 — U3)
         *PLUGIN_CHANGE_METHODS,
+        # 탐색 세션 목록은 사람 화면용 (M7 3.8)
+        "explore.list",
     }
 )
 """`ui_only`이지만 agent 연결에는 판정 전에 거부하는 메서드. `ui_only`는 판정을 건너뛰므로

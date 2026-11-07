@@ -156,6 +156,8 @@ async def _control(call: Call) -> dict[str, Any]:
     value = control_graph(call)  # 인자가 틀리면 판정 전에 거부 (아무것도 묻지 않음)
     # 개발 모듈 daemon의 에이전트 제어 실행은 사람 확인을 묻기 전에 거부 (M6 3.7)
     call.daemon.run_manager.refuse_dev_modules(call.principal)
+    # 탐색 세션 스텝 예산: 판정(사람 확인) **전에** (M7 3.4)
+    call.daemon.explore.check_budget(call.connection)
     authorized = await call.daemon.approvals.authorize(call, _window_arg(call))
     decision = authorized.decision
     assert isinstance(decision, Decision)  # control.*은 ui_only가 아니다
@@ -189,6 +191,8 @@ async def _control(call: Call) -> dict[str, Any]:
                 bound_window=bound,
             )
         )
+        # 판정을 통과해 제어 실행에 들어갔다: 탐색 세션의 스텝 하나
+        await asyncio.to_thread(call.daemon.explore.count_step, call.connection)
         outcome = await asyncio.to_thread(manager.wait_outcome, run_id, WAIT_S)
     finally:
         # 결과와 상관없이 이 창들로 입력이 갔다고 본다 (칸 상자 근거를 끊는 쪽이 안전)

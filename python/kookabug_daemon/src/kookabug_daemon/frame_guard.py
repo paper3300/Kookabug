@@ -61,6 +61,8 @@ __all__ = [
     "HINTS",
     "FrameGuard",
     "Guard",
+    "ProtectFileError",
+    "parse_protect_file",
 ]
 
 log = logging.getLogger(__name__)
@@ -138,12 +140,20 @@ _MAX_PID: Final = (1 << 32) - 1
 _MAX_HWND: Final = (1 << 53) - 1
 
 
-def _parse_record_file(raw: bytes) -> tuple[set[str], dict[WindowBinding, _Record]]:
-    """`agent-protect.json`을 엄격하게 읽는다. 형식이 하나라도 틀리면 `ValueError` (R1)."""
-    data = json.loads(raw.decode("utf-8"))
+class ProtectFileError(ValueError):
+    """보호 기록 파일이 문법·구조 어느 쪽이든 틀렸다."""
 
-    def fail(where: str) -> ValueError:
-        return ValueError(f"보호 기록 형식이 틀렸다: {where}")
+
+def parse_protect_file(raw: bytes) -> tuple[set[str], dict[WindowBinding, _Record]]:
+    """`agent-protect.json`을 엄격하게 읽는다 (비밀값 키 목록, 창 기록). 형식이 하나라도 틀리면
+    `ProtectFileError` (R1). daemon 시작과 사람 CLI(`screen protect`)가 같이 쓴다."""
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise ProtectFileError(f"JSON이 아니다: {exc}") from exc
+
+    def fail(where: str) -> ProtectFileError:
+        return ProtectFileError(f"보호 기록 형식이 틀렸다: {where}")
 
     def is_int(value: object) -> bool:
         return isinstance(value, int) and not isinstance(value, bool)
@@ -279,7 +289,7 @@ class FrameGuard:
                 self._fail_closed(None)
                 return
             try:
-                keys, records = _parse_record_file(raw)
+                keys, records = parse_protect_file(raw)
             except ValueError, UnicodeDecodeError:
                 # 문법 오류와 구조 오류(필드 누락·타입·배열·바인딩 값)를 똑같이 다룬다 (R1)
                 self._fail_closed(raw)

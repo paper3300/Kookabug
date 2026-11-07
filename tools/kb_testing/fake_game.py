@@ -96,9 +96,13 @@ def make_fake_game(
     permissions: dict[str, Any] | None = None,
     draw: bool = True,
     scenario_patch: Any = None,
+    screens: bool = True,
 ) -> FakeGame:
-    """예제 워크스페이스 사본 + 가짜 게임 사양. `scenario_patch(dict)`로 장면 표를 고칠 수 있다."""
+    """예제 워크스페이스 사본 + 가짜 게임 사양. `scenario_patch(dict)`로 장면 표를 고칠 수 있다.
+    `screens=False`면 확정 화면 지도(`screens/`)를 지운다 — 처음부터 탐색하는 검사용."""
     root = copy_sample_workspace(tmp_path / "ws")
+    if not screens:
+        shutil.rmtree(root / "screens", ignore_errors=True)
     frames = tmp_path / "frames"
     shutil.copytree(REPO_ROOT / "fixtures" / "sample-game" / "frames", frames)
     scenario = json.loads((frames / "scenario.json").read_text(encoding="utf-8"))

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from kookabug_core.service import WorkspaceService
     from kookabug_daemon.approvals import ApprovalBroker
     from kookabug_daemon.documents import DocumentTable, GraphChecker
+    from kookabug_daemon.explore import ExploreSessions
     from kookabug_daemon.frame_guard import FrameGuard
     from kookabug_daemon.frames import FrameCache
     from kookabug_daemon.image_cache import EditorCache
@@ -104,6 +105,15 @@ class DaemonContext(Protocol):
         """에이전트 정지 화면 보호 판정 (M7 3.5a)."""
         ...
 
+    @property
+    def explore(self) -> ExploreSessions:
+        """에이전트 탐색 세션 (M7 3.4)."""
+        ...
+
+    def connection_name(self, connection: int) -> str:
+        """그 연결의 `client.name` (끝난 연결이면 빈 글자)."""
+        ...
+
     def request_shutdown(self, *, force: bool, reason: str) -> None: ...
 
     def connection_toolsets(self, connection: int) -> frozenset[str]:
@@ -183,6 +193,7 @@ def registry() -> dict[str, MethodSpec]:
         approval,
         control,
         debug,
+        explore,
         graph,
         nodes,
         permissions,
@@ -206,6 +217,7 @@ def registry() -> dict[str, MethodSpec]:
         **permissions.METHODS,
         **plugins.METHODS,
         **debug.METHODS,
+        **explore.METHODS,
         **recorder.METHODS,
         **secrets.METHODS,
         **session.METHODS,

@@ -76,6 +76,14 @@ CASES: dict[str, list[dict[str, Any]]] = {
     "kb_input_type": [{"window": "SampleRPG", "text": "abc"},
                       {"window": "SampleRPG", "secret": "accounts.qa_tester_01"}],
     "kb_app_launch": [{}, {"profile": "login_fail"}],
+    # M7: 탐색 세션·화면 지도 저장·식별 (screens 툴셋)
+    "kb_screen_identify": [{"frame_id": "f_x"}],
+    "kb_explore_start": [{"title": "탐색"}, {"title": "탐색", "goal": "g", "max_steps": 5}],
+    "kb_explore_end": [{}],
+    "kb_screen_save": [{"key": "title", "frame_id": "f_x"},
+                       {"key": "title", "frame_id": "f_x", "title": "타이틀",
+                        "detect": {"all": [{"image": [0, 0, 2, 2]}]},
+                        "moves": [{"via": {"key": "esc"}, "to": None, "status": "untried"}]}],
 }  # fmt: skip
 PROCESS_SKIP = {"kb_run_cancel"}
 """daemon이 판정 전에 대표 인자(실행의 그래프 경로)를 구하다 `run_not_found`가 되는 도구 — 정적
@@ -138,6 +146,12 @@ class RecordingLink:
             "control.key": {"run_id": "abcd1234", "verdict": "pass"},
             "control.type": {"run_id": "abcd1234", "verdict": "pass"},
             "app.launch": {"pid": 1234},
+            "screens.identify": {"matches": [], "unknown": [], "checked": 0, "problems": []},
+            "explore.start": {"session": "20261107-000000-abcd", "folder": "f", "max_steps": 5},
+            "explore.end": {"session": "20261107-000000-abcd",
+                            "counts": {"screens": 0, "moves": 0, "untried": 0}},
+            "screens.save": {"path": "p", "key": "title", "revision": "r", "also_matches": [],
+                             "shot": "saved"},
         }[method]  # fmt: skip
 
     def enable(self, toolsets: list[str]) -> dict[str, Any]:

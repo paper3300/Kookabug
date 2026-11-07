@@ -111,10 +111,10 @@ def test_no_workspace_exits_6_without_stdout(tmp_path: Path, spawned: Spawned) -
 
 
 def test_tool_definitions_match_permissions_table() -> None:
-    # 권한 표의 도구(M7로 미룬 kb_screen_save 제외)와 MCP 정의가 1:1, 툴셋·조회/변경이 같다
+    # 권한 표의 도구와 MCP 정의가 1:1 (M7: kb_screen_save까지), 툴셋·조회/변경이 같다
     defined = {d.name: d for d in TOOL_DEFS}
     assert len(defined) == len(TOOL_DEFS)
-    assert set(defined) == set(TOOLS) - {"kb_screen_save"}
+    assert set(defined) == set(TOOLS)
     for name, tool in defined.items():
         assert tool.toolset == TOOLS[name].toolset
         assert tool.read_only is (not TOOLS[name].mutating)

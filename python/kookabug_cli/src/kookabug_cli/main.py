@@ -234,6 +234,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--workspace", metavar="DIR", help="워크스페이스 루트 (기본: 현재 폴더에서 위로 찾는다)"
     )
     screen_list.add_argument("--json", action="store_true", help="결과 JSON 한 개만 출력한다")
+    screen_protect = screen_commands.add_parser(
+        "protect",
+        help="에이전트 비밀값 보호 기록 관리 (사람만)",
+        description="에이전트 보호 기록(.kookabug/agent-protect.json)을 관리한다. daemon이 꺼져 "
+        "있어야 한다 (0 성공, 5 에이전트가 부름, 6 사용법·환경 오류)",
+    )
+    screen_protect.add_argument(
+        "--clear-keys",
+        action="store_true",
+        required=True,
+        help="저장 글자 검사에 쓰는 비밀값 키 목록을 비운다 (창 보호 기록은 그대로)",
+    )
+    screen_protect.add_argument(
+        "--workspace", metavar="DIR", help="워크스페이스 루트 (기본: 현재 폴더에서 위로 찾는다)"
+    )
+    screen_protect.add_argument("--json", action="store_true", help="결과 JSON 한 개만 출력한다")
 
     doctor = commands.add_parser(
         "doctor",

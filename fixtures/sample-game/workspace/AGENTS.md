@@ -14,4 +14,7 @@
   (스크린샷)·`kb_run_compare`(지난 성공과 비교)
 - 비밀값(비밀번호·토큰)을 파일·그래프에 쓰지 않는다. 그래프에서는 `{"$secret": "키"}`로 가리킨다
 - 플러그인 설치·제거·준비와 개발 모듈(`--plugin-module`) 실행은 사람만 한다 (에이전트 도구 없음)
+- 게임 화면 탐색은 `kb_explore_start` → 캡처 → `kb_screen_identify` → 처음이면 `kb_screen_save` →
+  입력 → 반복 → `kb_explore_end`. 결과는 `screens/_explored/`에 쌓이고 사람이 확인해 옮긴다.
+  되돌릴 수 없는 동작은 누르지 말고 `untried`로 남긴다. 비밀값 칸은 클릭한 뒤 입력한다
 <!-- kookabug:end -->

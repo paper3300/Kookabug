@@ -33,6 +33,9 @@ test("test_method_table_tools_and_internal_methods", () => {
     "control.key",
     "control.type",
     "daemon.shutdown",
+    // M7 탐색 세션·화면 지도 저장·식별 (에이전트만)
+    "explore.end",
+    "explore.start",
     "graph.check",
     "graph.list",
     "graph.patch",
@@ -44,7 +47,9 @@ test("test_method_table_tools_and_internal_methods", () => {
     "run.search",
     "screen.read_text",
     "screens.get",
+    "screens.identify",
     "screens.list",
+    "screens.save",
     "session.hello",
   ]);
   expect(Object.keys(NOTIFICATIONS).sort()).toEqual([
@@ -54,6 +59,8 @@ test("test_method_table_tools_and_internal_methods", () => {
     "approval.requested",
     "approval.resolved",
     "debug.breakpoints.changed",
+    // M7 탐색 세션·후보 (ui 연결에만)
+    "explore.changed",
     "graph.changed",
     "lease.changed",
     // M6 B4 플러그인 작업 진행·끝, 잠금 변경

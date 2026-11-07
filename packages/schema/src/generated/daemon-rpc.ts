@@ -50,6 +50,8 @@ export type MethodName = string;
  */
 export type ToolName =
   | "kb_app_launch"
+  | "kb_explore_end"
+  | "kb_explore_start"
   | "kb_graph_create"
   | "kb_graph_get"
   | "kb_graph_list"
@@ -71,7 +73,9 @@ export type ToolName =
   | "kb_run_status"
   | "kb_screen_capture"
   | "kb_screen_get"
+  | "kb_screen_identify"
   | "kb_screen_list"
+  | "kb_screen_save"
   | "kb_target_create"
   | "kb_toolset_enable"
   | "ui_only";
@@ -138,7 +142,7 @@ export type DaemonErrorCode = -32700 | -32600 | -32601 | -32602 | -32603 | -3210
  */
 export type DaemonErrorObject = DaemonStandardError | DaemonRequestFailedError;
 /**
- * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다)
+ * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 비밀값 — data.field), secret_unchecked(비밀값 검사 불가 — 키를 못 읽음·보호 기록 손상), screens_busy(화면 지도 잠금)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RequestFailedCode".
@@ -217,7 +221,16 @@ export type RequestFailedCode =
   | "plugin_failed"
   | "op_not_found"
   | "frame_protected"
-  | "protect_record_failed";
+  | "protect_record_failed"
+  | "agent_only"
+  | "explore_active"
+  | "explore_not_active"
+  | "explore_budget_exhausted"
+  | "screen_exists"
+  | "detect_not_matching"
+  | "secret_in_text"
+  | "secret_unchecked"
+  | "screens_busy";
 /**
  * 플러그인 작업 ID (= 설치 거래 ID, 작업 로그 이름)
  *
@@ -442,6 +455,44 @@ export type RunCompareResult = import("./run-index.js").CompareResult;
  * via the `definition` "RunIndexResult".
  */
 export type RunIndexResult = import("./run-index.js").RunIndex;
+/**
+ * image = 이 영역을 잘라 이미지 조건으로, ocr = 이 영역에 text가 있어야 (프레임 물리 픽셀)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensSaveCondition".
+ */
+export type ScreensSaveCondition =
+  | {
+      image: Rect;
+    }
+  | {
+      ocr: Rect;
+      text: string;
+    };
+/**
+ * 이동 입력: 요소 클릭·점 클릭(프레임 물리 픽셀)·키
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensSaveVia".
+ */
+export type ScreensSaveVia =
+  | {
+      click: {
+        element: string;
+      };
+    }
+  | {
+      click: {
+        /**
+         * @minItems 2
+         * @maxItems 2
+         */
+        point: [number, number];
+      };
+    }
+  | {
+      key: string;
+    };
 /**
  * crop = 편집 중 새로 고른 영역, image = 기존 target 이미지(target 기준 경로)
  *
@@ -889,7 +940,7 @@ export interface DaemonRequestFailedError {
   message: string;
 }
 /**
- * error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message. M5 B3: approval_required → decision·reason. M6: plugin_failed → plugin_error, op_not_found → op_id. M7: frame_protected·sensitive_region → reason·message(안내)
+ * error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message. M5 B3: approval_required → decision·reason. M6: plugin_failed → plugin_error, op_not_found → op_id. M7: frame_protected·sensitive_region → reason·message(안내), secret_in_text → field, secret_unchecked → reason(못 읽은 키 이름)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RequestFailedData".
@@ -904,6 +955,10 @@ export interface RequestFailedData {
     [k: string]: unknown | undefined;
   };
   diagnostics?: Diagnostic[];
+  /**
+   * M7 secret_in_text: 비밀값이 든 글자 필드 이름 (값 없음)
+   */
+  field?: string;
   /**
    * patch_invalid: 틀린 연산의 순번 (0부터)
    */
@@ -1032,6 +1087,88 @@ export interface ExitShape {
   kind: "fail" | "ok";
   name: string;
   outputs: string[];
+}
+/**
+ * M7: 탐색 세션·후보가 바뀜 (ui 연결에만)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ExploreChangedParams".
+ */
+export interface ExploreChangedParams {
+  sessions: ExploreSessionInfo[];
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ExploreSessionInfo".
+ */
+export interface ExploreSessionInfo {
+  agent: string;
+  counts: ExploreCounts;
+  id: string;
+  max_steps: number;
+  started_at: string;
+  status: "active" | "ended" | "interrupted";
+  steps: number;
+  title: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ExploreCounts".
+ */
+export interface ExploreCounts {
+  moves: number;
+  screens: number;
+  untried: number;
+}
+/**
+ * explore.end (kb_explore_end): 이 연결의 탐색 세션을 끝낸다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ExploreEndParams".
+ */
+export interface ExploreEndParams {}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ExploreEndResult".
+ */
+export interface ExploreEndResult {
+  counts: ExploreCounts;
+  session: string;
+}
+/**
+ * explore.list (사람 화면용): screens/_explored/의 탐색 세션들
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ExploreListParams".
+ */
+export interface ExploreListParams {}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ExploreListResult".
+ */
+export interface ExploreListResult {
+  sessions: ExploreSessionInfo[];
+}
+/**
+ * explore.start (kb_explore_start, M7 3.4): 탐색 세션 (에이전트 연결마다 하나)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ExploreStartParams".
+ */
+export interface ExploreStartParams {
+  goal?: string;
+  max_steps?: number;
+  title: string;
+  window?: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ExploreStartResult".
+ */
+export interface ExploreStartResult {
+  folder: WorkspacePath;
+  max_steps: number;
+  session: string;
 }
 /**
  * 편집기 정지 화면 (daemon 프레임 캐시, 최대 16장. 사라지면 frame_expired)
@@ -1575,6 +1712,24 @@ export interface Methods {
     result: BreakpointsResult;
     tool: "ui_only";
   };
+  "explore.end": {
+    params: ExploreEndParams;
+    renderer: false;
+    result: ExploreEndResult;
+    tool: "kb_explore_end";
+  };
+  "explore.list": {
+    params: ExploreListParams;
+    renderer: true;
+    result: ExploreListResult;
+    tool: "ui_only";
+  };
+  "explore.start": {
+    params: ExploreStartParams;
+    renderer: false;
+    result: ExploreStartResult;
+    tool: "kb_explore_start";
+  };
   "graph.check": {
     params: GraphCheckParams;
     renderer: false;
@@ -1911,11 +2066,23 @@ export interface Methods {
     result: ScreensGetResult;
     tool: "kb_screen_get";
   };
+  "screens.identify": {
+    params: ScreensIdentifyParams;
+    renderer: false;
+    result: ScreensIdentifyResult;
+    tool: "kb_screen_identify";
+  };
   "screens.list": {
     params: ScreensListParams;
     renderer: false;
     result: ScreensListResult;
     tool: "kb_screen_list";
+  };
+  "screens.save": {
+    params: ScreensSaveParams;
+    renderer: false;
+    result: ScreensSaveResult;
+    tool: "kb_screen_save";
   };
   "secrets.create": {
     params: SecretsCreateParams;
@@ -3216,6 +3383,41 @@ export interface ScreensGetResult {
   value?: unknown;
 }
 /**
+ * screens.identify (kb_screen_identify, M7 3.6): 정지 화면이 어느 화면인지 (확정 화면 + 자기 탐색 세션 후보)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensIdentifyParams".
+ */
+export interface ScreensIdentifyParams {
+  frame_id: string;
+}
+/**
+ * matches 맞는 화면, unknown 확인하지 못한 조건이 남은 화면(보호 프레임의 OCR 조건 등). 읽은 글자는 넣지 않는다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensIdentifyResult".
+ */
+export interface ScreensIdentifyResult {
+  checked: number;
+  matches: ScreensIdentifyMatch[];
+  problems: {
+    node: string;
+    problem: string;
+  }[];
+  unknown: ScreensIdentifyMatch[];
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensIdentifyMatch".
+ */
+export interface ScreensIdentifyMatch {
+  id?: string;
+  key?: string;
+  node: string;
+  state: "confirmed" | "explored";
+  title: string | null;
+}
+/**
  * screens.list (kb_screen_list, M5): under(screens/ 기준 또는 워크스페이스 기준 폴더) 아래 화면 지도
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -3236,6 +3438,54 @@ export interface ScreensListResult {
     problem?: string;
     title?: string;
   }[];
+}
+/**
+ * screens.save (kb_screen_save, M7 3.5): 자기 탐색 세션 폴더의 후보 카드 하나를 저장·갱신. 글자 필드는 비밀값 검사(3.5b)를 지난다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensSaveParams".
+ */
+export interface ScreensSaveParams {
+  description?: string;
+  detect?: {
+    all?: ScreensSaveCondition[];
+    none?: ScreensSaveCondition[];
+  };
+  elements?: {
+    kind: "button" | "field" | "list" | "text";
+    name: string;
+    rect: Rect;
+  }[];
+  frame_id: string;
+  key: string;
+  kind?: "popup" | "screen";
+  moves?: {
+    note?: string;
+    status: "tried" | "untried";
+    to?: string | null;
+    via: ScreensSaveVia;
+  }[];
+  of?: string;
+  title?: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensSaveResult".
+ */
+export interface ScreensSaveResult {
+  also_matches: {
+    node: string;
+    title: string | null;
+  }[];
+  incomplete?: true;
+  key: string;
+  path: WorkspacePath;
+  /**
+   * shot omitted의 보호 사유
+   */
+  reason?: string;
+  revision: string;
+  shot: "omitted" | "saved";
 }
 /**
  * secrets.create: 녹화 스텝(from_step, 비밀값·확인 필요 글자 구간)의 메모리 원문을 자격 증명 관리자에 그 키로 쓴다. 값을 RPC로 받지 않는다. 키가 이미 있으면 exists
@@ -3667,6 +3917,9 @@ export interface Notifications {
   };
   "debug.breakpoints.changed": {
     params: BreakpointsResult;
+  };
+  "explore.changed": {
+    params: ExploreChangedParams;
   };
   "graph.changed": {
     params: GraphChangedParams;

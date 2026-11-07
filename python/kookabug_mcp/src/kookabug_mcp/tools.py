@@ -1,9 +1,9 @@
 """MCP 도구 정의 (M5 계획 3.3). 도구 입력 JSON Schema의 단일 출처.
 
-도구 이름·툴셋·조회/변경은 `kookabug_core.permissions.TOOLS`와 1:1이다(M7로 미룬 `kb_screen_save`
-제외 — 검사가 본다). 판정은 shim이 하지 않는다: 도구는 daemon 메서드를 부르고, daemon이 연결의
-주체·툴셋으로 판정한다(꺼진 툴셋은 `toolset_disabled`). 처리기는 **그 도구 이름으로 판정되는
-daemon 메서드만** 부른다(자기 연결 문서 닫기 `graph.close`만 예외) — 다른 도구로 판정되는 메서드를
+도구 이름·툴셋·조회/변경은 `kookabug_core.permissions.TOOLS`와 1:1이다(검사가 본다). 판정은
+shim이 하지 않는다: 도구는 daemon 메서드를 부르고, daemon이 연결의 주체·툴셋으로
+판정한다(꺼진 툴셋은 `toolset_disabled`). 처리기는 **그 도구 이름으로 판정되는 daemon 메서드만**
+부른다(자기 연결 문서 닫기 `graph.close`만 예외) — 다른 도구로 판정되는 메서드를
 돌아 쓰면 그 도구의 deny를 우회한다(`test_tool_permissions`가 본다).
 
 처리기가 없는(None) 도구는 다음 묶음에서 붙는다 — 부르면 `isError` `not_available`.
@@ -555,6 +555,38 @@ def _screen_get(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     return ok_result(f"{got['path']}{note}", got)
 
 
+def _screen_identify(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    got = _daemon(link, "screens.identify", {"frame_id": str(args["frame_id"])})
+    names = ", ".join(str(m.get("id") or m.get("key")) for m in got["matches"]) or "없음"
+    unknown = f", 확인 못 함 {len(got['unknown'])}" if got["unknown"] else ""
+    return ok_result(f"맞는 화면: {names}{unknown}", got)
+
+
+def _explore_start(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params = {k: args[k] for k in ("title", "goal", "window", "max_steps") if k in args}
+    got = _daemon(link, "explore.start", params)
+    return ok_result(f"탐색 세션 {got['session']} (스텝 예산 {got['max_steps']})", got)
+
+
+def _explore_end(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    got = _daemon(link, "explore.end", {})
+    counts = got["counts"]
+    return ok_result(
+        f"탐색 세션 {got['session']} 끝: 화면 {counts['screens']} · 이동 {counts['moves']} · "
+        f"미탐색 {counts['untried']}",
+        got,
+    )
+
+
+def _screen_save(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    keys = ("key", "title", "description", "kind", "frame_id", "of", "detect", "elements", "moves")
+    got = _daemon(link, "screens.save", {k: args[k] for k in keys if k in args})
+    note = "" if got["shot"] == "saved" else f" (스크린샷 생략: {got.get('reason', '')})"
+    also = ", ".join(m["node"] for m in got["also_matches"])
+    also_note = f" — 같은 화면일 수 있음: {also}" if also else ""
+    return ok_result(f"{got['path']} 저장{note}{also_note}", got)
+
+
 # ---------------------------------------------------------------- 처리기 (control)
 
 
@@ -886,6 +918,49 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "*.screen.json 내용",
         _schema({"path": PATH}, ("path",)),
         _screen_get,
+    ),
+    ToolDef(
+        "kb_screen_identify",
+        "화면 식별",
+        "정지 화면(kb_screen_capture의 frame_id)이 어느 화면인지 — 확정 화면과 이 탐색 세션의 "
+        "후보. 처음 보는 화면이면 kb_screen_save로 저장한다",
+        _schema({"frame_id": {"type": "string", "minLength": 1}}, ("frame_id",)),
+        _screen_identify,
+    ),
+    ToolDef(
+        "kb_explore_start",
+        "탐색 시작",
+        "게임 화면 탐색 세션을 연다 (결과는 screens/_explored/<세션>/, 사람이 확인해 옮긴다). "
+        "순서: 캡처 → kb_screen_identify → 처음이면 kb_screen_save → 입력 → 반복 → "
+        "kb_explore_end. 되돌릴 수 없는 동작(구매·삭제)은 누르지 말고 moves에 untried로 남긴다. "
+        "비밀값 칸은 kb_input_click(point)으로 누른 뒤 입력한다",
+        _schema(
+            {
+                "title": {"type": "string", "minLength": 1},
+                "goal": {"type": "string"},
+                "window": {"type": "string"},
+                "max_steps": {"type": "integer", "minimum": 1, "maximum": 1000},
+            },
+            ("title",),
+        ),
+        _explore_start,
+    ),
+    ToolDef(
+        "kb_explore_end",
+        "탐색 끝",
+        "이 연결의 탐색 세션을 끝낸다",
+        _schema({}),
+        _explore_end,
+    ),
+    ToolDef(
+        "kb_screen_save",
+        "화면 저장",
+        "탐색 세션의 후보 화면 카드를 저장·갱신한다 (key = 새 화면 ID 후보, 좌표는 프레임 픽셀). "
+        "detect는 image(영역을 잘라 조건) 또는 ocr(영역 + 글자), moves는 via(click element·point "
+        "또는 key)·to(화면 키)·status(tried·untried). 보호 중인 화면은 조건·스크린샷 없이만 "
+        "저장된다",
+        daemon_def("ScreensSaveParams"),
+        _screen_save,
     ),
 )
 

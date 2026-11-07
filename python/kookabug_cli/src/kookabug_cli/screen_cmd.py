@@ -136,6 +136,8 @@ def _reader(ws: Workspace) -> TextReader:
 def run(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     if args.action == "list":
         return _run_list(args, out, err)
+    if args.action == "protect":
+        return _run_protect(args, out, err)
     report: dict[str, Any] = {"command": "screen test", "screen": args.screen}
 
     def finish(code: int, error: str | None = None, error_code: str | None = None) -> int:
@@ -319,3 +321,58 @@ def _print_list(report: Mapping[str, Any], out: TextIO) -> None:
             name = c["path"] if c["placement"] == "misplaced" else f"{c['session']}/{c['key']}"
             print(f"  {name}  {c.get('title', '')}{note}", file=out)
     out.flush()
+
+
+# ---------------------------------------------------------------- protect (M7 R1)
+
+EXIT_DENIED = 5
+
+
+def _run_protect(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
+    """`screen protect --clear-keys`: 저장 글자 검사의 비밀값 키 목록을 비운다 (사람만, daemon이
+    꺼져 있을 때 — daemon 잠금을 쥔 채 바꾼다). 기록 파일이 손상됐으면 바꾸지 않는다(사람이 직접
+    고치거나 지운다). 창 보호 기록은 그대로 둔다."""
+    import json as _json
+
+    from kookabug_core.documents import DocumentError, write_atomic
+    from kookabug_daemon.frame_guard import FILE, ProtectFileError, parse_protect_file
+    from kookabug_daemon.session import DaemonLock, LockBusy
+
+    def finish(code: int, text: str, **extra: Any) -> int:
+        if args.json:
+            body = {"command": "screen protect", "exit_code": code, "message": text, **extra}
+            print(_json.dumps(body, ensure_ascii=False), file=out)
+        else:
+            print(text, file=out if code == 0 else err)
+        return code
+
+    if AGENT_ENV in os.environ:
+        return finish(EXIT_DENIED, "보호 기록은 사람만 바꾼다 (KOOKABUG_AGENT)")
+    try:
+        ws = _workspace(args.workspace, Path.cwd())
+    except WorkspaceError as exc:
+        return finish(EXIT_USAGE, f"오류: {exc}")
+    path = ws.root.joinpath(*FILE.split("/"))
+    try:
+        lock = DaemonLock.acquire(ws.root)
+    except LockBusy:
+        return finish(EXIT_USAGE, "daemon이 돌고 있다 — 앱·daemon을 끈 뒤 다시 한다")
+    except OSError as exc:
+        return finish(EXIT_USAGE, f"오류: {exc}")
+    with lock:
+        if not path.exists():
+            return finish(0, "보호 기록이 없다 (지울 키 없음)", cleared=0)
+        raw = path.read_bytes()
+        try:
+            keys, _records = parse_protect_file(raw)
+        except ProtectFileError as exc:
+            return finish(
+                EXIT_USAGE, f"보호 기록 파일이 손상됐다 — 직접 확인해 고치거나 지운다: {exc}"
+            )
+        body = _json.loads(raw.decode("utf-8"))
+        body["secret_keys"] = []
+        try:
+            write_atomic(path, _json.dumps(body, ensure_ascii=False, indent=1).encode("utf-8"))
+        except DocumentError as exc:
+            return finish(EXIT_USAGE, f"오류: {exc}")
+    return finish(0, f"비밀값 키 {len(keys)}개를 지웠다 (창 보호 기록은 그대로)", cleared=len(keys))

@@ -81,6 +81,8 @@ export const RENDERER_METHODS: ReadonlySet<string> = new Set([
   "plugins.relock",
   "plugins.gc",
   "plugins.cancel",
+  // M7 탐색 세션 목록 (사람 화면용 — daemon이 agent 연결을 거부한다)
+  "explore.list",
 ]);
 
 // 주 프로세스 안에서만 쓰는 메서드. 렌더러 표면에서 뺀다. run.export는 dest(쓸 경로)를 주 프로세스의
@@ -105,8 +107,9 @@ export const RENDERER_EVENTS: ReadonlySet<string> = new Set([
   "approval.requested",
   "approval.resolved",
   "agent.connections.changed",
-  // M7 에이전트 보호 기록 손상 알림 (ui 연결에만, 화면 표시는 B5)
+  // M7 에이전트 보호 기록 손상 알림·탐색 세션 변경 (ui 연결에만, 화면 표시는 B5)
   "agent.protect_corrupt",
+  "explore.changed",
   // M6 B4 플러그인 작업 진행·끝(ui 연결에만), 잠금 변경
   "plugins.progress",
   "plugins.done",

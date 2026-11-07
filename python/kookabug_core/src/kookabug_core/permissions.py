@@ -97,8 +97,9 @@ TOOLS: Final[Mapping[str, ToolInfo]] = {
     **_tools("run", False, "kb_run_events", "kb_run_artifact_get", "kb_run_compare"),
     **_tools("observe", False, "kb_screen_capture", "kb_image_find", "kb_ocr_read"),
     **_tools("control", True, "kb_input_click", "kb_input_key", "kb_input_type", "kb_app_launch"),
-    **_tools("screens", False, "kb_screen_list", "kb_screen_get"),
-    **_tools("screens", True, "kb_screen_save"),
+    **_tools("screens", False, "kb_screen_list", "kb_screen_get", "kb_screen_identify"),
+    # M7 탐색 세션·화면 지도 저장 (계획 3.4·3.5)
+    **_tools("screens", True, "kb_screen_save", "kb_explore_start", "kb_explore_end"),
 }  # fmt: skip
 
 # 프리셋의 변경 도구 값 (툴셋별). 조회 도구는 모든 프리셋에서 allow

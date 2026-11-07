@@ -144,6 +144,8 @@ def test_every_method_has_tool_or_ui_only() -> None:
         "plugins.relock",
         "plugins.gc",
         "plugins.cancel",
+        # M7 탐색 세션 목록 (사람 화면용)
+        "explore.list",
     } | RECORDER_METHODS
 
 

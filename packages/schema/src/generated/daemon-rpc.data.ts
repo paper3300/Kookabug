@@ -1003,6 +1003,187 @@ export const daemonRpcSchema: unknown = {
       "title": "ExitShape",
       "type": "object"
     },
+    "ExploreChangedParams": {
+      "additionalProperties": false,
+      "description": "M7: 탐색 세션·후보가 바뀜 (ui 연결에만)",
+      "properties": {
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/ExploreSessionInfo"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sessions"
+      ],
+      "title": "ExploreChangedParams",
+      "type": "object"
+    },
+    "ExploreCounts": {
+      "additionalProperties": false,
+      "properties": {
+        "moves": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "screens": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "untried": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "moves",
+        "screens",
+        "untried"
+      ],
+      "title": "ExploreCounts",
+      "type": "object"
+    },
+    "ExploreEndParams": {
+      "additionalProperties": false,
+      "description": "explore.end (kb_explore_end): 이 연결의 탐색 세션을 끝낸다",
+      "title": "ExploreEndParams",
+      "type": "object"
+    },
+    "ExploreEndResult": {
+      "additionalProperties": false,
+      "properties": {
+        "counts": {
+          "$ref": "#/$defs/ExploreCounts"
+        },
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "counts",
+        "session"
+      ],
+      "title": "ExploreEndResult",
+      "type": "object"
+    },
+    "ExploreListParams": {
+      "additionalProperties": false,
+      "description": "explore.list (사람 화면용): screens/_explored/의 탐색 세션들",
+      "title": "ExploreListParams",
+      "type": "object"
+    },
+    "ExploreListResult": {
+      "additionalProperties": false,
+      "properties": {
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/ExploreSessionInfo"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sessions"
+      ],
+      "title": "ExploreListResult",
+      "type": "object"
+    },
+    "ExploreSessionInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "counts": {
+          "$ref": "#/$defs/ExploreCounts"
+        },
+        "id": {
+          "type": "string"
+        },
+        "max_steps": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "ended",
+            "interrupted"
+          ]
+        },
+        "steps": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent",
+        "counts",
+        "id",
+        "max_steps",
+        "started_at",
+        "status",
+        "steps",
+        "title"
+      ],
+      "title": "ExploreSessionInfo",
+      "type": "object"
+    },
+    "ExploreStartParams": {
+      "additionalProperties": false,
+      "description": "explore.start (kb_explore_start, M7 3.4): 탐색 세션 (에이전트 연결마다 하나)",
+      "properties": {
+        "goal": {
+          "type": "string"
+        },
+        "max_steps": {
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "window": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "title": "ExploreStartParams",
+      "type": "object"
+    },
+    "ExploreStartResult": {
+      "additionalProperties": false,
+      "properties": {
+        "folder": {
+          "$ref": "#/$defs/WorkspacePath"
+        },
+        "max_steps": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "folder",
+        "max_steps",
+        "session"
+      ],
+      "title": "ExploreStartResult",
+      "type": "object"
+    },
     "Frame": {
       "additionalProperties": false,
       "description": "편집기 정지 화면 (daemon 프레임 캐시, 최대 16장. 사라지면 frame_expired)",
@@ -2448,6 +2629,78 @@ export const daemonRpcSchema: unknown = {
           ],
           "type": "object"
         },
+        "explore.end": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ExploreEndParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/ExploreEndResult"
+            },
+            "tool": {
+              "const": "kb_explore_end"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "explore.list": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ExploreListParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/ExploreListResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "explore.start": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ExploreStartParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/ExploreStartResult"
+            },
+            "tool": {
+              "const": "kb_explore_start"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
         "graph.check": {
           "additionalProperties": false,
           "properties": {
@@ -3792,6 +4045,30 @@ export const daemonRpcSchema: unknown = {
           ],
           "type": "object"
         },
+        "screens.identify": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ScreensIdentifyParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/ScreensIdentifyResult"
+            },
+            "tool": {
+              "const": "kb_screen_identify"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
         "screens.list": {
           "additionalProperties": false,
           "properties": {
@@ -3806,6 +4083,30 @@ export const daemonRpcSchema: unknown = {
             },
             "tool": {
               "const": "kb_screen_list"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "screens.save": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ScreensSaveParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/ScreensSaveResult"
+            },
+            "tool": {
+              "const": "kb_screen_save"
             }
           },
           "required": [
@@ -4203,6 +4504,11 @@ export const daemonRpcSchema: unknown = {
         "screen.read_text",
         "screens.get",
         "screens.list",
+        "screens.identify",
+        "screens.save",
+        "explore.start",
+        "explore.end",
+        "explore.list",
         "secrets.create",
         "secrets.list",
         "session.hello",
@@ -4372,6 +4678,18 @@ export const daemonRpcSchema: unknown = {
           ],
           "type": "object"
         },
+        "explore.changed": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ExploreChangedParams"
+            }
+          },
+          "required": [
+            "params"
+          ],
+          "type": "object"
+        },
         "graph.changed": {
           "additionalProperties": false,
           "properties": {
@@ -4496,6 +4814,7 @@ export const daemonRpcSchema: unknown = {
       "required": [
         "agent.connections.changed",
         "agent.protect_corrupt",
+        "explore.changed",
         "approval.requested",
         "approval.resolved",
         "debug.breakpoints.changed",
@@ -7003,7 +7322,7 @@ export const daemonRpcSchema: unknown = {
       "type": "object"
     },
     "RequestFailedCode": {
-      "description": "-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다)",
+      "description": "-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 비밀값 — data.field), secret_unchecked(비밀값 검사 불가 — 키를 못 읽음·보호 기록 손상), screens_busy(화면 지도 잠금)",
       "enum": [
         "approval_required",
         "classification_pending",
@@ -7078,14 +7397,23 @@ export const daemonRpcSchema: unknown = {
         "plugin_failed",
         "op_not_found",
         "frame_protected",
-        "protect_record_failed"
+        "protect_record_failed",
+        "agent_only",
+        "explore_active",
+        "explore_not_active",
+        "explore_budget_exhausted",
+        "screen_exists",
+        "detect_not_matching",
+        "secret_in_text",
+        "secret_unchecked",
+        "screens_busy"
       ],
       "title": "RequestFailedCode",
       "type": "string"
     },
     "RequestFailedData": {
       "additionalProperties": false,
-      "description": "error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message. M5 B3: approval_required → decision·reason. M6: plugin_failed → plugin_error, op_not_found → op_id. M7: frame_protected·sensitive_region → reason·message(안내)",
+      "description": "error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message. M5 B3: approval_required → decision·reason. M6: plugin_failed → plugin_error, op_not_found → op_id. M7: frame_protected·sensitive_region → reason·message(안내), secret_in_text → field, secret_unchecked → reason(못 읽은 키 이름)",
       "properties": {
         "code": {
           "$ref": "#/$defs/RequestFailedCode"
@@ -7107,6 +7435,10 @@ export const daemonRpcSchema: unknown = {
             "$ref": "#/$defs/Diagnostic"
           },
           "type": "array"
+        },
+        "field": {
+          "description": "M7 secret_in_text: 비밀값이 든 글자 필드 이름 (값 없음)",
+          "type": "string"
         },
         "index": {
           "description": "patch_invalid: 틀린 연산의 순번 (0부터)",
@@ -8311,6 +8643,103 @@ export const daemonRpcSchema: unknown = {
       "title": "ScreensGetResult",
       "type": "object"
     },
+    "ScreensIdentifyMatch": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "node": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "confirmed",
+            "explored"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "node",
+        "state",
+        "title"
+      ],
+      "title": "ScreensIdentifyMatch",
+      "type": "object"
+    },
+    "ScreensIdentifyParams": {
+      "additionalProperties": false,
+      "description": "screens.identify (kb_screen_identify, M7 3.6): 정지 화면이 어느 화면인지 (확정 화면 + 자기 탐색 세션 후보)",
+      "properties": {
+        "frame_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "frame_id"
+      ],
+      "title": "ScreensIdentifyParams",
+      "type": "object"
+    },
+    "ScreensIdentifyResult": {
+      "additionalProperties": false,
+      "description": "matches 맞는 화면, unknown 확인하지 못한 조건이 남은 화면(보호 프레임의 OCR 조건 등). 읽은 글자는 넣지 않는다",
+      "properties": {
+        "checked": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "matches": {
+          "items": {
+            "$ref": "#/$defs/ScreensIdentifyMatch"
+          },
+          "type": "array"
+        },
+        "problems": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "node": {
+                "type": "string"
+              },
+              "problem": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "node",
+              "problem"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "unknown": {
+          "items": {
+            "$ref": "#/$defs/ScreensIdentifyMatch"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "checked",
+        "matches",
+        "problems",
+        "unknown"
+      ],
+      "title": "ScreensIdentifyResult",
+      "type": "object"
+    },
     "ScreensListParams": {
       "additionalProperties": false,
       "description": "screens.list (kb_screen_list, M5): under(screens/ 기준 또는 워크스페이스 기준 폴더) 아래 화면 지도",
@@ -8359,6 +8788,281 @@ export const daemonRpcSchema: unknown = {
       ],
       "title": "ScreensListResult",
       "type": "object"
+    },
+    "ScreensSaveCondition": {
+      "description": "image = 이 영역을 잘라 이미지 조건으로, ocr = 이 영역에 text가 있어야 (프레임 물리 픽셀)",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "image": {
+              "$ref": "#/$defs/Rect"
+            }
+          },
+          "required": [
+            "image"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "ocr": {
+              "$ref": "#/$defs/Rect"
+            },
+            "text": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "ocr",
+            "text"
+          ],
+          "type": "object"
+        }
+      ],
+      "title": "ScreensSaveCondition"
+    },
+    "ScreensSaveParams": {
+      "additionalProperties": false,
+      "description": "screens.save (kb_screen_save, M7 3.5): 자기 탐색 세션 폴더의 후보 카드 하나를 저장·갱신. 글자 필드는 비밀값 검사(3.5b)를 지난다",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "detect": {
+          "additionalProperties": false,
+          "properties": {
+            "all": {
+              "items": {
+                "$ref": "#/$defs/ScreensSaveCondition"
+              },
+              "type": "array"
+            },
+            "none": {
+              "items": {
+                "$ref": "#/$defs/ScreensSaveCondition"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "elements": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "button",
+                  "field",
+                  "list",
+                  "text"
+                ]
+              },
+              "name": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "rect": {
+                "$ref": "#/$defs/Rect"
+              }
+            },
+            "required": [
+              "kind",
+              "name",
+              "rect"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "popup",
+            "screen"
+          ]
+        },
+        "moves": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "note": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "tried",
+                  "untried"
+                ]
+              },
+              "to": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "via": {
+                "$ref": "#/$defs/ScreensSaveVia"
+              }
+            },
+            "required": [
+              "status",
+              "via"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "of": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "frame_id",
+        "key"
+      ],
+      "title": "ScreensSaveParams",
+      "type": "object"
+    },
+    "ScreensSaveResult": {
+      "additionalProperties": false,
+      "properties": {
+        "also_matches": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "node": {
+                "type": "string"
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "node",
+              "title"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "incomplete": {
+          "const": true
+        },
+        "key": {
+          "type": "string"
+        },
+        "path": {
+          "$ref": "#/$defs/WorkspacePath"
+        },
+        "reason": {
+          "description": "shot omitted의 보호 사유",
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "shot": {
+          "enum": [
+            "omitted",
+            "saved"
+          ]
+        }
+      },
+      "required": [
+        "also_matches",
+        "key",
+        "path",
+        "revision",
+        "shot"
+      ],
+      "title": "ScreensSaveResult",
+      "type": "object"
+    },
+    "ScreensSaveVia": {
+      "description": "이동 입력: 요소 클릭·점 클릭(프레임 물리 픽셀)·키",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "click": {
+              "additionalProperties": false,
+              "properties": {
+                "element": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "element"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "click"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "click": {
+              "additionalProperties": false,
+              "properties": {
+                "point": {
+                  "items": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "point"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "click"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "key": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "type": "object"
+        }
+      ],
+      "title": "ScreensSaveVia"
     },
     "SecretKey": {
       "description": "비밀값 키 (그래프 $secret 키와 같은 규칙)",
@@ -8793,6 +9497,8 @@ export const daemonRpcSchema: unknown = {
       "description": "권한 판정에 쓰는 도구 이름 (구현 계획 7장). ui_only는 판정하지 않는 메서드 (agent 연결이면 daemon의 AGENT_DENIED 목록 — daemon.shutdown, M3 디버그 메서드 debug.breakpoints.get·set·run.pause·run.resume·run.restart, run.export, M4 녹화·비밀값 메서드 recorder.*·secrets.*·target.read_text — 를 판정 전에 거부)",
       "enum": [
         "kb_app_launch",
+        "kb_explore_end",
+        "kb_explore_start",
         "kb_graph_create",
         "kb_graph_get",
         "kb_graph_list",
@@ -8814,7 +9520,9 @@ export const daemonRpcSchema: unknown = {
         "kb_run_status",
         "kb_screen_capture",
         "kb_screen_get",
+        "kb_screen_identify",
         "kb_screen_list",
+        "kb_screen_save",
         "kb_target_create",
         "kb_toolset_enable",
         "ui_only"

@@ -15,8 +15,10 @@ from typing import Any, Final
 from kookabug_core.canonical import loads_strict
 from kookabug_core.screens import EXPLORED_DIR, SCREENS_DIR, SUFFIX, ScreenFileError, parse_screen
 from kookabug_daemon.documents import resolve_path
+from kookabug_daemon.frames import EditorFrame
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.protocol import InvalidParams, RequestFailed
+from kookabug_daemon.targets import require_platform
 from kookabug_daemon.watch import walk
 
 __all__ = ["METHODS", "in_screens"]
@@ -112,7 +114,48 @@ def _list_arg(call: Call) -> str:
     return _under(call)
 
 
+# ---------------------------------------------------------------- M7 저장·식별 (3.5·3.6)
+
+
+def _frame(call: Call) -> EditorFrame:
+    from kookabug_daemon.methods.target import (
+        _agent_frame,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    return _agent_frame(call, str(call.params["frame_id"]))
+
+
+def _save(call: Call) -> dict[str, Any]:
+    from kookabug_daemon.screen_save import save
+
+    if call.principal.kind != "agent":
+        raise RequestFailed("agent_only", "화면 지도 저장은 에이전트 탐색 세션만 한다")
+    session = call.daemon.explore.require(call.connection)
+    result = save(call, _frame(call), session)
+    call.daemon.explore.changed()
+    return result
+
+
+def _identify(call: Call) -> dict[str, Any]:
+    from kookabug_daemon.screen_save import identify
+
+    session = call.daemon.explore.get(call.connection)
+    return identify(call.daemon, _frame(call), session)
+
+
+async def _save_handler(call: Call) -> dict[str, Any]:
+    require_platform()
+    return await asyncio.to_thread(_save, call)
+
+
+async def _identify_handler(call: Call) -> dict[str, Any]:
+    require_platform()
+    return await asyncio.to_thread(_identify, call)
+
+
 METHODS: Final = {
     "screens.list": MethodSpec(_list_handler, _list_arg),
     "screens.get": MethodSpec(_get_handler, _path_arg),
+    "screens.save": MethodSpec(_save_handler),
+    "screens.identify": MethodSpec(_identify_handler),
 }

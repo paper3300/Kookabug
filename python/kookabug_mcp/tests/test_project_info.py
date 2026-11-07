@@ -30,7 +30,9 @@ def test_project_info_agents_md_and_decisions(
     assert info["permissions"]["kb_graph_get"] == "allow"
     assert info["permissions"]["kb_graph_patch"] == "deny"
     assert info["permissions"]["kb_input_click"] == "deny"
-    assert "kb_screen_save" not in info["permissions"]
+    # M7: 화면 지도 저장·탐색 세션은 화면 지도 쓰기 (graph_author = ask → 사람 없음이면 deny)
+    assert info["permissions"]["kb_screen_save"] == "deny"
+    assert info["permissions"]["kb_screen_identify"] == "allow"
     # 정책을 바꾸면 다음 호출부터 반영
     local = ws / ".kookabug" / "local.json"
     local.parent.mkdir(exist_ok=True)

@@ -226,6 +226,9 @@ PRESET_TABLE: list[tuple[list[str], tuple[Verdict, Verdict, Verdict, Verdict]]] 
     ),
     (["kb_screen_list", "kb_screen_get"], ("allow", "allow", "allow", "allow")),
     (["kb_screen_save"], ("deny", "ask", "ask", "allow")),
+    # M7 식별(조회)·탐색 세션(변경)
+    (["kb_screen_identify"], ("allow", "allow", "allow", "allow")),
+    (["kb_explore_start", "kb_explore_end"], ("deny", "ask", "ask", "allow")),
 ]
 PRESET_CASES = [
     (preset, tool, values[i])

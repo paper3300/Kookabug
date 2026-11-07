@@ -29,6 +29,8 @@ from kookabug_daemon.targets import read_bytes, require_platform, target_path
 __all__ = ["IMAGE_SUFFIX", "METHODS", "image_path", "new_frame"]
 
 IMAGE_SUFFIX: Final = ".png"
+SCREEN_TARGETS: Final = "targets/screens/"
+"""확정 화면 지도의 target 자리 (승격이 쓴다)."""
 
 
 def image_path(call: Call, key: str = "path") -> WsPath:
@@ -289,6 +291,15 @@ def _guard_crop(call: Call, frame: EditorFrame, rect: Any) -> None:
 async def _save(call: Call) -> dict[str, Any]:
     params: Mapping[str, Any] = call.params
     where = target_path(call.daemon.root, str(params["path"]), save=True)
+    if call.principal.kind == "agent" and any(
+        rel.replace("\\", "/").casefold().startswith(SCREEN_TARGETS)
+        for rel in (where.given, where.rel)
+    ):
+        # 확정 화면 지도의 target 자리는 사람의 승격만 쓴다 (M7 3.7 — 에이전트는 탐색 세션 폴더)
+        raise RequestFailed(
+            "permission_denied",
+            "targets/screens/는 화면 지도 승격(사람) 자리라 에이전트가 쓰지 않는다",
+        )
     base: Any = params["base_revision"]
     crop = await asyncio.to_thread(_save_crop, call)
     outcome = await asyncio.to_thread(

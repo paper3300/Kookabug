@@ -109,8 +109,15 @@ TOOLS = {
     "plugins.relock": "ui_only",
     "plugins.gc": "ui_only",
     "plugins.cancel": "ui_only",
+    # M7 탐색 세션·화면 지도 저장·식별 (목록은 사람 화면용)
+    "screens.identify": "kb_screen_identify",
+    "screens.save": "kb_screen_save",
+    "explore.start": "kb_explore_start",
+    "explore.end": "kb_explore_end",
+    "explore.list": "ui_only",
 }
 AGENT_ONLY_B3 = {"control.click", "control.key", "control.type", "app.launch"}
+AGENT_ONLY_M7 = {"screens.identify", "screens.save", "explore.start", "explore.end"}
 AGENT_ONLY_B2 = {
     "run.failure",
     "run.events",
@@ -148,6 +155,7 @@ def test_method_table_matches_permission_table() -> None:
         "graph.check",
         *AGENT_ONLY_B2,
         *AGENT_ONLY_B3,
+        *AGENT_ONLY_M7,
     }
     for row in table.values():
         for part in ("params", "result"):
@@ -164,6 +172,7 @@ def test_notification_table() -> None:
         "approval.requested",
         "approval.resolved",
         "debug.breakpoints.changed",
+        "explore.changed",  # M7 탐색 세션·후보 (ui 연결에만)
         "graph.changed",
         "lease.changed",
         "plugins.changed",

@@ -50,10 +50,11 @@ from kookabug_core.service import (
     refuse_dev_modules,
 )
 from kookabug_core.validate.plugins import plugin_diagnostics, used_plugins
-from kookabug_core.workspace import WorkspaceError
+from kookabug_core.workspace import Workspace, WorkspaceError
 from kookabug_daemon.agent_cache import AgentCache
 from kookabug_daemon.approvals import APPROVAL_TIMEOUT_S, ApprovalBroker
 from kookabug_daemon.documents import DocumentTable, GraphChecker
+from kookabug_daemon.explore import ExploreSessions
 from kookabug_daemon.frame_guard import FILE as GUARD_FILE
 from kookabug_daemon.frame_guard import FrameGuard
 from kookabug_daemon.frames import FrameCache
@@ -256,6 +257,8 @@ class Daemon:
         self.guard.on_corrupt = lambda: self.post(
             lambda: self.notify_ui("agent.protect_corrupt", {"path": GUARD_FILE})
         )
+        self.explore = ExploreSessions(self.root, self._explore_changed)
+        """에이전트 탐색 세션 (M7 3.4)."""
         self._run_manager = RunManager(
             self.root,
             self.service,
@@ -381,7 +384,18 @@ class Daemon:
     def connections_changed(self) -> None:
         self._idle_since = None
 
+    def _explore_changed(self) -> None:
+        """탐색 세션·후보가 바뀌었다: ui 연결에 목록을 알린다 (`explore.changed`)."""
+        sessions = self.explore.listing(Workspace.open(self.root))
+        self.post(lambda: self.notify_ui("explore.changed", {"sessions": sessions}))
+
     def connection_closed(self, number: int) -> None:
+        # 연결이 끊기면 그 연결의 탐색 세션도 끝난다 (M7 3.4). explore.json 쓰기는 화면 지도 잠금을
+        # 기다릴 수 있어 이벤트 루프 밖에서
+        if self.explore.get(number) is not None:
+            threading.Thread(
+                target=self.explore.end, args=(number,), name="explore-end", daemon=True
+            ).start()
         self._documents.release_connection(number)
         self._run_manager.connection_closed(number)
         self.recorder.connection_closed(number)

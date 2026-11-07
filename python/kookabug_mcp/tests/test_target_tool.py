@@ -119,3 +119,26 @@ def test_existing_target_needs_revision(
     assert saved["revision"] != current
     assert (ws / EXISTING).read_bytes() != before
     assert mcp.close() == 0
+
+
+def test_target_create_refuses_screens_path(
+    ws: Path, daemon: ThreadDaemon, start_mcp: Start, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # M7: 에이전트는 확정 화면 지도 자리(screens/·targets/screens/)에 target을 쓰지 않는다
+    write_full(ws)
+    fake_window(ws, monkeypatch)
+    mcp = start_mcp()
+    mcp.initialize()
+    frame_id, rect = frame(mcp)
+    for path, code in (
+        ("targets/screens/lobby/1.target.json", "permission_denied"),
+        ("TARGETS/Screens/x.target.json", "permission_denied"),
+        ("screens/lobby.target.json", "invalid_params"),
+    ):
+        error = mcp.error(
+            "kb_target_create", {"path": path, "source": {"frame_id": frame_id}, "rect": rect}
+        )
+        assert error["code"] == code, (path, error)
+    assert not (ws / "targets" / "screens").exists()
+    assert not list((ws / "screens").glob("*.target.json"))
+    assert mcp.close() == 0

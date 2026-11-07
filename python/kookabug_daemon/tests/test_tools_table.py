@@ -53,6 +53,8 @@ M5_DENIED = {"approval.list", "approval.respond", "approval.preview", "permissio
 # M5 B5 에이전트 패널·설정 (에이전트가 자기 실행 명령·다른 에이전트 연결을 보거나 바꾸지 못함)
 M5_DENIED |= {"agent.connections", "agents.get", "agents.detect", "agents.set"}
 # M6 B4 플러그인 (계획 3.9 엄격: 에이전트는 설치·제거·준비·다시 잠그기·정리를 못 함)
+M7_DENIED = {"explore.list"}
+"""M7 탐색 세션 목록 — 사람 화면용."""
 M6_DENIED = {
     "plugins.preview",
     "plugins.install",
@@ -70,7 +72,9 @@ def test_ui_only_methods_agent_denied_or_allowlisted() -> None:
     assert ui_only == {name for name, tool in METHOD_TOOLS.items() if tool == UI_ONLY}
     assert ui_only >= AGENT_DENIED
     assert ui_only - AGENT_DENIED == UI_ONLY_AGENT_ALLOWED == ALLOWED_BEFORE_M3
-    assert {"daemon.shutdown"} | M3_DENIED | M4_DENIED | M5_DENIED | M6_DENIED == AGENT_DENIED
+    assert {
+        "daemon.shutdown"
+    } | M3_DENIED | M4_DENIED | M5_DENIED | M6_DENIED | M7_DENIED == AGENT_DENIED
 
 
 def test_every_plugin_method_but_list_is_agent_denied() -> None:

@@ -364,3 +364,48 @@ def test_screen_list_explored(tmp_path: Path) -> None:
     assert "screens/_explored/loose.screen.json  옛 자리 — 탐색 결과 배치가 잘못됐다" in stdout
     # 워크스페이스가 아니면 6
     assert list_run(tmp_path / "없음")[0] == 6
+
+
+def protect_run(ws: Path) -> tuple[int, dict[str, Any]]:
+    args = cli.build_parser().parse_args(
+        ["screen", "protect", "--clear-keys", "--workspace", str(ws), "--json"]
+    )
+    out, err = io.StringIO(), io.StringIO()
+    code = screen_cmd.run(args, out, err)
+    return code, json.loads(out.getvalue())
+
+
+def test_screen_protect_clear_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # M7 R1: 저장 글자 검사의 비밀값 키 목록은 사람만, daemon이 꺼져 있을 때 비운다
+    from kookabug_daemon.session import DaemonLock
+
+    monkeypatch.delenv("KOOKABUG_AGENT", raising=False)
+    ws = workspace(tmp_path / "ws")
+    path = ws / ".kookabug" / "agent-protect.json"
+    code, report = protect_run(ws)  # 기록 파일 없음
+    assert (code, report["cleared"]) == (0, 0)
+    body = {
+        "format": "kookabug.agent-protect/0",
+        "windows": [
+            {"window": {"hwnd": 1, "pid": 2, "created": "3"}, "keys": ["acc.pw"], "fields": [None]}
+        ],
+        "secret_keys": ["acc.id", "acc.pw"],
+    }
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(json.dumps(body), encoding="utf-8")
+    # daemon이 돌고 있으면 바꾸지 않는다
+    with DaemonLock.acquire(ws):
+        code, report = protect_run(ws)
+        assert code == 6 and "daemon" in report["message"]
+    # 에이전트가 부른 CLI는 종료 5
+    monkeypatch.setenv("KOOKABUG_AGENT", "agent:1")
+    assert protect_run(ws)[0] == 5
+    monkeypatch.delenv("KOOKABUG_AGENT")
+    code, report = protect_run(ws)
+    assert (code, report["cleared"]) == (0, 2)
+    after = json.loads(path.read_text(encoding="utf-8"))
+    assert after["secret_keys"] == [] and after["windows"] == body["windows"]
+    # 손상된 기록은 바꾸지 않는다 (사람이 직접 확인)
+    path.write_text('{"format": "kookabug.agent-protect/0", "windows": {}}', encoding="utf-8")
+    raw = path.read_bytes()
+    assert protect_run(ws)[0] == 6 and path.read_bytes() == raw
