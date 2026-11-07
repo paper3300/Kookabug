@@ -425,10 +425,11 @@ export const daemonRpcSchema: unknown = {
       "type": "object"
     },
     "ApprovalAnswer": {
-      "description": "사람 확인 답 (M5 3.6). allow_always는 프로젝트 계층(.kookabug/local.json)에 그 도구·인자에만 맞는 allow 규칙을 더한 뒤 실행한다. control 도구에는 받지 않는다(always_not_allowed)",
+      "description": "사람 확인 답 (M5 3.6). allow_always는 프로젝트 계층(.kookabug/local.json)에 그 도구·인자에만 맞는 allow 규칙을 더한 뒤 실행한다. control 도구에는 받지 않는다(always_not_allowed). allow_session(M7 3.11)은 요청 연결의 지금 탐색 세션 동안 같은 도구·권한 인자(control은 창 제목, screens는 도구 전체)의 ask를 다시 묻지 않는다 — 메모리에만, 세션 끝·연결 끊김·예산 초과·daemon 재시작에 사라지고 deny 규칙이 먼저다. 요청에 session이 없으면 session_not_allowed",
       "enum": [
         "allow_always",
         "allow_once",
+        "allow_session",
         "deny"
       ],
       "title": "ApprovalAnswer"
@@ -549,6 +550,31 @@ export const daemonRpcSchema: unknown = {
           "description": "approval.preview로 바뀔 그래프 값을 볼 수 있다 (graph.patch·graph.save·graph.create)",
           "type": "boolean"
         },
+        "session": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "title"
+              ],
+              "title": "ApprovalSession",
+              "type": "object"
+            }
+          ],
+          "description": "M7 3.11: \"이 탐색 동안 허용\"(allow_session)을 쓸 수 있으면 요청 연결의 지금 탐색 세션, 아니면 null(단추 없음). control 도구와 screens 변경 도구에만"
+        },
         "summary": {
           "description": "사람이 읽는 요약 줄",
           "items": {
@@ -569,6 +595,7 @@ export const daemonRpcSchema: unknown = {
         "id",
         "method",
         "previewable",
+        "session",
         "summary",
         "tool"
       ],
@@ -579,7 +606,7 @@ export const daemonRpcSchema: unknown = {
       "additionalProperties": false,
       "properties": {
         "by": {
-          "description": "답한 ui 연결(ui:<번호>) 또는 daemon(시간 초과·요청 연결 끊김)",
+          "description": "답한 ui 연결(ui:<번호>) 또는 daemon(시간 초과·요청 연결 끊김·탐색 세션 끝)",
           "type": "string"
         },
         "id": {
@@ -589,6 +616,7 @@ export const daemonRpcSchema: unknown = {
           "enum": [
             "allow_always",
             "allow_once",
+            "allow_session",
             "cancelled",
             "deny",
             "timeout"
@@ -4021,6 +4049,54 @@ export const daemonRpcSchema: unknown = {
           ],
           "type": "object"
         },
+        "screens.check": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ScreensCheckParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/ScreensCheckResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "screens.discard": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ScreensDiscardParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/ScreensDiscardResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
         "screens.get": {
           "additionalProperties": false,
           "properties": {
@@ -4069,6 +4145,54 @@ export const daemonRpcSchema: unknown = {
           ],
           "type": "object"
         },
+        "screens.layout_get": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/ScreensLayout"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "screens.layout_set": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ScreensLayoutSetParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/ScreensLayout"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
         "screens.list": {
           "additionalProperties": false,
           "properties": {
@@ -4083,6 +4207,30 @@ export const daemonRpcSchema: unknown = {
             },
             "tool": {
               "const": "kb_screen_list"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "screens.promote": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/ScreensPromoteParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/ScreensPromoteResult"
+            },
+            "tool": {
+              "const": "ui_only"
             }
           },
           "required": [
@@ -4509,6 +4657,11 @@ export const daemonRpcSchema: unknown = {
         "explore.start",
         "explore.end",
         "explore.list",
+        "screens.check",
+        "screens.promote",
+        "screens.discard",
+        "screens.layout_get",
+        "screens.layout_set",
         "secrets.create",
         "secrets.list",
         "session.hello",
@@ -7406,7 +7559,9 @@ export const daemonRpcSchema: unknown = {
         "detect_not_matching",
         "secret_in_text",
         "secret_unchecked",
-        "screens_busy"
+        "screens_busy",
+        "session_not_allowed",
+        "approval_cancelled"
       ],
       "title": "RequestFailedCode",
       "type": "string"
@@ -8611,6 +8766,94 @@ export const daemonRpcSchema: unknown = {
       "title": "ScreenReadTextParams",
       "type": "object"
     },
+    "ScreensCheckParams": {
+      "additionalProperties": false,
+      "description": "screens.check (사람만, M7 3.7): 후보 하나를 승격하기 전에 확인. 처리기는 B4",
+      "properties": {
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "type": "string"
+        },
+        "session": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "session"
+      ],
+      "title": "ScreensCheckParams",
+      "type": "object"
+    },
+    "ScreensCheckResult": {
+      "additionalProperties": false,
+      "properties": {
+        "ok": {
+          "description": "후보 판정 조건이 자기 스크린샷에서 맞고 승격을 막는 것이 없다",
+          "type": "boolean"
+        },
+        "revisions": {
+          "additionalProperties": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "description": "승격이 고칠 파일 → 지금 revision (없는 파일은 null). screens.promote의 base_revisions로 그대로 넘긴다",
+          "type": "object"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ok",
+        "revisions",
+        "warnings"
+      ],
+      "title": "ScreensCheckResult",
+      "type": "object"
+    },
+    "ScreensDiscardParams": {
+      "additionalProperties": false,
+      "description": "screens.discard (사람만, M7 3.7): 끝난 탐색 세션의 후보 하나(key) 또는 세션 전체를 지운다. 처리기는 B4",
+      "properties": {
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "type": "string"
+        },
+        "session": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "session"
+      ],
+      "title": "ScreensDiscardParams",
+      "type": "object"
+    },
+    "ScreensDiscardResult": {
+      "additionalProperties": false,
+      "properties": {
+        "removed": {
+          "description": "지운 파일 (워크스페이스 기준)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "removed"
+      ],
+      "title": "ScreensDiscardResult",
+      "type": "object"
+    },
     "ScreensGetParams": {
       "additionalProperties": false,
       "description": "screens.get (kb_screen_get, M5): screens/ 아래 *.screen.json 하나",
@@ -8740,6 +8983,48 @@ export const daemonRpcSchema: unknown = {
       "title": "ScreensIdentifyResult",
       "type": "object"
     },
+    "ScreensLayout": {
+      "additionalProperties": false,
+      "description": "screens.layout_get/set (사람만, M7 3.8): 화면 지도 카드 배치 .kookabug/screen-map.json. 처리기는 B5",
+      "properties": {
+        "layout": {
+          "description": "화면 ID·후보 → 카드 자리",
+          "type": "object"
+        },
+        "revision": {
+          "type": [
+            "null",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "layout",
+        "revision"
+      ],
+      "title": "ScreensLayout",
+      "type": "object"
+    },
+    "ScreensLayoutSetParams": {
+      "additionalProperties": false,
+      "properties": {
+        "base_revision": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "layout": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "base_revision",
+        "layout"
+      ],
+      "title": "ScreensLayoutSetParams",
+      "type": "object"
+    },
     "ScreensListParams": {
       "additionalProperties": false,
       "description": "screens.list (kb_screen_list, M5): under(screens/ 기준 또는 워크스페이스 기준 폴더) 아래 화면 지도",
@@ -8787,6 +9072,81 @@ export const daemonRpcSchema: unknown = {
         "screens"
       ],
       "title": "ScreensListResult",
+      "type": "object"
+    },
+    "ScreensPromoteParams": {
+      "additionalProperties": false,
+      "description": "screens.promote (사람만, M7 3.7): 후보를 확정 화면으로 옮기거나(new) 기존 화면에 합친다(merge). screens.lock 안 저널 거래. 처리기는 B4",
+      "properties": {
+        "base_revisions": {
+          "additionalProperties": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "description": "screens.check가 준 revisions 그대로. 하나라도 다르면 revision_conflict",
+          "type": "object"
+        },
+        "description": {
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "merge",
+            "new"
+          ]
+        },
+        "replace_detect": {
+          "type": "boolean"
+        },
+        "replace_shot": {
+          "type": "boolean"
+        },
+        "session": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "base_revisions",
+        "key",
+        "mode",
+        "session"
+      ],
+      "title": "ScreensPromoteParams",
+      "type": "object"
+    },
+    "ScreensPromoteResult": {
+      "additionalProperties": false,
+      "properties": {
+        "cleanup_pending": {
+          "description": "커밋은 됐고 마무리(후보 지우기·explore.json)가 남았다 — 다음 잠금 때 끝낸다",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "승격된 화면 파일 (워크스페이스 기준)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cleanup_pending",
+        "path"
+      ],
+      "title": "ScreensPromoteResult",
       "type": "object"
     },
     "ScreensSaveCondition": {

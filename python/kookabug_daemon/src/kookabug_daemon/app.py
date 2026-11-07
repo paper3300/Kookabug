@@ -289,6 +289,11 @@ class Daemon:
         """권한 파일 읽기·쓰기 (M5 B3 `permissions.*`·"항상 허용")."""
         self.approvals = ApprovalBroker(self, self._authorizer, config.approval_timeout_s)
         """사람 확인 (M5 B3 `approval.*`)."""
+        # 탐색 세션이 끝나면(끝·연결 끊김·예산) "이 탐색 동안 허용" 범위와 그 세션의 대기 요청을
+        # 이벤트 루프에서 끝낸다 (M7 B3). 세션 끝은 다른 스레드에서도 오므로 post로 넘긴다
+        self.explore.on_scope_end = lambda connection, session_id, reason: self.post(
+            lambda: self.approvals.scope_ended(connection, session_id, reason)
+        )
         self._agent_numbers: set[int] = set()
         """붙은 agent 연결 번호 (M5 B5 `agent.connections.changed`를 알릴지 정한다)."""
 
@@ -394,7 +399,10 @@ class Daemon:
         # 기다릴 수 있어 이벤트 루프 밖에서
         if self.explore.get(number) is not None:
             threading.Thread(
-                target=self.explore.end, args=(number,), name="explore-end", daemon=True
+                target=self.explore.end,
+                args=(number, "disconnected"),
+                name="explore-end",
+                daemon=True,
             ).start()
         self._documents.release_connection(number)
         self._run_manager.connection_closed(number)

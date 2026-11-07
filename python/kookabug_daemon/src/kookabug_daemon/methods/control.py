@@ -29,6 +29,7 @@ from kookabug_core.permissions import Decision
 from kookabug_core.runner.spec import BoundWindow
 from kookabug_daemon.agent_view import MASK
 from kookabug_daemon.documents import resolve_path
+from kookabug_daemon.explore import StepReservation
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.protocol import RequestFailed
 
@@ -156,8 +157,21 @@ async def _control(call: Call) -> dict[str, Any]:
     value = control_graph(call)  # 인자가 틀리면 판정 전에 거부 (아무것도 묻지 않음)
     # 개발 모듈 daemon의 에이전트 제어 실행은 사람 확인을 묻기 전에 거부 (M6 3.7)
     call.daemon.run_manager.refuse_dev_modules(call.principal)
-    # 탐색 세션 스텝 예산: 판정(사람 확인) **전에** (M7 3.4)
-    call.daemon.explore.check_budget(call.connection)
+    # 탐색 세션 스텝 예산: 판정(사람 확인) **전에** 한 칸 예약 (M7 3.4, B3 Mid 2). 제어 실행에
+    # 들어가면 스텝으로 확정, 판정 거부·사람 거부·취소·시작 실패면 되돌린다
+    # (세션 잠금은 저장 게시 동안 쥐어질 수 있어 이벤트 루프 밖에서)
+    step = await asyncio.to_thread(call.daemon.explore.reserve, call.connection)
+    try:
+        return await _reserved(call, value, step)
+    finally:
+        if step is not None:
+            # 확정했으면 아무 일도 하지 않는다. 취소(연결 끊김) 중에도 되돌려야 하므로 바로 부른다
+            step.release()
+
+
+async def _reserved(
+    call: Call, value: dict[str, Any], step: StepReservation | None
+) -> dict[str, Any]:
     authorized = await call.daemon.approvals.authorize(call, _window_arg(call))
     decision = authorized.decision
     assert isinstance(decision, Decision)  # control.*은 ui_only가 아니다
@@ -181,6 +195,15 @@ async def _control(call: Call) -> dict[str, Any]:
         # 그 바인딩의 보호 기록을 디스크에 쓴 뒤에만 비밀값을 보낸다. 실패면 protect_record_failed
         await asyncio.to_thread(guard.record_secret, call.connection, bindings, secret)
     try:
+        # "이 탐색 동안 허용"으로 승인된 입력은 그 세션 동안만 유효하다: 판정 뒤 창 찾기·보호 기록
+        # 사이에 세션이 끝났으면 실행하지 않는다 (예약은 finally가 되돌림, B3 검수 Mid 1)
+        if authorized.scoped and (
+            step is None or call.daemon.explore.live(call.connection, step.session.id) is None
+        ):
+            raise RequestFailed(
+                "explore_not_active",
+                "탐색 세션이 끝나 '이 탐색 동안 허용'으로 승인된 입력을 보내지 않았다",
+            )
         run_id = await asyncio.to_thread(
             functools.partial(
                 manager.start_internal,
@@ -191,8 +214,9 @@ async def _control(call: Call) -> dict[str, Any]:
                 bound_window=bound,
             )
         )
-        # 판정을 통과해 제어 실행에 들어갔다: 탐색 세션의 스텝 하나
-        await asyncio.to_thread(call.daemon.explore.count_step, call.connection)
+        # 판정을 통과해 제어 실행에 들어갔다: 예약한 칸을 탐색 세션의 스텝 하나로
+        if step is not None:
+            await asyncio.to_thread(step.commit)
         outcome = await asyncio.to_thread(manager.wait_outcome, run_id, WAIT_S)
     finally:
         # 결과와 상관없이 이 창들로 입력이 갔다고 본다 (칸 상자 근거를 끊는 쪽이 안전)

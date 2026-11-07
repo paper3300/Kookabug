@@ -132,6 +132,36 @@ def test_session_fields_with_secret_refused(
     assert not (game.root / "screens" / "_explored").exists()
 
 
+@pytest.mark.parametrize(
+    ("client", "expected"),
+    [
+        ({**AGENT, "id": f"agent-{SECRET.lower()}"}, ("secret_in_text", "agent.id")),
+        ({**AGENT, "name": f"mcp {SPACED}"}, ("secret_in_text", "agent.client")),
+        ({**AGENT, "id": "agent\x07bell"}, ("validation_failed", None)),
+        ({**AGENT, "id": "a" * 201}, ("validation_failed", None)),
+    ],
+    ids=["id_secret", "client_secret", "id_control_char", "id_too_long"],
+)
+def test_agent_identity_checked(
+    game: FakeGame, daemon: ThreadDaemon, client: dict[str, Any], expected: tuple[str, Any]
+) -> None:
+    """B2b 검수 Low 6: `explore.json`에 남는 에이전트 ID·표시 이름도 글자 검사·형식 검사."""
+    with daemon.client(client) as agent:
+        error = refused(agent, "explore.start", {"title": "식별자"})
+        assert (error.kind, error.data.get("field")) == expected
+        no_value(error.message)
+    assert not (game.root / "screens" / "_explored").exists()
+
+
+def test_agent_client_name_cleaned(game: FakeGame, daemon: ThreadDaemon) -> None:
+    with daemon.client({**AGENT, "name": "mcp\x1b[31m " + "x" * 300}) as agent:
+        session = agent.call("explore.start", {"title": "표시 이름"})["session"]
+    path = game.root / "screens" / "_explored" / session / "explore.json"
+    wait_until(lambda: '"ended"' in path.read_text("utf-8"), timeout=30)
+    client = json.loads(path.read_text("utf-8"))["agent"]["client"]
+    assert client.isprintable() and len(client) == 200 and client.startswith("mcp[31m ")
+
+
 def test_unreadable_key_or_corrupt_record_is_unchecked(
     game: FakeGame, daemon: ThreadDaemon
 ) -> None:

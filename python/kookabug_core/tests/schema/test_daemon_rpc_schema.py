@@ -115,6 +115,12 @@ TOOLS = {
     "explore.start": "kb_explore_start",
     "explore.end": "kb_explore_end",
     "explore.list": "ui_only",
+    # M7 B3 화면 지도 사람 전용 (승격·버리기·확인·카드 배치)
+    "screens.check": "ui_only",
+    "screens.promote": "ui_only",
+    "screens.discard": "ui_only",
+    "screens.layout_get": "ui_only",
+    "screens.layout_set": "ui_only",
 }
 AGENT_ONLY_B3 = {"control.click", "control.key", "control.type", "app.launch"}
 AGENT_ONLY_M7 = {"screens.identify", "screens.save", "explore.start", "explore.end"}

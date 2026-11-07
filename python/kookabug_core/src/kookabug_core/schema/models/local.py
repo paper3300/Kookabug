@@ -78,7 +78,7 @@ class Permissions(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    preset: Literal["full", "graph_author", "read_only", "runner"] | None = None
+    preset: Literal["explorer", "full", "graph_author", "read_only", "runner"] | None = None
     rules: list[PermissionRule] | None = None
     toolsets: (
         dict[

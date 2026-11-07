@@ -183,6 +183,37 @@ export function fromEndedSession(request: ApprovalRequest, session: SessionInfo 
   return session === null || request.agent.id !== `panel:${session.id}` || session.status === "ended" || session.status === "error";
 }
 
+export type ApprovalAnswer = "allow_once" | "allow_session" | "allow_always" | "deny";
+
+export interface ApprovalButton {
+  verdict: Exclude<ApprovalAnswer, "deny">;
+  label: string;
+  primary: boolean;
+}
+
+/** 게임 조작 도구 (control 툴셋 — "항상 허용" 없음, M5 U2) */
+export function isControlTool(tool: string): boolean {
+  return tool.startsWith("kb_input_") || tool === "kb_app_launch";
+}
+
+/**
+ * 확인 카드의 허용 단추 (M7 3.11). 거부는 카드가 늘 따로 둔다.
+ * - 게임 조작: 허용 / 이 탐색 동안 허용(탐색 세션이 있을 때) — "항상 허용"은 daemon이 줘도 그리지 않는다
+ * - 그 밖: 한 번 허용 / 이 탐색 동안 허용(daemon이 session을 줄 때 — 화면 지도 쓰기) / 항상 허용(규칙이 있을 때)
+ * 단추는 렌더러에만 있다 — 답(approval.respond)은 사람(ui) 연결만 보낼 수 있다
+ */
+export function approvalButtons(r: ApprovalRequest): ApprovalButton[] {
+  const control = isControlTool(r.tool);
+  // 게임 실행(kb_app_launch)은 범위 인자가 없어 daemon이 session을 주지 않는다 — 렌더러도 그리지 않는다
+  const exploring = r.session !== null && r.tool !== "kb_app_launch";
+  const out: ApprovalButton[] = [
+    { verdict: "allow_once", label: control && exploring ? "허용" : "한 번 허용", primary: true },
+  ];
+  if (exploring) out.push({ verdict: "allow_session", label: "이 탐색 동안 허용", primary: false });
+  if (r.always_rule !== null && !control) out.push({ verdict: "allow_always", label: "항상 허용", primary: false });
+  return out;
+}
+
 /** 이 확인 요청을 지금 세션 대화에 넣을지 (아니면 외부 에이전트 카드) */
 export function belongsToSession(request: ApprovalRequest, session: string | null): boolean {
   return session !== null && request.agent.id === `panel:${session}`;
@@ -204,6 +235,7 @@ const PRESET_LABEL: Record<string, string> = {
   graph_author: "그래프 작성",
   runner: "실행",
   full: "전체",
+  explorer: "탐색",
 };
 
 export function presetLabel(preset: string | null | undefined): string {
@@ -445,7 +477,7 @@ export async function answerAcpPermission(id: string, optionId: string | null): 
   await app().agentPermission(session.id, id, optionId).catch(() => false);
 }
 
-export async function respondApproval(id: string, verdict: "allow_once" | "allow_always" | "deny"): Promise<void> {
+export async function respondApproval(id: string, verdict: ApprovalAnswer): Promise<void> {
   const { approvals, session } = useAgent.getState();
   const card = approvals.get(id);
   if (card === undefined || card.state !== "open") return;
@@ -460,7 +492,13 @@ export async function respondApproval(id: string, verdict: "allow_once" | "allow
     await client().call("approval.respond", { id, verdict });
   } catch (err) {
     const e = toRpcError(err);
-    patch({ busy: false, error: e.kind === "not_found" ? "이미 닫힌 요청이에요" : e.message });
+    const text =
+      e.kind === "not_found"
+        ? "이미 닫힌 요청이에요"
+        : e.kind === "session_not_allowed"
+          ? "탐색 세션이 없어 '이 탐색 동안 허용'을 쓸 수 없어요"
+          : e.message;
+    patch({ busy: false, error: text });
   }
 }
 

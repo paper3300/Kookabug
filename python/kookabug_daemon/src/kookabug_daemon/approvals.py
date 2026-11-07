@@ -14,6 +14,15 @@
 
 답(`approval.respond`)·미리보기(`approval.preview`)는 `ui_only`이고 `AGENT_DENIED`라 에이전트는 자기
 요청을 승인할 수 없다. 판정 도구는 daemon 표(`METHOD_TOOLS`)가 정한다.
+
+**이 탐색 동안 허용**(`allow_session`, M7 3.11 U2): 요청 연결에 활성 탐색 세션이 있고 도구가
+control 또는 screens 변경 도구일 때만 카드에 나온다(`session`). 범위 = (연결, 세션, 도구, 권한
+인자 — control은 창 제목, screens는 도구 전체)이고 **이 브로커의 메모리에만** 있다(파일에 규칙을
+쓰지 않음 — daemon 재시작에 사라진다). 같은 범위의 다음 ask는 묻지 않고 승인으로 친다. 판정을 먼저
+하므로 deny 규칙이 늘 이긴다(범위는 ask만 건너뛴다). 세션 끝·연결 끊김·예산 다 씀이면 범위가
+사라지고(`scope_ended`), 그 세션에 걸린 대기 요청은 `cancelled`(`approval_cancelled`)로 끝난다.
+답할 때도 세션이 살아 있는지 다시 보므로 늦은 답은 아무것도 허락하지 않는다. 감사 기록(도구·창
+제목·시각)만 `explore.json`에 남기고, 창 제목은 3.5b 글자 검사를 지날 때만 적는다.
 """
 
 from __future__ import annotations
@@ -31,6 +40,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal
 from kookabug_core import documents as core_documents
 from kookabug_core.documents import DocumentError
 from kookabug_core.permissions import TOOLS, Decision, Principal, exact_rule
+from kookabug_daemon.explore import ExploreSession, check_texts
 from kookabug_daemon.graph_patch import PatchInvalid, apply_ops
 from kookabug_daemon.methods.tools import METHOD_TOOLS, Authorizer
 from kookabug_daemon.protocol import RequestFailed
@@ -39,16 +49,41 @@ if TYPE_CHECKING:
     from kookabug_daemon.app import Daemon
     from kookabug_daemon.methods import Call
 
-__all__ = ["APPROVAL_TIMEOUT_S", "ApprovalBroker", "Pending"]
+__all__ = ["APPROVAL_TIMEOUT_S", "ApprovalBroker", "Pending", "scope_arg"]
 
 log = logging.getLogger(__name__)
 
 APPROVAL_TIMEOUT_S: Final = 120.0
 PREVIEWABLE: Final = frozenset({"graph.patch", "graph.save", "graph.create"})
 
-type Answer = Literal["allow_once", "allow_always", "deny"]
-type Resolved = Literal["allow_once", "allow_always", "deny", "timeout", "cancelled"]
+type Answer = Literal["allow_once", "allow_always", "allow_session", "deny"]
+type Resolved = Literal[
+    "allow_once", "allow_always", "allow_session", "deny", "timeout", "cancelled"
+]
 type State = Literal["waiting", "resolving", "done"]
+type Scope = tuple[int, str, str, str]
+"""이 탐색 동안 허용 범위: (연결, 세션 ID, 도구, 권한 인자 — screens는 빈 글자)."""
+
+AUDIT_ARG_MAX: Final = 200
+"""`explore.json` `approvals[].arg` 최대 길이 (explore 형식)."""
+
+
+SESSION_EXCLUDED: Final = frozenset({"kb_app_launch"})
+"""control이지만 "이 탐색 동안 허용"을 주지 않는 도구."""
+
+
+def scope_arg(tool: str, arg: str) -> str | None:
+    """`allow_session`을 쓸 수 있는 도구면 범위의 권한 인자, 아니면 None. control은 창 제목(그
+    인자 그대로), screens 변경 도구는 도구 전체(빈 글자). 게임 실행(`kb_app_launch`)은 권한 인자가
+    없어(빈 글자) 한 번 누르면 모든 프로필 실행이 지나가므로 대상이 아니다 (B3 검수 Low 3)."""
+    info = TOOLS.get(tool)
+    if info is None or tool in SESSION_EXCLUDED:
+        return None
+    if info.toolset == "control":
+        return arg
+    if info.toolset == "screens" and info.mutating:
+        return ""
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +93,9 @@ class Authorized:
 
     decision: Decision | None
     approved: bool = False
+    scoped: bool = False
+    """승인이 "이 탐색 동안 허용"(범위 또는 `allow_session` 답)에서 왔다 — 탐색 세션이 살아 있는
+    동안만 유효하므로 실행 시작 직전에 세션을 다시 본다 (B3 검수 Mid 1)."""
 
 
 def _timestamp(at: datetime) -> str:
@@ -78,6 +116,8 @@ class Pending:
     always_rule: str | None
     expires_at: str
     future: asyncio.Future[Answer] = field(repr=False)
+    session: tuple[str, str] | None = None
+    """`allow_session`을 쓸 수 있으면 요청 때 그 연결의 탐색 세션 (ID, 제목)."""
     state: State = "waiting"
     """waiting → (allow_always 응답) resolving → done. resolving인 동안 시간 초과·연결 끊김·다른
     응답은 이 요청을 끝내지 못한다(규칙 쓰기의 결과로만 끝난다). done이면 쓰기를 시작하지 않는다."""
@@ -96,6 +136,9 @@ class Pending:
             "always_rule": self.always_rule,
             "previewable": self.method in PREVIEWABLE,
             "expires_at": self.expires_at,
+            "session": (
+                None if self.session is None else {"id": self.session[0], "title": self.session[1]}
+            ),
         }
 
 
@@ -141,13 +184,18 @@ class ApprovalBroker:
         self.authorizer = authorizer
         self.timeout_s = timeout_s
         self._pending: dict[str, Pending] = {}
+        self._scopes: set[Scope] = set()
+        """이 탐색 동안 허용 범위 (메모리에만 — 파일에 쓰지 않는다)."""
+        self._spent: set[tuple[int, str]] = set()
+        """예산을 다 쓴 (연결, 세션) — 범위를 새로 주지 않는다. 세션이 끝나면 지운다."""
 
     # ---------------------------------------------------------------- 판정 (요청 쪽)
 
     async def authorize(self, call: Call, arg: str) -> Authorized:
-        """판정 → ask면 사람 확인 → 다시 판정(approved). 집행한 판정과 승인 여부(`ui_only`면
-        판정 None). 승인 뒤 다시 판정한 결과는 여전히 `final: ask`이므로 `approved`를 함께
-        넘긴다."""
+        """판정 → ask면 (이 탐색 동안 허용 범위가 아니면) 사람 확인 → 다시 판정(approved). 집행한
+        판정과 승인 여부(`ui_only`면 판정 None). 승인 뒤 다시 판정한 결과는 여전히 `final: ask`
+        이므로 `approved`를 함께 넘긴다. deny는 첫 판정에서 끝나므로 범위가 deny 규칙을 넘지
+        못한다."""
         try:
             decision = await asyncio.to_thread(
                 self.authorizer.require, call.principal, call.method, arg
@@ -156,11 +204,15 @@ class ApprovalBroker:
         except RequestFailed as failed:
             if failed.code != "approval_required":
                 raise
-            await self._ask(call, arg, failed)
+            if self._in_scope(call, arg):
+                log.info("이 탐색 동안 허용: %s(%s) — %s", call.method, arg, call.principal.id)
+                scoped = True
+            else:
+                scoped = await self._ask(call, arg, failed) == "allow_session"
         decision = await asyncio.to_thread(
             self.authorizer.require, call.principal, call.method, arg, approved=True
         )
-        return Authorized(decision, approved=True)
+        return Authorized(decision, approved=True, scoped=scoped)
 
     async def approve(self, call: Call, arg: str) -> bool:
         """스스로 판정하는 메서드(`run.start`)용: 판정을 **보기만** 하고(집행 아님), ask면 사람
@@ -195,6 +247,12 @@ class ApprovalBroker:
         if TOOLS[tool].toolset != "control":
             with contextlib.suppress(ValueError):
                 always = exact_rule(tool, arg)
+        session: tuple[str, str] | None = None
+        if scope_arg(tool, arg) is not None:
+            active = self.daemon.explore.get(call.connection)
+            # 예산을 다 쓴 세션에는 범위를 새로 주지 않는다 (단추 없음)
+            if active is not None and (call.connection, active.id) not in self._spent:
+                session = (active.id, active.title)
         now = datetime.now(UTC)
         pending = Pending(
             id=f"ap_{secrets.token_hex(8)}",
@@ -209,6 +267,7 @@ class ApprovalBroker:
             always_rule=always,
             expires_at=_timestamp(now + timedelta(seconds=self.timeout_s)),
             future=asyncio.get_running_loop().create_future(),
+            session=session,
         )
         self._pending[pending.id] = pending
         log.info("확인 요청 %s: %s(%s) — %s", pending.id, tool, arg, principal.id)
@@ -261,6 +320,16 @@ class ApprovalBroker:
         # 이벤트 루프 하나에서만 돈다: 아래 상태 확인·전이는 await 전에 끝나므로 시간 초과·끊김·
         # 다른 응답과 겹치지 않는다 (broker 잠금 역할)
         pending = self._get(approval_id)
+        if pending.session is not None and self._session_of(pending) is None:
+            # 요청 뒤 그 탐색 세션이 끝났다 (범위 소멸 알림이 아직 오지 않았어도): 늦은 답은
+            # 아무것도 허락하지 않는다
+            self._cancel(pending)
+            raise RequestFailed(
+                "not_found", f"확인 요청 {approval_id}은(는) 탐색 세션이 끝나 취소됐다"
+            )
+        if verdict == "allow_session":
+            await self._allow_session(pending, by)
+            return
         if verdict != "allow_always":
             pending.future.set_result(verdict)
             self._resolve(pending, verdict, by)
@@ -294,6 +363,111 @@ class ApprovalBroker:
 
         write.add_done_callback(finish)
         await asyncio.shield(write)
+
+    # ---------------------------------------------------------------- 이 탐색 동안 허용
+
+    def scopes(self) -> frozenset[Scope]:
+        """지금 살아 있는 범위 (진단·검사용 사본)."""
+        return frozenset(self._scopes)
+
+    def spent(self) -> frozenset[tuple[int, str]]:
+        """예산을 다 써 범위를 새로 주지 않는 (연결, 세션) (진단·검사용 사본)."""
+        return frozenset(self._spent)
+
+    def _in_scope(self, call: Call, arg: str) -> bool:
+        tool = METHOD_TOOLS[call.method]
+        found = scope_arg(tool, arg)
+        if found is None or call.principal.kind != "agent" or not call.principal.attended:
+            return False
+        session = self.daemon.explore.get(call.connection)
+        return session is not None and (call.connection, session.id, tool, found) in self._scopes
+
+    def _session_of(self, pending: Pending) -> ExploreSession | None:
+        """요청 때의 탐색 세션이 아직 그 연결의 세션이면 그 세션, 아니면 None."""
+        if pending.session is None:
+            return None
+        return self.daemon.explore.live(pending.connection, pending.session[0])
+
+    async def _allow_session(self, pending: Pending, by: str) -> None:
+        found = scope_arg(pending.tool, pending.arg)
+        if pending.session is None or found is None:
+            raise RequestFailed(
+                "session_not_allowed",
+                f"{pending.tool} 요청에는 '이 탐색 동안 허용'을 쓸 수 없다 "
+                "(요청 연결에 탐색 세션이 없거나 게임 조작·화면 지도 저장 도구가 아니다)",
+            )
+        if (pending.connection, pending.session[0]) in self._spent:
+            # 대기 중 예산을 다 써 범위가 사라진 세션: 범위를 다시 만들지 않는다 (B3 검수 Low 4)
+            raise RequestFailed(
+                "session_not_allowed",
+                "탐색 스텝 예산을 다 써 '이 탐색 동안 허용'을 쓸 수 없다 (한 번 허용·거부만)",
+            )
+        # 감사 기록 한 줄 (창 제목은 글자 검사를 지날 때만 — 비밀값 제공자를 읽으므로 루프 밖에서)
+        entry = await asyncio.to_thread(self._audit_entry, pending.tool, found)
+        # 기다리는 사이 세션이 끝났거나 요청이 끝났으면(시간 초과·끊김) 아무것도 허락하지 않는다
+        session = self._session_of(pending)
+        if pending.state != "waiting":
+            raise RequestFailed("not_found", f"확인 요청 {pending.id}이(가) 없다 (이미 끝남)")
+        if session is None:
+            self._cancel(pending)
+            raise RequestFailed(
+                "not_found", f"확인 요청 {pending.id}은(는) 탐색 세션이 끝나 취소됐다"
+            )
+        self.daemon.explore.note_approval(session, entry)
+        self._scopes.add((pending.connection, session.id, pending.tool, found))
+        log.info("이 탐색 동안 허용: %s(%s) — 세션 %s", pending.tool, found, session.id)
+        pending.future.set_result("allow_session")
+        self._resolve(pending, "allow_session", by)
+        await asyncio.to_thread(self.daemon.explore.flush, session)
+
+    def _audit_entry(self, tool: str, arg: str) -> dict[str, Any]:
+        entry: dict[str, Any] = {
+            "tool": tool,
+            "scope": "session",
+            "at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        if arg and len(arg) <= AUDIT_ARG_MAX:
+            try:
+                check_texts([("arg", arg)], self.daemon.guard, self.daemon.root)
+            except RequestFailed:
+                pass  # 비밀값이 들었거나 검사할 수 없다: 창 제목을 적지 않는다
+            else:
+                entry["arg"] = arg
+        return entry
+
+    def scope_ended(self, connection: int, session_id: str, reason: str) -> None:
+        """탐색 세션 끝·연결 끊김·예산 다 씀 (이벤트 루프 안): 그 세션의 범위를 지운다. 끝·끊김이면
+        그 세션에 걸린 대기 요청도 `cancelled`로 끝낸다(늦은 답으로 범위가 생기지 않는다)."""
+        dropped = {s for s in self._scopes if s[0] == connection and s[1] == session_id}
+        self._scopes -= dropped
+        if dropped:
+            log.info(
+                "이 탐색 동안 허용 범위 %d개를 지웠다 (세션 %s, %s)",
+                len(dropped),
+                session_id,
+                reason,
+            )
+        if reason == "budget":
+            self._spent.add((connection, session_id))
+            return
+        self._spent.discard((connection, session_id))
+        for pending in list(self._pending.values()):
+            if (
+                pending.connection == connection
+                and pending.session is not None
+                and pending.session[0] == session_id
+            ):
+                self._cancel(pending)
+
+    def _cancel(self, pending: Pending) -> None:
+        """탐색 세션이 끝나 대기 요청을 취소한다. 규칙을 쓰는 중(resolving)이면 그 결과가 끝낸다."""
+        if pending.state != "waiting":
+            return
+        pending.failure = RequestFailed(
+            "approval_cancelled", f"탐색 세션이 끝나 확인 요청을 취소했다 ({pending.tool})"
+        )
+        pending.future.set_result("deny")
+        self._resolve(pending, "cancelled", "daemon")
 
     async def preview(self, approval_id: str) -> dict[str, Any]:
         """승인하면 쓰일 그래프 값 (쓰지 않는다)."""

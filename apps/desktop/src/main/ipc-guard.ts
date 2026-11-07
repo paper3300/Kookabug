@@ -83,6 +83,12 @@ export const RENDERER_METHODS: ReadonlySet<string> = new Set([
   "plugins.cancel",
   // M7 탐색 세션 목록 (사람 화면용 — daemon이 agent 연결을 거부한다)
   "explore.list",
+  // M7 화면 지도 사람 전용 (승격·버리기·확인·카드 배치 — daemon이 agent 연결을 거부한다)
+  "screens.check",
+  "screens.promote",
+  "screens.discard",
+  "screens.layout_get",
+  "screens.layout_set",
 ]);
 
 // 주 프로세스 안에서만 쓰는 메서드. 렌더러 표면에서 뺀다. run.export는 dest(쓸 경로)를 주 프로세스의

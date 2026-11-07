@@ -22,12 +22,12 @@ export type Toolset = "control" | "core" | "graph_edit" | "observe" | "run" | "s
  */
 export type Revision = string;
 /**
- * 사람 확인 답 (M5 3.6). allow_always는 프로젝트 계층(.kookabug/local.json)에 그 도구·인자에만 맞는 allow 규칙을 더한 뒤 실행한다. control 도구에는 받지 않는다(always_not_allowed)
+ * 사람 확인 답 (M5 3.6). allow_always는 프로젝트 계층(.kookabug/local.json)에 그 도구·인자에만 맞는 allow 규칙을 더한 뒤 실행한다. control 도구에는 받지 않는다(always_not_allowed). allow_session(M7 3.11)은 요청 연결의 지금 탐색 세션 동안 같은 도구·권한 인자(control은 창 제목, screens는 도구 전체)의 ask를 다시 묻지 않는다 — 메모리에만, 세션 끝·연결 끊김·예산 초과·daemon 재시작에 사라지고 deny 규칙이 먼저다. 요청에 session이 없으면 session_not_allowed
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "ApprovalAnswer".
  */
-export type ApprovalAnswer = "allow_always" | "allow_once" | "deny";
+export type ApprovalAnswer = "allow_always" | "allow_once" | "allow_session" | "deny";
 /**
  * 사람 확인 요청 ID
  *
@@ -230,7 +230,9 @@ export type RequestFailedCode =
   | "detect_not_matching"
   | "secret_in_text"
   | "secret_unchecked"
-  | "screens_busy";
+  | "screens_busy"
+  | "session_not_allowed"
+  | "approval_cancelled";
 /**
  * 플러그인 작업 ID (= 설치 거래 ID, 작업 로그 이름)
  *
@@ -765,6 +767,10 @@ export interface ApprovalRequest {
    */
   previewable: boolean;
   /**
+   * M7 3.11: "이 탐색 동안 허용"(allow_session)을 쓸 수 있으면 요청 연결의 지금 탐색 세션, 아니면 null(단추 없음). control 도구와 screens 변경 도구에만
+   */
+  session: null | ApprovalSession;
+  /**
    * 사람이 읽는 요약 줄
    */
   summary: string[];
@@ -773,6 +779,10 @@ export interface ApprovalRequest {
 export interface ApprovalAgent {
   id: string;
   name: string;
+}
+export interface ApprovalSession {
+  id: string;
+  title: string;
 }
 /**
  * 승인하면 쓰일 그래프 값 (쓰지 않는다, "캔버스에서 보기" U10)
@@ -794,11 +804,11 @@ export interface ApprovalPreviewResult {
  */
 export interface ApprovalResolvedParams {
   /**
-   * 답한 ui 연결(ui:<번호>) 또는 daemon(시간 초과·요청 연결 끊김)
+   * 답한 ui 연결(ui:<번호>) 또는 daemon(시간 초과·요청 연결 끊김·탐색 세션 끝)
    */
   by: string;
   id: ApprovalId;
-  verdict: "allow_always" | "allow_once" | "cancelled" | "deny" | "timeout";
+  verdict: "allow_always" | "allow_once" | "allow_session" | "cancelled" | "deny" | "timeout";
 }
 /**
  * 사람 확인 답. 끝난(답함·시간 초과·취소) 요청이면 not_found
@@ -2060,6 +2070,18 @@ export interface Methods {
     result: TargetReadTextResult;
     tool: "kb_ocr_read";
   };
+  "screens.check": {
+    params: ScreensCheckParams;
+    renderer: true;
+    result: ScreensCheckResult;
+    tool: "ui_only";
+  };
+  "screens.discard": {
+    params: ScreensDiscardParams;
+    renderer: true;
+    result: ScreensDiscardResult;
+    tool: "ui_only";
+  };
   "screens.get": {
     params: ScreensGetParams;
     renderer: false;
@@ -2072,11 +2094,29 @@ export interface Methods {
     result: ScreensIdentifyResult;
     tool: "kb_screen_identify";
   };
+  "screens.layout_get": {
+    params: EmptyParams;
+    renderer: true;
+    result: ScreensLayout;
+    tool: "ui_only";
+  };
+  "screens.layout_set": {
+    params: ScreensLayoutSetParams;
+    renderer: true;
+    result: ScreensLayout;
+    tool: "ui_only";
+  };
   "screens.list": {
     params: ScreensListParams;
     renderer: false;
     result: ScreensListResult;
     tool: "kb_screen_list";
+  };
+  "screens.promote": {
+    params: ScreensPromoteParams;
+    renderer: true;
+    result: ScreensPromoteResult;
+    tool: "ui_only";
   };
   "screens.save": {
     params: ScreensSaveParams;
@@ -3363,6 +3403,53 @@ export interface TargetReadTextResult {
   text: string;
 }
 /**
+ * screens.check (사람만, M7 3.7): 후보 하나를 승격하기 전에 확인. 처리기는 B4
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensCheckParams".
+ */
+export interface ScreensCheckParams {
+  key: string;
+  session: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensCheckResult".
+ */
+export interface ScreensCheckResult {
+  /**
+   * 후보 판정 조건이 자기 스크린샷에서 맞고 승격을 막는 것이 없다
+   */
+  ok: boolean;
+  /**
+   * 승격이 고칠 파일 → 지금 revision (없는 파일은 null). screens.promote의 base_revisions로 그대로 넘긴다
+   */
+  revisions: {
+    [k: string]: null | string | undefined;
+  };
+  warnings: string[];
+}
+/**
+ * screens.discard (사람만, M7 3.7): 끝난 탐색 세션의 후보 하나(key) 또는 세션 전체를 지운다. 처리기는 B4
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensDiscardParams".
+ */
+export interface ScreensDiscardParams {
+  key?: string;
+  session: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensDiscardResult".
+ */
+export interface ScreensDiscardResult {
+  /**
+   * 지운 파일 (워크스페이스 기준)
+   */
+  removed: string[];
+}
+/**
  * screens.get (kb_screen_get, M5): screens/ 아래 *.screen.json 하나
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -3418,6 +3505,31 @@ export interface ScreensIdentifyMatch {
   title: string | null;
 }
 /**
+ * screens.layout_get/set (사람만, M7 3.8): 화면 지도 카드 배치 .kookabug/screen-map.json. 처리기는 B5
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensLayout".
+ */
+export interface ScreensLayout {
+  /**
+   * 화면 ID·후보 → 카드 자리
+   */
+  layout: {
+    [k: string]: unknown | undefined;
+  };
+  revision: null | string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensLayoutSetParams".
+ */
+export interface ScreensLayoutSetParams {
+  base_revision: null | string;
+  layout: {
+    [k: string]: unknown | undefined;
+  };
+}
+/**
  * screens.list (kb_screen_list, M5): under(screens/ 기준 또는 워크스페이스 기준 폴더) 아래 화면 지도
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -3438,6 +3550,43 @@ export interface ScreensListResult {
     problem?: string;
     title?: string;
   }[];
+}
+/**
+ * screens.promote (사람만, M7 3.7): 후보를 확정 화면으로 옮기거나(new) 기존 화면에 합친다(merge). screens.lock 안 저널 거래. 처리기는 B4
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensPromoteParams".
+ */
+export interface ScreensPromoteParams {
+  /**
+   * screens.check가 준 revisions 그대로. 하나라도 다르면 revision_conflict
+   */
+  base_revisions: {
+    [k: string]: null | string | undefined;
+  };
+  description?: string;
+  folder?: string;
+  id?: string;
+  key: string;
+  mode: "merge" | "new";
+  replace_detect?: boolean;
+  replace_shot?: boolean;
+  session: string;
+  title?: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensPromoteResult".
+ */
+export interface ScreensPromoteResult {
+  /**
+   * 커밋은 됐고 마무리(후보 지우기·explore.json)가 남았다 — 다음 잠금 때 끝낸다
+   */
+  cleanup_pending: boolean;
+  /**
+   * 승격된 화면 파일 (워크스페이스 기준)
+   */
+  path: string;
 }
 /**
  * screens.save (kb_screen_save, M7 3.5): 자기 탐색 세션 폴더의 후보 카드 하나를 저장·갱신. 글자 필드는 비밀값 검사(3.5b)를 지난다

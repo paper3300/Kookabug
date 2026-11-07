@@ -557,6 +557,13 @@ class Transport:
             return
         spec = self.registry.get(method)
         if spec is None:
+            # 처리기가 아직 없는 메서드도 에이전트의 사람 전용 호출은 판정 전 거부가 먼저다 (M7 B3)
+            assert conn.principal is not None
+            try:
+                self.host.authorizer.gate(conn.principal, method, conn.toolsets)
+            except RequestFailed as failed:
+                conn.send(error_message(request_id, **_fields(failed)))
+                return
             fail(METHOD_NOT_FOUND, f"이 daemon에는 아직 {method}가 없다")
             return
         try:

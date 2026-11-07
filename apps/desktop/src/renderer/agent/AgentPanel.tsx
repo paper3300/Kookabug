@@ -12,12 +12,14 @@ import css from "./agent.module.css";
 import {
   addChip,
   answerAcpPermission,
+  approvalButtons,
   cancelPrompt,
   connectCandidate,
   connectManual,
   effectivePreset,
   endSession,
   fromEndedSession,
+  isControlTool,
   newConversation,
   presetLabel,
   refreshAgents,
@@ -46,15 +48,17 @@ const PRESETS: [string, string][] = [
   ["graph_author", "그래프 작성 — 읽기 + 편집은 확인 후"],
   ["read_only", "읽기 전용"],
   ["runner", "실행 — 작성 + 실행, 입력은 확인 후"],
+  ["explorer", "탐색 — 화면 지도 쓰기, 게임 조작은 확인 후"],
   ["full", "전체 (주의)"],
 ];
 
 const RESULT_TEXT: Record<string, string> = {
   allow_once: "한 번 허용했어요",
   allow_always: "항상 허용했어요 (프로젝트 규칙에 저장)",
+  allow_session: "이 탐색 동안 허용했어요 (탐색이 끝나면 다시 물어요)",
   deny: "거부했어요",
   timeout: "120초 안에 답이 없어 거부됐어요",
-  cancelled: "요청이 취소됐어요 (에이전트 연결이 끝남)",
+  cancelled: "요청이 취소됐어요 (에이전트 연결이나 탐색 세션이 끝남)",
 };
 
 function ShieldIcon() {
@@ -103,7 +107,10 @@ async function previewApproval(id: string, title: string): Promise<string | null
   }
 }
 
-/** Kookabug 확인 요청 카드 (approval.requested): 한 번 허용 / 항상 허용(control 없음) / 캔버스에서 보기 / 거부 */
+/**
+ * Kookabug 확인 요청 카드 (approval.requested): 한 번 허용 / 이 탐색 동안 허용(탐색 세션) / 항상 허용(control 없음) /
+ * 캔버스에서 보기 / 거부. 단추는 approvalButtons가 정한다
+ */
 export function ApprovalCardView({ card, external }: { card: ApprovalState; external?: boolean }) {
   const r = card.request;
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -138,21 +145,31 @@ export function ApprovalCardView({ card, external }: { card: ApprovalState; exte
           </div>
         ))}
       </div>
-      {open && r.always_rule !== null && (
+      {open && r.session !== null && (
+        <div className={css.cardNote} data-part="session-scope">
+          이 탐색 동안 허용하면 탐색 &lsquo;{r.session.title}&rsquo;이 끝날 때까지{" "}
+          {isControlTool(r.tool) ? `창 '${r.arg}'의 같은 조작` : "같은 도구"}을(를) 다시 묻지 않아요 (저장하지 않음)
+        </div>
+      )}
+      {open && r.always_rule !== null && !isControlTool(r.tool) && (
         <div className={css.cardNote} data-part="always-rule">
           항상 허용하면 프로젝트 규칙 <code>{r.always_rule}</code>을(를) 저장해요
         </div>
       )}
       {open ? (
         <div className={css.cardButtons}>
-          <button type="button" className={css.primary} disabled={busy} onClick={() => void respondApproval(r.id, "allow_once")}>
-            한 번 허용
-          </button>
-          {r.always_rule !== null && (
-            <button type="button" className={css.secondary} disabled={busy} onClick={() => void respondApproval(r.id, "allow_always")}>
-              항상 허용
+          {approvalButtons(r).map((b) => (
+            <button
+              key={b.verdict}
+              type="button"
+              className={b.primary ? css.primary : css.secondary}
+              data-verdict={b.verdict}
+              disabled={busy}
+              onClick={() => void respondApproval(r.id, b.verdict)}
+            >
+              {b.label}
             </button>
-          )}
+          ))}
           {r.previewable && (
             <button
               type="button"

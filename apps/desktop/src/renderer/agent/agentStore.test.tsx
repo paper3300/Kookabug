@@ -1,7 +1,10 @@
 // 에이전트 패널 대화 모델 (M5 계획 3.10): 조각 이어 붙이기·도구 호출 접기·권한 카드·취소, 확인 요청 라우팅
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
+import { ApprovalCardView } from "./AgentPanel";
 import {
   applyEvent,
+  approvalButtons,
   belongsToSession,
   fromEndedSession,
   pendingCount,
@@ -96,6 +99,7 @@ describe("확인 요청 라우팅", () => {
     always_rule: "kb_graph_patch(tests/a.graph.json)",
     previewable: true,
     expires_at: "2026-11-06T00:00:00.000Z",
+    session: null,
   });
 
   test("panel:<세션>이면 그 세션 대화, 아니면 외부 에이전트", () => {
@@ -146,6 +150,65 @@ describe("끝난 세션의 확인 요청 (검수 H1)", () => {
     expect(fromEndedSession(req("panel:p0zz"), live)).toBe(true);
     expect(fromEndedSession(req("panel:p1ab"), null)).toBe(true);
     expect(fromEndedSession(req("mcp:123"), null)).toBe(false);
+  });
+});
+
+describe("확인 카드 단추 — 이 탐색 동안 허용 (M7 3.11 B3)", () => {
+  const SESSION = { id: "20261107-101500-ab12", title: "예제 탐색" };
+  const ask = (tool: string, method: string, always: string | null, session: typeof SESSION | null): ApprovalRequest => ({
+    id: "ap_0123456789abcdef",
+    connection: 4,
+    agent: { id: "mcp:1", name: "mcp" },
+    tool: tool as ApprovalRequest["tool"],
+    method: method as ApprovalRequest["method"],
+    arg: tool.startsWith("kb_input_") ? "SampleRPG" : "",
+    summary: ["창 'SampleRPG' 클릭"],
+    always_rule: always,
+    previewable: false,
+    expires_at: "2026-11-07T00:00:00.000Z",
+    session,
+  });
+  const verdicts = (r: ApprovalRequest) => approvalButtons(r).map((b) => b.verdict);
+  const labels = (r: ApprovalRequest) => approvalButtons(r).map((b) => b.label);
+
+  test("게임 조작 + 탐색 세션: 허용 / 이 탐색 동안 허용 (항상 허용 없음)", () => {
+    const r = ask("kb_input_click", "control.click", null, SESSION);
+    expect(labels(r)).toEqual(["허용", "이 탐색 동안 허용"]);
+    expect(verdicts(r)).toEqual(["allow_once", "allow_session"]);
+  });
+
+  test("게임 실행은 탐색 세션이 있어도 이 탐색 동안 허용이 없다 (B3 검수 Low 3)", () => {
+    expect(verdicts(ask("kb_app_launch", "app.launch", null, SESSION))).toEqual(["allow_once"]);
+  });
+
+  test("게임 조작은 daemon이 규칙을 줘도 항상 허용을 그리지 않는다", () => {
+    const r = ask("kb_input_key", "control.key", "kb_input_key(SampleRPG)", SESSION);
+    expect(verdicts(r)).not.toContain("allow_always");
+  });
+
+  test("화면 지도 쓰기 + 탐색 세션: 한 번 허용 / 이 탐색 동안 허용 / 항상 허용", () => {
+    const r = ask("kb_screen_save", "screens.save", "kb_screen_save()", SESSION);
+    expect(labels(r)).toEqual(["한 번 허용", "이 탐색 동안 허용", "항상 허용"]);
+  });
+
+  test("탐색 세션이 없으면 이 탐색 동안 허용 단추가 없다 (M5 카드 그대로)", () => {
+    expect(labels(ask("kb_input_click", "control.click", null, null))).toEqual(["한 번 허용"]);
+    expect(labels(ask("kb_graph_patch", "graph.patch", "kb_graph_patch(tests/a.graph.json)", null))).toEqual([
+      "한 번 허용",
+      "항상 허용",
+    ]);
+  });
+
+  test("카드 렌더: 세션 안내와 단추 (거부는 늘 따로)", () => {
+    const card = { request: ask("kb_input_click", "control.click", null, SESSION), state: "open", busy: false, error: null } as const;
+    const html = renderToStaticMarkup(<ApprovalCardView card={card} />);
+    expect(html).toContain('data-verdict="allow_session"');
+    expect(html).toContain("이 탐색 동안 허용");
+    expect(html).toContain("예제 탐색");
+    expect(html).not.toContain('data-verdict="allow_always"');
+    expect(html).toContain("거부");
+    const done = { ...card, state: "allow_session" } as const;
+    expect(renderToStaticMarkup(<ApprovalCardView card={done} />)).toContain("이 탐색 동안 허용했어요");
   });
 });
 

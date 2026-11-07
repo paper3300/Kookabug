@@ -146,6 +146,12 @@ def test_every_method_has_tool_or_ui_only() -> None:
         "plugins.cancel",
         # M7 탐색 세션 목록 (사람 화면용)
         "explore.list",
+        # M7 B3 화면 지도 사람 전용 (승격·버리기·확인·카드 배치)
+        "screens.check",
+        "screens.promote",
+        "screens.discard",
+        "screens.layout_get",
+        "screens.layout_set",
     } | RECORDER_METHODS
 
 

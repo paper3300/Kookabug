@@ -57,7 +57,7 @@ __all__ = [
 
 Verdict = Literal["allow", "ask", "deny"]
 Toolset = Literal["core", "graph_edit", "run", "observe", "control", "screens"]
-Preset = Literal["read_only", "graph_author", "runner", "full"]
+Preset = Literal["read_only", "graph_author", "runner", "full", "explorer"]
 LayerName = Literal["user", "project", "team"]
 Reason = Literal[
     "human", "policy_invalid", "unknown_tool", "rule", "toolset", "preset", "team_ceiling",
@@ -98,8 +98,10 @@ TOOLS: Final[Mapping[str, ToolInfo]] = {
     **_tools("observe", False, "kb_screen_capture", "kb_image_find", "kb_ocr_read"),
     **_tools("control", True, "kb_input_click", "kb_input_key", "kb_input_type", "kb_app_launch"),
     **_tools("screens", False, "kb_screen_list", "kb_screen_get", "kb_screen_identify"),
-    # M7 탐색 세션·화면 지도 저장 (계획 3.4·3.5)
-    **_tools("screens", True, "kb_screen_save", "kb_explore_start", "kb_explore_end"),
+    # M7 탐색 세션·화면 지도 저장 (계획 3.4·3.5). 세션 끝(`kb_explore_end`)은 조회로 분류해
+    # 늘 허용한다 — screens 변경이 ask·deny인 프리셋에서도 에이전트가 세션을 끝낼 수 있게 (B3)
+    **_tools("screens", True, "kb_screen_save", "kb_explore_start"),
+    **_tools("screens", False, "kb_explore_end"),
 }  # fmt: skip
 
 # 프리셋의 변경 도구 값 (툴셋별). 조회 도구는 모든 프리셋에서 allow
@@ -108,6 +110,8 @@ _PRESET_MUTATING: Final[dict[Preset, dict[Toolset, Verdict]]] = {
     "graph_author": {"graph_edit": "ask", "run": "deny", "control": "deny", "screens": "ask"},
     "runner": {"graph_edit": "ask", "run": "allow", "control": "ask", "screens": "ask"},
     "full": {"graph_edit": "allow", "run": "allow", "control": "allow", "screens": "allow"},
+    # M7 탐색(U1): 화면 지도 쓰기 allow, 게임 조작 ask, 그래프 편집·실행 deny
+    "explorer": {"graph_edit": "deny", "run": "deny", "control": "ask", "screens": "allow"},
 }
 
 

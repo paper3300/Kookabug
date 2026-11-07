@@ -17,6 +17,8 @@ from kookabug_daemon.protocol import InvalidParams, RequestFailed
 __all__ = ["METHODS"]
 
 _LIMITS: Final = {"title": 200, "goal": 1000, "window": 200}
+_ID_MAX: Final = 200
+"""`explore.json` `agent.id`·`agent.client` 최대 길이 (explore 형식)."""
 
 
 def _agent_only(call: Call) -> None:
@@ -43,12 +45,32 @@ def _start(call: Call) -> dict[str, Any]:
     max_steps = call.params.get("max_steps", DEFAULT_MAX_STEPS)
     if isinstance(max_steps, bool) or not isinstance(max_steps, int) or not 1 <= max_steps <= 1000:
         raise InvalidParams("max_steps는 1~1000이다")
-    texts = [(n, v) for n, v in (("title", title), ("goal", goal), ("window", window)) if v]
+    agent_id = call.principal.id
+    # explore.json에 남는 에이전트 식별자 (B2b Low 6): ID는 형식 검사(바꾸지 않음), 표시 이름은 제어
+    # 문자를 빼고 자른다. 둘 다 비밀값 글자 검사도 지난다
+    if len(agent_id) > _ID_MAX or not agent_id.isprintable():
+        raise RequestFailed(
+            "validation_failed",
+            f"에이전트 ID가 {_ID_MAX}자를 넘거나 제어 문자가 있어 탐색 세션을 열지 않는다",
+        )
+    client = "".join(ch for ch in call.daemon.connection_name(call.connection) if ch.isprintable())
+    client = client[:_ID_MAX]
+    texts = [
+        (n, v)
+        for n, v in (
+            ("title", title),
+            ("goal", goal),
+            ("window", window),
+            ("agent.id", agent_id),
+            ("agent.client", client),
+        )
+        if v
+    ]
     check_texts(texts, call.daemon.guard, call.daemon.root)
     session = call.daemon.explore.start(
         call.connection,
-        call.principal.id,
-        call.daemon.connection_name(call.connection),
+        agent_id,
+        client,
         title,
         goal,
         window,

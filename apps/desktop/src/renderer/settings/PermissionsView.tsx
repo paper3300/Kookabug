@@ -20,10 +20,12 @@ interface Perms {
   rules?: { rule: string; verdict: Verdict }[];
 }
 
-const PRESETS: [string, string][] = [
+export const PRESETS: [string, string][] = [
   ["graph_author", "그래프 작성 — 읽기 + 편집은 확인 후"],
   ["read_only", "읽기 전용"],
   ["runner", "실행 — 작성 + 실행, 입력은 확인 후"],
+  // M7 3.11 U1: 조회·화면 지도 쓰기·탐색 세션 허용, 게임 조작 확인 후, 그래프 편집·실행 거부
+  ["explorer", "탐색 — 화면 지도 쓰기, 게임 조작은 확인 후 (편집·실행 없음)"],
   ["full", "전체 (주의)"],
 ];
 
@@ -34,7 +36,7 @@ export const TOOLSETS: [string, string, string][] = [
   ["run", "실행", "실행 시작·정지, 이벤트·증거·비교 읽기"],
   ["observe", "화면 보기", "캡처, 이미지 찾기, OCR (읽기만)"],
   ["control", "게임 조작", "게임 창에 클릭·키·글자 입력, 게임 실행"],
-  ["screens", "화면 지도", "화면 지도 조회"],
+  ["screens", "화면 지도", "화면 지도 조회·식별, 탐색 세션과 후보 저장 (승격·버리기는 사람만)"],
 ];
 
 const VERDICT_TEXT: Record<Verdict, string> = { allow: "허용", ask: "확인", deny: "거부" };

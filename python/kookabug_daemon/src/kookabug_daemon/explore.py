@@ -5,8 +5,11 @@
 - `explore.end`·연결 끊김: `status: ended`, `ended_at`. 디스크가 `active`인데 살아 있는 세션이
   아니면 목록에서 `interrupted`
 - **스텝** = 활성 세션 동안 그 연결의 control 도구 호출 중 판정을 통과해 제어 실행에 들어간 것.
-  `steps >= max_steps`면 판정 **전에** `explore_budget_exhausted`
+  판정 **전에** 세션 잠금 안에서 한 칸을 예약하고(`steps + reserved >= max_steps`면
+  `explore_budget_exhausted`), 제어 실행에 들어가면 스텝으로 확정, 거부·실패면 되돌린다(B3)
 - 세션은 입력 임대권을 쥐지 않는다(클릭마다 기존 거부 그대로)
+- "이 탐색 동안 허용"(`allow_session`) 범위는 승인 브로커의 메모리에 있다. 세션 끝·연결 끊김·예산
+  다 씀을 `on_scope_end`로 알리고, 감사 기록만 `explore.json` `approvals[]`에 남긴다
 
 저장·내보내는 글자 검사(3.5b, `check_texts`): 보호 기록의 비밀값 키 전부(`FrameGuard.secret_keys`)를
 워크스페이스 비밀값 제공자로 읽어, 공백·대소문자 무시로 그 값이 글자에 들어 있으면 아무것도 쓰지
@@ -158,12 +161,21 @@ class ExploreSession:
     started_at: str
     folder: Path
     steps: int = 0
+    reserved: int = 0
+    """판정·사람 확인·시작 중인 control 호출 수 (B3 Mid 2 — 예산은 `steps + reserved`로 본다)."""
     approvals: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
     lock: threading.Lock = field(default_factory=threading.Lock)
+    """세션 파일 쓰기 잠금 (`write_lock` — 저장 게시 동안 오래 쥘 수 있다)."""
+    budget: threading.Lock = field(default_factory=threading.Lock)
+    """스텝·예약·감사 기록 메모리 값 잠금 (짧게만 쥔다 — 이벤트 루프에서도 부른다)."""
 
     @property
     def rel(self) -> str:
         return f"{SCREENS_DIR}/{EXPLORED_DIR}/{self.id}"
+
+    def _approvals(self) -> list[dict[str, Any]]:
+        with self.budget:
+            return [dict(a) for a in self.approvals]
 
     def record(self, status: str, ended_at: str | None = None) -> dict[str, Any]:
         body: dict[str, Any] = {
@@ -176,7 +188,7 @@ class ExploreSession:
             "status": status,
             "steps": self.steps,
             "max_steps": self.max_steps,
-            "approvals": list(self.approvals),
+            "approvals": self._approvals(),
             "promoted": {},
         }
         if self.goal:
@@ -186,12 +198,43 @@ class ExploreSession:
         return body
 
 
+type ScopeEnded = Callable[[int, str, str], None]
+"""(연결, 세션 ID, 사유 `ended`·`disconnected`·`budget`) — "이 탐색 동안 허용" 범위가 끝났다."""
+
+
+class StepReservation:
+    """control 호출 하나가 쥔 예산 한 칸 (B3 Mid 2). 제어 실행에 들어가면 `commit`(스텝 하나),
+    판정 거부·사람 거부·시작 실패면 `release`(되돌림). 둘 다 한 번만 효과가 있다."""
+
+    def __init__(self, owner: ExploreSessions, session: ExploreSession) -> None:
+        self._owner = owner
+        self.session = session
+        self._done = False
+
+    def commit(self) -> None:
+        if self._take():
+            self._owner.count_step(self.session)
+
+    def release(self) -> None:
+        self._take()
+
+    def _take(self) -> bool:
+        with self.session.budget:
+            if self._done:
+                return False
+            self._done = True
+            self.session.reserved -= 1
+            return True
+
+
 class ExploreSessions:
     """연결별 활성 탐색 세션. 어느 스레드에서 불러도 된다."""
 
     def __init__(self, root: Path, notify: Callable[[], None] | None = None) -> None:
         self.root = root
         self.notify = notify
+        self.on_scope_end: ScopeEnded | None = None
+        """세션 끝·연결 끊김·예산 다 씀을 승인 브로커에 알린다 (`allow_session` 범위 소멸, B3)."""
         self._lock = threading.Lock()
         self._active: dict[int, ExploreSession] = {}
 
@@ -242,11 +285,14 @@ class ExploreSessions:
         self._changed()
         return session
 
-    def end(self, connection: int) -> ExploreSession | None:
+    def end(self, connection: int, reason: str = "ended") -> ExploreSession | None:
         with self._lock:
             session = self._active.pop(connection, None)
         if session is None:
             return None
+        # 표에서 뺀 **뒤에** 알린다: 그 사이 온 늦은 답도 살아 있는 세션을 찾지 못해 아무것도
+        # 허락하지 않는다 (승인 브로커가 답할 때 세션을 다시 본다)
+        self._scope_end(connection, session.id, reason)
         # 잠금을 못 얻으면 디스크는 interrupted로 보인다
         with contextlib.suppress(RequestFailed), write_lock(self.root, session):
             self._write(session, "ended", _now())
@@ -256,6 +302,11 @@ class ExploreSessions:
     def get(self, connection: int) -> ExploreSession | None:
         with self._lock:
             return self._active.get(connection)
+
+    def live(self, connection: int, session_id: str) -> ExploreSession | None:
+        """그 연결의 지금 세션이 `session_id`면 그 세션 (끝났거나 다른 세션이면 None)."""
+        session = self.get(connection)
+        return session if session is not None and session.id == session_id else None
 
     def require(self, connection: int) -> ExploreSession:
         session = self.get(connection)
@@ -271,26 +322,59 @@ class ExploreSessions:
 
     # ------------------------------------------------------------ 예산 (스텝)
 
-    def check_budget(self, connection: int) -> None:
-        """판정 전: 예산을 다 썼으면 `explore_budget_exhausted` (세션은 그대로)."""
-        session = self.get(connection)
-        if session is not None and session.steps >= session.max_steps:
-            raise RequestFailed(
-                "explore_budget_exhausted",
-                f"탐색 스텝 예산 {session.max_steps}을(를) 다 썼다 (kb_explore_end 뒤 새 세션)",
-            )
-
-    def count_step(self, connection: int) -> None:
-        """판정을 통과해 제어 실행에 들어간 control 호출 하나."""
+    def reserve(self, connection: int) -> StepReservation | None:
+        """판정(사람 확인) **전에** 예산 한 칸을 예약한다 (B3 Mid 2). 세션의 예산 잠금 안에서
+        `steps + reserved < max_steps`일 때만 — 승인 대기 중인 요청 여럿이 예산을 넘지 못한다.
+        다 썼으면 `explore_budget_exhausted`(세션은 그대로). 세션이 없으면 None."""
         session = self.get(connection)
         if session is None:
+            return None
+        with session.budget:
+            if session.steps + session.reserved >= session.max_steps:
+                raise RequestFailed(
+                    "explore_budget_exhausted",
+                    f"탐색 스텝 예산 {session.max_steps}을(를) 다 썼다 (kb_explore_end 뒤 새 세션)",
+                )
+            session.reserved += 1
+        return StepReservation(self, session)
+
+    def count_step(self, session: ExploreSession) -> None:
+        """예약한 칸이 제어 실행에 들어갔다: 스텝 하나. 세션이 이미 끝났으면 세지 않는다."""
+        if self.live(session.connection, session.id) is None:
             return
-        with session.lock:
+        with session.budget:
             session.steps += 1  # 메모리가 기준 (살아 있는 동안)
+            spent = session.steps >= session.max_steps
         # 잠금을 못 얻으면 다음 쓰기에서 따라잡는다
         with contextlib.suppress(RequestFailed), write_lock(self.root, session):
             self._write(session, "active")
+        if spent:
+            # 예산을 다 썼다: "이 탐색 동안 허용" 범위도 끝난다 (세션은 kb_explore_end까지 그대로)
+            self._scope_end(session.connection, session.id, "budget")
         self._changed()
+
+    # ------------------------------------------------------------ 이 탐색 동안 허용 (감사 기록)
+
+    def note_approval(self, session: ExploreSession, entry: Mapping[str, Any]) -> None:
+        """`allow_session` 감사 기록을 메모리 세션에 더한다 (짧다 — 이벤트 루프에서 부른다).
+        파일은 `flush`나 세션 끝 쓰기가 `explore.json` `approvals[]`로 남긴다 (범위 자체는 브로커
+        메모리)."""
+        with session.budget:
+            session.approvals.append(dict(entry))
+
+    def flush(self, session: ExploreSession) -> None:
+        """살아 있는 세션의 `explore.json`을 지금 메모리 값으로 다시 쓴다 (잠금을 못 얻으면
+        건너뜀)."""
+        if self.live(session.connection, session.id) is None:
+            return
+        with contextlib.suppress(RequestFailed), write_lock(self.root, session):
+            self._write(session, "active")
+
+    def _scope_end(self, connection: int, session_id: str, reason: str) -> None:
+        hook = self.on_scope_end
+        if hook is not None:
+            with contextlib.suppress(Exception):  # 알림 실패가 세션 끝을 막지 않는다
+                hook(connection, session_id, reason)
 
     # ------------------------------------------------------------ 기록
 

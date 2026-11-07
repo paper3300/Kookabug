@@ -68,7 +68,7 @@
       "description": "에이전트 권한 (사용자 계층). 모든 워크스페이스에 적용되고, 프로젝트 계층 값이 먼저다",
       "properties": {
         "preset": {
-          "enum": ["full", "graph_author", "read_only", "runner"]
+          "enum": ["explorer", "full", "graph_author", "read_only", "runner"]
         },
         "rules": {
           "items": {

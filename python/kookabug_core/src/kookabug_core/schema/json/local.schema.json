@@ -25,7 +25,7 @@
       "description": "에이전트 권한 (프로젝트 계층). 툴셋·프리셋 값이 사용자 설정보다 먼저다",
       "properties": {
         "preset": {
-          "enum": ["full", "graph_author", "read_only", "runner"]
+          "enum": ["explorer", "full", "graph_author", "read_only", "runner"]
         },
         "rules": {
           "items": {

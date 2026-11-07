@@ -68,7 +68,7 @@
       "description": "에이전트 권한. 이 파일(kookabug.json)의 툴셋·프리셋 값은 상한이다 (사용자·프로젝트 계층이 더 풀 수 없다)",
       "properties": {
         "preset": {
-          "enum": ["full", "graph_author", "read_only", "runner"]
+          "enum": ["explorer", "full", "graph_author", "read_only", "runner"]
         },
         "rules": {
           "items": {

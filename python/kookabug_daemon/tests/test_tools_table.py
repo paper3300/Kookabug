@@ -53,8 +53,15 @@ M5_DENIED = {"approval.list", "approval.respond", "approval.preview", "permissio
 # M5 B5 에이전트 패널·설정 (에이전트가 자기 실행 명령·다른 에이전트 연결을 보거나 바꾸지 못함)
 M5_DENIED |= {"agent.connections", "agents.get", "agents.detect", "agents.set"}
 # M6 B4 플러그인 (계획 3.9 엄격: 에이전트는 설치·제거·준비·다시 잠그기·정리를 못 함)
-M7_DENIED = {"explore.list"}
-"""M7 탐색 세션 목록 — 사람 화면용."""
+M7_DENIED = {
+    "explore.list",
+    "screens.check",
+    "screens.promote",
+    "screens.discard",
+    "screens.layout_get",
+    "screens.layout_set",
+}
+"""M7 탐색 세션 목록·화면 지도 승격·버리기·확인·카드 배치 — 사람만 (B3 엄격)."""
 M6_DENIED = {
     "plugins.preview",
     "plugins.install",
@@ -94,7 +101,9 @@ class _NoService:
         raise AssertionError("ui_only 메서드는 판정하지 않는다")
 
 
-@pytest.mark.parametrize("method", sorted(M3_DENIED | M4_DENIED | M5_DENIED | M6_DENIED))
+@pytest.mark.parametrize(
+    "method", sorted(M3_DENIED | M4_DENIED | M5_DENIED | M6_DENIED | M7_DENIED)
+)
 def test_agent_denied_before_decision(method: str) -> None:
     authorizer = Authorizer(_NoService())
     agent = Principal("agent", "codex-1", attended=True)

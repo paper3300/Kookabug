@@ -208,40 +208,42 @@ def test_default_preset_graph_author() -> None:
     assert decide(policy(), ATTENDED, "kb_screen_list").final == "allow"
 
 
-# 계획 2.10 프리셋 표 그대로 (read_only, graph_author, runner, full)
+# 계획 2.10 프리셋 표 그대로 (read_only, graph_author, runner, full) + M7 3.11 explorer
 CORE = ["kb_project_info", "kb_toolset_enable", "kb_graph_list", "kb_graph_get",
         "kb_graph_validate", "kb_node_search", "kb_run_status", "kb_log_search"]  # fmt: skip
-PRESET_TABLE: list[tuple[list[str], tuple[Verdict, Verdict, Verdict, Verdict]]] = [
-    (CORE, ("allow", "allow", "allow", "allow")),
-    (["kb_graph_create", "kb_graph_patch", "kb_target_create"], ("deny", "ask", "ask", "allow")),
-    (["kb_run_start", "kb_run_cancel"], ("deny", "deny", "allow", "allow")),
+PRESET_ORDER: tuple[Preset, ...] = ("read_only", "graph_author", "runner", "full", "explorer")
+ALLOW5: tuple[Verdict, ...] = ("allow",) * 5
+PRESET_TABLE: list[tuple[list[str], tuple[Verdict, ...]]] = [
+    (CORE, ALLOW5),
     (
-        ["kb_run_events", "kb_run_artifact_get", "kb_run_compare"],
-        ("allow", "allow", "allow", "allow"),
+        ["kb_graph_create", "kb_graph_patch", "kb_target_create"],
+        ("deny", "ask", "ask", "allow", "deny"),
     ),
-    (["kb_screen_capture", "kb_image_find", "kb_ocr_read"], ("allow", "allow", "allow", "allow")),
+    (["kb_run_start", "kb_run_cancel"], ("deny", "deny", "allow", "allow", "deny")),
+    (["kb_run_events", "kb_run_artifact_get", "kb_run_compare"], ALLOW5),
+    (["kb_screen_capture", "kb_image_find", "kb_ocr_read"], ALLOW5),
     (
         ["kb_input_click", "kb_input_key", "kb_input_type", "kb_app_launch"],
-        ("deny", "deny", "ask", "allow"),
+        ("deny", "deny", "ask", "allow", "ask"),
     ),
-    (["kb_screen_list", "kb_screen_get"], ("allow", "allow", "allow", "allow")),
-    (["kb_screen_save"], ("deny", "ask", "ask", "allow")),
-    # M7 식별(조회)·탐색 세션(변경)
-    (["kb_screen_identify"], ("allow", "allow", "allow", "allow")),
-    (["kb_explore_start", "kb_explore_end"], ("deny", "ask", "ask", "allow")),
+    (["kb_screen_list", "kb_screen_get"], ALLOW5),
+    (["kb_screen_save"], ("deny", "ask", "ask", "allow", "allow")),
+    # M7 식별(조회)·탐색 세션 시작(변경)·끝(조회 — 늘 허용, B3 Low 8)
+    (["kb_screen_identify", "kb_explore_end"], ALLOW5),
+    (["kb_explore_start"], ("deny", "ask", "ask", "allow", "allow")),
 ]
 PRESET_CASES = [
     (preset, tool, values[i])
     for tools, values in PRESET_TABLE
     for tool in tools
-    for i, preset in enumerate(("read_only", "graph_author", "runner", "full"))
+    for i, preset in enumerate(PRESET_ORDER)
 ]
 
 
 def test_preset_table_covers_every_tool() -> None:
     assert sorted(t for tools, _ in PRESET_TABLE for t in tools) == sorted(TOOLS)
-    assert len(PRESET_CASES) == 4 * len(TOOLS)
-    assert set(PRESETS) == {"read_only", "graph_author", "runner", "full"}
+    assert len(PRESET_CASES) == len(PRESET_ORDER) * len(TOOLS)
+    assert set(PRESETS) == set(PRESET_ORDER)
 
 
 @pytest.mark.parametrize(("preset", "tool", "expected"), PRESET_CASES)

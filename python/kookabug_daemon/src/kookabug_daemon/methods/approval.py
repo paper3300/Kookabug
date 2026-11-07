@@ -19,7 +19,8 @@ async def _list(call: Call) -> dict[str, Any]:
 
 async def _respond(call: Call) -> dict[str, Any]:
     verdict = str(call.params["verdict"])
-    assert verdict in ("allow_once", "allow_always", "deny")  # 계약 형식 검사를 지났다
+    # 계약 형식 검사를 지났다. allow_session은 탐색 세션이 있는 요청에만 (M7 B3)
+    assert verdict in ("allow_once", "allow_always", "allow_session", "deny")
     await call.daemon.approvals.respond(
         str(call.params["id"]),
         verdict,  # pyright: ignore[reportArgumentType]

@@ -115,11 +115,11 @@ class AppLaunchResult(BaseModel):
     pid: Annotated[int, Field(ge=1, le=9007199254740991)]
 
 
-class ApprovalAnswer(RootModel[Literal["allow_always", "allow_once", "deny"]]):
+class ApprovalAnswer(RootModel[Literal["allow_always", "allow_once", "allow_session", "deny"]]):
     root: Annotated[
-        Literal["allow_always", "allow_once", "deny"],
+        Literal["allow_always", "allow_once", "allow_session", "deny"],
         Field(
-            description="사람 확인 답 (M5 3.6). allow_always는 프로젝트 계층(.kookabug/local.json)에 그 도구·인자에만 맞는 allow 규칙을 더한 뒤 실행한다. control 도구에는 받지 않는다(always_not_allowed)",
+            description="사람 확인 답 (M5 3.6). allow_always는 프로젝트 계층(.kookabug/local.json)에 그 도구·인자에만 맞는 allow 규칙을 더한 뒤 실행한다. control 도구에는 받지 않는다(always_not_allowed). allow_session(M7 3.11)은 요청 연결의 지금 탐색 세션 동안 같은 도구·권한 인자(control은 창 제목, screens는 도구 전체)의 ask를 다시 묻지 않는다 — 메모리에만, 세션 끝·연결 끊김·예산 초과·daemon 재시작에 사라지고 deny 규칙이 먼저다. 요청에 session이 없으면 session_not_allowed",
             title="ApprovalAnswer",
         ),
     ]
@@ -147,15 +147,30 @@ class ApprovalAgent(BaseModel):
     name: str
 
 
+class ApprovalSession(BaseModel):
+    """
+    M7 3.11: "이 탐색 동안 허용"(allow_session)을 쓸 수 있으면 요청 연결의 지금 탐색 세션, 아니면 null(단추 없음). control 도구와 screens 변경 도구에만
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: str
+    title: str
+
+
 class ApprovalResolvedParams(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
     by: Annotated[
-        str, Field(description="답한 ui 연결(ui:<번호>) 또는 daemon(시간 초과·요청 연결 끊김)")
+        str,
+        Field(
+            description="답한 ui 연결(ui:<번호>) 또는 daemon(시간 초과·요청 연결 끊김·탐색 세션 끝)"
+        ),
     ]
     id: ApprovalId
-    verdict: Literal["allow_always", "allow_once", "cancelled", "deny", "timeout"]
+    verdict: Literal["allow_always", "allow_once", "allow_session", "cancelled", "deny", "timeout"]
 
 
 class ApprovalRespondParams(BaseModel):
@@ -1458,6 +1473,8 @@ class RequestFailedCode(
             "secret_in_text",
             "secret_unchecked",
             "screens_busy",
+            "session_not_allowed",
+            "approval_cancelled",
         ]
     ]
 ):
@@ -1546,6 +1563,8 @@ class RequestFailedCode(
             "secret_in_text",
             "secret_unchecked",
             "screens_busy",
+            "session_not_allowed",
+            "approval_cancelled",
         ],
         Field(
             description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 비밀값 — data.field), secret_unchecked(비밀값 검사 불가 — 키를 못 읽음·보호 기록 손상), screens_busy(화면 지도 잠금)",
@@ -1816,6 +1835,53 @@ class ScreenReadTextParams(BaseModel):
     rect: Rect | None = None
 
 
+class ScreensCheckParams(BaseModel):
+    """
+    screens.check (사람만, M7 3.7): 후보 하나를 승격하기 전에 확인. 처리기는 B4
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    key: Annotated[str, Field(pattern="^[a-z][a-z0-9_]{0,63}$")]
+    session: Annotated[str, Field(min_length=1)]
+
+
+class ScreensCheckResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    ok: Annotated[
+        bool, Field(description="후보 판정 조건이 자기 스크린샷에서 맞고 승격을 막는 것이 없다")
+    ]
+    revisions: Annotated[
+        dict[str, str | None],
+        Field(
+            description="승격이 고칠 파일 → 지금 revision (없는 파일은 null). screens.promote의 base_revisions로 그대로 넘긴다"
+        ),
+    ]
+    warnings: list[str]
+
+
+class ScreensDiscardParams(BaseModel):
+    """
+    screens.discard (사람만, M7 3.7): 끝난 탐색 세션의 후보 하나(key) 또는 세션 전체를 지운다. 처리기는 B4
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    key: Annotated[str | None, Field(pattern="^[a-z][a-z0-9_]{0,63}$")] = None
+    session: Annotated[str, Field(min_length=1)]
+
+
+class ScreensDiscardResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    removed: Annotated[list[str], Field(description="지운 파일 (워크스페이스 기준)")]
+
+
 class ScreensIdentifyMatch(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1860,6 +1926,26 @@ class ScreensIdentifyResult(BaseModel):
     unknown: list[ScreensIdentifyMatch]
 
 
+class ScreensLayout(BaseModel):
+    """
+    screens.layout_get/set (사람만, M7 3.8): 화면 지도 카드 배치 .kookabug/screen-map.json. 처리기는 B5
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    layout: Annotated[dict[str, Any], Field(description="화면 ID·후보 → 카드 자리")]
+    revision: str | None
+
+
+class ScreensLayoutSetParams(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_revision: str | None
+    layout: dict[str, Any]
+
+
 class ScreensListParams(BaseModel):
     """
     screens.list (kb_screen_list, M5): under(screens/ 기준 또는 워크스페이스 기준 폴더) 아래 화면 지도
@@ -1869,6 +1955,42 @@ class ScreensListParams(BaseModel):
         extra="forbid",
     )
     under: str | None = None
+
+
+class ScreensPromoteParams(BaseModel):
+    """
+    screens.promote (사람만, M7 3.7): 후보를 확정 화면으로 옮기거나(new) 기존 화면에 합친다(merge). screens.lock 안 저널 거래. 처리기는 B4
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_revisions: Annotated[
+        dict[str, str | None],
+        Field(description="screens.check가 준 revisions 그대로. 하나라도 다르면 revision_conflict"),
+    ]
+    description: str | None = None
+    folder: str | None = None
+    id: str | None = None
+    key: Annotated[str, Field(pattern="^[a-z][a-z0-9_]{0,63}$")]
+    mode: Literal["merge", "new"]
+    replace_detect: bool | None = None
+    replace_shot: bool | None = None
+    session: Annotated[str, Field(min_length=1)]
+    title: str | None = None
+
+
+class ScreensPromoteResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    cleanup_pending: Annotated[
+        bool,
+        Field(
+            description="커밋은 됐고 마무리(후보 지우기·explore.json)가 남았다 — 다음 잠금 때 끝낸다"
+        ),
+    ]
+    path: Annotated[str, Field(description="승격된 화면 파일 (워크스페이스 기준)")]
 
 
 class ScreensSaveCondition1(BaseModel):
@@ -2498,6 +2620,12 @@ class ApprovalRequest(BaseModel):
             description="approval.preview로 바뀔 그래프 값을 볼 수 있다 (graph.patch·graph.save·graph.create)"
         ),
     ]
+    session: Annotated[
+        ApprovalSession | None,
+        Field(
+            description='M7 3.11: "이 탐색 동안 허용"(allow_session)을 쓸 수 있으면 요청 연결의 지금 탐색 세션, 아니면 null(단추 없음). control 도구와 screens 변경 도구에만'
+        ),
+    ]
     summary: Annotated[list[str], Field(description="사람이 읽는 요약 줄")]
     tool: ToolName
 
@@ -3122,6 +3250,26 @@ class ScreenReadText(BaseModel):
     tool: Literal["kb_ocr_read"]
 
 
+class ScreensCheck(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: ScreensCheckParams
+    renderer: Literal[True]
+    result: ScreensCheckResult
+    tool: Literal["ui_only"]
+
+
+class ScreensDiscard(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: ScreensDiscardParams
+    renderer: Literal[True]
+    result: ScreensDiscardResult
+    tool: Literal["ui_only"]
+
+
 class ScreensIdentify(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -3130,6 +3278,36 @@ class ScreensIdentify(BaseModel):
     renderer: Literal[False]
     result: ScreensIdentifyResult
     tool: Literal["kb_screen_identify"]
+
+
+class ScreensLayoutGet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[True]
+    result: ScreensLayout
+    tool: Literal["ui_only"]
+
+
+class ScreensLayoutSet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: ScreensLayoutSetParams
+    renderer: Literal[True]
+    result: ScreensLayout
+    tool: Literal["ui_only"]
+
+
+class ScreensPromote(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: ScreensPromoteParams
+    renderer: Literal[True]
+    result: ScreensPromoteResult
+    tool: Literal["ui_only"]
 
 
 class SecretsCreate(BaseModel):
@@ -5255,9 +5433,14 @@ class Methods(BaseModel):
     run_subscribe: Annotated[RunSubscribe, Field(alias="run.subscribe")]
     run_unsubscribe: Annotated[RunUnsubscribe, Field(alias="run.unsubscribe")]
     screen_read_text: Annotated[ScreenReadText, Field(alias="screen.read_text")]
+    screens_check: Annotated[ScreensCheck, Field(alias="screens.check")]
+    screens_discard: Annotated[ScreensDiscard, Field(alias="screens.discard")]
     screens_get: Annotated[ScreensGet, Field(alias="screens.get")]
     screens_identify: Annotated[ScreensIdentify, Field(alias="screens.identify")]
+    screens_layout_get: Annotated[ScreensLayoutGet, Field(alias="screens.layout_get")]
+    screens_layout_set: Annotated[ScreensLayoutSet, Field(alias="screens.layout_set")]
     screens_list: Annotated[ScreensList, Field(alias="screens.list")]
+    screens_promote: Annotated[ScreensPromote, Field(alias="screens.promote")]
     screens_save: Annotated[ScreensSave, Field(alias="screens.save")]
     secrets_create: Annotated[SecretsCreate, Field(alias="secrets.create")]
     secrets_list: Annotated[SecretsList, Field(alias="secrets.list")]

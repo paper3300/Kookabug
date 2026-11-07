@@ -20,6 +20,7 @@ from kookabug_daemon.protocol import UI_ONLY, RequestFailed
 __all__ = [
     "AGENT_DENIED",
     "AGENT_RAW",
+    "HUMAN_SCREEN_METHODS",
     "METHOD_TOOLS",
     "PLUGIN_CHANGE_METHODS",
     "RECORDER_METHODS",
@@ -68,6 +69,19 @@ PLUGIN_CHANGE_METHODS: Final = frozenset(
 """M6 플러그인 설치·제거·준비·다시 잠그기·정리 (계획 3.8·3.9, 엄격: Agent 권한): 사람만. 미리보기도
 원천을 받고(네트워크·디스크) 거래를 시작하므로 여기에 든다. 공개 MCP 도구는 없다."""
 
+HUMAN_SCREEN_METHODS: Final = frozenset(
+    {
+        "screens.check",
+        "screens.promote",
+        "screens.discard",
+        "screens.layout_get",
+        "screens.layout_set",
+    }
+)
+"""M7 화면 지도의 사람 전용 메서드 (계획 3.7·3.8, 엄격: Agent 권한): 에이전트가 자기 탐색 결과를
+확정하거나 지우지 못하게. 처리기는 B4(승격·버리기·확인)·B5(배치)가 붙인다 — 그 전에도 에이전트
+연결은 판정 전에 `permission_denied`다(전송이 처리기 유무보다 먼저 막는다)."""
+
 METHOD_TOOLS: Final[dict[str, str]] = {
     "session.hello": UI_ONLY,
     "daemon.shutdown": UI_ONLY,
@@ -102,6 +116,8 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     "explore.start": "kb_explore_start",
     "explore.end": "kb_explore_end",
     "explore.list": UI_ONLY,
+    # M7 사람 전용 화면 지도 메서드 (계획 3.7·3.8, B3 엄격): 승격·버리기·확인·카드 배치
+    **dict.fromkeys(sorted(HUMAN_SCREEN_METHODS), UI_ONLY),
     "run.start": "kb_run_start",
     "run.cancel": "kb_run_cancel",
     "run.status": "kb_run_status",
@@ -172,6 +188,8 @@ AGENT_DENIED: Final = frozenset(
         *PLUGIN_CHANGE_METHODS,
         # 탐색 세션 목록은 사람 화면용 (M7 3.8)
         "explore.list",
+        # 에이전트는 자기 탐색 결과를 승격·버리기·확인하거나 지도 배치를 바꾸지 못한다 (M7 3.7, B3)
+        *HUMAN_SCREEN_METHODS,
     }
 )
 """`ui_only`이지만 agent 연결에는 판정 전에 거부하는 메서드. `ui_only`는 판정을 건너뛰므로
