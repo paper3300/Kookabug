@@ -212,25 +212,44 @@ test("env turned broken by verify refuses new widget requests", async () => {
   test.setTimeout(240_000);
   const page = await open();
   await openWidgetNode(page, "n_color");
-  const frame = await liveWidgetFrame(page, "sample.color");
-  expect(frame.url().startsWith(`kbplugin://${ww().hosts.sample}/`)).toBe(true);
-  const importLate = () =>
-    frame.evaluate(async () => {
+  const live = await liveWidgetFrame(page, "sample.color");
+  expect(live.url().startsWith(`kbplugin://${ww().hosts.sample}/`)).toBe(true);
+  // 깨짐 뒤 요청은 처리기가 곧바로 거부하지만(요청마다 daemon plugins.list), 인스펙터가 위젯을 내리는 것은
+  // daemon 감시 tick(약 1초)의 plugins.changed 뒤라, 진짜 위젯 프레임은 느린 러너에서 import 전에 떼어질 수
+  // 있다(CI ci_1 "Frame was detached"). 그래서 같은 껍데기 주소를 앱 문서가 미리 띄워 둔 프레임 하나를
+  // 고정해 두고(React가 지우지 않음) "깨짐 전에 뜬 위젯 문서의 새 모듈 요청"을 그 프레임에서 본다
+  const shell = live.url();
+  await page.evaluate((src) => {
+    const pinned = document.createElement("iframe");
+    pinned.name = "kb-e2e-pinned-widget";
+    pinned.setAttribute("sandbox", "allow-scripts");
+    pinned.style.display = "none";
+    pinned.src = src;
+    document.body.appendChild(pinned);
+  }, shell);
+  await expect.poll(() => page.frames().some((f) => f.name() === "kb-e2e-pinned-widget" && f.url() === shell)).toBe(true);
+  const frame = page.frames().find((f) => f.name() === "kb-e2e-pinned-widget")!;
+  const importLate = (file: string) =>
+    frame.evaluate(async (name) => {
       try {
-        // 위젯 문서 기준 상대 주소 (검사 파일의 모듈이 아니다)
-        const late: string = "./late.mjs";
+        // 위젯 문서 기준 상대 주소 (검사 파일의 모듈이 아니다). 자원 주소에는 질의를 붙일 수 없어(처리기 bad_url)
+        // 요청마다 다른 파일이다
+        const late: string = `./${name}`;
         const m = (await import(late)) as { observed: string };
         return m.observed;
       } catch (e) {
         return `blocked:${String(e)}`;
       }
-    });
+    }, file);
   const listed = (await page.evaluate(() => window.kookabug.rpc("plugins.list", {}))) as {
     plugins: { id: string; ui?: { path: string } }[];
   };
   const ui = path.join(ww().ws, listed.plugins.find((p) => p.id === "sample")!.ui!.path);
   // 환경 안 ui 폴더에 새 모듈을 더하고(환경 파일이 바뀜) 실제 verify → 깨짐 기록
   fs.writeFileSync(path.join(ui, "late.mjs"), 'export const observed = "served-after-broken";');
+  fs.writeFileSync(path.join(ui, "before.mjs"), 'export const observed = "served-before-broken";');
+  // 양성 대조: 깨짐 전에는 고정 프레임의 같은 종류 요청이 실제로 실린다 (거부가 고정 프레임 탓이 아님)
+  expect(await importLate("before.mjs")).toBe("served-before-broken");
   const verified = verifyPlugins(world!, ww().ws);
   expect(verified.ok).toBe(false);
   expect(verified.environments.shared.status).toBe("broken");
@@ -240,9 +259,10 @@ test("env turned broken by verify refuses new widget requests", async () => {
   const sample = after.plugins.find((p) => p.id === "sample")!;
   expect(sample.env_status).toBe("broken");
   expect(sample.ui).toBeUndefined();
-  // 이미 뜬 위젯 프레임의, 깨짐 뒤 처음 하는 모듈 요청은 처리기가 거부한다
-  expect(await importLate()).toMatch(/^blocked:/);
-  // daemon이 환경 상태 변화를 plugins.changed로 알려 인스펙터가 위젯을 내리고 기본 편집기로
+  // daemon이 환경 상태 변화를 plugins.changed로 알려 인스펙터가 위젯을 내리고 기본 편집기로.
+  // 느린 러너에서 실제로 생긴 순서(위젯이 먼저 내려감)를 일부러 만든 뒤 요청한다 — 순서에 기대지 않는다
   await expect(widgetBox(page, "sample.color")).toHaveCount(0, { timeout: 15_000 });
   await expect(configField(page, "color").getByRole("textbox", { name: "color" })).toHaveValue(/^#/);
+  // 깨짐 전에 뜬 위젯 문서(고정 프레임)의, 깨짐 뒤 처음 하는 모듈 요청은 처리기가 거부한다
+  expect(await importLate("late.mjs")).toMatch(/^blocked:/);
 });

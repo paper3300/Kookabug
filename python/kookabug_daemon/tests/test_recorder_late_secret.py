@@ -116,7 +116,7 @@ def test_late_secret_revalidates_exported_target(
         graph = json.dumps(graph_from_fragment(prepared["fragment"]), ensure_ascii=False)
         ui.call("recorder.commit_finish", {"token": prepared["token"], "graph_path": GRAPH})
         assert_exports_clean(rig, graph)
-    assert RAW not in "\n".join(r.getMessage() for r in caplog.records)
+    assert RAW not in logs_of(caplog)
 
 
 def test_written_draft_revalidated_after_abort_and_late_secret(tmp_path: Path) -> None:
@@ -142,7 +142,35 @@ def test_written_draft_revalidated_after_abort_and_late_secret(tmp_path: Path) -
 
 
 def logs_of(caplog: pytest.LogCaptureFixture) -> str:
-    return "\n".join(r.getMessage() for r in caplog.records)
+    """Kookabug 로그만. websockets 라이브러리의 DEBUG 프레임 덤프(`< TEXT …`)는 사람 연결로 보낸
+    알림 그대로라 로그 출구가 아니다 — daemon은 `websockets` 로거를 WARNING으로 둔다(`app.
+    _setup_logging`). caplog를 DEBUG로 두면 알림 도착 시점에 따라 그 덤프가 섞인다(CI 부하)."""
+    return "\n".join(r.getMessage() for r in caplog.records if r.name.startswith("kookabug"))
+
+
+def test_websockets_frame_dump_not_in_daemon_log(tmp_path: Path) -> None:
+    """`logs_of`가 Kookabug 로거만 보는 근거: daemon 로그 수준을 debug로 올려도 websockets 프레임
+    덤프는 stderr·로그 파일에 나가지 않는다 (CI ci_1)."""
+    from kookabug_daemon.app import _setup_logging  # pyright: ignore[reportPrivateUsage]
+
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    ws_level = logging.getLogger("websockets").level
+    try:
+        path = _setup_logging(tmp_path, "debug")
+        logging.getLogger("websockets.server").debug("< TEXT 02_%s.png", RAW)
+        logging.getLogger("kookabug_daemon.recorder").debug("디버그 줄은 나간다")
+        for handler in root.handlers:
+            handler.flush()
+        text = path.read_text(encoding="utf-8")
+    finally:
+        for handler in [h for h in root.handlers if h not in handlers]:
+            root.removeHandler(handler)
+            handler.close()
+        root.setLevel(level)
+        logging.getLogger("websockets").setLevel(ws_level)
+    assert "디버그 줄은 나간다" in text
+    assert RAW not in text
 
 
 def test_abort_modified_target_does_not_log_secret(

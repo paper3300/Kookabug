@@ -578,7 +578,12 @@ def test_password_step_requires_secret_and_absent_from_recording_data(
         seen.extend(drain(ui))
     assert_no_raw("recorder RPC 결과·알림", json.dumps(seen, ensure_ascii=False))
     assert_no_raw("세션 steps.json", stored)
-    assert_no_raw("daemon 로그", "\n".join(r.getMessage() for r in caplog.records))
+    # Kookabug 로그만 (websockets DEBUG 프레임 덤프는 사람 연결 알림 그대로 — daemon은 그 로거를
+    # WARNING으로 둔다, 알림 도착 시점에 따라 섞인다)
+    assert_no_raw(
+        "daemon 로그",
+        "\n".join(r.getMessage() for r in caplog.records if r.name.startswith("kookabug")),
+    )
     graph_bytes = (rig.root / GRAPH).read_bytes()
     assert_no_raw("그래프 파일", graph_bytes)
     assert ACCOUNT.encode() in graph_bytes and SECRET_KEY.encode() in graph_bytes

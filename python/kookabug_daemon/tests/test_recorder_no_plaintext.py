@@ -96,7 +96,12 @@ def test_password_absent_from_recording_data(
     assert_no_raw("steps.json", stored)
     assert b"qa_tester_01" not in stored
     # daemon 로그
-    assert_no_raw("daemon 로그", "\n".join(r.getMessage() for r in caplog.records))
+    # Kookabug 로그만 (websockets DEBUG 프레임 덤프는 사람 연결 알림 그대로 — daemon은 그 로거를
+    # WARNING으로 둔다, 알림 도착 시점에 따라 섞인다)
+    assert_no_raw(
+        "daemon 로그",
+        "\n".join(r.getMessage() for r in caplog.records if r.name.startswith("kookabug")),
+    )
     # 그래프: 비밀값은 키로만, 일반 글자는 그대로
     graph_bytes = (rig.root / GRAPH).read_bytes()
     assert_no_raw("그래프 파일", graph_bytes)
