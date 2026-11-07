@@ -209,6 +209,20 @@ class ProcessIdent(BaseModel):
     pid: Annotated[int, Field(ge=0)]
 
 
+class RecordOverride(BaseModel):
+    """
+    실행별 기록 강제 (M7 3.4a·R2): 에이전트 제어 실행은 스크린샷·영상을 끄고 비밀값을 가린다. 그래프 계층 규칙(워크스페이스 → 그래프 → 노드)과 별개로 실행 시작 정책에 덮는다. run.json에 그대로 남는다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    by: Literal["agent_control"]
+    redact_secrets: Literal[True]
+    screenshots: Literal["off"]
+    video: Literal["off"]
+
+
 class RequestId(RootModel[int]):
     root: Annotated[
         int,
@@ -268,6 +282,20 @@ class Agent(BaseModel):
     id: str
 
 
+class BoundWindow(BaseModel):
+    """
+    에이전트 제어 실행의 대상 창 (M7 R1): daemon이 정한 바인딩. runner는 다시 찾지 않고 이 창에만 붙는다(PID·생성 시각·제목이 정확히 같아야). hwnd 0은 daemon이 창을 하나로 정하지 못함 — 붙지 않는다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    created: str
+    hwnd: Annotated[int, Field(ge=0, le=9007199254740991)]
+    pid: Annotated[int, Field(ge=0, le=9007199254740991)]
+    title: str
+
+
 class Control(BaseModel):
     """
     제어 채널: 감독자가 연 파이프 이름과 상호 인증 키(32바이트 hex)
@@ -305,6 +333,12 @@ class RunSpecPlatform(BaseModel):
         str | None,
         Field(
             description="fake: 장면 전이 표 파일(kookabug.fake-scenario/0, 절대 경로). 있으면 frames 대신 이 장면·가짜 창·프로세스를 쓴다"
+        ),
+    ] = None
+    state_file: Annotated[
+        str | None,
+        Field(
+            description="fake·scenario 검사 전용 (M7 3.12): 첫 가짜 게임의 지금 상태(kookabug.fake-scenario-state/0)를 실행 사이에 잇는 파일(절대 경로). windows에는 쓸 수 없다"
         ),
     ] = None
 
@@ -847,6 +881,12 @@ class RunSpec(BaseModel):
     agent: Annotated[
         Agent | None, Field(description="그 실행을 낸 에이전트 (M5 에이전트 제어 실행)")
     ] = None
+    bound_window: Annotated[
+        BoundWindow | None,
+        Field(
+            description="에이전트 제어 실행의 대상 창 (M7 R1): daemon이 정한 바인딩. runner는 다시 찾지 않고 이 창에만 붙는다(PID·생성 시각·제목이 정확히 같아야). hwnd 0은 daemon이 창을 하나로 정하지 못함 — 붙지 않는다"
+        ),
+    ] = None
     breakpoints: Annotated[
         Any | None,
         Field(
@@ -896,6 +936,7 @@ class RunSpec(BaseModel):
         ),
     ]
     profile: str | None
+    record_override: RecordOverride | None = None
     run_dir: Annotated[str, Field(description="감독자가 만든 실행 폴더 (절대 경로)")]
     run_id: Annotated[str, Field(pattern="^[a-z0-9]{8}$")]
     self_kill_margin_ms: Annotated[

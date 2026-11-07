@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any, Final
 
 from kookabug_core.workspace import Workspace
@@ -18,8 +19,11 @@ from kookabug_daemon.frames import EditorFrame, FrameCache
 from kookabug_daemon.methods import Call, Handler, MethodSpec
 from kookabug_daemon.methods.graph import request_int
 from kookabug_daemon.methods.tools import agent_use_safe_api
-from kookabug_daemon.methods.windows import capture_window
+from kookabug_daemon.methods.windows import (  # noqa: F401 — RealSource가 이 이름으로 찾는다
+    capture_window,
+)
 from kookabug_daemon.protocol import InvalidParams, RequestFailed
+from kookabug_daemon.screen_source import Grab
 from kookabug_daemon.targets import read_bytes, require_platform, target_path
 
 __all__ = ["IMAGE_SUFFIX", "METHODS", "image_path", "new_frame"]
@@ -39,34 +43,56 @@ def image_path(call: Call, key: str = "path") -> WsPath:
     return where
 
 
-def new_frame(call: Call, pixels: Any, client_size: tuple[int, int], dpi: int) -> EditorFrame:
-    """정지 화면을 캐시에 넣고 PNG를 편집기 캐시에 쓴다 (막히는 호출)."""
+def new_frame(
+    call: Call,
+    pixels: Any,
+    client_size: tuple[int, int],
+    dpi: int,
+    *,
+    grab: Grab | None = None,
+) -> EditorFrame:
+    """정지 화면을 캐시에 넣는다 (막히는 호출). 사람 연결이면 PNG를 편집기 캐시에 쓴다.
+
+    에이전트 연결이 만든 정지 화면은 **디스크에 쓰지 않는다**(픽셀은 메모리 캐시만, M7 3.5a) —
+    이미지가 나가는 출구는 보호 판정(`frame_guard`)을 거친 agent 캐시뿐이다. 창 캡처(`grab`)면 창
+    바인딩과 캡처 시점 판정을 프레임에 둔다(R1)."""
     from kookabug_platform.frames import encode_png
 
     pixels.setflags(write=False)
     frame_id = FrameCache.new_id()
     frame = EditorFrame(
-        frame_id, pixels, client_size, max(1, dpi), f"{frame_id}.png", owner=call.connection
+        frame_id,
+        pixels,
+        client_size,
+        max(1, dpi),
+        f"{frame_id}.png",
+        owner=call.connection,
+        window=grab is not None,
+        binding=None if grab is None else grab.binding,
     )
-    call.daemon.image_cache.put(frame.cache, encode_png(pixels))
+    if call.principal.kind == "agent":
+        frame = replace(frame, guard=call.daemon.guard.check(frame))
+    else:
+        call.daemon.image_cache.put(frame.cache, encode_png(pixels))
     call.daemon.frames.add(frame)
     return frame
 
 
 def _capture(call: Call) -> dict[str, Any]:
-    import numpy as np
-
-    captured = capture_window(request_int(call.params["window"]))
-    pixels = np.ascontiguousarray(captured.pixels)
-    info = captured.info
-    frame = new_frame(call, pixels, info.client_size, info.dpi)
+    grab = call.daemon.screen_source.capture(request_int(call.params["window"]))
+    frame = new_frame(call, grab.pixels, grab.client_size, grab.dpi, grab=grab)
     result = frame.to_json()
     if call.principal.kind == "agent":
+        assert frame.guard is not None
+        if not frame.guard.clear:
+            # 보호 중: 이미지는 어디에도 쓰지 않고 사유·안내만 (탐색을 이어 가게)
+            result["protected"] = frame.guard.to_json()
+            return result
         # MCP 이미지 내용: 긴 변 1568·1 MiB 이하로 줄여 에이전트 캐시에 (M5 3.2, 편집기 캐시와 나눔)
         from kookabug_daemon.agent_cache import AgentCache, shrink_png
         from kookabug_platform.frames import encode_png
 
-        png, width, height = shrink_png(encode_png(pixels))
+        png, width, height = shrink_png(encode_png(frame.pixels))
         name = AgentCache(call.daemon.root).put(call.connection, png)
         result["agent_image"] = {"cache": name, "width": width, "height": height}
     return result
@@ -168,6 +194,9 @@ def _agent_frame(call: Call, frame_id: str) -> EditorFrame:
     만든 프레임은 `frame_not_owned`, 실행 증거에서 연 프레임은 그 파일의 분류를 다시 본다."""
     from kookabug_daemon.methods.run_agent import recheck_source
 
+    if call.principal.kind == "agent":
+        # 사라진 창의 정지 화면은 먼저 버린다 (M7 R1 — 그 뒤 frame_expired)
+        call.daemon.guard.sweep()
     frame = call.daemon.frames.get(frame_id)
     if call.principal.kind != "agent":
         return frame
@@ -198,6 +227,10 @@ def _screen_read_text(call: Call) -> dict[str, Any]:
     rect = (
         [request_int(v) for v in given] if given is not None else [0, 0, frame.width, frame.height]
     )
+    if call.principal.kind == "agent":
+        # 보호 판정 (M7 3.5a): 민감 target(sensitive_region)·비밀값을 입력한 창(frame_protected)
+        call.daemon.guard.require_clear(frame)
+        return call.daemon.targets.read_text(frame_id, rect)
     hit = call.daemon.targets.sensitive_visible(frame)
     if hit is not None:
         text = (
@@ -224,8 +257,33 @@ def _save_crop(call: Call) -> Mapping[str, Any] | None:
     if "run_id" in crop:
         frame = artifact_frame(call, str(crop["run_id"]), str(crop["file"]))
         return {"frame_id": frame.frame_id, "rect": list(crop["rect"])}
-    _agent_frame(call, str(crop["frame_id"]))
+    frame = _agent_frame(call, str(crop["frame_id"]))
+    if call.principal.kind == "agent":
+        _guard_crop(call, frame, crop["rect"])
     return crop
+
+
+def _guard_crop(call: Call, frame: EditorFrame, rect: Any) -> None:
+    """에이전트 crop (`kb_target_create{frame_id}`, M7 3.5a): 보호 판정이 `clear`인 프레임만, 그리고
+    그 창의 알려진 비밀값 칸 상자와 겹치면 거부 (녹화기 `ProtectionSet.require_clear` — 안전 확인
+    직후 경계 이중 방어)."""
+    from kookabug_core.recorder.protect import SecretRegionOverlap
+    from kookabug_daemon.frames import check_rect
+
+    guard = call.daemon.guard
+    guard.require_clear(frame)
+    box = check_rect(frame, [request_int(v) for v in rect], what="잘라 낼 영역")
+    protection = guard.protection_set(frame)
+    if protection is None:
+        return
+    try:
+        protection.require_clear((box[0], box[1], box[2], box[3]), None, frame.pixels)
+    except SecretRegionOverlap as exc:
+        raise RequestFailed(
+            "frame_protected",
+            "비밀값을 입력한 칸과 겹치는 영역은 자르지 않아요",
+            reason="secret_field",
+        ) from exc
 
 
 async def _save(call: Call) -> dict[str, Any]:

@@ -125,17 +125,22 @@ STALE_OBSERVATION: Final = "stale_observation"
 """입력 직전 재검증 실패의 원인 코드 (처리되지 않은 fail, 출구 없음 — M1 2.4)."""
 
 
-def run_record_policy(program: Program, root: Any | None = None) -> RecordPolicy:
+def run_record_policy(
+    program: Program, root: Any | None = None, override: Mapping[str, Any] | None = None
+) -> RecordPolicy:
     """실행의 기본 기록 정책: 워크스페이스 `record` 위에 테스트 그래프의 `record` (스텝 층 전).
     워크스페이스에 `record.video`가 없으면 영상은 `failed_only` (M3). runner가 첫 스텝 전 인코더
-    준비를 기다릴지(영상이 꺼진 실행은 기다리지 않음)도 이것으로 정한다."""
+    준비를 기다릴지(영상이 꺼진 실행은 기다리지 않음)도 이것으로 정한다. `override`는 실행별 기록
+    강제(`RunSpec.record_override`, 에이전트 제어 실행 — M7 R2)로 그 위에 덮는다."""
     root = program.graphs.get(program.root) if root is None else root
     workspace_record = program.workspace.config.get("record")
     policy = workspace_policy(
         workspace_record if isinstance(workspace_record, Mapping) else None,
         graph_source(WORKSPACE_FILE),
     )
-    return policy if root is None else policy.layer(root.record, graph_source(root.path))
+    if root is not None:
+        policy = policy.layer(root.record, graph_source(root.path))
+    return policy.forced(override)
 
 
 @dataclass(frozen=True, slots=True)
@@ -157,6 +162,9 @@ class ExecOptions:
     graph_prefix: str = ""
     collect_events: bool = True
     capture_timeout_ms: int = DEFAULT_CAPTURE_TIMEOUT_MS
+    record_override: Mapping[str, Any] | None = None
+    """실행별 기록 강제 (`RunSpec.record_override`, M7 R2). 계층 규칙과 별개로 시작 정책에
+    덮는다."""
 
 
 @dataclass(frozen=True)
@@ -293,7 +301,7 @@ class Executor:
             on_observed=self.on_observed,
             judge_env=self.judge_env,
         )
-        policy = run_record_policy(program, root)
+        policy = run_record_policy(program, root, options.record_override)
         recorder.redact_secrets = policy.redact_secrets
         top = Frame(root, (), None, 0, {}, record_policy=policy)
         if self.video is not None:

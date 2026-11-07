@@ -160,6 +160,7 @@ def test_notification_table() -> None:
     table = DEFS["Notifications"]["properties"]
     assert sorted(table) == [
         "agent.connections.changed",
+        "agent.protect_corrupt",  # M7 에이전트 보호 기록 손상 (ui 연결에만)
         "approval.requested",
         "approval.resolved",
         "debug.breakpoints.changed",

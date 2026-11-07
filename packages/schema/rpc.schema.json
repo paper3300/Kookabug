@@ -787,6 +787,27 @@
       "title": "ProcessIdent",
       "type": "object"
     },
+    "RecordOverride": {
+      "additionalProperties": false,
+      "description": "실행별 기록 강제 (M7 3.4a·R2): 에이전트 제어 실행은 스크린샷·영상을 끄고 비밀값을 가린다. 그래프 계층 규칙(워크스페이스 → 그래프 → 노드)과 별개로 실행 시작 정책에 덮는다. run.json에 그대로 남는다",
+      "properties": {
+        "by": {
+          "enum": ["agent_control"]
+        },
+        "redact_secrets": {
+          "const": true
+        },
+        "screenshots": {
+          "enum": ["off"]
+        },
+        "video": {
+          "enum": ["off"]
+        }
+      },
+      "required": ["by", "redact_secrets", "screenshots", "video"],
+      "title": "RecordOverride",
+      "type": "object"
+    },
     "Request": {
       "additionalProperties": false,
       "description": "응답을 기다리는 요청",
@@ -868,6 +889,30 @@
           "required": ["id"],
           "type": "object"
         },
+        "bound_window": {
+          "additionalProperties": false,
+          "description": "에이전트 제어 실행의 대상 창 (M7 R1): daemon이 정한 바인딩. runner는 다시 찾지 않고 이 창에만 붙는다(PID·생성 시각·제목이 정확히 같아야). hwnd 0은 daemon이 창을 하나로 정하지 못함 — 붙지 않는다",
+          "properties": {
+            "created": {
+              "type": "string"
+            },
+            "hwnd": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "pid": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": ["created", "hwnd", "pid", "title"],
+          "type": "object"
+        },
         "breakpoints": {
           "$ref": "urn:kookabug:breakpoints:0#/$defs/BreakpointList",
           "description": "시작할 때의 브레이크포인트 (M3). 사람이 UI에서 시작한 실행만 daemon이 채운다. 없으면 빈 목록"
@@ -931,6 +976,9 @@
         },
         "profile": {
           "type": ["null", "string"]
+        },
+        "record_override": {
+          "$ref": "#/$defs/RecordOverride"
         },
         "run_dir": {
           "description": "감독자가 만든 실행 폴더 (절대 경로)",
@@ -1032,6 +1080,10 @@
         },
         "scenario": {
           "description": "fake: 장면 전이 표 파일(kookabug.fake-scenario/0, 절대 경로). 있으면 frames 대신 이 장면·가짜 창·프로세스를 쓴다",
+          "type": "string"
+        },
+        "state_file": {
+          "description": "fake·scenario 검사 전용 (M7 3.12): 첫 가짜 게임의 지금 상태(kookabug.fake-scenario-state/0)를 실행 사이에 잇는 파일(절대 경로). windows에는 쓸 수 없다",
           "type": "string"
         }
       },

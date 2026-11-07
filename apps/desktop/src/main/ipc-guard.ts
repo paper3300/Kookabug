@@ -105,6 +105,8 @@ export const RENDERER_EVENTS: ReadonlySet<string> = new Set([
   "approval.requested",
   "approval.resolved",
   "agent.connections.changed",
+  // M7 에이전트 보호 기록 손상 알림 (ui 연결에만, 화면 표시는 B5)
+  "agent.protect_corrupt",
   // M6 B4 플러그인 작업 진행·끝(ui 연결에만), 잠금 변경
   "plugins.progress",
   "plugins.done",

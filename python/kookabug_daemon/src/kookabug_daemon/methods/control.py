@@ -5,7 +5,8 @@
 그래서 실행·녹화 중이면 `run_busy`·`recording_active`, 다른 주체가 임대권을 쥐었으면
 `input_lease_busy`다. 키·버튼은 액터가 누르고 떼고, runner가 죽으면 감독자가, 둘 다 죽으면 다음
 임대권 획득자가 뗀다(기존 보장). 기록은 `runs/` 아래 일반 실행 폴더(`run.json` `source:
-agent_control`, 영상 off).
+agent_control`). 실행 사양의 기록 강제로 스크린샷·영상을 끄고 비밀값을 가린다(`record_override`,
+M7 R2 — 워크스페이스 설정과 무관).
 
 - 판정은 처리기가 한다(`self_authorized`): 그 도구(`kb_input_*`) 판정 → ask면 사람 확인(control은
   "항상 허용" 없음) → 집행한 판정을 내부 진입점에 넘긴다(`kb_run_start`를 다시 판정하지 않음)
@@ -25,6 +26,7 @@ from typing import Any, Final
 
 from kookabug_core.documents import template
 from kookabug_core.permissions import Decision
+from kookabug_core.runner.spec import BoundWindow
 from kookabug_daemon.agent_view import MASK
 from kookabug_daemon.documents import resolve_path
 from kookabug_daemon.methods import Call, MethodSpec
@@ -138,6 +140,18 @@ def _result(run_id: str, outcome: Any) -> dict[str, Any]:
     return out
 
 
+def _input_kind(call: Call) -> tuple[str, tuple[int, int] | None, str | None]:
+    """(입력 종류, 점 클릭의 점, 비밀값 키) — 보호 기록·칸 상자 근거(M7 R3)용."""
+    params = call.params
+    if call.method == "control.click":
+        point = params.get("point")
+        return "click", None if point is None else (int(point[0]), int(point[1])), None
+    if call.method == "control.key":
+        return "key", None, None
+    secret = params.get("secret")
+    return "type", None, None if secret is None else str(secret)
+
+
 async def _control(call: Call) -> dict[str, Any]:
     value = control_graph(call)  # 인자가 틀리면 판정 전에 거부 (아무것도 묻지 않음)
     # 개발 모듈 daemon의 에이전트 제어 실행은 사람 확인을 묻기 전에 거부 (M6 3.7)
@@ -146,16 +160,43 @@ async def _control(call: Call) -> dict[str, Any]:
     decision = authorized.decision
     assert isinstance(decision, Decision)  # control.*은 ui_only가 아니다
     manager = call.daemon.run_manager
-    run_id = await asyncio.to_thread(
-        functools.partial(
-            manager.start_internal,
-            call.principal,
-            value,
-            decision,
-            approved=authorized.approved,
-        )
+    guard = call.daemon.guard
+    kind, point, secret = _input_kind(call)
+    # 대상 창을 여기서 **한 번** 정한다 (제목 정확히 같음 — runner 붙기와 같은 함수). 정확히 하나가
+    # 아니면 붙지 않는 바인딩(hwnd 0)을 넘겨 입력 없이 실패한다 (M7 R1)
+    title = _window_arg(call)
+    found = await asyncio.to_thread(call.daemon.screen_source.find, title)
+    bindings = found if len(found) == 1 else []
+    bound = (
+        BoundWindow(found[0].hwnd, found[0].pid, found[0].created, title)
+        if len(found) == 1
+        else BoundWindow(0, 0, "", title)
     )
-    outcome = await asyncio.to_thread(manager.wait_outcome, run_id, WAIT_S)
+    before = None
+    if point is not None and bindings:
+        before = await asyncio.to_thread(guard.before_click, bindings)
+    if secret is not None and bindings:
+        # 그 바인딩의 보호 기록을 디스크에 쓴 뒤에만 비밀값을 보낸다. 실패면 protect_record_failed
+        await asyncio.to_thread(guard.record_secret, call.connection, bindings, secret)
+    try:
+        run_id = await asyncio.to_thread(
+            functools.partial(
+                manager.start_internal,
+                call.principal,
+                value,
+                decision,
+                approved=authorized.approved,
+                bound_window=bound,
+            )
+        )
+        outcome = await asyncio.to_thread(manager.wait_outcome, run_id, WAIT_S)
+    finally:
+        # 결과와 상관없이 이 창들로 입력이 갔다고 본다 (칸 상자 근거를 끊는 쪽이 안전)
+        await asyncio.to_thread(
+            functools.partial(
+                guard.note_input, call.connection, bindings, kind, point=point, before=before
+            )
+        )
     return _result(run_id, outcome)
 
 

@@ -58,8 +58,8 @@ def _windows() -> list[dict[str, Any]]:
 
 
 async def _list(call: Call) -> dict[str, Any]:
-    require_windows()
-    return {"windows": await asyncio.to_thread(_windows)}
+    # 원천: 실제 Windows(`_windows`) 또는 장면 가짜 게임(숨은 --platform-fake, M7 3.12)
+    return {"windows": await asyncio.to_thread(call.daemon.screen_source.windows)}
 
 
 def capture_window(hwnd: int) -> CapturedFrame:

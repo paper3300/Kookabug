@@ -16,6 +16,10 @@
   맞추기만 참
 - **이미 떠 있는 게임**: 표의 `running: true`면 시작할 때 기본 갈래 게임 하나가 떠 있다(띄우지
   않고 창에 붙는 그래프용)
+- **상태 파일** (검사 전용, M7 3.12): `state_file`을 주면 첫 게임의 지금 상태 전부(갈래·장면·보인
+  프레임·지연 전이·칸 값·포커스·선택·창 PID·열림)를 `kookabug.fake-scenario-state/0`으로 시작 때
+  읽고 바뀔 때마다 쓴다 — 제어 실행(runner 프로세스)마다 새로 만들어도 게임이 이어지고, daemon 가짜
+  캡처가 같은 상태를 본다. 없거나 깨졌으면 표의 `start`
 
 SDK `fake_context(scenario=)`에도 그대로 넣는다(`kookabug_sdk.testing.Scenario`: `capture`·
 `on_input`·`launch`). 그때는 가장 나중에 띄운 게임이 화면·입력을 받는다.
@@ -24,6 +28,8 @@ SDK `fake_context(scenario=)`에도 그대로 넣는다(`kookabug_sdk.testing.Sc
 from __future__ import annotations
 
 import itertools
+import json
+import os
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -55,6 +61,7 @@ from kookabug_sdk.types import (
 
 __all__ = [
     "FORMAT",
+    "STATE_FORMAT",
     "FakeScenario",
     "ScenarioError",
     "ScenarioPlatform",
@@ -62,6 +69,8 @@ __all__ = [
 ]
 
 FORMAT: Final = "kookabug.fake-scenario/0"
+STATE_FORMAT: Final = "kookabug.fake-scenario-state/0"
+"""검사 전용 상태 파일 형식 (M7 3.12)."""
 FIRST_PID: Final = 4001
 FIRST_HWND: Final = 0x10010
 _WINDOW_GONE: Final = "window_gone"
@@ -357,6 +366,61 @@ class ScenarioState:
             if len(value) < spec["max_length"]:
                 state["values"][state["focus"]] = value + ch
 
+    # ------------------------------------------------------------ 상태 파일 (검사 전용, M7 3.12)
+
+    def to_json(self) -> dict[str, Any]:
+        """지금 상태 전부 (`kookabug.fake-scenario-state/0`의 게임 부분)."""
+        pending: list[dict[str, Any]] = []
+        if self._pending is not None:
+            edge, left = self._pending
+            index = next(i for i, t in enumerate(self.s["transitions"]) if t is edge)
+            pending.append({"transition": index, "to": edge["to"], "after_frames_left": left})
+        return {
+            "variant": self.variant,
+            "scene": self.scene,
+            "shown": self._shown,
+            "captures": self.captures,
+            "pending": pending,
+            "forms": {
+                name: {
+                    "values": dict(form["values"]),
+                    "focus": form["focus"],
+                    "selected": form["selected"],
+                }
+                for name, form in self.forms.items()
+            },
+        }
+
+    def restore(self, data: Mapping[str, Any]) -> bool:
+        """`to_json`이 쓴 상태로 되돌린다. 표와 맞지 않으면 아무것도 바꾸지 않고 False."""
+        try:
+            variant, scene = str(data["variant"]), str(data["scene"])
+            if variant not in self.s["variants"] or scene not in self.s["scenes"]:
+                return False
+            transitions = self.s["transitions"]
+            pending: tuple[_Edge, int] | None = None
+            for item in data.get("pending", []):
+                edge = transitions[int(item["transition"])]
+                pending = (edge, int(item["after_frames_left"]))
+            forms: dict[str, dict[str, Any]] = {}
+            for name, form in dict(data.get("forms", {})).items():
+                spec = self._forms()[name]
+                names = {f["name"] for f in spec["fields"]}
+                values = {str(k): str(v) for k, v in dict(form["values"]).items()}
+                if set(values) != names or form["focus"] not in names:
+                    return False
+                forms[name] = {
+                    "values": values,
+                    "focus": str(form["focus"]),
+                    "selected": bool(form["selected"]),
+                }
+            shown, captures = int(data.get("shown", 0)), int(data.get("captures", 0))
+        except KeyError, IndexError, TypeError, ValueError, AttributeError:
+            return False
+        self.variant, self.scene, self._shown, self.captures = variant, scene, shown, captures
+        self._pending, self.forms = pending, forms
+        return True
+
     def capture(self) -> str:
         """캡처 한 번. 이 캡처에 보이는 장면."""
         if self._pending is not None:
@@ -399,7 +463,9 @@ def _where_point(at: Where) -> Point:
 class FakeScenario:
     """장면 전이 표 하나와 거기서 띄운 가짜 게임들."""
 
-    def __init__(self, spec: Mapping[str, Any], folder: Path) -> None:
+    def __init__(
+        self, spec: Mapping[str, Any], folder: Path, *, state_file: str | Path | None = None
+    ) -> None:
         self.spec = _check(dict(spec), folder)
         self.folder = folder
         self._scenes = {name: folder / file for name, file in self.spec["scenes"].items()}
@@ -409,18 +475,54 @@ class FakeScenario:
         self._hwnds = itertools.count(FIRST_HWND, 0x10)
         self.inputs: list[tuple[int, str, tuple[Any, ...]]] = []
         """장면에 닿은 입력 (창 HWND, 종류, 인수) — 검사용."""
+        self.state_file = None if state_file is None else Path(state_file)
+        """검사 전용 상태 파일 (M7 3.12): 첫 게임의 상태를 실행·프로세스 사이에 잇는다."""
         if self.spec.get("running", False):
             # 이미 떠 있는 게임 하나 (띄우지 않고 창에 붙는 그래프·에이전트 제어 실행 검사, M5)
             self.launch_game("", ())
 
     @classmethod
-    def load(cls, path: str | Path) -> FakeScenario:
+    def load(cls, path: str | Path, *, state_file: str | Path | None = None) -> FakeScenario:
         path = Path(path)
         try:
             data = loads_strict(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, ValueError) as exc:
             raise ScenarioError(f"장면 표 {path}을(를) 읽을 수 없다: {exc}") from exc
-        return cls(_obj(data, "/"), path.parent)
+        return cls(_obj(data, "/"), path.parent, state_file=state_file)
+
+    # ------------------------------------------------------------ 상태 파일 (검사 전용)
+
+    def _read_state(self) -> dict[str, Any] | None:
+        if self.state_file is None:
+            return None
+        try:
+            data = loads_strict(self.state_file.read_text(encoding="utf-8"))
+        except OSError, UnicodeDecodeError, ValueError:
+            return None  # 없음·깨짐 = 표의 start
+        if not isinstance(data, dict) or data.get("format") != STATE_FORMAT:
+            return None
+        return cast(dict[str, Any], data)
+
+    def save_state(self) -> None:
+        """첫 게임의 지금 상태를 상태 파일에 쓴다 (임시 파일 → 바꾸기). 없으면 아무것도 안 한다."""
+        if self.state_file is None or not self._games:
+            return
+        game = self._games[0]
+        body = {
+            "format": STATE_FORMAT,
+            **game.state.to_json(),
+            "window": {
+                "pid": game.window.pid,
+                "created": game.window.process_created,
+                "open": game.open,
+            },
+        }
+        tmp = self.state_file.with_name(f"{self.state_file.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, self.state_file)
+
+    def _stateful(self, game: _Game) -> bool:
+        return self.state_file is not None and bool(self._games) and game is self._games[0]
 
     # ------------------------------------------------------------ 창·프로세스
 
@@ -450,20 +552,30 @@ class FakeScenario:
     def launch_game(self, path: str, args: Sequence[str] = ()) -> _Game:
         pid = next(self._pids)
         hwnd = next(self._hwnds)
+        state = ScenarioState(self.spec, args)
+        is_open = True
+        created = str(pid)
+        saved = self._read_state() if not self._games else None
+        if saved is not None and state.restore(saved):
+            # 상태 파일의 창(같은 HWND를 다른 PID가 쓰는 경우·닫힌 창·프로세스 생성 시각 — 검사가
+            # 바꾼다)
+            window_state = saved.get("window")
+            if isinstance(window_state, dict):
+                found = cast(dict[str, Any], window_state)
+                if isinstance(found.get("pid"), int):
+                    pid = int(found["pid"])
+                    created = str(pid)
+                if isinstance(found.get("created"), str) and found["created"]:
+                    created = str(found["created"])
+                is_open = found.get("open", True) is not False
         window = WindowRef(
             handle=hwnd,
             title=str(self.window_spec["title"]),
             pid=pid,
-            process_created=str(pid),
+            process_created=created,
             binding=f"fake-{hwnd:x}",
         )
-        game = _Game(
-            ScenarioState(self.spec, args),
-            window,
-            ProcessRef(pid, self.process_name),
-            path,
-            tuple(args),
-        )
+        game = _Game(state, window, ProcessRef(pid, self.process_name), path, tuple(args), is_open)
         self._games.append(game)
         return game
 
@@ -519,6 +631,8 @@ class FakeScenario:
         game = self.game_of_process(process)
         if game is not None:
             game.open = False
+            if self._stateful(game):
+                self.save_state()
         return True
 
     # ------------------------------------------------------------ 화면·입력
@@ -526,6 +640,8 @@ class FakeScenario:
     def frame(self, game: _Game) -> Image:
         """캡처 한 번: 지금 장면 PNG (프레임 번호는 그 게임의 캡처 차례)."""
         scene = game.state.capture()
+        if self._stateful(game):
+            self.save_state()
         return Image(*self.client_size, path=self.scene_path(scene), frame=game.state.captures)
 
     def apply(self, game: _Game, kind: str, *args: Any) -> None:
@@ -541,6 +657,22 @@ class FakeScenario:
                 game.state.text(args[0])
             case _:
                 pass
+        if self._stateful(game):
+            self.save_state()
+
+    def field_values(self, game: _Game) -> dict[str, tuple[tuple[int, int, int, int], str]]:
+        """지금 장면이 입력 장면인 폼의 칸 → (칸 상자, 지금 값). 검사 전용 그리기(daemon 가짜
+        캡처의 `draw_fields`)가 쓴다."""
+        state = game.state
+        out: dict[str, tuple[tuple[int, int, int, int], str]] = {}
+        for name, form in self.spec.get("forms", {}).items():
+            if form["input_scene"] != state.scene or name not in state.forms:
+                continue
+            values = state.forms[name]["values"]
+            for f in form["fields"]:
+                x, y, w, h = (int(v) for v in f["rect"])
+                out[f"{name}.{f['name']}"] = ((x, y, w, h), str(values.get(f["name"], "")))
+        return out
 
     # ------------------------------------------------------------ SDK `testing.Scenario`
 

@@ -49,6 +49,8 @@ test("test_method_table_tools_and_internal_methods", () => {
   ]);
   expect(Object.keys(NOTIFICATIONS).sort()).toEqual([
     "agent.connections.changed",
+    // M7 에이전트 보호 기록 손상 (ui 연결에만)
+    "agent.protect_corrupt",
     "approval.requested",
     "approval.resolved",
     "debug.breakpoints.changed",

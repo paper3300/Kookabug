@@ -20,6 +20,8 @@ from kookabug_core.diagnostics import Diagnostic
 from kookabug_daemon.protocol import RequestFailed
 
 if TYPE_CHECKING:
+    from kookabug_daemon.frame_guard import Guard
+    from kookabug_daemon.screen_source import WindowBinding
     from kookabug_platform.vision import FrameMeta, Pixels
 
 __all__ = ["MAX_FRAMES", "EditorFrame", "FrameCache", "check_rect"]
@@ -45,6 +47,12 @@ class EditorFrame:
     source: tuple[str, str] | None = None
     """실행 증거에서 연 것이면 (실행 ID, 실행 폴더 기준 경로) — 에이전트가 쓸 때 분류를 다시
     본다."""
+    window: bool = False
+    """창 캡처(`target.capture`)로 만든 정지 화면 (PNG 열기·실행 증거·녹화 프레임이 아님)."""
+    binding: WindowBinding | None = None
+    """캡처한 창의 바인딩 (모르면 None). 그 창이 사라지면 이 정지 화면도 버린다 (M7 R1)."""
+    guard: Guard | None = None
+    """캡처 시점의 보호 판정 (에이전트 연결, M7 R1). 이후 출구는 이것과 그때 판정 중 나쁜 쪽."""
 
     @property
     def width(self) -> int:
@@ -117,6 +125,14 @@ class FrameCache:
         """그 정지 화면을 지운다 (녹화 세션 정리 — 그 뒤 `frame_expired`)."""
         with self._lock:
             self._frames.pop(frame_id, None)
+
+    def discard_binding(self, binding: WindowBinding) -> int:
+        """그 창 바인딩에서 캡처한 정지 화면을 모두 지운다 (창이 사라짐 — M7 R1). 지운 수."""
+        with self._lock:
+            gone = [k for k, f in self._frames.items() if f.binding == binding]
+            for key in gone:
+                del self._frames[key]
+        return len(gone)
 
     def get(self, frame_id: str) -> EditorFrame:
         with self._lock:

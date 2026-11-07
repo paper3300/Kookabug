@@ -23,7 +23,9 @@ from kookabug_core.diagnostics import json_pointer
 from kookabug_sdk import Secret
 
 __all__ = [
+    "AGENT_CONTROL_RECORD",
     "DEFAULT_VIDEO",
+    "OVERRIDE_SOURCE",
     "OmitReason",
     "RecordPolicy",
     "ScreenshotMode",
@@ -40,6 +42,16 @@ type ScreenshotMode = Literal["on", "off"]
 type VideoMode = Literal["on", "failed_only", "off"]
 type OmitReason = Literal["secret_input", "policy_off", "capture_policy", "sensitive_target"]
 """`sensitive_target`: `sensitive: true` target 영역에서 읽은 OCR 글자 (M1)."""
+
+AGENT_CONTROL_RECORD: Final[Mapping[str, Any]] = {
+    "screenshots": "off",
+    "video": "off",
+    "redact_secrets": True,
+    "by": "agent_control",
+}
+"""에이전트 제어 실행의 기록 강제 (M7 3.4a·R2): 이미지 기록을 모두 끄고 비밀값을 가린다. 사용자·
+워크스페이스 설정 파일과 그래프 계층 규칙은 바꾸지 않는다 — 실행 사양으로만 넘긴다."""
+OVERRIDE_SOURCE: Final = "run.json#/record_override"
 
 _VIDEO_STRENGTH: Final[dict[str, int]] = {"on": 0, "failed_only": 1, "off": 2}
 _VIDEO_MODES: Final[dict[Any, VideoMode]] = {"on": "on", "failed_only": "failed_only", "off": "off"}
@@ -87,6 +99,25 @@ class RecordPolicy:
         if screenshots == self.screenshots and video == self.video:
             return self
         return replace(self, screenshots=screenshots, video=video, sources=sources)
+
+    def forced(self, override: Mapping[str, Any] | None) -> RecordPolicy:
+        """실행별 기록 강제(`RunSpec.record_override`, M7 R2)를 덮는다. 계층 규칙(`layer`)과
+        별개로 실행 시작 정책에 한 번만 쓴다: 스크린샷·영상 off, 비밀값 가림 — 끄기·가리기만 받는다.
+        정한 곳(`sources`)은 `run.json#/record_override`."""
+        if not override:
+            return self
+        source = OVERRIDE_SOURCE
+        sources = dict(self.sources)
+        screenshots, video, redact = self.screenshots, self.video, self.redact_secrets
+        if override.get("screenshots") == "off" and screenshots != "off":
+            screenshots, sources["screenshots"] = "off", source
+        if override.get("video") == "off" and video != "off":
+            video, sources["video"] = "off", source
+        if override.get("redact_secrets") is True:
+            redact = True
+        return replace(
+            self, screenshots=screenshots, video=video, sources=sources, redact_secrets=redact
+        )
 
 
 @dataclass(frozen=True, slots=True)

@@ -20,6 +20,20 @@ class FailurePath(RootModel[list[str]]):
     root: Annotated[list[str], Field(min_length=1)]
 
 
+class RecordOverride(BaseModel):
+    """
+    실행별 기록 강제 (M7 R2): 에이전트 제어 실행은 스크린샷·영상을 끄고 비밀값을 가렸다. 그래프·워크스페이스 기록 정책과 별개
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    by: Literal["agent_control"]
+    redact_secrets: Literal[True]
+    screenshots: Literal["off"]
+    video: Literal["off"]
+
+
 class DebugInfo(BaseModel):
     """
     디버거 개입 정보 (스키마 v0 6장)
@@ -225,6 +239,12 @@ class Run(BaseModel):
     ] = None
     plugins: list[Plugin] | None = None
     reason: str | None = None
+    record_override: Annotated[
+        RecordOverride | None,
+        Field(
+            description="실행별 기록 강제 (M7 R2): 에이전트 제어 실행은 스크린샷·영상을 끄고 비밀값을 가렸다. 그래프·워크스페이스 기록 정책과 별개"
+        ),
+    ] = None
     retried_steps: Annotated[
         int | None,
         Field(

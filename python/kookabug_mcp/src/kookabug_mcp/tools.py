@@ -481,6 +481,15 @@ def _screen_capture(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]
     frame = _daemon(link, "target.capture", {"window": window["handle"]})
     data = {k: frame[k] for k in ("frame_id", "width", "height", "dpi", "client_size")}
     data["window"] = window["title"]
+    protected = frame.get("protected")
+    if isinstance(protected, dict):
+        # 보호 중 (M7 3.5a): 이미지 없이 사유·안내만 — 탐색은 메타로 이어 간다
+        data["protected"] = protected
+        text = (
+            f"{window['title']} 캡처 (frame_id {frame['frame_id']}) — 이미지 없음: "
+            f"{protected.get('hint', '')} ({protected.get('reason', '')})"
+        )
+        return ok_result(text, data)
     # 이미지 축소는 daemon이 한다 (agent 연결이면 agent_image — 에이전트 캐시, 편집기 캐시와 나눔)
     shown = frame.get("agent_image")
     images = [] if shown is None else [(_cache_file(link, str(shown["cache"])), "image/png")]
@@ -790,7 +799,8 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_screen_capture",
         "화면 캡처",
-        "window(창 제목)를 주면 그 창을 캡처(frame_id·이미지), 없으면 창 목록",
+        "window(창 제목)를 주면 그 창을 캡처(frame_id·이미지), 없으면 창 목록. 민감 대상이 "
+        "보이거나 비밀값을 입력한 칸이 남은 화면은 이미지 없이 protected(사유·안내)만 준다",
         _schema({"window": WINDOW}),
         _screen_capture,
     ),
@@ -811,7 +821,7 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_ocr_read",
         "글자 읽기",
-        "정지 화면의 글자 (sensitive target이 보이는 영역은 거부)",
+        "정지 화면의 글자 (sensitive target이 보이는 화면·비밀값을 입력한 칸이 남은 화면은 거부)",
         _schema({"frame_id": {"type": "string", "minLength": 1}, "rect": RECT}, ("frame_id",)),
         _ocr_read,
     ),
@@ -842,7 +852,9 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_input_type",
         "글자 입력",
-        "글자를 입력한다. secret을 주면 그 비밀값(키 이름)을 입력하고 값은 돌려주지 않는다",
+        "글자를 입력한다. secret을 주면 그 비밀값(키 이름)을 입력하고 값은 돌려주지 않는다. "
+        "비밀값 칸은 kb_input_click(point)으로 누른 뒤 10초 안에 입력한다 — 아니면 그 창이 닫힐 "
+        "때까지 kb_screen_capture 이미지가 오지 않는다",
         _schema(
             {
                 "window": WINDOW,

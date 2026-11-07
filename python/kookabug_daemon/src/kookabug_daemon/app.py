@@ -54,6 +54,8 @@ from kookabug_core.workspace import WorkspaceError
 from kookabug_daemon.agent_cache import AgentCache
 from kookabug_daemon.approvals import APPROVAL_TIMEOUT_S, ApprovalBroker
 from kookabug_daemon.documents import DocumentTable, GraphChecker
+from kookabug_daemon.frame_guard import FILE as GUARD_FILE
+from kookabug_daemon.frame_guard import FrameGuard
 from kookabug_daemon.frames import FrameCache
 from kookabug_daemon.image_cache import EditorCache
 from kookabug_daemon.lease_watch import LeaseWatcher, lease_dir
@@ -69,6 +71,7 @@ from kookabug_daemon.recorder import RecorderService
 from kookabug_daemon.recorder_hook import HookTesting, testing_options
 from kookabug_daemon.recorder_store import RecorderStore
 from kookabug_daemon.runs import RunManager
+from kookabug_daemon.screen_source import ScreenSource, make_source
 from kookabug_daemon.session import (
     LOGS_DIR,
     PRIVATE_DIR,
@@ -245,6 +248,14 @@ class Daemon:
         self._frames = FrameCache()
         self._image_cache = EditorCache(self.root)
         self._targets = TargetStore(self.root, self._frames)
+        self.screen_source: ScreenSource = make_source(config.platform_fake)
+        """창 목록·캡처 원천 (실제 Windows 또는 장면 가짜 게임, M7 3.12)."""
+        self.guard = FrameGuard(self.root, self._frames, self._targets, self.screen_source)
+        """에이전트 정지 화면 보호 판정 (M7 3.5a)."""
+        # 보호 기록 손상으로 처음 막았을 때 사람 연결에 알린다 (값 없음, M7 3라운드)
+        self.guard.on_corrupt = lambda: self.post(
+            lambda: self.notify_ui("agent.protect_corrupt", {"path": GUARD_FILE})
+        )
         self._run_manager = RunManager(
             self.root,
             self.service,
@@ -554,6 +565,8 @@ class Daemon:
             await asyncio.to_thread(self._image_cache.reset)
             await asyncio.to_thread(AgentCache(self.root).reset)
             await asyncio.to_thread(RecorderStore.clear_all, self.root)
+            # 에이전트 보호 기록 (M7 R1): 재시작 뒤에도 비밀값을 넣은 창은 계속 보호한다
+            await asyncio.to_thread(self.guard.load)
             async with self.transport.serve() as server:
                 port = self.transport.bound(server)
                 await asyncio.to_thread(_faults.fault_point, "daemon.before_session_publish")

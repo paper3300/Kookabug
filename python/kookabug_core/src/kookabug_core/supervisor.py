@@ -79,6 +79,7 @@ from kookabug_core.runner.spec import (
     DEFAULT_WORKER_START_TIMEOUT_MS,
     PROTOCOL,
     VIDEO_FINISH_MAX_MS,
+    BoundWindow,
     ControlSpec,
     PlatformSpec,
     RunSpec,
@@ -186,6 +187,10 @@ class StartOptions:
     스냅샷 안 경로다."""
     source: str | None = None
     agent: Mapping[str, Any] | None = None
+    record_override: Mapping[str, Any] | None = None
+    """실행별 기록 강제 (M7 R2, `record.policy.AGENT_CONTROL_RECORD` — daemon 내부 진입점만)."""
+    bound_window: BoundWindow | None = None
+    """에이전트 제어 실행의 대상 창 바인딩 (M7 R1 — daemon 내부 진입점만)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -286,6 +291,8 @@ class Supervisor:
             graph_value=opts.graph_value,
             source=opts.source,
             agent=opts.agent,
+            record_override=opts.record_override,
+            bound_window=opts.bound_window,
         )
         handle = RunHandle(self, spec, folder, job, started_at)
         handle._launch(listener, key)

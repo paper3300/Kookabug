@@ -21,10 +21,13 @@ __all__ = [
     "DEFAULT_SHUTDOWN_GRACE_MS",
     "PROTOCOL",
     "VIDEO_FINISH_MAX_MS",
+    "BoundWindow",
     "ControlSpec",
     "PlatformSpec",
     "RunSpec",
     "SpecError",
+    "bind_find_window",
+    "control_title_matches",
     "ident_from_json",
     "ident_to_json",
 ]
@@ -73,12 +76,20 @@ class PlatformSpec:
     input_log: str | None = None
     hooks: Mapping[str, Mapping[str, str]] = field(default_factory=dict[str, Mapping[str, str]])
     scenario: str | None = None
+    state_file: str | None = None
+    """검사 전용 (M7 3.12): 장면 가짜 게임의 상태를 실행 사이에 잇는 파일. `fake`·`scenario`만."""
+
+    def __post_init__(self) -> None:
+        # 검사 전용 상태 파일이 실제 플랫폼·장면 없는 가짜에 섞이지 않게 (제품 경로 누출 금지)
+        if self.state_file is not None and (self.kind != "fake" or self.scenario is None):
+            raise SpecError("state_file은 장면 가짜 플랫폼(fake + scenario)에만 쓴다")
 
     @classmethod
     def fake_from(cls, spec: Mapping[str, Any], base: Path) -> PlatformSpec:
         """숨은 테스트 옵션 `--platform-fake`의 사양 객체(`frames`·`scenario`·`input_log`·
-        `hooks`) → 가짜 플랫폼. 장면 표·입력 기록 경로는 사양 파일 폴더(`base`) 기준이다 (runner는
-        다른 작업 폴더에서 돈다)."""
+        `hooks`·`state_file`) → 가짜 플랫폼. 장면 표·입력 기록·상태 파일 경로는 사양 파일
+        폴더(`base`) 기준이다 (runner는 다른 작업 폴더에서 돈다). `draw_fields`는 daemon 가짜
+        캡처만 쓴다(실행 사양에 넣지 않는다)."""
 
         def beside(value: Any) -> str | None:
             return None if value is None else str((base / str(value)).resolve())
@@ -89,6 +100,7 @@ class PlatformSpec:
             input_log=beside(spec.get("input_log")),
             hooks=spec.get("hooks", {}),
             scenario=beside(spec.get("scenario")),
+            state_file=beside(spec.get("state_file")),
         )
 
     def to_json(self) -> dict[str, Any]:
@@ -101,7 +113,62 @@ class PlatformSpec:
             data["hooks"] = {hook: dict(names) for hook, names in self.hooks.items()}
         if self.scenario is not None:
             data["scenario"] = self.scenario
+        if self.state_file is not None:
+            data["state_file"] = self.state_file
         return data
+
+
+def control_title_matches(actual: str, wanted: str) -> bool:
+    """에이전트 제어 실행의 창 제목 규칙: **정확히 같음** (daemon 창 정하기와 runner 붙기가 같은
+    함수를 쓴다 — 끝 개행·대소문자 차이도 다른 창이다, M7 R1)."""
+    return actual == wanted
+
+
+@dataclass(frozen=True, slots=True)
+class BoundWindow:
+    """daemon이 정한 에이전트 제어 실행의 대상 창 (M7 R1). runner는 창을 다시 찾지 않고 이
+    바인딩에만 붙는다 — 붙을 때 PID·프로세스 생성 시각·제목을 확인하고 다르면 붙지 않는다(입력
+    없음).
+    `hwnd`가 0이면 daemon이 창을 하나로 정하지 못한 것이다(없음·여럿): 붙지 않는다."""
+
+    hwnd: int
+    pid: int
+    created: str
+    title: str
+
+    def to_json(self) -> dict[str, Any]:
+        return {"hwnd": self.hwnd, "pid": self.pid, "created": self.created, "title": self.title}
+
+    @classmethod
+    def from_json(cls, data: Mapping[str, Any]) -> BoundWindow:
+        return cls(int(data["hwnd"]), int(data["pid"]), str(data["created"]), str(data["title"]))
+
+
+def bind_find_window(platform: Any, bound: BoundWindow) -> None:
+    """실행 플랫폼의 창 찾기(`find_window`)를 그 바인딩 확인으로 바꾼다 (에이전트 제어 실행)."""
+    from kookabug_sdk.types import WindowRef
+
+    def find_window(title: str | None, process_name: str | None, owned: bool) -> Any:
+        if bound.hwnd == 0:
+            return None
+        ref = WindowRef(
+            handle=bound.hwnd, title=bound.title, pid=bound.pid, process_created=bound.created
+        )
+        try:
+            info = platform.window_info(ref)
+        except Exception:  # 닫힘·다른 프로세스가 다시 씀(window_gone·mismatch)
+            return None
+        window = info.window
+        if (
+            window.handle != bound.hwnd
+            or window.pid != bound.pid
+            or str(window.process_created) != bound.created
+            or not control_title_matches(str(info.title), bound.title)
+        ):
+            return None
+        return window
+
+    platform.find_window = find_window
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +207,11 @@ class RunSpec:
     """실행 출처 (`agent_control`). `run.json`에 남는다."""
     agent: Mapping[str, Any] | None = None
     """그 실행을 낸 에이전트 (`{id}`, 에이전트 제어 실행)."""
+    record_override: Mapping[str, Any] | None = None
+    """실행별 기록 강제 (`{screenshots: off, video: off, redact_secrets: true, by}`, M7 R2). 시작
+    정책에 덮고 `run.json`에 남긴다."""
+    bound_window: BoundWindow | None = None
+    """에이전트 제어 실행의 대상 창 (M7 R1). 있으면 창 붙기는 이 바인딩만 쓴다."""
 
     @classmethod
     def from_json(cls, data: Any) -> RunSpec:
@@ -183,11 +255,18 @@ class RunSpec:
                 input_log=platform.get("input_log"),
                 hooks={h: dict(n) for h, n in platform.get("hooks", {}).items()},
                 scenario=platform.get("scenario"),
+                state_file=platform.get("state_file"),
             ),
             breakpoints=Breakpoint.many(spec.get("breakpoints", ())),
             graph_value=spec.get("graph_value"),
             source=spec.get("source"),
             agent=spec.get("agent"),
+            record_override=spec.get("record_override"),
+            bound_window=(
+                None
+                if spec.get("bound_window") is None
+                else BoundWindow.from_json(spec["bound_window"])
+            ),
             **optional,
         )
 
@@ -224,4 +303,10 @@ class RunSpec:
             **({} if self.graph_value is None else {"graph_value": dict(self.graph_value)}),
             **({} if self.source is None else {"source": self.source}),
             **({} if self.agent is None else {"agent": dict(self.agent)}),
+            **(
+                {}
+                if self.record_override is None
+                else {"record_override": dict(self.record_override)}
+            ),
+            **({} if self.bound_window is None else {"bound_window": self.bound_window.to_json()}),
         }

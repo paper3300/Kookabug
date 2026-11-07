@@ -132,6 +132,7 @@ from kookabug_core.runner.spec import (
     PROTOCOL,
     VIDEO_FINISH_MAX_MS,
     RunSpec,
+    bind_find_window,
     ident_to_json,
 )
 from kookabug_core.runner.watchdog import Watchdog
@@ -532,6 +533,9 @@ class Runner:
             self._run_json["source"] = spec.source
         if spec.agent is not None:
             self._run_json["agent"] = dict(spec.agent)
+        if spec.record_override is not None:
+            # 실행별 기록 강제 (M7 R2): 기록 뷰어 머리 줄 "이미지 기록 없음 · 비밀값 가림"
+            self._run_json["record_override"] = dict(spec.record_override)
         write_run_json(self.folder.run_json, self._run_json)
         self.controller.journal_ready(self._emit_quiet)
 
@@ -645,6 +649,9 @@ class Runner:
         refused = self._open_platform(snap.workspace)
         if refused is not None:
             return refused
+        if spec.bound_window is not None:
+            # 에이전트 제어 실행 (M7 R1): daemon이 정한 그 창에만 붙는다 (다시 찾지 않음)
+            bind_find_window(self.platform, spec.bound_window)
         installed = (
             set()
             if self.plugins is None
@@ -774,7 +781,7 @@ class Runner:
             return
         if not callable(getattr(self.platform, "video_frame", None)):
             return  # 녹화 프레임을 줄 수 없는 플랫폼: 녹화 스레드가 없다
-        if run_record_policy(program).video == "off":
+        if run_record_policy(program, override=self.spec.record_override).video == "off":
             return  # 기본 정책이 끔이면 게이트가 늘 off다
         remaining_s = max(0.0, (self.deadline_at_ms - self.clock.now_ms()) / 1000)
         until = time.monotonic() + min(VIDEO_PROBE_WAIT_S, remaining_s / 2)
@@ -817,7 +824,9 @@ class Runner:
             return None
         if kind == "fake" and spec.platform.scenario is not None:
             try:
-                scenario = FakeScenario.load(spec.platform.scenario)
+                scenario = FakeScenario.load(
+                    spec.platform.scenario, state_file=spec.platform.state_file
+                )
             except ScenarioError as exc:
                 return _End.error("platform_invalid", str(exc))
             store, decode = _fake_store(budget, spec.frame_output_refs)
@@ -941,6 +950,7 @@ class Runner:
                     graph_prefix=GRAPH_PREFIX,
                     collect_events=False,
                     capture_timeout_ms=self.spec.capture_timeout_ms,
+                    record_override=self.spec.record_override,
                 ),
             )
         except GraphInvalid as exc:

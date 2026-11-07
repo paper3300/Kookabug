@@ -24,7 +24,7 @@ from collections.abc import Callable, Mapping
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from kookabug_core.canonical import loads_strict
 from kookabug_core.record import read_run_json
@@ -440,6 +440,13 @@ def video_policy(folder: Path, run_json: Mapping[str, Any] | None) -> dict[str, 
             if stronger.video != policy.video:
                 source = stronger.sources.get("video")
             policy = stronger
+    override = None if run_json is None else run_json.get("record_override")
+    if isinstance(override, Mapping):
+        # 실행별 기록 강제 (M7 R2, 에이전트 제어 실행): runner와 같은 규칙으로 맨 위에 덮는다
+        forced = policy.forced(cast(Mapping[str, Any], override))
+        if forced.video != policy.video:
+            source = forced.sources.get("video")
+        policy = forced
     return {"mode": policy.video, "source": source}
 
 

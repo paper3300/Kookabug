@@ -371,6 +371,26 @@
     "reason": {
       "type": "string"
     },
+    "record_override": {
+      "additionalProperties": false,
+      "description": "실행별 기록 강제 (M7 R2): 에이전트 제어 실행은 스크린샷·영상을 끄고 비밀값을 가렸다. 그래프·워크스페이스 기록 정책과 별개",
+      "properties": {
+        "by": {
+          "enum": ["agent_control"]
+        },
+        "redact_secrets": {
+          "const": true
+        },
+        "screenshots": {
+          "enum": ["off"]
+        },
+        "video": {
+          "enum": ["off"]
+        }
+      },
+      "required": ["by", "redact_secrets", "screenshots", "video"],
+      "type": "object"
+    },
     "retried_steps": {
       "description": "재시도 끝에 성공한 스텝 수 (step.end.retried). pass인데 0보다 크면 \"불안정\" (M3)",
       "minimum": 0,

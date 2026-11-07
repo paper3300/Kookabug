@@ -82,6 +82,15 @@ export interface Run {
   plugins?: Plugin[];
   reason?: string;
   /**
+   * 실행별 기록 강제 (M7 R2): 에이전트 제어 실행은 스크린샷·영상을 끄고 비밀값을 가렸다. 그래프·워크스페이스 기록 정책과 별개
+   */
+  record_override?: {
+    by: "agent_control";
+    redact_secrets: true;
+    screenshots: "off";
+    video: "off";
+  };
+  /**
    * 재시도 끝에 성공한 스텝 수 (step.end.retried). pass인데 0보다 크면 "불안정" (M3)
    */
   retried_steps?: number;

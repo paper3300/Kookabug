@@ -20,11 +20,13 @@ if TYPE_CHECKING:
     from kookabug_core.service import WorkspaceService
     from kookabug_daemon.approvals import ApprovalBroker
     from kookabug_daemon.documents import DocumentTable, GraphChecker
+    from kookabug_daemon.frame_guard import FrameGuard
     from kookabug_daemon.frames import FrameCache
     from kookabug_daemon.image_cache import EditorCache
     from kookabug_daemon.permission_files import PermissionFiles
     from kookabug_daemon.plugin_jobs import PluginJobs
     from kookabug_daemon.runs import RunManager
+    from kookabug_daemon.screen_source import ScreenSource
     from kookabug_daemon.targets import TargetStore
 
 __all__ = ["Call", "DaemonContext", "MethodSpec", "RunsLike", "no_arg", "registry"]
@@ -90,6 +92,16 @@ class DaemonContext(Protocol):
     @property
     def targets(self) -> TargetStore:
         """target 열기·미리보기·저장 (저장 잠금·에디터 소유 기록)."""
+        ...
+
+    @property
+    def screen_source(self) -> ScreenSource:
+        """창 목록·캡처 원천 (실제 Windows 또는 장면 가짜 게임, M7 3.12)."""
+        ...
+
+    @property
+    def guard(self) -> FrameGuard:
+        """에이전트 정지 화면 보호 판정 (M7 3.5a)."""
         ...
 
     def request_shutdown(self, *, force: bool, reason: str) -> None: ...

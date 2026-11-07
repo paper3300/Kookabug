@@ -91,6 +91,7 @@ from kookabug_core.engine.debug import ResumeMode
 from kookabug_core.permissions import Decision, Principal
 from kookabug_core.record import follow, read_run, read_run_json
 from kookabug_core.record.index import node_titles
+from kookabug_core.record.policy import AGENT_CONTROL_RECORD
 from kookabug_core.record.runfolder import (
     EVENTS_FILE,
     RUN_JSON_FILE,
@@ -101,7 +102,7 @@ from kookabug_core.record.runfolder import (
 from kookabug_core.registry import Registry
 from kookabug_core.runner.control import ControlState
 from kookabug_core.runner.run import unix_micros
-from kookabug_core.runner.spec import PlatformSpec
+from kookabug_core.runner.spec import BoundWindow, PlatformSpec
 from kookabug_core.schema import check_shape
 from kookabug_core.service import (
     DevModulesRefused,
@@ -574,6 +575,7 @@ class RunManager:
         approved: bool = False,
         source: Literal["agent_control"] = "agent_control",
         deadline_ms: int = CONTROL_DEADLINE_MS,
+        bound_window: BoundWindow | None = None,
     ) -> str:
         """daemon이 메모리에서 만든 그래프 값으로 실행한다 (에이전트 제어 실행). **공개 RPC가
         아니다** — `control.*` 처리기만 부르고, 이미 집행한 그 도구의 판정(`decision`)을 받는다
@@ -614,6 +616,11 @@ class RunManager:
                     graph_value=dict(graph_value),
                     source=source,
                     agent={"id": principal.id},
+                    # 에이전트 제어 실행은 이미지 기록을 모두 끄고 비밀값을 가린다 (M7 R2) —
+                    # 워크스페이스·사용자 설정 파일은 바꾸지 않고 실행 사양으로만
+                    record_override=dict(AGENT_CONTROL_RECORD),
+                    # daemon이 정한 창에만 붙는다 (M7 R1 — 보호 기록을 쓴 창 = 입력하는 창)
+                    bound_window=bound_window,
                 )
                 try:
                     handle = self.service.start_decided(

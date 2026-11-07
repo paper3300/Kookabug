@@ -529,6 +529,18 @@ export interface ProcessIdent {
   pid: number;
 }
 /**
+ * 실행별 기록 강제 (M7 3.4a·R2): 에이전트 제어 실행은 스크린샷·영상을 끄고 비밀값을 가린다. 그래프 계층 규칙(워크스페이스 → 그래프 → 노드)과 별개로 실행 시작 정책에 덮는다. run.json에 그대로 남는다
+ *
+ * This interface was referenced by `RpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RecordOverride".
+ */
+export interface RecordOverride {
+  by: "agent_control";
+  redact_secrets: true;
+  screenshots: "off";
+  video: "off";
+}
+/**
  * 응답을 기다리는 요청
  *
  * This interface was referenced by `RpcMessageDefs`'s JSON-Schema
@@ -582,6 +594,15 @@ export interface RunSpec {
     id: string;
   };
   /**
+   * 에이전트 제어 실행의 대상 창 (M7 R1): daemon이 정한 바인딩. runner는 다시 찾지 않고 이 창에만 붙는다(PID·생성 시각·제목이 정확히 같아야). hwnd 0은 daemon이 창을 하나로 정하지 못함 — 붙지 않는다
+   */
+  bound_window?: {
+    created: string;
+    hwnd: number;
+    pid: number;
+    title: string;
+  };
+  /**
    * 시작할 때의 브레이크포인트 (M3). 사람이 UI에서 시작한 실행만 daemon이 채운다. 없으면 빈 목록
    */
   breakpoints?: import("./breakpoints.js").BreakpointList;
@@ -628,6 +649,7 @@ export interface RunSpec {
    */
   plugin_modules: string[];
   profile: null | string;
+  record_override?: RecordOverride;
   /**
    * 감독자가 만든 실행 폴더 (절대 경로)
    */
@@ -681,6 +703,10 @@ export interface RunSpecPlatform {
    * fake: 장면 전이 표 파일(kookabug.fake-scenario/0, 절대 경로). 있으면 frames 대신 이 장면·가짜 창·프로세스를 쓴다
    */
   scenario?: string;
+  /**
+   * fake·scenario 검사 전용 (M7 3.12): 첫 가짜 게임의 지금 상태(kookabug.fake-scenario-state/0)를 실행 사이에 잇는 파일(절대 경로). windows에는 쓸 수 없다
+   */
+  state_file?: string;
 }
 /**
  * runner.hello (runner → 감독자): 제어 채널에 붙은 직후. runner는 자기 식별을 스스로 알린다 (venv 런처를 거쳐 띄웠어도 실제 runner 프로세스)
