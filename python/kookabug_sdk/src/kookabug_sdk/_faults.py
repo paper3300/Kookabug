@@ -92,6 +92,9 @@ POINTS: Final[dict[str, frozenset[Role]]] = {
     # 화면 지도 승격 거래의 단계 (M7 계획 3.7·R4, 이벤트 = 단계 이름:
     # `kookabug_core.screen_promote.STAGES`). daemon·CLI 모두 감독자 역할로 지난다
     "screens.stage": _SUPERVISOR,
+    # 일반 파일 거래 `filetx`의 단계 (M8 계획 3.8, 이벤트 = 단계 이름:
+    # `kookabug_core.filetx.STAGES`)
+    "filetx.stage": _SUPERVISOR,
 }
 
 _POLL_S: Final = 0.01

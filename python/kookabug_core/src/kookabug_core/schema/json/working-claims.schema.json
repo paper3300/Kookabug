@@ -1,0 +1,81 @@
+{
+  "$id": "urn:kookabug:working-claims:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "작업 기준 주장 덧씌움 knowledge/working/claims/<기능>.json (계획 9장 R4). Agent가 기존 expected 주장에 한 revise·supersede·set_status·mark_conflicted는 팀 파일 대신 여기 쌓이고 보고함 수락 때 팀에 반영된다. base_rev = 바탕이 된 팀 주장 rev, claim.rev = 작업 revision",
+  "properties": {
+    "claims": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "base_rev": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "by": {
+            "additionalProperties": false,
+            "properties": {
+              "agent": {
+                "anyOf": [
+                  {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "job": {
+                "anyOf": [
+                  {
+                    "pattern": "^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "claim": {
+            "$ref": "urn:kookabug:claims:0#/$defs/Claim"
+          },
+          "ops": {
+            "items": {
+              "enum": ["mark_conflicted", "revise", "set_status", "supersede"]
+            },
+            "type": "array"
+          }
+        },
+        "required": ["at", "base_rev", "claim", "ops"],
+        "title": "WorkingClaim",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "feature": {
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "type": "string"
+    },
+    "format": {
+      "const": "kookabug.working-claims/0"
+    },
+    "revision": {
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": ["claims", "feature", "format", "revision"],
+  "title": "WorkingClaims",
+  "type": "object"
+}

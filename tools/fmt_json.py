@@ -1,6 +1,6 @@
 """레포가 관리하는 JSON을 canonical 형식으로 맞춘다.
 
-대상: `packages/schema/*.schema.json`,
+대상: `packages/schema/*.schema.json`·`packages/schema/knowledge/*.schema.json`,
 설계 문서(`kb_testing.doc_examples.DOCS`)의 ```json 예시 블록.
 
     uv run python tools/fmt_json.py          # 고친다
@@ -32,7 +32,8 @@ def formatted(path: Path) -> str:
 
 
 def targets() -> list[Path]:
-    return sorted(SCHEMA_DIR.glob("*.schema.json")) + list(DOCS.values())
+    schemas = [*SCHEMA_DIR.glob("*.schema.json"), *SCHEMA_DIR.glob("knowledge/*.schema.json")]
+    return sorted(schemas) + list(DOCS.values())
 
 
 def main(argv: list[str] | None = None) -> int:

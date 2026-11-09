@@ -1,0 +1,175 @@
+{
+  "$id": "urn:kookabug:adoption:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "채택 기록 knowledge/adoptions/<채택 ID>.json (M8 계획 3.8): 자동 채택·묶음 수락·되돌리기",
+  "properties": {
+    "at": {
+      "maxLength": 40,
+      "minLength": 1,
+      "type": "string"
+    },
+    "by": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "enum": ["human", "kookabug"]
+        }
+      },
+      "required": ["kind"],
+      "type": "object"
+    },
+    "case": {
+      "anyOf": [
+        {
+          "pattern": "^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "change": {
+      "anyOf": [
+        {
+          "pattern": "^w-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "changes": {
+      "items": {
+        "pattern": "^w-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "after_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "before_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "path": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["after_sha256", "before_sha256", "path"],
+        "title": "AdoptionFile",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "format": {
+      "const": "kookabug.adoption/0"
+    },
+    "id": {
+      "pattern": "^a-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+      "type": "string"
+    },
+    "kind": {
+      "enum": ["accept", "auto", "revert"]
+    },
+    "negatives": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "frame": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "note": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "source": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["frame"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "policy_sha": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reverted": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "adoption": {
+              "pattern": "^a-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+              "type": "string"
+            },
+            "at": {
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["adoption", "at"],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "runs": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": ["at", "files", "format", "id", "kind"],
+  "title": "Adoption",
+  "type": "object"
+}

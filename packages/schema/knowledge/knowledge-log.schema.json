@@ -1,0 +1,174 @@
+{
+  "$id": "urn:kookabug:knowledge-log:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "지식 감사 이력 knowledge/log.jsonl 한 줄 (M8 계획 3.2). 값 대신 바뀐 필드 이름만",
+  "properties": {
+    "agent": {
+      "additionalProperties": false,
+      "properties": {
+        "client": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "enum": ["agent", "human", "kookabug"]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["kind"],
+      "title": "KnowledgeActor",
+      "type": "object"
+    },
+    "at": {
+      "maxLength": 40,
+      "minLength": 1,
+      "type": "string"
+    },
+    "base_rev": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "basis": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "ref": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["ref", "type"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "code": {
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    },
+    "fields": {
+      "items": {
+        "maxLength": 200,
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "file": {
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    },
+    "format": {
+      "const": "kookabug.knowledge-log/0"
+    },
+    "id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "job": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "new_rev": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "op": {
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    },
+    "request_id": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "result": {
+      "enum": ["applied", "conflict", "refused"]
+    },
+    "seq": {
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": ["agent", "at", "file", "format", "op", "result", "seq"],
+  "title": "KnowledgeLogLine",
+  "type": "object"
+}

@@ -1,0 +1,236 @@
+{
+  "$defs": {
+    "Cheat": {
+      "additionalProperties": false,
+      "properties": {
+        "adoption": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "at": {
+                  "maxLength": 40,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "by": {
+                  "const": "human"
+                },
+                "category": {
+                  "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                  "type": "string"
+                },
+                "digest": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                }
+              },
+              "required": ["at", "by", "category", "digest"],
+              "title": "CheatAdoption",
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "args": {
+          "additionalProperties": {
+            "$ref": "#/$defs/CheatArg"
+          },
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]{0,31}$"
+          },
+          "type": "object"
+        },
+        "effect": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "env": {
+          "additionalProperties": false,
+          "properties": {
+            "profiles": {
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "type": "string"
+        },
+        "impl": {
+          "$ref": "#/$defs/CheatImpl"
+        },
+        "origin": {
+          "additionalProperties": false,
+          "properties": {
+            "basis": {
+              "items": {
+                "$ref": "urn:kookabug:claims:0#/$defs/Basis"
+              },
+              "type": "array"
+            },
+            "job": {
+              "pattern": "^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+              "type": "string"
+            },
+            "kind": {
+              "enum": ["agent", "human"]
+            }
+          },
+          "required": ["kind"],
+          "type": "object"
+        },
+        "preconditions": {
+          "items": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rev": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "title": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["args", "effect", "id", "impl", "rev", "title"],
+      "title": "Cheat",
+      "type": "object"
+    },
+    "CheatArg": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "max": {
+              "type": "integer"
+            },
+            "min": {
+              "type": "integer"
+            },
+            "type": {
+              "const": "integer"
+            }
+          },
+          "required": ["max", "min", "type"],
+          "title": "CheatArgInteger",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "enum"
+            },
+            "values": {
+              "items": {
+                "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": ["type", "values"],
+          "title": "CheatArgEnum",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "const": "id"
+            }
+          },
+          "required": ["type"],
+          "title": "CheatArgId",
+          "type": "object"
+        }
+      ],
+      "title": "CheatArg"
+    },
+    "CheatImpl": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "graph": {
+              "pattern": "^[^\\\\:]+\\.graph\\.json$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "console"
+            },
+            "template": {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["graph", "kind", "template"],
+          "title": "CheatImplConsole",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "plugin"
+            },
+            "node": {
+              "pattern": "^[a-z][a-z0-9_.]{0,127}$",
+              "type": "string"
+            }
+          },
+          "required": ["kind", "node"],
+          "title": "CheatImplPlugin",
+          "type": "object"
+        }
+      ],
+      "title": "CheatImpl"
+    }
+  },
+  "$id": "urn:kookabug:cheats:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "치트 정의 knowledge/cheats.json (M8 계획 3.2). adoption은 사람 전용",
+  "properties": {
+    "cheats": {
+      "items": {
+        "$ref": "#/$defs/Cheat"
+      },
+      "type": "array"
+    },
+    "format": {
+      "const": "kookabug.cheats/0"
+    },
+    "history": {
+      "items": {
+        "$ref": "#/$defs/Cheat"
+      },
+      "type": "array"
+    },
+    "revision": {
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": ["cheats", "format", "revision"],
+  "title": "Cheats",
+  "type": "object"
+}

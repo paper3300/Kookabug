@@ -1,0 +1,346 @@
+{
+  "$id": "urn:kookabug:case:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "조사 사건 knowledge/cases/<사건 ID>.json (M8 계획 3.2). resolved·closed는 Kookabug만",
+  "properties": {
+    "actions": {
+      "items": {
+        "enum": ["baseline_change", "reobserve", "repair_candidate", "rerun"]
+      },
+      "type": "array"
+    },
+    "format": {
+      "const": "kookabug.case/0"
+    },
+    "hypotheses": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "cause": {
+            "enum": [
+              "environment",
+              "flow_change",
+              "intended_change",
+              "intermittent",
+              "product_regression",
+              "test_defect",
+              "ui_change"
+            ]
+          },
+          "note": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "state": {
+            "enum": ["confirmed", "open", "refuted", "supported"]
+          },
+          "support": {
+            "items": {
+              "$ref": "urn:kookabug:claims:0#/$defs/Basis"
+            },
+            "type": "array"
+          }
+        },
+        "required": ["cause", "state"],
+        "title": "CaseHypothesis",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "id": {
+      "pattern": "^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+      "type": "string"
+    },
+    "links": {
+      "additionalProperties": false,
+      "properties": {
+        "adoption": {
+          "anyOf": [
+            {
+              "pattern": "^a-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "claims": {
+          "items": {
+            "$ref": "urn:kookabug:claims:0#/$defs/ClaimRef"
+          },
+          "type": "array"
+        },
+        "reports": {
+          "items": {
+            "pattern": "^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "working": {
+          "items": {
+            "pattern": "^w-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "needs": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "how": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "human_only": {
+            "type": "boolean"
+          },
+          "observation": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "permission": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "splits": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "unknown": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["unknown"],
+        "title": "CaseNeed",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "original": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": ["team", "working"]
+            }
+          },
+          "required": ["kind"],
+          "type": "object"
+        },
+        "claims": {
+          "items": {
+            "$ref": "urn:kookabug:claims:0#/$defs/ClaimRef"
+          },
+          "type": "array"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9-]{0,95}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "graph_sha": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "run": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": ["run"],
+      "title": "CaseOriginal",
+      "type": "object"
+    },
+    "recheck": {
+      "additionalProperties": false,
+      "properties": {
+        "on": {
+          "items": {
+            "enum": ["new_build", "new_evidence", "new_source"]
+          },
+          "type": "array"
+        },
+        "until": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "resolution": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "adoption": {
+              "pattern": "^a-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+              "type": "string"
+            },
+            "at": {
+              "maxLength": 40,
+              "minLength": 1,
+              "type": "string"
+            },
+            "by": {
+              "enum": ["adoption", "human"]
+            },
+            "note": {
+              "maxLength": 4000,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["by"],
+          "title": "CaseResolution",
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "revision": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "runs": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "maxLength": 40,
+            "minLength": 1,
+            "type": "string"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9-]{0,95}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["at", "run"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "signature": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "state": {
+      "enum": ["closed", "needs_info", "open", "resolved", "watching"]
+    },
+    "symptom": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "enum": [
+            "launch_failed",
+            "node_error",
+            "stalled",
+            "target_missing",
+            "unexpected_screen",
+            "value_mismatch"
+          ]
+        },
+        "node": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "test": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["kind"],
+      "title": "CaseSymptom",
+      "type": "object"
+    },
+    "title": {
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": ["format", "id", "original", "revision", "signature", "state", "symptom", "title"],
+  "title": "Case",
+  "type": "object"
+}

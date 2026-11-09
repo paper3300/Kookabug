@@ -1,5 +1,43 @@
 {
   "$defs": {
+    "CheatsPolicy": {
+      "additionalProperties": false,
+      "description": "M8: 치트 정책. 분류는 사용자 정의(제품 기본 분류 없음). 사람 전용 쓰기",
+      "properties": {
+        "categories": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "description": {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              "id": {
+                "pattern": "^[a-z][a-z0-9_]{0,63}$",
+                "type": "string"
+              },
+              "title": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "unattended": {
+                "type": "boolean"
+              }
+            },
+            "required": ["id", "title"],
+            "title": "CheatCategory",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "title": "CheatsPolicy",
+      "type": "object"
+    },
     "OcrSettings": {
       "additionalProperties": false,
       "description": "OCR 엔진과 그 설정. engine이 없으면 rapidocr",
@@ -194,6 +232,52 @@
       "title": "Settings",
       "type": "object"
     },
+    "Source": {
+      "additionalProperties": false,
+      "description": "원본 하나. path·url·local 중 하나. local이면 경로는 .kookabug/local.json#sources.<id>.path",
+      "oneOf": [
+        {
+          "required": ["path"]
+        },
+        {
+          "required": ["url"]
+        },
+        {
+          "required": ["local"]
+        }
+      ],
+      "properties": {
+        "id": {
+          "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": ["code", "data", "design_doc", "other", "patch_notes", "qa_sheet", "strings"]
+        },
+        "local": {
+          "const": true
+        },
+        "path": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "pattern": "^https?://",
+          "type": "string"
+        }
+      },
+      "required": ["id", "kind", "title"],
+      "title": "Source",
+      "type": "object"
+    },
     "WorkspaceRecordPolicy": {
       "additionalProperties": false,
       "description": "워크스페이스 기록 정책: 그래프 RecordPolicy(screenshots·video)에 비밀값 가림 스위치를 더한 것. 상위에서 끈 것은 하위에서 켤 수 없다",
@@ -218,12 +302,24 @@
   "additionalProperties": false,
   "description": "팀 공용 워크스페이스 설정 (kookabug.json)",
   "properties": {
+    "automation": {
+      "$ref": "urn:kookabug:automation:0"
+    },
+    "cheats": {
+      "$ref": "#/$defs/CheatsPolicy"
+    },
     "format": {
       "const": "kookabug.workspace/0"
     },
     "id": {
       "description": "워크스페이스 ID (UUID 소문자). 자격 증명 관리자 비밀값 이름 kookabug:<ID>:<키>의 접두라 팀이 같은 값을 쓴다. 없으면 처음 비밀값을 만들 때(secrets.create) 만들어 넣는다 (M4)",
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "name": {
+      "description": "M8: 프로젝트 이름 (마법사 1단계, kookabug workspace new --name)",
+      "maxLength": 100,
+      "minLength": 1,
       "type": "string"
     },
     "ocr": {
@@ -255,6 +351,13 @@
     },
     "settings": {
       "$ref": "#/$defs/Settings"
+    },
+    "sources": {
+      "description": "M8: 원본 위치 (복사하지 않는다). 사람 전용 쓰기(project.sources.set)",
+      "items": {
+        "$ref": "#/$defs/Source"
+      },
+      "type": "array"
     }
   },
   "required": ["format"],

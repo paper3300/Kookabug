@@ -1,0 +1,110 @@
+{
+  "$id": "urn:kookabug:working:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "작업 기준 변경 knowledge/working/<변경 ID>/change.json (M8 계획 3.2). 경로는 tests/·subgraphs/·targets/만",
+  "properties": {
+    "case": {
+      "anyOf": [
+        {
+          "pattern": "^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "created": {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "at": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "job": {
+          "anyOf": [
+            {
+              "pattern": "^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["at"],
+      "type": "object"
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "after_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "base_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "copy": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "path": {
+            "pattern": "^(tests|subgraphs|targets)/[^\\\\:]+$",
+            "type": "string"
+          }
+        },
+        "required": ["after_sha256", "base_sha256", "copy", "path"],
+        "title": "WorkingFile",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "format": {
+      "const": "kookabug.working/0"
+    },
+    "group": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "id": {
+      "pattern": "^w-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+      "type": "string"
+    },
+    "kind": {
+      "enum": ["claim_expected", "graph", "locator_repair", "other", "screen_flow", "target"]
+    },
+    "state": {
+      "enum": ["accepted", "active", "adopted", "rejected", "reverted", "stale"]
+    }
+  },
+  "required": ["created", "files", "format", "id", "kind", "state"],
+  "title": "WorkingChange",
+  "type": "object"
+}

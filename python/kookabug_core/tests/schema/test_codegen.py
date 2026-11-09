@@ -36,11 +36,12 @@ def test_stale_outputs_detects_changed_missing_and_extra(tmp_path: Any, monkeypa
 
 
 def test_metaschema_source_must_be_canonical(tmp_path: Any, monkeypatch: Any) -> None:
-    for kind in KINDS:
-        (tmp_path / f"{kind}.schema.json").write_bytes(
-            (PACKAGE_JSON / f"{kind}.schema.json").read_bytes()
-        )
+    sources = {kind: gen_schema.schema_path(kind) for kind in KINDS}
     monkeypatch.setattr(gen_schema, "SCHEMA_DIR", tmp_path)
+    for kind, source in sources.items():
+        target = gen_schema.schema_path(kind)
+        target.parent.mkdir(exist_ok=True)
+        target.write_bytes(source.read_bytes())
     monkeypatch.setattr(gen_schema, "REPO_ROOT", tmp_path)
     assert gen_schema.check_sources() == []
     (tmp_path / "local.schema.json").write_text('{"type": "object"}\n', encoding="utf-8")
@@ -52,7 +53,7 @@ def test_copied_json_matches_packages_schema() -> None:
     names = sorted(p.name for p in copied.iterdir() if p.name.endswith(".json"))
     assert names == sorted(f"{k}.schema.json" for k in KINDS)
     for kind in KINDS:
-        source = (PACKAGE_JSON / f"{kind}.schema.json").read_bytes()
+        source = gen_schema.schema_path(kind).read_bytes()  # M8 지식 형식은 knowledge/
         assert copied.joinpath(f"{kind}.schema.json").read_bytes() == source
 
 

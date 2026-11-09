@@ -1,0 +1,209 @@
+{
+  "$defs": {
+    "KnowledgeOp": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "base_revision": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "file": {
+              "description": "features/<기능>·lessons·cheats·unknowns (사건은 cases 도구로만)",
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "item": {
+              "type": "object"
+            },
+            "op": {
+              "const": "add"
+            }
+          },
+          "required": ["base_revision", "file", "item", "op"],
+          "title": "OpAdd",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "base_rev": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "changes": {
+              "minProperties": 1,
+              "type": "object"
+            },
+            "file": {
+              "description": "features/<기능>·lessons·cheats·unknowns (사건은 cases 도구로만)",
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "op": {
+              "const": "revise"
+            }
+          },
+          "required": ["base_rev", "changes", "file", "id", "op"],
+          "title": "OpRevise",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "base_rev": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "by": {
+              "$ref": "urn:kookabug:claims:0#/$defs/ClaimRef"
+            },
+            "file": {
+              "description": "features/<기능>·lessons·cheats·unknowns (사건은 cases 도구로만)",
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "op": {
+              "const": "supersede"
+            }
+          },
+          "required": ["base_rev", "by", "file", "id", "op"],
+          "title": "OpSupersede",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "base_rev": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "file": {
+              "description": "features/<기능>·lessons·cheats·unknowns (사건은 cases 도구로만)",
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "op": {
+              "const": "mark_conflicted"
+            },
+            "with": {
+              "items": {
+                "$ref": "urn:kookabug:claims:0#/$defs/ClaimRef"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": ["base_rev", "file", "id", "op", "with"],
+          "title": "OpMarkConflicted",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "base_rev": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "basis": {
+              "$ref": "urn:kookabug:claims:0#/$defs/Basis"
+            },
+            "file": {
+              "description": "features/<기능>·lessons·cheats·unknowns (사건은 cases 도구로만)",
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "op": {
+              "const": "attach_evidence"
+            }
+          },
+          "required": ["base_rev", "basis", "file", "id", "op"],
+          "title": "OpAttachEvidence",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "base_rev": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "file": {
+              "description": "features/<기능>·lessons·cheats·unknowns (사건은 cases 도구로만)",
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "op": {
+              "const": "set_status"
+            },
+            "status": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["base_rev", "file", "id", "op", "status"],
+          "title": "OpSetStatus",
+          "type": "object"
+        }
+      ],
+      "title": "KnowledgeOp"
+    }
+  },
+  "$id": "urn:kookabug:knowledge-ops:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "제한 지식 변경 요청 kb_knowledge_apply (M8 계획 3.3). 한 요청 전부 적용 또는 전부 거부",
+  "properties": {
+    "format": {
+      "const": "kookabug.knowledge-ops/0"
+    },
+    "ops": {
+      "items": {
+        "$ref": "#/$defs/KnowledgeOp"
+      },
+      "maxItems": 200,
+      "minItems": 1,
+      "type": "array"
+    },
+    "request_id": {
+      "pattern": "^[A-Za-z0-9_.:-]{1,128}$",
+      "type": "string"
+    }
+  },
+  "required": ["ops", "request_id"],
+  "title": "KnowledgeOps",
+  "type": "object"
+}

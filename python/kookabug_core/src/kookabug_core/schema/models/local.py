@@ -5,6 +5,13 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, RootModel, StringConstraints
 
 
+class LocalSource(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    path: Annotated[str, Field(max_length=1000, min_length=1)]
+
+
 class PermissionVerdict(RootModel[Literal["allow", "ask", "deny"]]):
     root: Annotated[Literal["allow", "ask", "deny"], Field(title="PermissionVerdict")]
 
@@ -101,3 +108,8 @@ class Local(BaseModel):
     plugin_index: PluginIndex | None = None
     plugin_trust: PluginTrust | None = None
     settings: Settings | None = None
+    sources: Annotated[
+        dict[Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_.-]{1,64}$")], LocalSource]
+        | None,
+        Field(description="M8: 이 PC의 원본 경로 (kookabug.json sources[].local: true인 원본)"),
+    ] = None

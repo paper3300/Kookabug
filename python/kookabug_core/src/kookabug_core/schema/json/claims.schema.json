@@ -1,0 +1,274 @@
+{
+  "$defs": {
+    "Basis": {
+      "additionalProperties": false,
+      "description": "근거 하나. source = sources:<원본 ID>#<위치>, evidence = 증거 묶음 ID, run = 실행 ID, human = 사람 답(u-…)·사람 연산. 위키·주장 근거 형식은 없다(자기 인용 차단). source의 hash·verified는 서비스가 계산해 넣는다(URL 등 확인 못 한 원본은 verified: false — 그것만으로 expected를 supported로 못 올린다, 계획 9장 R5)",
+      "properties": {
+        "hash": {
+          "maxLength": 200,
+          "type": "string"
+        },
+        "note": {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        "ref": {
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "seen_at": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "enum": ["evidence", "human", "run", "source"]
+        },
+        "verified": {
+          "type": "boolean"
+        }
+      },
+      "required": ["ref", "type"],
+      "title": "Basis",
+      "type": "object"
+    },
+    "Claim": {
+      "additionalProperties": false,
+      "description": "주장 하나 (KB문서 6장)",
+      "properties": {
+        "basis": {
+          "items": {
+            "$ref": "#/$defs/Basis"
+          },
+          "type": "array"
+        },
+        "conflicts_with": {
+          "items": {
+            "$ref": "#/$defs/ClaimRef"
+          },
+          "type": "array"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_.]{0,127}$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": ["expected", "guess", "observed"]
+        },
+        "preconditions": {
+          "items": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "property": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "rev": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "scope": {
+          "$ref": "#/$defs/ClaimScope"
+        },
+        "statement": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "enum": ["conflicted", "hypothesis", "superseded", "supported", "unverifiable"]
+        },
+        "subject": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "superseded_by": {
+          "$ref": "#/$defs/ClaimRef"
+        },
+        "supersedes": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClaimRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "value": {
+          "description": "명제의 값 (JSON 값 무엇이든)"
+        },
+        "verified_by": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "graph": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "node": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": ["graph", "node"],
+            "title": "ClaimVerifier",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": ["basis", "id", "kind", "rev", "statement", "status"],
+      "title": "Claim",
+      "type": "object"
+    },
+    "ClaimRef": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z][a-z0-9_.]{0,127}$",
+          "type": "string"
+        },
+        "rev": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": ["id", "rev"],
+      "title": "ClaimRef",
+      "type": "object"
+    },
+    "ClaimScope": {
+      "additionalProperties": false,
+      "description": "적용 범위. null·빠짐 = 제한 없음",
+      "properties": {
+        "builds": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "from": {
+                  "anyOf": [
+                    {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "to": {
+                  "anyOf": [
+                    {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "data_rev": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "locale": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profiles": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "title": "ClaimScope",
+      "type": "object"
+    }
+  },
+  "$id": "urn:kookabug:claims:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "기능별 주장 파일 knowledge/features/<기능>.json (M8 계획 3.2). history는 옛 rev 항목",
+  "properties": {
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/Claim"
+      },
+      "type": "array"
+    },
+    "feature": {
+      "pattern": "^[a-z][a-z0-9_]{0,63}$",
+      "type": "string"
+    },
+    "format": {
+      "const": "kookabug.claims/0"
+    },
+    "history": {
+      "items": {
+        "$ref": "#/$defs/Claim"
+      },
+      "type": "array"
+    },
+    "revision": {
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": ["claims", "feature", "format", "revision"],
+  "title": "Claims",
+  "type": "object"
+}

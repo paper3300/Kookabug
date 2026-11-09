@@ -1,0 +1,93 @@
+{
+  "$defs": {
+    "Lesson": {
+      "additionalProperties": false,
+      "properties": {
+        "active": {
+          "type": "boolean"
+        },
+        "advice": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "applies": {
+          "additionalProperties": false,
+          "properties": {
+            "builds": {
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "profiles": {
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "screens": {
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "basis": {
+          "items": {
+            "$ref": "urn:kookabug:claims:0#/$defs/Basis"
+          },
+          "type": "array"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_.]{0,127}$",
+          "type": "string"
+        },
+        "rev": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": ["active", "advice", "basis", "id", "rev"],
+      "title": "Lesson",
+      "type": "object"
+    }
+  },
+  "$id": "urn:kookabug:lessons:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "경험칙 knowledge/lessons.json (M8 계획 3.2). 저장·근거·활성만",
+  "properties": {
+    "format": {
+      "const": "kookabug.lessons/0"
+    },
+    "history": {
+      "items": {
+        "$ref": "#/$defs/Lesson"
+      },
+      "type": "array"
+    },
+    "lessons": {
+      "items": {
+        "$ref": "#/$defs/Lesson"
+      },
+      "type": "array"
+    },
+    "revision": {
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": ["format", "lessons", "revision"],
+  "title": "Lessons",
+  "type": "object"
+}

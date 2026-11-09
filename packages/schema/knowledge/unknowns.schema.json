@@ -1,0 +1,120 @@
+{
+  "$defs": {
+    "Unknown": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "at": {
+                  "maxLength": 40,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "by": {
+                  "const": "human"
+                },
+                "text": {
+                  "maxLength": 4000,
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": ["at", "by", "text"],
+              "title": "UnknownAnswer",
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocks": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "how": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "human_only": {
+          "type": "boolean"
+        },
+        "id": {
+          "pattern": "^u-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+          "type": "string"
+        },
+        "options": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "type": "array"
+        },
+        "question": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "rev": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "pattern": "^sources:[A-Za-z0-9_.-]{1,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": ["answered", "dropped", "open"]
+        }
+      },
+      "required": ["human_only", "id", "question", "rev", "state"],
+      "title": "Unknown",
+      "type": "object"
+    }
+  },
+  "$id": "urn:kookabug:unknowns:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "미지수 knowledge/unknowns.json (M8 계획 3.2). 답은 사람 전용 unknowns.answer만",
+  "properties": {
+    "format": {
+      "const": "kookabug.unknowns/0"
+    },
+    "history": {
+      "items": {
+        "$ref": "#/$defs/Unknown"
+      },
+      "type": "array"
+    },
+    "revision": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "unknowns": {
+      "items": {
+        "$ref": "#/$defs/Unknown"
+      },
+      "type": "array"
+    }
+  },
+  "required": ["format", "revision", "unknowns"],
+  "title": "Unknowns",
+  "type": "object"
+}

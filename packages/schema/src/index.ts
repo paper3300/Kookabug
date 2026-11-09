@@ -19,6 +19,20 @@ export * as target from "./generated/target.js";
 export * as userSettings from "./generated/user-settings.js";
 export * as videoIndex from "./generated/video-index.js";
 export * as workspace from "./generated/workspace.js";
+// M8 지식 형식 (packages/schema/knowledge/)
+export * as kbAdoption from "./generated/adoption.js";
+export * as kbAutomation from "./generated/automation.js";
+export * as kbCase from "./generated/case.js";
+export * as kbCheats from "./generated/cheats.js";
+export * as kbClaims from "./generated/claims.js";
+export * as kbEvidence from "./generated/evidence.js";
+export * as kbLessons from "./generated/lessons.js";
+export * as kbLog from "./generated/knowledge-log.js";
+export * as kbOps from "./generated/knowledge-ops.js";
+export * as kbReport from "./generated/report.js";
+export * as kbUnknowns from "./generated/unknowns.js";
+export * as kbWorking from "./generated/working.js";
+export * as kbWorkingClaims from "./generated/working-claims.js";
 export { DEFAULT_COLOR_TOLERANCE, DEFAULT_MATCH_THRESHOLD } from "./generated/constants.js";
 
 // daemon 전송 코덱과 런타임 검사 (M2 계획 2.6·2.10)

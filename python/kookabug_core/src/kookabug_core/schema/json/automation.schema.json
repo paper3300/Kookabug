@@ -1,0 +1,126 @@
+{
+  "$defs": {
+    "Forbidden": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "text"
+            },
+            "value": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": ["kind", "value"],
+          "title": "ForbiddenText",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "target"
+            },
+            "path": {
+              "pattern": "^[^\\\\:]+\\.target\\.json$",
+              "type": "string"
+            }
+          },
+          "required": ["kind", "path"],
+          "title": "ForbiddenTarget",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[a-z][a-z0-9_]{0,63}$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "screen"
+            }
+          },
+          "required": ["id", "kind"],
+          "title": "ForbiddenScreen",
+          "type": "object"
+        }
+      ],
+      "title": "Forbidden"
+    }
+  },
+  "$id": "urn:kookabug:automation:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "자동화 정책 kookabug.json#automation (M8 계획 3.4). 사람 전용 쓰기. 빠진 키는 기본값",
+  "properties": {
+    "auto_repair": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "max_adoptions": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "profiles": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scope": {
+          "items": {
+            "pattern": "^[^\\\\:]+/$",
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [],
+      "title": "AutoRepair",
+      "type": "object"
+    },
+    "budget": {
+      "additionalProperties": false,
+      "properties": {
+        "minutes": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "runs": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "title": "JobBudget",
+      "type": "object"
+    },
+    "forbidden": {
+      "items": {
+        "$ref": "#/$defs/Forbidden"
+      },
+      "type": "array"
+    },
+    "format": {
+      "const": "kookabug.automation/0"
+    }
+  },
+  "required": ["format"],
+  "title": "Automation",
+  "type": "object"
+}

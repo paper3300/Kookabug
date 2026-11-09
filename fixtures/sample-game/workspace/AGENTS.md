@@ -17,4 +17,10 @@
 - 게임 화면 탐색은 `kb_explore_start` → 캡처 → `kb_screen_identify` → 처음이면 `kb_screen_save` →
   입력 → 반복 → `kb_explore_end`. 결과는 `screens/_explored/`에 쌓이고 사람이 확인해 옮긴다.
   되돌릴 수 없는 동작은 누르지 말고 `untried`로 남긴다. 비밀값 칸은 클릭한 뒤 입력한다
+- 지식(`knowledge/`)은 `kb_knowledge_apply` 연산(add·revise·supersede·mark_conflicted·
+  attach_evidence·set_status)으로만 바꾼다. 근거는 원본·증거 묶음·실행이다(위키·주장은 근거가
+  아니다). 사람 근거·치트 채택·미지수 답은 사람만 쓴다. 산문은 `kb_wiki_write`(`wiki/`)로 쓴다
+- 실패는 `kb_case_open`으로 사건을 열고 가설·필요한 정보를 남긴다. 사건을 닫는 것은 채택·사람뿐이다.
+  수리는 `kb_adopt_request`로 요청한다(검증 실행은 Kookabug가 고른다)
+- 플레이북 판 `kookabug.playbooks/0`
 <!-- kookabug:end -->

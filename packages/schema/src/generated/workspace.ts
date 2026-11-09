@@ -6,6 +6,16 @@
  */
 export type PermissionVerdict = "allow" | "ask" | "deny";
 /**
+ * 원본 하나. path·url·local 중 하나. local이면 경로는 .kookabug/local.json#sources.<id>.path
+ *
+ * This interface was referenced by `Workspace`'s JSON-Schema
+ * via the `definition` "Source".
+ */
+export type Source = Source1 & Source2;
+export type Source1 = {
+  [k: string]: unknown | undefined;
+};
+/**
  * This interface was referenced by `Workspace`'s JSON-Schema
  * via the `definition` "SettingKey".
  */
@@ -15,11 +25,17 @@ export type SettingKey = string;
  * 팀 공용 워크스페이스 설정 (kookabug.json)
  */
 export interface Workspace {
+  automation?: import("./automation.js").Automation;
+  cheats?: CheatsPolicy;
   format: "kookabug.workspace/0";
   /**
    * 워크스페이스 ID (UUID 소문자). 자격 증명 관리자 비밀값 이름 kookabug:<ID>:<키>의 접두라 팀이 같은 값을 쓴다. 없으면 처음 비밀값을 만들 때(secrets.create) 만들어 넣는다 (M4)
    */
   id?: string;
+  /**
+   * M8: 프로젝트 이름 (마법사 1단계, kookabug workspace new --name)
+   */
+  name?: string;
   ocr?: OcrSettings;
   permissions?: Permissions;
   plugin_index?: PluginIndex;
@@ -30,6 +46,26 @@ export interface Workspace {
   retention?: Retention;
   run?: RunConditions;
   settings?: Settings;
+  /**
+   * M8: 원본 위치 (복사하지 않는다). 사람 전용 쓰기(project.sources.set)
+   */
+  sources?: Source[];
+}
+/**
+ * M8: 치트 정책. 분류는 사용자 정의(제품 기본 분류 없음). 사람 전용 쓰기
+ *
+ * This interface was referenced by `Workspace`'s JSON-Schema
+ * via the `definition` "CheatsPolicy".
+ */
+export interface CheatsPolicy {
+  categories?: CheatCategory[];
+  enabled?: boolean;
+}
+export interface CheatCategory {
+  description?: string;
+  id: string;
+  title: string;
+  unattended?: boolean;
 }
 /**
  * OCR 엔진과 그 설정. engine이 없으면 rapidocr
@@ -174,4 +210,12 @@ export interface RunConditions {
    * 워커가 시작 인사에 답하기까지의 기한. 없으면 30000
    */
   worker_start_timeout_ms?: number;
+}
+export interface Source2 {
+  id: string;
+  kind: "code" | "data" | "design_doc" | "other" | "patch_notes" | "qa_sheet" | "strings";
+  local?: true;
+  path?: string;
+  title: string;
+  url?: string;
 }

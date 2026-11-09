@@ -20,6 +20,12 @@ export interface Local {
   plugin_index?: PluginIndex;
   plugin_trust?: PluginTrust;
   settings?: Settings;
+  /**
+   * M8: 이 PC의 원본 경로 (kookabug.json sources[].local: true인 원본)
+   */
+  sources?: {
+    [k: string]: LocalSource | undefined;
+  };
 }
 /**
  * 에이전트 권한 (프로젝트 계층). 툴셋·프리셋 값이 사용자 설정보다 먼저다
@@ -248,4 +254,7 @@ export interface PluginTrust {
  */
 export interface Settings {
   [k: string]: unknown | undefined;
+}
+export interface LocalSource {
+  path: string;
 }

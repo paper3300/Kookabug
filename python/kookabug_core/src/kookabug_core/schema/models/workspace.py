@@ -5,6 +5,28 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, RootModel, StringConstraints
 
 
+class CheatCategory(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    description: Annotated[str | None, Field(max_length=2000)] = None
+    id: Annotated[str, Field(pattern="^[a-z][a-z0-9_]{0,63}$")]
+    title: Annotated[str, Field(max_length=200, min_length=1)]
+    unattended: bool | None = None
+
+
+class CheatsPolicy(BaseModel):
+    """
+    M8: 치트 정책. 분류는 사용자 정의(제품 기본 분류 없음). 사람 전용 쓰기
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    categories: list[CheatCategory] | None = None
+    enabled: bool | None = None
+
+
 class Det(BaseModel):
     """
     rapidocr 검출 크기 설정 (없는 값은 기본값)
@@ -150,6 +172,64 @@ class Settings(
     ]
 
 
+class Source1(BaseModel):
+    """
+    원본 하나. path·url·local 중 하나. local이면 경로는 .kookabug/local.json#sources.<id>.path
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: Annotated[str, Field(pattern="^[A-Za-z0-9_.-]{1,64}$")]
+    kind: Literal["code", "data", "design_doc", "other", "patch_notes", "qa_sheet", "strings"]
+    local: Literal[True] | None = None
+    path: Annotated[str, Field(max_length=1000, min_length=1)]
+    title: Annotated[str, Field(max_length=200, min_length=1)]
+    url: Annotated[str | None, Field(max_length=2000, min_length=1, pattern="^https?://")] = None
+
+
+class Source2(BaseModel):
+    """
+    원본 하나. path·url·local 중 하나. local이면 경로는 .kookabug/local.json#sources.<id>.path
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: Annotated[str, Field(pattern="^[A-Za-z0-9_.-]{1,64}$")]
+    kind: Literal["code", "data", "design_doc", "other", "patch_notes", "qa_sheet", "strings"]
+    local: Literal[True] | None = None
+    path: Annotated[str | None, Field(max_length=1000, min_length=1)] = None
+    title: Annotated[str, Field(max_length=200, min_length=1)]
+    url: Annotated[str, Field(max_length=2000, min_length=1, pattern="^https?://")]
+
+
+class Source3(BaseModel):
+    """
+    원본 하나. path·url·local 중 하나. local이면 경로는 .kookabug/local.json#sources.<id>.path
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: Annotated[str, Field(pattern="^[A-Za-z0-9_.-]{1,64}$")]
+    kind: Literal["code", "data", "design_doc", "other", "patch_notes", "qa_sheet", "strings"]
+    local: Literal[True]
+    path: Annotated[str | None, Field(max_length=1000, min_length=1)] = None
+    title: Annotated[str, Field(max_length=200, min_length=1)]
+    url: Annotated[str | None, Field(max_length=2000, min_length=1, pattern="^https?://")] = None
+
+
+class Source(RootModel[Source1 | Source2 | Source3]):
+    root: Annotated[
+        Source1 | Source2 | Source3,
+        Field(
+            description="원본 하나. path·url·local 중 하나. local이면 경로는 .kookabug/local.json#sources.<id>.path",
+            title="Source",
+        ),
+    ]
+
+
 class WorkspaceRecordPolicy(BaseModel):
     """
     워크스페이스 기록 정책: 그래프 RecordPolicy(screenshots·video)에 비밀값 가림 스위치를 더한 것. 상위에서 끈 것은 하위에서 켤 수 없다
@@ -213,12 +293,22 @@ class Workspace(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    automation: Annotated[Any | None, Field(description="urn:kookabug:automation:0")] = None
+    cheats: CheatsPolicy | None = None
     format: Literal["kookabug.workspace/0"]
     id: Annotated[
         str | None,
         Field(
             description="워크스페이스 ID (UUID 소문자). 자격 증명 관리자 비밀값 이름 kookabug:<ID>:<키>의 접두라 팀이 같은 값을 쓴다. 없으면 처음 비밀값을 만들 때(secrets.create) 만들어 넣는다 (M4)",
             pattern="^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        ),
+    ] = None
+    name: Annotated[
+        str | None,
+        Field(
+            description="M8: 프로젝트 이름 (마법사 1단계, kookabug workspace new --name)",
+            max_length=100,
+            min_length=1,
         ),
     ] = None
     ocr: OcrSettings | None = None
@@ -231,3 +321,7 @@ class Workspace(BaseModel):
     retention: Retention | None = None
     run: RunConditions | None = None
     settings: Settings | None = None
+    sources: Annotated[
+        list[Source] | None,
+        Field(description="M8: 원본 위치 (복사하지 않는다). 사람 전용 쓰기(project.sources.set)"),
+    ] = None

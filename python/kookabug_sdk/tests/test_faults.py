@@ -239,8 +239,11 @@ def test_points_table_matches_plan() -> None:
         "plugins.stage",
         # M7 B4 화면 지도 승격 거래 단계 (daemon·CLI 모두 감독자)
         "screens.stage",
+        # M8 B1 일반 파일 거래 filetx 단계 (daemon·CLI 모두 감독자)
+        "filetx.stage",
     }
     assert _faults.POINTS["plugins.stage"] == frozenset({"plugin"})
     assert _faults.POINTS["screens.stage"] == frozenset({"supervisor"})
+    assert _faults.POINTS["filetx.stage"] == frozenset({"supervisor"})
     assert _faults.POINTS["journal.partial_line"] == frozenset(_faults.ROLES)
     assert _faults.POINTS["daemon.after_lock"] == frozenset({"supervisor"})

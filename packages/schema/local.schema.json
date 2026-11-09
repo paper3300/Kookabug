@@ -114,6 +114,26 @@
     },
     "settings": {
       "$ref": "#/$defs/Settings"
+    },
+    "sources": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["path"],
+        "title": "LocalSource",
+        "type": "object"
+      },
+      "description": "M8: 이 PC의 원본 경로 (kookabug.json sources[].local: true인 원본)",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_.-]{1,64}$"
+      },
+      "type": "object"
     }
   },
   "required": ["format"],

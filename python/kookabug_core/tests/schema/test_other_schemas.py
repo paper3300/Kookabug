@@ -312,7 +312,7 @@ def test_shared_defs_identical_across_files() -> None:
     seen: dict[str, tuple[str, Any]] = {}
     shared = 0
     for kind in KINDS:
-        for name, full in metaschema(kind)["$defs"].items():
+        for name, full in metaschema(kind).get("$defs", {}).items():
             schema = {k: v for k, v in full.items() if k != "description"}
             if name in seen:
                 first_kind, first = seen[name]

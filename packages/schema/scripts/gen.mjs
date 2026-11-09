@@ -28,6 +28,25 @@ const kinds = [
   "plugin-lock",
   "explore",
 ];
+// M8 지식 형식: 원본은 knowledge/ 폴더에 있다 (생성물은 다른 종류와 같은 곳)
+const knowledgeKinds = [
+  "claims",
+  "case",
+  "evidence",
+  "lessons",
+  "cheats",
+  "unknowns",
+  "working",
+  "working-claims",
+  "adoption",
+  "report",
+  "knowledge-ops",
+  "knowledge-log",
+  "automation",
+];
+kinds.push(...knowledgeKinds);
+const schemaFile = (kind) =>
+  path.join(root, ...(knowledgeKinds.includes(kind) ? ["knowledge"] : []), `${kind}.schema.json`);
 
 const banner =
   "/* 생성물 (packages/schema/*.schema.json → scripts/gen.mjs). 직접 고치지 않는다. */";
@@ -76,7 +95,7 @@ const URN = /^urn:kookabug:([a-z-]+):0(?:#\/\$defs\/([A-Za-z0-9_]+))?$/;
 const titles = {};
 const defTitles = {};
 for (const kind of kinds) {
-  const schema = JSON.parse(await readFile(path.join(root, `${kind}.schema.json`), "utf8"));
+  const schema = JSON.parse(await readFile(schemaFile(kind), "utf8"));
   titles[kind] = schema.title;
   defTitles[kind] = Object.fromEntries(
     Object.entries(schema.$defs ?? {}).map(([name, def]) => [name, def.title ?? name]),
@@ -105,7 +124,7 @@ function externalToTs(node) {
 await mkdir(outDir, { recursive: true });
 const expected = new Set();
 for (const kind of kinds) {
-  const schema = JSON.parse(await readFile(path.join(root, `${kind}.schema.json`), "utf8"));
+  const schema = JSON.parse(await readFile(schemaFile(kind), "utf8"));
   // 생성기는 최상위가 객체일 때만 $defs를 다 내보낸다. 최상위가 oneOf(메시지 종류)인 daemon-rpc·rpc는
   // 빈 객체 틀로 $defs를 내보내고 최상위 합 타입은 직접 붙인다 (메서드 표 등을 렌더러가 쓴다)
   const union = DEFS_ROOT.has(kind) ? schema.oneOf.map((s) => s.$ref.split("/").pop()) : null;

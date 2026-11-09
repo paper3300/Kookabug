@@ -1,0 +1,250 @@
+{
+  "$id": "urn:kookabug:report:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "작업 보고 knowledge/reports/<작업 ID>.json (M8 계획 3.11). 항목은 Kookabug가 작업의 구조화 기록에서 만들고 Agent 글은 notes 하나",
+  "properties": {
+    "agent": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "budget": {
+      "additionalProperties": false,
+      "properties": {
+        "minutes": {
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "runs": {
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "ended_at": {
+      "anyOf": [
+        {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "format": {
+      "const": "kookabug.report/0"
+    },
+    "groups": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "cause": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "at": {
+                    "maxLength": 40,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "by": {
+                    "const": "human"
+                  },
+                  "decision": {
+                    "enum": ["accept", "reject"]
+                  }
+                },
+                "required": ["at", "by", "decision"],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "items": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "adoption": {
+                  "pattern": "^a-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+                  "type": "string"
+                },
+                "case": {
+                  "pattern": "^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+                  "type": "string"
+                },
+                "change": {
+                  "pattern": "^w-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+                  "type": "string"
+                },
+                "cheat": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "checks": {
+                  "items": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "claims": {
+                  "items": {
+                    "$ref": "urn:kookabug:claims:0#/$defs/ClaimRef"
+                  },
+                  "type": "array"
+                },
+                "detail": {
+                  "maxLength": 4000,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "evidence": {
+                  "pattern": "^[a-z][a-z0-9-]{0,95}$",
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "auto_adopted",
+                    "budget",
+                    "cheat_candidate",
+                    "init_summary",
+                    "prep_failed",
+                    "regression_suspect",
+                    "stalled",
+                    "undetermined",
+                    "working_only"
+                  ]
+                },
+                "summary": {
+                  "additionalProperties": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "type": "object"
+                },
+                "unknowns": {
+                  "items": {
+                    "pattern": "^u-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": ["kind"],
+              "title": "ReportItem",
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "key": {
+            "maxLength": 600,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["cause", "items", "key", "title"],
+        "title": "ReportGroup",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "job": {
+      "pattern": "^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+      "type": "string"
+    },
+    "notes": {
+      "anyOf": [
+        {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "playbook": {
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    },
+    "rendered": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "started_at": {
+      "maxLength": 40,
+      "minLength": 1,
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "budget_exhausted",
+        "cancelled",
+        "done",
+        "failed",
+        "interrupted",
+        "prep_failed",
+        "running"
+      ]
+    },
+    "trigger": {
+      "enum": ["ci", "manual", "schedule"]
+    },
+    "unknowns": {
+      "items": {
+        "pattern": "^u-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": ["format", "groups", "job", "playbook", "started_at", "state", "trigger"],
+  "title": "Report",
+  "type": "object"
+}

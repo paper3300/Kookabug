@@ -25,7 +25,9 @@ __all__ = [
     "AGENTS_END",
     "AGENTS_FILE",
     "AGENTS_SECTION",
+    "AUTOMATION_DEFAULTS",
     "LOCAL_FILE",
+    "PLAYBOOKS_FORMAT",
     "RETENTION_DEFAULTS",
     "SECRET_ENV_PREFIX",
     "WORKSPACE_FILE",
@@ -55,6 +57,13 @@ RETENTION_DEFAULTS: Final[Mapping[str, int]] = {
     "keep_last": 50,
 }
 """실행 기록 보관 기본값 (워크스페이스 구조 \"실행 기록 보관\"). 정리는 보류 H1."""
+AUTOMATION_DEFAULTS: Final[Mapping[str, Any]] = {
+    "auto_repair": {"enabled": True, "scope": ["tests/"], "profiles": None, "max_adoptions": 20},
+    "budget": {"minutes": 60, "runs": 30},
+}
+"""자동화 정책 기본값 (M8 계획 3.4 — 키가 없을 때). 기본 금지 동작은 없다."""
+PLAYBOOKS_FORMAT: Final = "kookabug.playbooks/0"
+"""제품 플레이북 판 (M8 계획 3.1·3.10). `AGENTS.md` 관리 구간에 적는다."""
 
 Layer = Literal["options", "local", "profile", "workspace"]
 _LAYER_NAMES: Final[dict[Layer, str]] = {
@@ -209,6 +218,30 @@ class Workspace:
                 if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
                     out[key] = value
         return out
+
+    def automation(self) -> dict[str, Any]:
+        """`kookabug.json`의 `automation`, 빠진 키는 기본값 (M8 계획 3.4). 형식이 틀린 파일은 빈
+        설정으로 읽었으므로 기본값 전체다."""
+        raw = self.config.get("automation")
+        raw = cast(dict[str, Any], raw) if isinstance(raw, dict) else {}
+        repair = cast(dict[str, Any], raw.get("auto_repair") or {})
+        budget = cast(dict[str, Any], raw.get("budget") or {})
+        defaults = AUTOMATION_DEFAULTS
+        return {
+            "format": "kookabug.automation/0",
+            "auto_repair": {**cast(dict[str, Any], defaults["auto_repair"]), **repair},
+            "forbidden": list(raw.get("forbidden") or []),
+            "budget": {**cast(dict[str, Any], defaults["budget"]), **budget},
+        }
+
+    def cheats_policy(self) -> dict[str, Any]:
+        """`kookabug.json`의 `cheats` (기본: 꺼짐, 분류 없음 — 제품 기본 분류 없음)."""
+        raw = self.config.get("cheats")
+        raw = cast(dict[str, Any], raw) if isinstance(raw, dict) else {}
+        return {
+            "enabled": bool(raw.get("enabled", False)),
+            "categories": list(raw.get("categories") or []),
+        }
 
     def profile_names(self) -> list[str]:
         profiles = self.config.get("profiles")
@@ -403,6 +436,12 @@ AGENTS_SECTION: Final = """\
 - 게임 화면 탐색은 `kb_explore_start` → 캡처 → `kb_screen_identify` → 처음이면 `kb_screen_save` →
   입력 → 반복 → `kb_explore_end`. 결과는 `screens/_explored/`에 쌓이고 사람이 확인해 옮긴다.
   되돌릴 수 없는 동작은 누르지 말고 `untried`로 남긴다. 비밀값 칸은 클릭한 뒤 입력한다
+- 지식(`knowledge/`)은 `kb_knowledge_apply` 연산(add·revise·supersede·mark_conflicted·
+  attach_evidence·set_status)으로만 바꾼다. 근거는 원본·증거 묶음·실행이다(위키·주장은 근거가
+  아니다). 사람 근거·치트 채택·미지수 답은 사람만 쓴다. 산문은 `kb_wiki_write`(`wiki/`)로 쓴다
+- 실패는 `kb_case_open`으로 사건을 열고 가설·필요한 정보를 남긴다. 사건을 닫는 것은 채택·사람뿐이다.
+  수리는 `kb_adopt_request`로 요청한다(검증 실행은 Kookabug가 고른다)
+- 플레이북 판 `kookabug.playbooks/0`
 """
 """예제·새 워크스페이스 `AGENTS.md`의 관리 구간 본문 (M5 3.12)."""
 

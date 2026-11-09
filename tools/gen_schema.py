@@ -27,6 +27,22 @@ from kookabug_sdk.console import utf8_stdio
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = REPO_ROOT / "packages" / "schema"
 CORE_SCHEMA = REPO_ROOT / "python" / "kookabug_core" / "src" / "kookabug_core" / "schema"
+KNOWLEDGE_KINDS = (
+    "claims",
+    "case",
+    "evidence",
+    "lessons",
+    "cheats",
+    "unknowns",
+    "working",
+    "working-claims",
+    "adoption",
+    "report",
+    "knowledge-ops",
+    "knowledge-log",
+    "automation",
+)
+"""M8 지식 형식. 원본은 `packages/schema/knowledge/`에 있다 (생성물은 다른 종류와 같은 곳)."""
 KINDS = (
     "graph",
     "target",
@@ -48,6 +64,7 @@ KINDS = (
     "recorder-fragment",
     "plugin-lock",
     "explore",
+    *KNOWLEDGE_KINDS,
 )
 
 MODELS_INIT = '''\
@@ -73,7 +90,8 @@ def module_name(kind: str) -> str:
 
 
 def schema_path(kind: str) -> Path:
-    return SCHEMA_DIR / f"{kind}.schema.json"
+    folder = SCHEMA_DIR / "knowledge" if kind in KNOWLEDGE_KINDS else SCHEMA_DIR
+    return folder / f"{kind}.schema.json"
 
 
 def check_sources() -> list[str]:

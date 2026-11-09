@@ -1,0 +1,252 @@
+{
+  "$id": "urn:kookabug:evidence:0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "증거 묶음 knowledge/evidence/<묶음 ID>/manifest.json (M8 계획 3.2). 가림 처리된 최소 증거, 지우거나 고치는 도구 없음",
+  "properties": {
+    "basis": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["team", "working"]
+        }
+      },
+      "required": ["kind"],
+      "type": "object"
+    },
+    "by": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "enum": ["agent", "human", "kookabug"]
+        }
+      },
+      "required": ["kind"],
+      "type": "object"
+    },
+    "env": {
+      "additionalProperties": false,
+      "properties": {
+        "client_size": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
+        "dpi": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "game_build": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "platform": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "failed_step": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "node": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "step": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$",
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": ["path", "sha256"],
+        "title": "EvidenceFile",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "format": {
+      "const": "kookabug.evidence/0"
+    },
+    "graph_sha": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "id": {
+      "pattern": "^[a-z][a-z0-9-]{0,95}$",
+      "type": "string"
+    },
+    "note": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "type": "string"
+    },
+    "omitted": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "what": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": ["reason", "what"],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "origin": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "type": "string"
+    },
+    "pinned_at": {
+      "maxLength": 40,
+      "minLength": 1,
+      "type": "string"
+    },
+    "run": {
+      "anyOf": [
+        {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "verdict": {
+      "anyOf": [
+        {
+          "enum": ["error", "fail", "pass", "skip"]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": ["by", "files", "format", "id", "pinned_at"],
+  "title": "Evidence",
+  "type": "object"
+}

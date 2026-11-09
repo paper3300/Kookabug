@@ -1,0 +1,73 @@
+/* 생성물 (packages/schema/*.schema.json → scripts/gen.mjs). 직접 고치지 않는다. */
+
+/**
+ * 작업 보고 knowledge/reports/<작업 ID>.json (M8 계획 3.11). 항목은 Kookabug가 작업의 구조화 기록에서 만들고 Agent 글은 notes 하나
+ */
+export interface Report {
+  agent?: string | null;
+  budget?: {
+    /**
+     * @minItems 2
+     * @maxItems 2
+     */
+    minutes?: [number, number];
+    /**
+     * @minItems 2
+     * @maxItems 2
+     */
+    runs?: [number, number];
+  };
+  ended_at?: string | null;
+  format: "kookabug.report/0";
+  groups: ReportGroup[];
+  job: string;
+  notes?: string | null;
+  playbook: string;
+  rendered?: string | null;
+  started_at: string;
+  state:
+    | "budget_exhausted"
+    | "cancelled"
+    | "done"
+    | "failed"
+    | "interrupted"
+    | "prep_failed"
+    | "running";
+  trigger: "ci" | "manual" | "schedule";
+  unknowns?: string[];
+}
+export interface ReportGroup {
+  cause: string;
+  decision?: {
+    at: string;
+    by: "human";
+    decision: "accept" | "reject";
+  } | null;
+  items: ReportItem[];
+  key: string;
+  title: string;
+}
+export interface ReportItem {
+  adoption?: string;
+  case?: string;
+  change?: string;
+  cheat?: string;
+  checks?: string[];
+  claims?: import("./claims.js").ClaimRef[];
+  detail?: string;
+  evidence?: string;
+  kind:
+    | "auto_adopted"
+    | "budget"
+    | "cheat_candidate"
+    | "init_summary"
+    | "prep_failed"
+    | "regression_suspect"
+    | "stalled"
+    | "undetermined"
+    | "working_only";
+  summary?: {
+    [k: string]: number | undefined;
+  };
+  unknowns?: string[];
+}
