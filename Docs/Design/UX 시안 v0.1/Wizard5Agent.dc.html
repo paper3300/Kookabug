@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Agent 연결</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#1F1F1F}
+a{color:#4DAAFC}a:hover{color:#7CC0FF}
+button,input,select,textarea{font-family:inherit}
+</style>
+</helmet>
+<div style="width: 1120px; height: 720px; box-sizing: border-box; overflow: hidden; border-radius: 10px; background: #1F1F1F; color: #CCCCCC; font-family: 'Segoe UI', 'Noto Sans KR', system-ui, sans-serif; font-size: 14px; display: flex">
+
+  <div style="flex: 0 0 560px; box-sizing: border-box; padding: 44px 44px 28px 52px; display: flex; flex-direction: column">
+    <div style="display: flex; align-items: center; gap: 8px">
+      <span style="font-size: 12px; color: #9D9D9D; letter-spacing: .04em">5 / 9 · Agent · 선택</span>
+      <span style="flex: 1 1 auto"></span>
+      <span style="font-size: 11px; color: #8A8A8A">저장</span><span style="display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 10px; background: #2D2540; border: 1px solid #463A66; color: #D2C2F0; font-size: 11px; white-space: nowrap">사용자</span>
+    </div>
+    <h1 style="margin: 10px 0 0; font-size: 28px; line-height: 1.3; font-weight: 700; color: #F3F3F3">어떤 Agent와 일할까요?</h1>
+    <p style="margin: 10px 0 0; font-size: 14px; line-height: 1.6; color: #A9A9A9">Agent가 게임 정보를 모으고, 테스트를 만들고, 실패 원인을 찾아요. 나중에 연결해도 돼요.</p>
+
+    <div role="radiogroup" aria-label="Agent" style="margin-top: 16px; border: 1px solid #3C3C3C; border-radius: 8px; overflow: hidden; background: #232323">
+        <label style="display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-bottom: 1px solid #2E2E2E; background: #04395E">
+          <span aria-hidden="true" style="flex: 0 0 28px; height: 28px; border-radius: 50%; background: #2E2E2E; color: #E7E7E7; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center">C</span>
+          <span style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+            <span style="display: flex; align-items: center; gap: 6px"><span style="color: #E7E7E7; font-weight: 600">Claude Code</span><span style="padding: 0 6px; border-radius: 3px; background: #1E3D2F; color: #A8E0A5; font-size: 11px; line-height: 18px; white-space: nowrap">감지됨</span><span style="padding: 0 6px; border-radius: 3px; background: #1E3D2F; color: #A8E0A5; font-size: 11px; line-height: 18px; white-space: nowrap">연결 시험 통과</span></span>
+            <span style="font-size: 12px; color: #A9A9A9">설치됨 · ACP로 연결</span>
+          </span>
+          <input type="radio" name="agent" checked style="width: 18px; height: 18px; accent-color: #0078D4">
+        </label>
+        <label style="display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-bottom: 1px solid #2E2E2E; background: transparent">
+          <span aria-hidden="true" style="flex: 0 0 28px; height: 28px; border-radius: 50%; background: #2E2E2E; color: #E7E7E7; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center">X</span>
+          <span style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+            <span style="display: flex; align-items: center; gap: 6px"><span style="color: #E7E7E7; font-weight: 600">Codex CLI</span><span style="padding: 0 6px; border-radius: 3px; background: #1E3D2F; color: #A8E0A5; font-size: 11px; line-height: 18px; white-space: nowrap">감지됨</span></span>
+            <span style="font-size: 12px; color: #A9A9A9">설치됨 · ACP로 연결</span>
+          </span>
+          <input type="radio" name="agent"  style="width: 18px; height: 18px; accent-color: #0078D4">
+        </label>
+        <label style="display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-bottom: 1px solid #2E2E2E; background: transparent">
+          <span aria-hidden="true" style="flex: 0 0 28px; height: 28px; border-radius: 50%; background: #2E2E2E; color: #E7E7E7; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center">G</span>
+          <span style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+            <span style="display: flex; align-items: center; gap: 6px"><span style="color: #E7E7E7; font-weight: 600">Gemini CLI</span></span>
+            <span style="font-size: 12px; color: #A9A9A9">설치 안 됨 · 설치 방법 보기</span>
+          </span>
+          <input type="radio" name="agent"  style="width: 18px; height: 18px; accent-color: #0078D4">
+        </label>
+        <label style="display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-bottom: 1px solid #2E2E2E; background: transparent">
+          <span aria-hidden="true" style="flex: 0 0 28px; height: 28px; border-radius: 50%; background: #2E2E2E; color: #E7E7E7; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center">+</span>
+          <span style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+            <span style="display: flex; align-items: center; gap: 6px"><span style="color: #E7E7E7; font-weight: 600">직접 입력</span></span>
+            <span style="font-size: 12px; color: #A9A9A9">이름과 명령줄로 ACP Agent 추가</span>
+          </span>
+          <input type="radio" name="agent"  style="width: 18px; height: 18px; accent-color: #0078D4">
+        </label>
+        <label style="display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-bottom: 1px solid #2E2E2E; background: transparent">
+          <span aria-hidden="true" style="flex: 0 0 28px; height: 28px; border-radius: 50%; background: #2E2E2E; color: #E7E7E7; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center">⚿</span>
+          <span style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+            <span style="display: flex; align-items: center; gap: 6px"><span style="color: #E7E7E7; font-weight: 600">API 키만</span><span style="padding: 0 6px; border-radius: 3px; background: #3A2F17; color: #E2C08D; font-size: 11px; line-height: 18px; white-space: nowrap">판단 노드 전용</span></span>
+            <span style="font-size: 12px; color: #A9A9A9">Init·조사·수리는 못 해요</span>
+          </span>
+          <input type="radio" name="agent"  style="width: 18px; height: 18px; accent-color: #0078D4">
+        </label>
+    </div>
+    <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 7px">
+      <span id="perm" style="font-size: 13px; color: #BBBBBB">Agent 권한</span>
+      <div role="group" aria-labelledby="perm" style="display: inline-flex; align-self: flex-start; padding: 3px; background: #2A2A2A; border-radius: 6px"><button type="button" aria-pressed="false" style="height: 30px; padding: 0 12px; background: none; color: #A9A9A9; border: 0; border-radius: 4px; font-size: 13px">읽기 전용</button><button type="button" aria-pressed="false" style="height: 30px; padding: 0 12px; background: none; color: #A9A9A9; border: 0; border-radius: 4px; font-size: 13px">그래프 작성</button><button type="button" aria-pressed="true" style="height: 30px; padding: 0 12px; background: #3C3C3C; color: #F3F3F3; border: 0; border-radius: 4px; font-size: 13px">지식 관리 · 추천</button><button type="button" aria-pressed="false" style="height: 30px; padding: 0 12px; background: none; color: #A9A9A9; border: 0; border-radius: 4px; font-size: 13px">전체</button></div>
+      <span style="font-size: 12px; line-height: 1.5; color: #9D9D9D">지식 관리: 위키·사건을 쓰고 테스트를 실행해요. 게임을 직접 클릭할 땐 물어봐요.<br>혼자 도는 작업은 7단계 자동화 정책을 따라요.</span>
+    </div>
+
+    <div style="flex: 1 1 auto"></div>
+    
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+      <a href="Setup4Accounts.dc.html" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 16px; background: #2A2A2A; color: #CCCCCC; border-radius: 6px; font-size: 15px; text-decoration: none"><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M10 3L5 8l5 5"></path></svg>이전</a>
+      <div aria-hidden="true" style="display: flex; align-items: center; gap: 6px"><span style="width: 6px; height: 6px; border-radius: 3px; background: #E7E7E7"></span><span style="width: 6px; height: 6px; border-radius: 3px; background: #E7E7E7"></span><span style="width: 6px; height: 6px; border-radius: 3px; background: #E7E7E7"></span><span style="width: 6px; height: 6px; border-radius: 3px; background: #E7E7E7"></span><span style="width: 20px; height: 6px; border-radius: 3px; background: #E7E7E7"></span><span style="width: 6px; height: 6px; border-radius: 3px; background: #4A4A4A"></span><span style="width: 6px; height: 6px; border-radius: 3px; background: #4A4A4A"></span><span style="width: 6px; height: 6px; border-radius: 3px; background: #4A4A4A"></span><span style="width: 6px; height: 6px; border-radius: 3px; background: #4A4A4A"></span></div>
+      <div style="display: flex; align-items: center; gap: 4px"><a href="#" style="display: inline-flex; align-items: center; height: 44px; padding: 0 14px; color: #BBBBBB; border-radius: 6px; font-size: 15px; text-decoration: none">건너뛰기</a><a href="Wizard6Sources.dc.html" style="display: inline-flex; align-items: center; gap: 10px; height: 44px; padding: 0 18px; background: #0078D4; color: #FFFFFF; border-radius: 6px; font-size: 15px; font-weight: 600; text-decoration: none">다음 <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M13 3v5a2 2 0 0 1-2 2H4"></path><path d="M6.5 7.5L4 10l2.5 2.5"></path></svg></a></div>
+    </div>
+  </div>
+
+  <div style="flex: 1 1 auto; margin: 16px 16px 16px 0; border-radius: 8px; background-color: #181818; background-image: radial-gradient(#2A2A2A 1px, transparent 1px); background-size: 16px 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; box-sizing: border-box">
+<div style="width: 440px; font-size: 12px; color: #9D9D9D">고르면 바로 연결을 시험해요. 통과해야 “다음”이 켜져요.</div><div style="width: 440px; box-sizing: border-box; background: #232323; border: 1px solid #333333; border-radius: 8px; overflow: hidden; "><div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid #2B2B2B"><span style="color: #E7E7E7; font-weight: 600; font-size: 13px">연결 시험 · Claude Code</span><span style="font-size: 12px; color: #9D9D9D">2.4초</span></div><div style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #2B2B2B;"><span style="flex: 0 0 14px; margin-top: 2px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#89D185" stroke-width="2" aria-hidden="true"><path d="M3 8.5l3 3 7-7"></path></svg></span><span style="flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px"><span style="color: #E7E7E7; font-size: 13px">실행 파일 찾음</span><span style="font-size: 12px; color: #9D9D9D"><span style="font-family: 'JetBrains Mono', Consolas, monospace">claude</span> · PATH</span></span></div><div style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #2B2B2B;"><span style="flex: 0 0 14px; margin-top: 2px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#89D185" stroke-width="2" aria-hidden="true"><path d="M3 8.5l3 3 7-7"></path></svg></span><span style="flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px"><span style="color: #E7E7E7; font-size: 13px">ACP 세션 열기</span><span style="font-size: 12px; color: #9D9D9D">새 세션 · 작업 폴더 sample-rpg</span></span></div><div style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #2B2B2B;"><span style="flex: 0 0 14px; margin-top: 2px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#89D185" stroke-width="2" aria-hidden="true"><path d="M3 8.5l3 3 7-7"></path></svg></span><span style="flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px"><span style="color: #E7E7E7; font-size: 13px">Kookabug 도구 연결</span><span style="font-size: 12px; color: #9D9D9D">kb_* 도구 사용 가능 · 권한 지식 관리</span></span></div><div style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; "><span style="flex: 0 0 14px; margin-top: 2px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#89D185" stroke-width="2" aria-hidden="true"><path d="M3 8.5l3 3 7-7"></path></svg></span><span style="flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px"><span style="color: #E7E7E7; font-size: 13px">시험 질문</span><span style="font-size: 12px; color: #9D9D9D">“이 프로젝트 이름은?” → “sample-rpg”</span></span></div><div style="padding: 10px 14px; background: #1A2B1F; color: #A8E0A5; font-size: 13px; border-top: 1px solid #2B4A33">연결됐어요. 다음으로 넘어갈 수 있어요.</div></div><div style="width: 440px; box-sizing: border-box; background: #232323; border: 1px solid #333333; border-radius: 8px; overflow: hidden; opacity: .72"><div style="padding: 10px 14px; border-bottom: 1px solid #2B2B2B; color: #9D9D9D; font-size: 12px">실패했을 때 (예시)</div><div style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #2B2B2B;"><span style="flex: 0 0 14px; margin-top: 2px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#89D185" stroke-width="2" aria-hidden="true"><path d="M3 8.5l3 3 7-7"></path></svg></span><span style="flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px"><span style="color: #E7E7E7; font-size: 13px">실행 파일 찾음</span><span style="font-size: 12px; color: #9D9D9D">codex · PATH</span></span></div><div style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; "><span style="flex: 0 0 14px; margin-top: 2px"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#F48771" stroke-width="2" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"></path></svg></span><span style="flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px"><span style="color: #E7E7E7; font-size: 13px">Kookabug 도구 연결</span><span style="font-size: 12px; color: #9D9D9D">MCP 설정을 쓸 수 없어요 · 폴더 권한 확인</span></span></div><div style="display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid #2B2B2B"><span style="height: 28px; padding: 0 10px; display: inline-flex; align-items: center; background: #2A2A2A; border-radius: 4px; font-size: 12px; color: #E7E7E7">다시 시험</span><span style="height: 28px; padding: 0 10px; display: inline-flex; align-items: center; background: #2A2A2A; border-radius: 4px; font-size: 12px; color: #E7E7E7">로그 보기</span><span style="height: 28px; padding: 0 10px; display: inline-flex; align-items: center; font-size: 12px; color: #9D9D9D">다른 Agent 고르기</span></div></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1120,"height":720}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
