@@ -193,6 +193,31 @@ class StartOptions:
     """에이전트 제어 실행의 대상 창 바인딩 (M7 R1 — daemon 내부 진입점만)."""
     unattended: bool = False
     """사람 없는 Agent 연결이 시작한 실행 (M8 3.5 치트 무인 분류 — daemon이 주체로 정한다)."""
+    overlay: Mapping[str, bytes] | None = None
+    """작업 기준 덧씌움 (M8 3.6, daemon이 시작 때 고정한 바이트). 감독자가 실행 폴더
+    `overlay/<n>.bin`에 쓰고 사양에는 경로·sha만 넣는다."""
+    basis: Mapping[str, Any] | None = None
+    """`run.json basis` 기록 (M8 3.6)."""
+    job: str | None = None
+    """이 실행을 낸 작업 ID (M8)."""
+
+
+def _write_overlay(run_dir: Path, overlay: Mapping[str, bytes]) -> dict[str, dict[str, str]]:
+    """덧씌움 바이트를 실행 폴더에 고정한다 (runner가 sha를 다시 확인한다)."""
+    import hashlib
+
+    folder = run_dir / "overlay"
+    # 새 실행 폴더 안에 처음 만든다 — 이미 있으면(링크·정션 포함) 쓰지 않는다
+    folder.mkdir(exist_ok=False)
+    out: dict[str, dict[str, str]] = {}
+    for n, (rel, data) in enumerate(sorted(overlay.items())):
+        name = f"overlay/{n}.bin"
+        with open(run_dir / name, "xb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        out[rel] = {"file": name, "sha256": hashlib.sha256(data).hexdigest()}
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,6 +287,7 @@ class Supervisor:
         else:
             folder = create_run_folder(runs, graph, new_id=_only(opts.run_id))
         started_at = format_t(datetime.now(UTC))
+        overlay = None if not opts.overlay else _write_overlay(folder.path, opts.overlay)
         job = Job.create(run_job_name(folder.run_id))
         try:
             listener = PipeListener(new_pipe_name("control"))
@@ -296,6 +322,9 @@ class Supervisor:
             record_override=opts.record_override,
             bound_window=opts.bound_window,
             unattended=opts.unattended,
+            overlay=overlay,
+            basis=opts.basis,
+            job=opts.job,
         )
         handle = RunHandle(self, spec, folder, job, started_at)
         handle._launch(listener, key)

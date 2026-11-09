@@ -599,6 +599,76 @@ class JsonRpcVersion(RootModel[Literal["2.0"]]):
     root: Annotated[Literal["2.0"], Field(title="JsonRpcVersion")]
 
 
+class Negative(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    frame_id: Annotated[str, Field(min_length=1)]
+    note: Annotated[str, Field(min_length=1)]
+
+
+class Kb8AdoptRequestParams(BaseModel):
+    """
+    adopt.request: 사건의 작업 기준 변경 하나를 자동 채택 조건 1~8로 검사해 팀에 게시 (M8 3.8·R1). 검증 실행은 Kookabug가 고른다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    case: Annotated[str, Field(pattern="^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+    change: Annotated[str, Field(pattern="^w-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+    negatives: Annotated[list[Negative] | None, Field(max_length=16)] = None
+
+
+class Failed(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    code: str
+    condition: Annotated[int, Field(ge=1, le=8)]
+    detail: str
+
+
+class Kb8AdoptRequestResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    adopted: bool
+    adoption: str | None
+    failed: Failed | None
+    kept: Literal["working"]
+    manifest: str | None
+    negatives: list[str]
+    runs: list[str]
+
+
+class Kb8AdoptRevertParams(BaseModel):
+    """
+    adopt.revert: 채택(자동·수락)을 한 번 되돌린다 (사람 전용). 팀 파일이 채택 뒤 바이트일 때만
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    adoption: Annotated[str, Field(pattern="^a-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+
+
+class Kb8AdoptRevertResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    adoption: str
+    files: list[str]
+    reverted: str
+
+
+class Kb8AdoptionsListResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    adoptions: list[dict[str, Any]]
+
+
 class Kb8CheatAdoptionValue(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -699,6 +769,71 @@ class Kb8CheatsUnadoptParams(BaseModel):
     rev: Annotated[int, Field(ge=1)]
 
 
+class Kb8EvidencePinParams(BaseModel):
+    """
+    evidence.pin: 실행 기록에서 가림 처리한 최소 증거 묶음을 knowledge/evidence/에 고정 (지우거나 고치는 도구 없음)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    note: Annotated[str, Field(min_length=1)]
+    run: Annotated[str, Field(min_length=1)]
+    step: Annotated[str | None, Field(min_length=1)] = None
+
+
+class Kb8EvidencePinResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    files: list[str]
+    id: str
+    omitted: list[dict[str, Any]]
+
+
+class Change(RootModel[str]):
+    root: Annotated[str, Field(pattern="^w-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+
+
+class Claim(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: Annotated[str, Field(pattern="^[a-z][a-z0-9_.]{0,127}$")]
+    rev: Annotated[int, Field(ge=1)]
+
+
+class Kb8WorkingDecideParams(BaseModel):
+    """
+    working.accept·working.reject: 작업 기준 변경(파일)과 작업 주장 rev를 한 거래로 수락하거나 덧씌움에서 뺀다 (사람 전용). claims의 rev는 보고가 가리킨 작업 rev — 지금과 다르면 revision_conflict
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    changes: Annotated[list[Change] | None, Field(max_length=200)] = None
+    claims: Annotated[list[Claim] | None, Field(max_length=200)] = None
+
+
+class Kb8WorkingDecideResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    adoption: str | None
+    changes: list[str]
+    claims: list[dict[str, Any]]
+    conflicts: list[dict[str, Any]]
+    files: list[str]
+
+
+class Kb8WorkingListResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    changes: list[dict[str, Any]]
+    claims: list[dict[str, Any]]
+
+
 class LeaseDevice(BaseModel):
     """
     소유자가 입력을 보내는 장치. 다음 획득자가 앞 소유자의 키를 이 장치로 뗀다. none은 입력 장치가 없는 소유자(녹화) — 뗄 것이 없다
@@ -758,6 +893,36 @@ class MethodName(RootModel[str]):
             title="MethodName",
         ),
     ]
+
+
+class AdoptRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8AdoptRequestParams
+    renderer: Literal[False]
+    result: Kb8AdoptRequestResult
+    tool: Literal["ui_only"]
+
+
+class AdoptRevert(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8AdoptRevertParams
+    renderer: Literal[False]
+    result: Kb8AdoptRevertResult
+    tool: Literal["ui_only"]
+
+
+class AdoptionsList(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[False]
+    result: Kb8AdoptionsListResult
+    tool: Literal["ui_only"]
 
 
 class AgentsDetect(BaseModel):
@@ -850,6 +1015,16 @@ class DebugBreakpointsSet(BaseModel):
     tool: Literal["ui_only"]
 
 
+class EvidencePin(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8EvidencePinParams
+    renderer: Literal[False]
+    result: Kb8EvidencePinResult
+    tool: Literal["ui_only"]
+
+
 class ExploreEnd(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -867,6 +1042,36 @@ class GraphClose(BaseModel):
     params: GraphCloseParams
     renderer: Literal[True]
     result: EmptyResult
+    tool: Literal["ui_only"]
+
+
+class WorkingAccept(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8WorkingDecideParams
+    renderer: Literal[False]
+    result: Kb8WorkingDecideResult
+    tool: Literal["ui_only"]
+
+
+class WorkingList(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[False]
+    result: Kb8WorkingListResult
+    tool: Literal["ui_only"]
+
+
+class WorkingReject(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8WorkingDecideParams
+    renderer: Literal[False]
+    result: Kb8WorkingDecideResult
     tool: Literal["ui_only"]
 
 
@@ -1606,6 +1811,13 @@ class RequestFailedCode(
             "session_not_allowed",
             "approval_cancelled",
             "recovery_pending",
+            "basis_denied",
+            "policy_path",
+            "knowledge_busy",
+            "already_reverted",
+            "change_not_active",
+            "nothing_to_revert",
+            "evidence_missing",
         ]
     ]
 ):
@@ -1697,6 +1909,13 @@ class RequestFailedCode(
             "session_not_allowed",
             "approval_cancelled",
             "recovery_pending",
+            "basis_denied",
+            "policy_path",
+            "knowledge_busy",
+            "already_reverted",
+            "change_not_active",
+            "nothing_to_revert",
+            "evidence_missing",
         ],
         Field(
             description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 비밀값 — data.field), secret_unchecked(비밀값 검사 불가 — 키를 못 읽음·보호 기록 손상), screens_busy(화면 지도 잠금)",
@@ -3127,6 +3346,11 @@ class GraphPatchResult(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    basis: Annotated[
+        Literal["working"] | None,
+        Field(description="M8 E3: 작업 기준으로 썼으면 working (팀 파일은 그대로)"),
+    ] = None
+    change: Annotated[str | None, Field(description="M8 E3: 쓴 작업 기준 변경 ID")] = None
     created: Annotated[dict[str, str], Field(description="add_node ref → 새 노드 ID")]
     diagnostics: list[Diagnostic]
     removed_refs: Annotated[
@@ -4465,6 +4689,12 @@ class RunStartParams(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    basis: Annotated[
+        Literal["team", "working"] | None,
+        Field(
+            description="M8 3.6 실행 기준: team(팀 파일만) | working(시작 때 작업 기준 덧씌움 고정). 생략하면 작업 연결은 working, 그 밖은 team"
+        ),
+    ] = None
     deadline_ms: Annotated[int | None, Field(ge=1, le=9007199254740991)] = None
     idempotency_key: Annotated[str | None, Field(min_length=1)] = None
     path: WorkspacePath
@@ -4723,6 +4953,11 @@ class TargetSaveResult(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    basis: Annotated[
+        Literal["working"] | None,
+        Field(description="M8 E3: 작업 기준으로 썼으면 working (팀 파일은 그대로)"),
+    ] = None
+    change: Annotated[str | None, Field(description="M8 E3: 쓴 작업 기준 변경 ID")] = None
     image: WorkspacePath
     preview: PreviewResult | None
     revision: TargetRevision
@@ -4842,7 +5077,12 @@ class GraphOpenResult(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    basis: Annotated[
+        Literal["working"] | None,
+        Field(description="M8 3.6: 작업 연결이 본 작업 기준 사본이면 working"),
+    ] = None
     canonical: Annotated[bool, Field(description="원문이 canonical 형식인가")]
+    change: Annotated[str | None, Field(description="M8 3.6: 그 작업 기준 변경 ID")] = None
     created: Annotated[
         dict[str, str] | None,
         Field(description="graph.create ops의 add_node ref → 새 노드 ID (M5, ops를 줬을 때만)"),
@@ -5683,6 +5923,9 @@ class Methods(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    adopt_request: Annotated[AdoptRequest, Field(alias="adopt.request")]
+    adopt_revert: Annotated[AdoptRevert, Field(alias="adopt.revert")]
+    adoptions_list: Annotated[AdoptionsList, Field(alias="adoptions.list")]
     agent_connections: Annotated[AgentConnections, Field(alias="agent.connections")]
     agent_toolsets_enable: Annotated[AgentToolsetsEnable, Field(alias="agent.toolsets.enable")]
     agent_toolsets_get: Annotated[AgentToolsetsGet, Field(alias="agent.toolsets.get")]
@@ -5703,6 +5946,7 @@ class Methods(BaseModel):
     daemon_shutdown: Annotated[DaemonShutdown, Field(alias="daemon.shutdown")]
     debug_breakpoints_get: Annotated[DebugBreakpointsGet, Field(alias="debug.breakpoints.get")]
     debug_breakpoints_set: Annotated[DebugBreakpointsSet, Field(alias="debug.breakpoints.set")]
+    evidence_pin: Annotated[EvidencePin, Field(alias="evidence.pin")]
     explore_end: Annotated[ExploreEnd, Field(alias="explore.end")]
     explore_list: Annotated[ExploreList, Field(alias="explore.list")]
     explore_start: Annotated[ExploreStart, Field(alias="explore.start")]
@@ -5785,6 +6029,9 @@ class Methods(BaseModel):
     target_read_text: Annotated[TargetReadText, Field(alias="target.read_text")]
     target_save: Annotated[TargetSave, Field(alias="target.save")]
     windows_list: Annotated[WindowsList, Field(alias="windows.list")]
+    working_accept: Annotated[WorkingAccept, Field(alias="working.accept")]
+    working_list: Annotated[WorkingList, Field(alias="working.list")]
+    working_reject: Annotated[WorkingReject, Field(alias="working.reject")]
     workspace_info: Annotated[WorkspaceInfo, Field(alias="workspace.info")]
     workspace_read: Annotated[WorkspaceRead, Field(alias="workspace.read")]
     workspace_tree: Annotated[WorkspaceTree, Field(alias="workspace.tree")]

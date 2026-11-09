@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Literal
 
+from kookabug_core.adopt import path_key
 from kookabug_core.canonical import canonical_dumps
 from kookabug_core.loader import Program, load_program
 from kookabug_core.record.runfolder import SNAPSHOT_DIR
@@ -101,6 +102,8 @@ class Snapshot:
     files: dict[str, int] = field(default_factory=dict[str, int])
     absent: set[str] = field(default_factory=set[str])
     attempts: int = 1
+    overlaid: set[str] = field(default_factory=set[str])
+    """원본 대신 덧씌움 바이트로 쓴 경로 (M8 3.6 작업 기준)."""
 
 
 DEFAULT_LIMITS: Final = SnapshotLimits()
@@ -118,6 +121,7 @@ def take_snapshot(
     limits: SnapshotLimits = DEFAULT_LIMITS,
     on_copy: Callable[[str, int], None] | None = None,
     graph_value: Mapping[str, Any] | None = None,
+    overlay: Mapping[str, bytes] | None = None,
 ) -> Snapshot:
     """`graph`(워크스페이스 기준 경로)와 그것이 참조하는 파일을 `dest`에 복사하고 거기서 읽는다.
 
@@ -128,11 +132,15 @@ def take_snapshot(
     (daemon이 메모리에서 만든 에이전트 제어 실행, M5 3.9 — 워크스페이스에 그래프 파일을 쓰지
     않는다).
     참조하는 target 등은 원본에서 복사한다.
+
+    `overlay`(워크스페이스 기준 경로 → 바이트, M8 3.6)를 주면 그 경로는 원본 대신 그 바이트로 쓴다
+    (작업 기준 덧씌움·채택 검증 manifest). 원본에 없는 경로여도 쓴다. 고정점의 변경 검사 대상이
+    아니다(값으로 고정했으므로).
     """
     root = Path(dest).resolve()
     for attempt in range(1, limits.max_retries + 2):
         _clear(root)
-        copier = _Copier(workspace, root, limits, attempt, on_copy)
+        copier = _Copier(workspace, root, limits, attempt, on_copy, overlay)
         copier.copy(WORKSPACE_FILE)
         if graph_value is not None:
             copier.write_value(graph, graph_value)
@@ -161,6 +169,7 @@ def take_snapshot(
                 {rel: sig[0] for rel, sig in copier.copied.items()},
                 copier.absent,
                 attempt,
+                set(copier.overlaid),
             )
     raise SnapshotError(
         "snapshot_unstable",
@@ -197,7 +206,11 @@ class _Copier:
         limits: SnapshotLimits,
         attempt: int,
         on_copy: Callable[[str, int], None] | None,
+        overlay: Mapping[str, bytes] | None = None,
     ) -> None:
+        self.overlay = {path_key(rel): (rel, data) for rel, data in (overlay or {}).items()}
+        self.overlaid: set[str] = set()
+        """덧씌움 바이트로 쓴 경로 (M8 3.6). 원본 변경 검사 대상이 아니다."""
         self.source = source
         self.source_root = source.root.resolve()
         self.root = root
@@ -213,7 +226,30 @@ class _Copier:
         self.total = 0
 
     def done(self) -> set[str]:
-        return self.copied.keys() | self.absent | self.written
+        return self.copied.keys() | self.absent | self.written | self.overlaid
+
+    def _overlay(self, rel: str) -> bool:
+        """덧씌움 경로면 그 바이트를 쓰고 True. 개인 폴더 규칙은 원본 복사와 같다."""
+        found = self.overlay.get(path_key(rel))
+        if found is None:
+            return False
+        src = self.source.resolve(rel)
+        if src is None or self._private(rel, src):
+            raise SnapshotError("snapshot_failed", f"'{rel}'은(는) 덧씌울 수 있는 경로가 아니다")
+        data = found[1]
+        if self.total + len(data) > self.limits.max_bytes:
+            raise SnapshotError(
+                "snapshot_too_large", f"스냅샷 크기가 {self.limits.max_bytes}바이트를 넘는다"
+            )
+        dst = self.root.joinpath(*rel.split("/"))
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(data)
+        except OSError as exc:
+            raise SnapshotError("snapshot_failed", f"'{rel}'을(를) 쓰지 못했다: {exc}") from exc
+        self.total += len(data)
+        self.overlaid.add(rel)
+        return True
 
     def write_value(self, rel: str, value: Mapping[str, Any]) -> None:
         if self.source.resolve(rel) is None or self._private(rel, self.root / rel):
@@ -230,6 +266,8 @@ class _Copier:
         src = self.source.resolve(rel)
         if src is None or rel in self.done():
             return  # 워크스페이스 경로가 아님(로더가 graph_missing으로 보고) 또는 이미 처리
+        if self._overlay(rel):
+            return
         if self._private(rel, src):
             raise SnapshotError(
                 "snapshot_private_file",

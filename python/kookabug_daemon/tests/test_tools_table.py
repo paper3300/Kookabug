@@ -64,6 +64,17 @@ M7_DENIED = {
 """M7 탐색 세션 목록·화면 지도 승격·버리기·확인·카드 배치 — 사람만 (B3 엄격)."""
 M8_DENIED = {"cheats.list", "cheats.adopt", "cheats.unadopt", "cheats.categories.set"}
 """M8 치트 채택·분류 — 사람만 (B2 엄격: Agent 권한)."""
+M8_DENIED |= {
+    "adopt.request",
+    "adopt.revert",
+    "adoptions.list",
+    "evidence.pin",
+    "working.accept",
+    "working.list",
+    "working.reject",
+}
+"""M8 B3 채택 되돌리기·묶음 수락·거절·목록 — 사람만. `adopt.request`·`evidence.pin`은 B4가 Agent
+도구로 옮길 때까지 사람만."""
 M6_DENIED = {
     "plugins.preview",
     "plugins.install",

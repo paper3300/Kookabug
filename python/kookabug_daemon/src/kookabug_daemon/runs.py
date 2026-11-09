@@ -86,9 +86,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Final, Literal, Protocol, cast
 
+from kookabug_core.adopt import path_key
+from kookabug_core.basis import Frozen
+from kookabug_core.basis import freeze as freeze_basis
 from kookabug_core.canonical import canonical_dumps, loads_strict
 from kookabug_core.engine.debug import ResumeMode
-from kookabug_core.permissions import Decision, Principal
+from kookabug_core.filetx import TxError
+from kookabug_core.knowledge.formats import KnowledgeError
+from kookabug_core.permissions import Decision, Principal, effective_preset
 from kookabug_core.record import follow, read_run, read_run_json
 from kookabug_core.record.index import node_titles
 from kookabug_core.record.policy import AGENT_CONTROL_RECORD
@@ -212,6 +217,8 @@ class StartRequest:
     approved: bool = False
     """ask 판정을 사람이 확인했다 (M5 3.6, `approvals.ApprovalBroker.approve`). ② 단계의 판정에
     넘긴다 — 그 사이 정책이 deny로 바뀌었으면 그대로 거부된다."""
+    basis: str | None = None
+    """M8 3.6 실행 기준 `team`|`working` (None이면 작업 연결은 working, 그 밖은 team)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -520,6 +527,7 @@ class RunManager:
                 "profile": request.profile,
                 "settings": settings,
                 "deadline_ms": request.deadline_ms,
+                "basis": request.basis,
             }
         )
         principal = request.principal
@@ -731,29 +739,102 @@ class RunManager:
         self._prune()
         return result
 
+    def _freeze(self, request: StartRequest) -> Frozen:
+        """실행 기준 (M8 3.6): 요청 값, 없으면 작업 연결은 working·그 밖은 team. `qa_runner`
+        프리셋 Agent는 team만(`basis_denied`)."""
+        principal = request.principal
+        kind = request.basis or ("working" if principal.job is not None else "team")
+        if kind == "working" and principal.kind == "agent":
+            preset = effective_preset(self.service.policy())
+            if preset == "qa_runner":
+                raise RequestFailed(
+                    "basis_denied", "qa_runner 프리셋은 팀 기준(basis: team)으로만 실행한다"
+                )
+        try:
+            return freeze_basis(
+                self.root,
+                "working" if kind == "working" else "team",
+                job=principal.job,
+                agent=principal.id if principal.kind == "agent" else None,
+            )
+        except (KnowledgeError, TxError) as exc:
+            text = f"실행 기준을 고정하지 못했다: {exc}"
+            raise RequestFailed("io_error", text, message=text) from exc
+
+    def start_verify(
+        self,
+        graph: str,
+        *,
+        overlay: Mapping[str, bytes],
+        profile: str | None,
+        basis: Mapping[str, Any],
+        deadline_ms: int | None = None,
+    ) -> str:
+        """자동 채택 검증 실행 (M8 3.8 조건 4·6, R1·E5). **공개 RPC가 아니다** — `adopt.request`
+        처리기만 부른다. Kookabug가 고른 테스트를 manifest 바이트(`overlay` — 의존성 폐포 전체)로만,
+        무인(치트는 무인 분류만)으로 돈다. 그래프 편집·임의 입력 경로가 없다. 시작 예약은
+        `run.start`와 같다(실행 중·녹화 중·종료 중이면 `run_busy`·`recording_active`·
+        `shutting_down`). 실행 ID를 돌려준다 (막히는 호출)."""
+        principal = Principal("user", "kookabug:adopt", attended=False)
+        request = StartRequest(principal=principal, path=graph, profile=profile)
+        decision = Decision("allow", "allow", None, "kookabug:adopt", "human")
+        with self._start_lock:
+            reserved = self._reserve()
+            try:
+                workspace = _open_workspace(self.root)
+                start = start_options(
+                    workspace.run_conditions(),
+                    deadline_ms=deadline_ms,
+                    profile=profile,
+                    settings={},
+                    plugin_modules=self.plugin_modules,
+                    platform=self.platform,
+                )
+                options = replace(
+                    start,
+                    run_id=reserved,
+                    unattended=True,
+                    overlay=dict(overlay),
+                    basis=dict(basis),
+                )
+                try:
+                    handle = self.service.start_decided(decision, graph, options)
+                except (OSError, RuntimeError) as exc:
+                    text = f"실행을 시작할 수 없다: {exc}"
+                    raise RequestFailed("io_error", text, message=text) from exc
+            except BaseException:
+                self._unreserve(reserved)
+                raise
+            return self._register(request, handle, graph, -1, None)["run_id"]
+
     def _prepare_and_launch(
         self, request: StartRequest, where: WsPath, decision: Decision, run_id: str
     ) -> tuple[RunHandle, str, int]:
         """④ 사전 검증 → ⑤ 시작. (핸들, 실행한 그래프 경로)."""
         # ④ 사전 검증 (경로는 잠금 뒤·연산 직전에 다시 해석한다)
         current = recheck_path(self.root, where)
-        if not current.path.is_file():
+        # 실행 기준 고정 (M8 3.6): 이 순간의 작업 기준 덧씌움을 메모리로 읽는다
+        frozen = self._freeze(request)
+        in_overlay = any(path_key(k) == path_key(current.rel) for k in frozen.overlay)
+        if not current.path.is_file() and not in_overlay:
             raise RequestFailed(
                 "not_found", f"그래프 파일이 없다: {request.path}", path=request.path
             )
         workspace = _open_workspace(self.root)
         settings = dict(request.settings)
         options = RunOptions(settings=settings, profile=request.profile)
-        _, diagnostics = check_graph(
-            workspace, current.rel, registry=self._registry(), options=options
-        )
-        errors = [d for d in diagnostics if d.severity == "error"]
-        if errors:
-            raise RequestFailed(
-                "validation_failed",
-                f"실행 전 검증 오류 {len(errors)}개",
-                diagnostics=[d.to_dict() for d in diagnostics],
+        if not frozen.overlay:
+            # 덧씌움 실행은 runner가 스냅샷(덧씌운 바이트)에서 검증한다 — 팀 파일로 미리 보지 않음
+            _, diagnostics = check_graph(
+                workspace, current.rel, registry=self._registry(), options=options
             )
+            errors = [d for d in diagnostics if d.severity == "error"]
+            if errors:
+                raise RequestFailed(
+                    "validation_failed",
+                    f"실행 전 검증 오류 {len(errors)}개",
+                    diagnostics=[d.to_dict() for d in diagnostics],
+                )
         # ⑤ 시작 (②의 판정과 예약한 ID를 넘긴다). 브레이크포인트는 UI 실행에만, 시작 순간의 파일 값
         start = start_options(
             workspace.run_conditions(),
@@ -771,7 +852,15 @@ class RunManager:
             handle = self.service.start_decided(
                 decision,
                 current.rel,
-                replace(start, run_id=run_id, breakpoints=breakpoints, unattended=unattended),
+                replace(
+                    start,
+                    run_id=run_id,
+                    breakpoints=breakpoints,
+                    unattended=unattended,
+                    overlay=frozen.overlay or None,
+                    basis=frozen.record,
+                    job=request.principal.job,
+                ),
                 approved=request.approved,
             )
         except (OSError, RuntimeError) as exc:  # 실행 폴더·Job·파이프를 만들지 못함

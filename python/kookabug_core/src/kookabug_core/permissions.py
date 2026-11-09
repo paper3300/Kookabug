@@ -48,6 +48,7 @@ __all__ = [
     "Toolset",
     "Verdict",
     "decide",
+    "effective_preset",
     "exact_rule",
     "load_policy",
     "parse_rule",
@@ -236,6 +237,8 @@ class Principal:
     kind: Literal["user", "agent"]
     id: str
     attended: bool
+    job: str | None = None
+    """작업 토큰으로 묶인 연결이면 그 작업 ID (M8 R4 — 쓰기가 작업 기준으로 간다. 연결은 B4)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -357,6 +360,14 @@ def _by_toolset(policy: Policy, info: ToolInfo) -> _Pick | None:
             verdict = _toolset_verdict(value, info)
             return _Pick(verdict, layer.layer, f"toolset:{info.toolset}", "toolset")
     return None
+
+
+def effective_preset(policy: Policy) -> str:
+    """판정에 쓰는 프리셋 이름 (프로젝트 → 사용자 → 기본). M8 작업 기준 쓰기 분기(E3)가 본다."""
+    for layer in (policy.project, policy.user):
+        if layer.preset is not None:
+            return layer.preset
+    return DEFAULT_PRESET
 
 
 def _by_preset(policy: Policy, tool: str) -> _Pick:

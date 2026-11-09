@@ -192,6 +192,7 @@ class MethodSpec:
 def registry() -> dict[str, MethodSpec]:
     """이 daemon이 처리하는 메서드. 계약에 있지만 여기 없는 메서드는 `method_not_found`다."""
     from kookabug_daemon.methods import (
+        adopt,
         agent,
         agents,
         approval,
@@ -211,10 +212,13 @@ def registry() -> dict[str, MethodSpec]:
         session,
         target,
         windows,
+        working,
         workspace,
     )
 
     return {
+        **adopt.METHODS,
+        **working.METHODS,
         **agent.METHODS,
         **agents.METHODS,
         **approval.METHODS,

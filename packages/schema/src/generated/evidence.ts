@@ -32,6 +32,19 @@ export interface Evidence {
   format: "kookabug.evidence/0";
   graph_sha?: string | null;
   id: string;
+  /**
+   * 음성 대조 프레임 묶음 (M8 3.8 조건 5, R10): 이 묶음의 프레임에서 targets의 locator가 찾아지면 안 된다. 출처(origin) 필수
+   */
+  negative?: {
+    /**
+     * @minItems 1
+     */
+    frames: [string, ...string[]];
+    /**
+     * @minItems 1
+     */
+    targets: [string, ...string[]];
+  };
   note?: string;
   omitted?: {
     reason: string;

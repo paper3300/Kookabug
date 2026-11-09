@@ -279,6 +279,8 @@ def test_control_thread_and_runtime_share_clock(
             return RunResult("r1", "pass", "pass", "", None, None, [])
 
     monkeypatch.setattr(run_module, "Executor", _Executor)
+    # 프로그램 없이 실행기만 부르는 검사: run.json qa 기록(M8 B2)은 이 검사의 대상이 아니다
+    monkeypatch.setattr(runner, "_set_qa", lambda *a, **k: None)  # pyright: ignore[reportUnknownLambdaType]
     now[0] = 300_000_000  # 300 ms
     runner._run_program(None, None)  # pyright: ignore[reportPrivateUsage, reportArgumentType]
     assert captured["clock"] is runner.clock

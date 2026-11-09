@@ -594,6 +594,12 @@ export interface RunSpec {
     id: string;
   };
   /**
+   * M8 3.6: run.json basis에 그대로 남길 실행 기준 기록 (형식은 run.schema.json basis)
+   */
+  basis?: {
+    [k: string]: unknown | undefined;
+  };
+  /**
    * 에이전트 제어 실행의 대상 창 (M7 R1): daemon이 정한 바인딩. runner는 다시 찾지 않고 이 창에만 붙는다(PID·생성 시각·제목이 정확히 같아야). hwnd 0은 daemon이 창을 하나로 정하지 못함 — 붙지 않는다
    */
   bound_window?: {
@@ -640,9 +646,27 @@ export interface RunSpec {
     [k: string]: unknown | undefined;
   };
   /**
+   * M8: 이 실행을 낸 작업 ID
+   */
+  job?: string | null;
+  /**
    * 감독자가 만든 실행 Job 이름. runner는 어떤 자식도 띄우기 전에 자기를 넣는다
    */
   job_name: string;
+  /**
+   * M8 3.6: 스냅샷 덧씌움 (워크스페이스 기준 경로 → 감독자가 시작 때 실행 폴더에 고정한 바이트). 스냅샷은 이 경로를 원본 대신 이 바이트로 복사한다
+   */
+  overlay?: {
+    [k: string]:
+      | {
+          /**
+           * 실행 폴더 기준 고정 사본 경로 (overlay/<n>.bin)
+           */
+          file: string;
+          sha256: string;
+        }
+      | undefined;
+  };
   platform: RunSpecPlatform;
   /**
    * 워커가 import할 플러그인 모듈 (개발용 --plugin-module). 비면 워커를 띄우지 않는다

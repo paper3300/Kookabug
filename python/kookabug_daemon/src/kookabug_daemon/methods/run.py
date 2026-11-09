@@ -61,6 +61,7 @@ async def _start(call: Call) -> dict[str, Any]:
         # 사람이 UI에서 시작한 실행만 디버그 대상 (주체 kind가 아니라 연결 종류로, M3 2.1)
         ui=call.client_kind == "ui",
         approved=approved,
+        basis=None if params.get("basis") is None else str(params["basis"]),
     )
     return await asyncio.to_thread(call.daemon.run_manager.start, request)
 

@@ -9,19 +9,26 @@
 from __future__ import annotations
 
 import asyncio
+import copy
+import hashlib
 from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any, Final
 
+from kookabug_core import basis
+from kookabug_core.canonical import loads_strict, save_text
+from kookabug_core.knowledge.formats import Actor, KnowledgeError
 from kookabug_core.workspace import Workspace
 from kookabug_daemon.documents import RUNS_NAME, WsPath, resolve_path
 from kookabug_daemon.frames import EditorFrame, FrameCache
 from kookabug_daemon.methods import Call, Handler, MethodSpec
+from kookabug_daemon.methods.adopt import failed
 from kookabug_daemon.methods.graph import request_int
 from kookabug_daemon.methods.tools import agent_use_safe_api
 from kookabug_daemon.methods.windows import (  # noqa: F401 — RealSource가 이 이름으로 찾는다
     capture_window,
 )
+from kookabug_daemon.methods.working import refuse_policy_path, working_actor
 from kookabug_daemon.protocol import InvalidParams, RequestFailed
 from kookabug_daemon.screen_source import Grab
 from kookabug_daemon.targets import read_bytes, require_platform, target_path
@@ -300,8 +307,14 @@ async def _save(call: Call) -> dict[str, Any]:
             "permission_denied",
             "targets/screens/는 화면 지도 승격(사람) 자리라 에이전트가 쓰지 않는다",
         )
+    refuse_policy_path(call, where.given, where.rel)
     base: Any = params["base_revision"]
     crop = await asyncio.to_thread(_save_crop, call)
+    actor = working_actor(call)
+    if actor is not None:
+        return await asyncio.to_thread(
+            _save_working, call, where, actor, crop, None if base is None else str(base)
+        )
     outcome = await asyncio.to_thread(
         call.daemon.targets.save,
         where,
@@ -314,6 +327,99 @@ async def _save(call: Call) -> dict[str, Any]:
         "revision": outcome.revision,
         "preview": outcome.preview,
         "warnings": outcome.warnings,
+    }
+
+
+def _view_revision(json_bytes: bytes | None, png: bytes | None) -> str | None:
+    if json_bytes is None:
+        return None
+    image = "missing" if png is None else hashlib.sha256(png).hexdigest()
+    return f"{hashlib.sha256(json_bytes).hexdigest()}:{image}"
+
+
+def _save_working(
+    call: Call,
+    where: WsPath,
+    actor: Actor,
+    crop: Mapping[str, Any] | None,
+    base_revision: str | None,
+) -> dict[str, Any]:
+    """작업 기준 target 쓰기 (E3·R4, 막히는 호출): 팀 파일은 읽기만 한다. 이미지 이름은 지금 보기의
+    `image`(제자리 수리 — 같은 경로의 PNG 바이트만 바뀐다), 없으면 `<이름>.png`. 쓰기 전에 그 정지
+    화면에서 바로 찾아지는지 본다(팀 저장과 같은 규칙)."""
+    from kookabug_core.adopt import image_rel
+    from kookabug_daemon.targets import (
+        _check_spec,  # pyright: ignore[reportPrivateUsage]
+        _crop_image,  # pyright: ignore[reportPrivateUsage]
+        _fill_defaults,  # pyright: ignore[reportPrivateUsage]
+        _fill_frame,  # pyright: ignore[reportPrivateUsage]
+    )
+    from kookabug_platform.frames import encode_png
+
+    root = call.daemon.root
+    params = call.params
+    data, _ = basis.view(root, where.rel, job=actor.job, agent=actor.id)
+    current: dict[str, Any] | None = None
+    text: str | None = None
+    if data is not None:
+        text = data.decode("utf-8", errors="replace")
+        parsed = loads_strict(text)
+        current = parsed if isinstance(parsed, dict) else None
+    old_image = None if current is None else image_rel(where.rel, current)
+    png_now = None
+    if old_image is not None:
+        png_now, _ = basis.view(root, old_image, job=actor.job, agent=actor.id)
+    revision = _view_revision(data, png_now)
+    if base_revision is None and data is not None:
+        raise RequestFailed("exists", f"'{where.given}'이(가) 이미 있다", revision=revision)
+    if base_revision is not None and revision != base_revision:
+        raise RequestFailed(
+            "revision_conflict",
+            "target이 밖에서 바뀌었다 (작업 기준 보기가 기준 revision과 다르다)",
+            revision=revision,
+        )
+    stem = where.path.name[: -len(".target.json")]
+    name = str(current["image"]) if current is not None and "image" in current else f"{stem}.png"
+    value = _fill_defaults(params["spec"], name)
+    files: dict[str, bytes] = {}
+    preview: Any = None
+    if crop is not None:
+        frame = call.daemon.frames.get(str(crop["frame_id"]))
+        pixels, _ = _crop_image(frame, crop["rect"])
+        _check_spec(value, where.rel)
+        _fill_frame(value, frame)
+        png = bytes(encode_png(pixels))
+        preview = call.daemon.targets._expected_preview(where, value, frame, png)  # pyright: ignore[reportPrivateUsage]
+        image = image_rel(where.rel, value)
+        if image is None:
+            raise RequestFailed("target_invalid", "target image 경로가 틀렸다", diagnostics=[])
+        files[image] = png
+    else:
+        if current is None or png_now is None:
+            raise RequestFailed(
+                "target_invalid", "새 target은 crop(템플릿 영역)이 있어야 한다", diagnostics=[]
+            )
+        if current.get("recorded") is not None:
+            value["recorded"] = copy.deepcopy(current["recorded"])
+        else:
+            value.pop("recorded", None)
+        _check_spec(value, where.rel)
+        png = png_now
+    out = save_text(text, value).encode("utf-8")
+    files[where.rel] = out
+    expect = {where.rel: None if data is None else hashlib.sha256(data).hexdigest()}
+    try:
+        doc = basis.write(root, files, actor=actor, kind="target", expect=expect)
+    except KnowledgeError as exc:
+        raise failed(exc) from exc
+    image = image_rel(where.rel, value) or name
+    return {
+        "image": image,
+        "revision": _view_revision(out, png),
+        "preview": preview,
+        "warnings": [],
+        "basis": "working",
+        "change": str(doc["id"]),
     }
 
 

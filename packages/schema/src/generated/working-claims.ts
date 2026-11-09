@@ -17,5 +17,9 @@ export interface WorkingClaim {
     job?: string | null;
   };
   claim: import("./claims.js").Claim;
+  /**
+   * 이 덧씌움의 지난 작업 rev (보고 항목이 가리킨 rev를 찾을 때, B3). 지우지 않는다
+   */
+  history?: import("./claims.js").Claim[];
   ops: ("mark_conflicted" | "revise" | "set_status" | "supersede")[];
 }

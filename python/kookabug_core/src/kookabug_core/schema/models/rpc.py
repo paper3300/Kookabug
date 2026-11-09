@@ -308,6 +308,20 @@ class Control(BaseModel):
     pipe: str
 
 
+class Overlay(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    file: Annotated[
+        str,
+        Field(
+            description="실행 폴더 기준 고정 사본 경로 (overlay/<n>.bin)",
+            pattern="^overlay/[0-9]{1,6}\\.bin$",
+        ),
+    ]
+    sha256: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
+
+
 class Hooks(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -881,6 +895,12 @@ class RunSpec(BaseModel):
     agent: Annotated[
         Agent | None, Field(description="그 실행을 낸 에이전트 (M5 에이전트 제어 실행)")
     ] = None
+    basis: Annotated[
+        dict[str, Any] | None,
+        Field(
+            description="M8 3.6: run.json basis에 그대로 남길 실행 기준 기록 (형식은 run.schema.json basis)"
+        ),
+    ] = None
     bound_window: Annotated[
         BoundWindow | None,
         Field(
@@ -922,12 +942,19 @@ class RunSpec(BaseModel):
             description="루트 그래프 값 (M5 에이전트 제어 실행 — daemon 내부 진입점만 채운다). 있으면 graph 자리의 워크스페이스 파일 대신 이 값을 스냅샷에 쓴다"
         ),
     ] = None
+    job: Annotated[str | None, Field(description="M8: 이 실행을 낸 작업 ID")] = None
     job_name: Annotated[
         str,
         Field(
             description="감독자가 만든 실행 Job 이름. runner는 어떤 자식도 띄우기 전에 자기를 넣는다"
         ),
     ]
+    overlay: Annotated[
+        dict[str, Overlay] | None,
+        Field(
+            description="M8 3.6: 스냅샷 덧씌움 (워크스페이스 기준 경로 → 감독자가 시작 때 실행 폴더에 고정한 바이트). 스냅샷은 이 경로를 원본 대신 이 바이트로 복사한다"
+        ),
+    ] = None
     platform: RunSpecPlatform
     plugin_modules: Annotated[
         list[str],

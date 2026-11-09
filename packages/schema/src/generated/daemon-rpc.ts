@@ -233,7 +233,14 @@ export type RequestFailedCode =
   | "screens_busy"
   | "session_not_allowed"
   | "approval_cancelled"
-  | "recovery_pending";
+  | "recovery_pending"
+  | "basis_denied"
+  | "policy_path"
+  | "knowledge_busy"
+  | "already_reverted"
+  | "change_not_active"
+  | "nothing_to_revert"
+  | "evidence_missing";
 /**
  * 플러그인 작업 ID (= 설치 거래 ID, 작업 로그 이름)
  *
@@ -1434,9 +1441,17 @@ export interface GraphOpenParams {
  */
 export interface GraphOpenResult {
   /**
+   * M8 3.6: 작업 연결이 본 작업 기준 사본이면 working
+   */
+  basis?: "working";
+  /**
    * 원문이 canonical 형식인가
    */
   canonical: boolean;
+  /**
+   * M8 3.6: 그 작업 기준 변경 ID
+   */
+  change?: string;
   /**
    * graph.create ops의 add_node ref → 새 노드 ID (M5, ops를 줬을 때만)
    */
@@ -1537,6 +1552,14 @@ export interface GraphPatchRemovedRef {
  */
 export interface GraphPatchResult {
   /**
+   * M8 E3: 작업 기준으로 썼으면 working (팀 파일은 그대로)
+   */
+  basis?: "working";
+  /**
+   * M8 E3: 쓴 작업 기준 변경 ID
+   */
+  change?: string;
+  /**
    * add_node ref → 새 노드 ID
    */
   created: {
@@ -1597,6 +1620,641 @@ export interface GraphValidateResult {
   diagnostics: Diagnostic[];
   seq: RequestSeq;
   shapes: NodeShapes;
+}
+/**
+ * adopt.request: 사건의 작업 기준 변경 하나를 자동 채택 조건 1~8로 검사해 팀에 게시 (M8 3.8·R1). 검증 실행은 Kookabug가 고른다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8AdoptRequestParams".
+ */
+export interface Kb8AdoptRequestParams {
+  case: string;
+  change: string;
+  /**
+   * @maxItems 16
+   */
+  negatives?:
+    | []
+    | [
+        {
+          frame_id: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        }
+      ]
+    | [
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        },
+        {
+          frame_id: string;
+          note: string;
+        }
+      ];
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8AdoptRequestResult".
+ */
+export interface Kb8AdoptRequestResult {
+  adopted: boolean;
+  adoption: string | null;
+  failed: {
+    code: string;
+    condition: number;
+    detail: string;
+  } | null;
+  kept: "working";
+  manifest: string | null;
+  negatives: string[];
+  runs: string[];
+}
+/**
+ * adopt.revert: 채택(자동·수락)을 한 번 되돌린다 (사람 전용). 팀 파일이 채택 뒤 바이트일 때만
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8AdoptRevertParams".
+ */
+export interface Kb8AdoptRevertParams {
+  adoption: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8AdoptRevertResult".
+ */
+export interface Kb8AdoptRevertResult {
+  adoption: string;
+  files: string[];
+  reverted: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8AdoptionsListResult".
+ */
+export interface Kb8AdoptionsListResult {
+  adoptions: {
+    [k: string]: unknown | undefined;
+  }[];
 }
 export interface Kb8CheatAdoptionValue {
   at: string;
@@ -1697,6 +2355,74 @@ export interface Kb8CheatsUnadoptParams {
   rev: number;
 }
 /**
+ * evidence.pin: 실행 기록에서 가림 처리한 최소 증거 묶음을 knowledge/evidence/에 고정 (지우거나 고치는 도구 없음)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8EvidencePinParams".
+ */
+export interface Kb8EvidencePinParams {
+  note: string;
+  run: string;
+  step?: string | null;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8EvidencePinResult".
+ */
+export interface Kb8EvidencePinResult {
+  files: string[];
+  id: string;
+  omitted: {
+    [k: string]: unknown | undefined;
+  }[];
+}
+/**
+ * working.accept·working.reject: 작업 기준 변경(파일)과 작업 주장 rev를 한 거래로 수락하거나 덧씌움에서 뺀다 (사람 전용). claims의 rev는 보고가 가리킨 작업 rev — 지금과 다르면 revision_conflict
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8WorkingDecideParams".
+ */
+export interface Kb8WorkingDecideParams {
+  /**
+   * @maxItems 200
+   */
+  changes?: string[];
+  /**
+   * @maxItems 200
+   */
+  claims?: {
+    id: string;
+    rev: number;
+  }[];
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8WorkingDecideResult".
+ */
+export interface Kb8WorkingDecideResult {
+  adoption: string | null;
+  changes: string[];
+  claims: {
+    [k: string]: unknown | undefined;
+  }[];
+  conflicts: {
+    [k: string]: unknown | undefined;
+  }[];
+  files: string[];
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8WorkingListResult".
+ */
+export interface Kb8WorkingListResult {
+  changes: {
+    [k: string]: unknown | undefined;
+  }[];
+  claims: {
+    [k: string]: unknown | undefined;
+  }[];
+}
+/**
  * 입력 임대권 소유자 (없으면 null). 녹화 세션이면 kind recorder (상태 바 '입력: 녹화')
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -1738,6 +2464,24 @@ export interface MatchInfo {
  * via the `definition` "Methods".
  */
 export interface Methods {
+  "adopt.request": {
+    params: Kb8AdoptRequestParams;
+    renderer: false;
+    result: Kb8AdoptRequestResult;
+    tool: "ui_only";
+  };
+  "adopt.revert": {
+    params: Kb8AdoptRevertParams;
+    renderer: false;
+    result: Kb8AdoptRevertResult;
+    tool: "ui_only";
+  };
+  "adoptions.list": {
+    params: EmptyParams;
+    renderer: false;
+    result: Kb8AdoptionsListResult;
+    tool: "ui_only";
+  };
   "agent.connections": {
     params: EmptyParams;
     renderer: true;
@@ -1856,6 +2600,12 @@ export interface Methods {
     params: BreakpointsSetParams;
     renderer: true;
     result: BreakpointsResult;
+    tool: "ui_only";
+  };
+  "evidence.pin": {
+    params: Kb8EvidencePinParams;
+    renderer: false;
+    result: Kb8EvidencePinResult;
     tool: "ui_only";
   };
   "explore.end": {
@@ -2325,6 +3075,24 @@ export interface Methods {
     renderer: true;
     result: WindowsListResult;
     tool: "kb_screen_capture";
+  };
+  "working.accept": {
+    params: Kb8WorkingDecideParams;
+    renderer: false;
+    result: Kb8WorkingDecideResult;
+    tool: "ui_only";
+  };
+  "working.list": {
+    params: EmptyParams;
+    renderer: false;
+    result: Kb8WorkingListResult;
+    tool: "ui_only";
+  };
+  "working.reject": {
+    params: Kb8WorkingDecideParams;
+    renderer: false;
+    result: Kb8WorkingDecideResult;
+    tool: "ui_only";
   };
   "workspace.info": {
     params: EmptyParams;
@@ -3440,6 +4208,10 @@ export interface RunSearchResult {
  * via the `definition` "RunStartParams".
  */
 export interface RunStartParams {
+  /**
+   * M8 3.6 실행 기준: team(팀 파일만) | working(시작 때 작업 기준 덧씌움 고정). 생략하면 작업 연결은 working, 그 밖은 team
+   */
+  basis?: "team" | "working";
   deadline_ms?: number;
   idempotency_key?: string;
   path: WorkspacePath;
@@ -4181,6 +4953,14 @@ export interface RunCropRef {
  * via the `definition` "TargetSaveResult".
  */
 export interface TargetSaveResult {
+  /**
+   * M8 E3: 작업 기준으로 썼으면 working (팀 파일은 그대로)
+   */
+  basis?: "working";
+  /**
+   * M8 E3: 쓴 작업 기준 변경 ID
+   */
+  change?: string;
   image: WorkspacePath;
   preview: PreviewResult | null;
   revision: TargetRevision;

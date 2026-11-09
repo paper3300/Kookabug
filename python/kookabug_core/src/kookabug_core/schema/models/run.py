@@ -16,6 +16,35 @@ class Agent(BaseModel):
     id: str
 
 
+type KnowledgeAdditionalProperty = Annotated[int, Field(ge=0)]
+
+
+type FilesAdditionalProperty = Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
+
+
+class WorkingItem(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    files: dict[str, FilesAdditionalProperty]
+    id: str
+
+
+class Basis(BaseModel):
+    """
+    M8 3.6 실행 기준 고정: team = 팀 파일만, working = 시작 때 고정한 작업 기준 덧씌움(변경 ID·경로별 sha). stale = 팀 파일이 바뀌어 뺀 변경. adopt = 자동 채택 검증 실행이면 그 manifest digest
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    adopt: str | None = None
+    kind: Literal["team", "working"]
+    knowledge: dict[str, KnowledgeAdditionalProperty]
+    stale: list[str]
+    working: list[WorkingItem]
+
+
 class FailurePath(RootModel[list[str]]):
     root: Annotated[list[str], Field(min_length=1)]
 
@@ -258,6 +287,12 @@ class Run(BaseModel):
             description="에이전트용 비밀값 분류(이벤트 secret_paths·스텝 secret·agent_withhold)를 남긴 기록 (M5 3.8). 없으면 daemon은 에이전트에게 안전 필드(판정·스텝·노드·출구·상태·오류 코드·시각·기간)만 준다"
         ),
     ] = None
+    basis: Annotated[
+        Basis | None,
+        Field(
+            description="M8 3.6 실행 기준 고정: team = 팀 파일만, working = 시작 때 고정한 작업 기준 덧씌움(변경 ID·경로별 sha). stale = 팀 파일이 바뀌어 뺀 변경. adopt = 자동 채택 검증 실행이면 그 manifest digest"
+        ),
+    ] = None
     code: str | None = None
     conditions: Conditions | None = None
     debug_intervened: Annotated[bool | None, Field(description="디버거가 개입한 실행")] = None
@@ -269,6 +304,9 @@ class Run(BaseModel):
     format: Literal["kookabug.run/0"]
     game_build: str | None = None
     graph: Annotated[str, Field(description="실행한 테스트 그래프 (워크스페이스 기준)")]
+    job: Annotated[
+        str | None, Field(description="M8: 이 실행을 낸 agent-job 작업 ID (없으면 작업 밖)")
+    ] = None
     observed: Observed | None = None
     packages: Annotated[dict[str, str] | None, Field(description="패키지 이름 → 버전")] = None
     pause_count: Annotated[int | None, Field(ge=0)] = None

@@ -20,6 +20,7 @@ from kookabug_daemon.protocol import UI_ONLY, RequestFailed
 __all__ = [
     "AGENT_DENIED",
     "AGENT_RAW",
+    "HUMAN_BASIS_METHODS",
     "HUMAN_CHEAT_METHODS",
     "HUMAN_SCREEN_METHODS",
     "METHOD_TOOLS",
@@ -87,6 +88,21 @@ HUMAN_CHEAT_METHODS: Final = frozenset(
     {"cheats.list", "cheats.adopt", "cheats.unadopt", "cheats.categories.set"}
 )
 """M8 치트 채택·분류 (계획 3.2·3.5·3.13, 엄격: Agent 권한). 처리기는 `methods.cheats`."""
+
+HUMAN_BASIS_METHODS: Final = frozenset(
+    {
+        "adopt.request",
+        "adopt.revert",
+        "adoptions.list",
+        "evidence.pin",
+        "working.accept",
+        "working.list",
+        "working.reject",
+    }
+)
+"""M8 두 기준·채택 (계획 3.8·3.13, B3, 엄격: Agent 권한). 되돌리기·묶음 수락·거절·목록은 사람
+전용. `adopt.request`·`evidence.pin`은 B4가 툴셋 `cases`의 도구(`kb_adopt_request`·
+`kb_evidence_pin`)로 옮길 때까지 사람 연결만 (에이전트 연결은 판정 전에 거부)."""
 
 METHOD_TOOLS: Final[dict[str, str]] = {
     "session.hello": UI_ONLY,
@@ -173,6 +189,8 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     **dict.fromkeys(sorted(PLUGIN_CHANGE_METHODS), UI_ONLY),
     # M8 B2: 치트 채택·분류 — 사람만 (Agent는 후보만, 채택·분류는 못 한다)
     **dict.fromkeys(sorted(HUMAN_CHEAT_METHODS), UI_ONLY),
+    # M8 B3: 채택·되돌리기·묶음 수락·증거 고정 — 지금은 사람만 (B4가 Agent 도구를 붙인다)
+    **dict.fromkeys(sorted(HUMAN_BASIS_METHODS), UI_ONLY),
 }
 
 AGENT_DENIED: Final = frozenset(
@@ -202,6 +220,8 @@ AGENT_DENIED: Final = frozenset(
         *HUMAN_SCREEN_METHODS,
         # 에이전트는 치트를 채택·분류하지 못한다 (M8 3.2·3.5, B2)
         *HUMAN_CHEAT_METHODS,
+        # 에이전트는 채택을 되돌리거나 작업 기준을 팀에 수락하지 못한다 (M8 3.8, B3)
+        *HUMAN_BASIS_METHODS,
     }
 )
 """`ui_only`이지만 agent 연결에는 판정 전에 거부하는 메서드. `ui_only`는 판정을 건너뛰므로

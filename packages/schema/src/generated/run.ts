@@ -50,6 +50,23 @@ export interface Run {
    * 에이전트용 비밀값 분류(이벤트 secret_paths·스텝 secret·agent_withhold)를 남긴 기록 (M5 3.8). 없으면 daemon은 에이전트에게 안전 필드(판정·스텝·노드·출구·상태·오류 코드·시각·기간)만 준다
    */
   agent_mask?: 1;
+  /**
+   * M8 3.6 실행 기준 고정: team = 팀 파일만, working = 시작 때 고정한 작업 기준 덧씌움(변경 ID·경로별 sha). stale = 팀 파일이 바뀌어 뺀 변경. adopt = 자동 채택 검증 실행이면 그 manifest digest
+   */
+  basis?: {
+    adopt?: string;
+    kind: "team" | "working";
+    knowledge: {
+      [k: string]: number | undefined;
+    };
+    stale: string[];
+    working: {
+      files: {
+        [k: string]: string | undefined;
+      };
+      id: string;
+    }[];
+  };
   code?: string;
   conditions?: Conditions;
   /**
@@ -67,6 +84,10 @@ export interface Run {
    * 실행한 테스트 그래프 (워크스페이스 기준)
    */
   graph: string;
+  /**
+   * M8: 이 실행을 낸 agent-job 작업 ID (없으면 작업 밖)
+   */
+  job?: string | null;
   observed?: Observed;
   /**
    * 패키지 이름 → 버전

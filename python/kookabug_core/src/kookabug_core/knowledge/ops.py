@@ -48,7 +48,15 @@ from kookabug_core.knowledge.formats import (
 )
 from kookabug_core.workspace import Workspace, WorkspaceError
 
-__all__ = ["MAX_WIKI_BYTES", "apply", "check_wiki_path", "refresh_wiki", "wiki_write"]
+__all__ = [
+    "MAX_WIKI_BYTES",
+    "apply",
+    "check_wiki_path",
+    "decide_working_claims",
+    "log_into",
+    "refresh_wiki",
+    "wiki_write",
+]
 
 MAX_WIKI_BYTES: Final = 1 << 20
 REQUEST_ID: Final = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
@@ -183,6 +191,13 @@ class _Engine:
         """기존 팀 `expected`의 새 작업 rev를 덧씌움에 쓴다 (팀 파일은 그대로). `base_rev`는 처음
         덧씌울 때의 팀 rev를 유지한다."""
         entries, pos = self._working_pos(feature, str(team_item["id"]))
+        history: list[dict[str, Any]] = []
+        if pos is not None:
+            # 지난 작업 rev는 지우지 않는다 (보고 항목이 가리킨 rev를 찾을 때, B3)
+            history = list(entries[pos].get("history", []))
+            old = entries[pos]["claim"]
+            if old.get("rev") != new.get("rev"):
+                history.append(copy.deepcopy(old))
         entry = {
             "at": now(),
             "base_rev": int(team_item["rev"]) if pos is None else entries[pos]["base_rev"],
@@ -190,6 +205,8 @@ class _Engine:
             "claim": new,
             "ops": sorted({*(entries[pos]["ops"] if pos is not None else []), op}),
         }
+        if history:
+            entry["history"] = history
         if pos is None:
             entries.append(entry)
         else:
@@ -757,6 +774,22 @@ def _log_bytes(
     return body, None if old is None else filetx.sha256_of(old), [*existing, *lines]
 
 
+def log_into(
+    root: Path, tx: filetx.Tx, entries: list[dict[str, Any]], actor: Actor
+) -> list[dict[str, Any]]:
+    """감사 이력 줄을 거래에 더한다(`log.jsonl` + `wiki/log.md` 렌더). 작업 기준 쓰기·채택·되돌리기·
+    수락·증거 고정이 같은 규칙으로 남긴다 (B3). 전체 줄을 돌려준다."""
+    body, sha, all_lines = _log_bytes(root, entries, actor, None)
+    tx.write(LOG_FILE, body, expect_sha=sha)
+    old = filetx.read(root, "wiki/log.md")
+    tx.write(
+        "wiki/log.md",
+        render.render_log(all_lines).encode("utf-8"),
+        expect_sha=None if old is None else filetx.sha256_of(old),
+    )
+    return all_lines
+
+
 def _wiki_pages(root: Path) -> tuple[list[str], list[str]]:
     """(`wiki/` 기준 페이지들 — 색인·일지·보고 제외, 보고 파일 이름들). 링크·정션은 따라가지
     않는다."""
@@ -1036,6 +1069,119 @@ def _apply_locked(
     commit = tx.commit()
     result["warnings"] = commit["warnings"]
     return result
+
+
+# ---------------------------------------------------------------- 작업 주장 수락·거절 (B3)
+
+
+def decide_working_claims(
+    root: Path,
+    tx: filetx.Tx,
+    refs: Iterable[Mapping[str, Any]],
+    *,
+    actor: Actor,
+    accept: bool,
+) -> dict[str, Any]:
+    """작업 주장 덧씌움(R4)의 사람 수락·거절을 거래에 더한다 (잠금은 부르는 쪽, `filetx.locked`).
+
+    - 대상은 `{id, rev}` — rev는 보고가 가리킨 **작업 rev**다. 덧씌움의 지금 작업 rev와 다르면
+      `revision_conflict`(그 사이 Agent가 더 고쳤다 — 보고를 다시 본다)
+    - 수락: 팀 주장 rev가 덧씌움의 `base_rev`와 다르면 `revision_conflict`(팀이 그 사이 바뀜).
+      같으면 그 작업 rev 내용을 팀 rev+1로 올리고(옛 팀 rev는 history) 근거 규칙을 다시
+      검사한다. 수락한 주장이 낀 의미 충돌을 다시 찾아 둘 다 `conflicted`로 둔다(사람 연산이라
+      팀 파일에 바로)
+    - 거절: 덧씌움에서 뺀다 (팀 파일 그대로)
+
+    결과 `{claims: [{id, rev, file}], conflicts, entries}` — `entries`는 감사 이력 줄(부르는 쪽이
+    `log_into`로 남긴다)."""
+    workspace = Workspace.open(root)
+    engine = _Engine(root, workspace, actor)
+    done: list[dict[str, Any]] = []
+    for index, ref in enumerate(refs):
+        claim_id = str(ref.get("id"))
+        feature = claim_id.split(".", 1)[0]
+        if file_kind(f"features/{feature}") is None:
+            raise KnowledgeError("unknown_id", "없는 주장이다", id=claim_id, index=index)
+        entries, pos = engine._working_pos(feature, claim_id)  # pyright: ignore[reportPrivateUsage]
+        if pos is None:
+            raise KnowledgeError(
+                "unknown_id", "작업 기준에 없는 주장이다", id=claim_id, index=index
+            )
+        entry = entries[pos]
+        if int(entry["claim"]["rev"]) != int(ref.get("rev", -1)):
+            raise KnowledgeError(
+                "revision_conflict",
+                "작업 주장이 보고 뒤에 바뀌었다 — 보고를 다시 본다",
+                id=claim_id,
+                rev=entry["claim"]["rev"],
+                index=index,
+            )
+        file = f"features/{feature}"
+        if accept:
+            loaded = engine.doc(file)
+            items = _items(loaded.doc, "claims")
+            tpos = engine.find(items, claim_id)
+            if tpos is None:
+                raise KnowledgeError("unknown_id", "팀 파일에 없는 주장이다", id=claim_id)
+            team_item = items[tpos]
+            if int(team_item["rev"]) != int(entry["base_rev"]):
+                raise KnowledgeError(
+                    "revision_conflict",
+                    "팀 주장이 작업 기준을 만든 뒤 바뀌었다",
+                    id=claim_id,
+                    rev=team_item["rev"],
+                    index=index,
+                )
+            new = copy.deepcopy(entry["claim"])
+            new["rev"] = int(team_item["rev"]) + 1
+            engine.check_item("claims", new, f"claims/{index}")
+            cast(list[dict[str, Any]], loaded.doc.setdefault("history", [])).append(
+                copy.deepcopy(team_item)
+            )
+            items[tpos] = new
+            engine.touched.add(file)
+            engine.bumped.add((file, claim_id))
+            engine.changed.add((file, claim_id))
+            done.append({"id": claim_id, "rev": new["rev"], "file": file})
+        else:
+            done.append({"id": claim_id, "rev": entry["claim"]["rev"], "file": None})
+        del entries[pos]
+        engine.touched_working.add(feature)
+        engine.entries.append(
+            {
+                "op": "accept_working_claim" if accept else "reject_working_claim",
+                "file": file if accept else store.working_claims_rel(feature),
+                "id": claim_id,
+                "base_rev": entry["base_rev"],
+                "new_rev": done[-1]["rev"],
+                "basis": [],
+                "fields": [],
+                "result": "applied",
+            }
+        )
+    if accept:
+        engine.semantic_conflicts()
+    for file in sorted(engine.touched):
+        loaded = engine.team[file]
+        loaded.doc["revision"] = engine.start[file] + 1
+        problem = shape_problem(loaded.doc, "claims")
+        if problem is not None:
+            raise KnowledgeError("format", f"{file}: 결과 형식이 틀렸다 ({problem})")
+        tx.write(loaded.rel, store.encode(loaded.doc), expect_sha=loaded.sha)
+    for feature in sorted(engine.touched_working):
+        over = engine.working[feature]
+        over.doc["revision"] = int(over.doc["revision"]) + 1
+        tx.write(over.rel, store.encode(over.doc), expect_sha=over.sha)
+    changed_features = [f.split("/", 1)[1] for f in engine.touched if f.startswith("features/")]
+    if changed_features:
+        refresh_wiki(
+            root,
+            tx,
+            features=_all_features(root, engine),
+            changed_features=changed_features,
+            log_entries=None,
+        )
+    return {"claims": done, "conflicts": engine.conflicts, "entries": engine.entries}
 
 
 # ---------------------------------------------------------------- 위키 쓰기

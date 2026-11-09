@@ -1228,9 +1228,17 @@
       "additionalProperties": false,
       "description": "value는 Python이 읽은 값. 원문 텍스트는 보내지 않는다",
       "properties": {
+        "basis": {
+          "description": "M8 3.6: 작업 연결이 본 작업 기준 사본이면 working",
+          "enum": ["working"]
+        },
         "canonical": {
           "description": "원문이 canonical 형식인가",
           "type": "boolean"
+        },
+        "change": {
+          "description": "M8 3.6: 그 작업 기준 변경 ID",
+          "type": "string"
         },
         "created": {
           "additionalProperties": {
@@ -1540,6 +1548,14 @@
     "GraphPatchResult": {
       "additionalProperties": false,
       "properties": {
+        "basis": {
+          "description": "M8 E3: 작업 기준으로 썼으면 working (팀 파일은 그대로)",
+          "enum": ["working"]
+        },
+        "change": {
+          "description": "M8 E3: 쓴 작업 기준 변경 ID",
+          "type": "string"
+        },
         "created": {
           "additionalProperties": {
             "type": "string"
@@ -1711,6 +1727,146 @@
     "JsonRpcVersion": {
       "const": "2.0",
       "title": "JsonRpcVersion"
+    },
+    "Kb8AdoptRequestParams": {
+      "additionalProperties": false,
+      "description": "adopt.request: 사건의 작업 기준 변경 하나를 자동 채택 조건 1~8로 검사해 팀에 게시 (M8 3.8·R1). 검증 실행은 Kookabug가 고른다",
+      "properties": {
+        "case": {
+          "pattern": "^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+          "type": "string"
+        },
+        "change": {
+          "pattern": "^w-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+          "type": "string"
+        },
+        "negatives": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "frame_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "note": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": ["frame_id", "note"],
+            "type": "object"
+          },
+          "maxItems": 16,
+          "type": "array"
+        }
+      },
+      "required": ["case", "change"],
+      "title": "Kb8AdoptRequestParams",
+      "type": "object"
+    },
+    "Kb8AdoptRequestResult": {
+      "additionalProperties": false,
+      "properties": {
+        "adopted": {
+          "type": "boolean"
+        },
+        "adoption": {
+          "type": ["string", "null"]
+        },
+        "failed": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "condition": {
+                  "maximum": 8,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "detail": {
+                  "type": "string"
+                }
+              },
+              "required": ["code", "condition", "detail"],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kept": {
+          "const": "working"
+        },
+        "manifest": {
+          "type": ["string", "null"]
+        },
+        "negatives": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "runs": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": ["adopted", "adoption", "failed", "kept", "manifest", "negatives", "runs"],
+      "title": "Kb8AdoptRequestResult",
+      "type": "object"
+    },
+    "Kb8AdoptRevertParams": {
+      "additionalProperties": false,
+      "description": "adopt.revert: 채택(자동·수락)을 한 번 되돌린다 (사람 전용). 팀 파일이 채택 뒤 바이트일 때만",
+      "properties": {
+        "adoption": {
+          "pattern": "^a-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+          "type": "string"
+        }
+      },
+      "required": ["adoption"],
+      "title": "Kb8AdoptRevertParams",
+      "type": "object"
+    },
+    "Kb8AdoptRevertResult": {
+      "additionalProperties": false,
+      "properties": {
+        "adoption": {
+          "type": "string"
+        },
+        "files": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "reverted": {
+          "type": "string"
+        }
+      },
+      "required": ["adoption", "files", "reverted"],
+      "title": "Kb8AdoptRevertResult",
+      "type": "object"
+    },
+    "Kb8AdoptionsListResult": {
+      "additionalProperties": false,
+      "properties": {
+        "adoptions": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": ["adoptions"],
+      "title": "Kb8AdoptionsListResult",
+      "type": "object"
     },
     "Kb8CheatAdoption": {
       "anyOf": [
@@ -1931,6 +2087,141 @@
       "title": "Kb8CheatsUnadoptParams",
       "type": "object"
     },
+    "Kb8EvidencePinParams": {
+      "additionalProperties": false,
+      "description": "evidence.pin: 실행 기록에서 가림 처리한 최소 증거 묶음을 knowledge/evidence/에 고정 (지우거나 고치는 도구 없음)",
+      "properties": {
+        "note": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "run": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "step": {
+          "minLength": 1,
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["note", "run"],
+      "title": "Kb8EvidencePinParams",
+      "type": "object"
+    },
+    "Kb8EvidencePinResult": {
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "omitted": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": ["files", "id", "omitted"],
+      "title": "Kb8EvidencePinResult",
+      "type": "object"
+    },
+    "Kb8WorkingDecideParams": {
+      "additionalProperties": false,
+      "description": "working.accept·working.reject: 작업 기준 변경(파일)과 작업 주장 rev를 한 거래로 수락하거나 덧씌움에서 뺀다 (사람 전용). claims의 rev는 보고가 가리킨 작업 rev — 지금과 다르면 revision_conflict",
+      "properties": {
+        "changes": {
+          "items": {
+            "pattern": "^w-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+            "type": "string"
+          },
+          "maxItems": 200,
+          "type": "array"
+        },
+        "claims": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "pattern": "^[a-z][a-z0-9_.]{0,127}$",
+                "type": "string"
+              },
+              "rev": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": ["id", "rev"],
+            "type": "object"
+          },
+          "maxItems": 200,
+          "type": "array"
+        }
+      },
+      "required": [],
+      "title": "Kb8WorkingDecideParams",
+      "type": "object"
+    },
+    "Kb8WorkingDecideResult": {
+      "additionalProperties": false,
+      "properties": {
+        "adoption": {
+          "type": ["string", "null"]
+        },
+        "changes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "claims": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "conflicts": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "files": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": ["adoption", "changes", "claims", "conflicts", "files"],
+      "title": "Kb8WorkingDecideResult",
+      "type": "object"
+    },
+    "Kb8WorkingListResult": {
+      "additionalProperties": false,
+      "properties": {
+        "changes": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "claims": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": ["changes", "claims"],
+      "title": "Kb8WorkingListResult",
+      "type": "object"
+    },
     "LeaseChangedParams": {
       "additionalProperties": false,
       "description": "입력 임대권 소유자 (없으면 null). 녹화 세션이면 kind recorder (상태 바 '입력: 녹화')",
@@ -2114,6 +2405,63 @@
       "additionalProperties": false,
       "description": "메서드 표 (단일 출처). 메시지가 아니라 타입 표다: params·result 모양, 권한 도구, 렌더러 표면에 내놓는지(false = Electron 주 프로세스 내부용)",
       "properties": {
+        "adopt.request": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/Kb8AdoptRequestParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/Kb8AdoptRequestResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": ["params", "renderer", "result", "tool"],
+          "type": "object"
+        },
+        "adopt.revert": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/Kb8AdoptRevertParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/Kb8AdoptRevertResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": ["params", "renderer", "result", "tool"],
+          "type": "object"
+        },
+        "adoptions.list": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/Kb8AdoptionsListResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": ["params", "renderer", "result", "tool"],
+          "type": "object"
+        },
         "agent.connections": {
           "additionalProperties": false,
           "properties": {
@@ -2486,6 +2834,25 @@
             },
             "result": {
               "$ref": "#/$defs/BreakpointsResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": ["params", "renderer", "result", "tool"],
+          "type": "object"
+        },
+        "evidence.pin": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/Kb8EvidencePinParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/Kb8EvidencePinResult"
             },
             "tool": {
               "const": "ui_only"
@@ -3976,6 +4343,63 @@
           "required": ["params", "renderer", "result", "tool"],
           "type": "object"
         },
+        "working.accept": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/Kb8WorkingDecideParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/Kb8WorkingDecideResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": ["params", "renderer", "result", "tool"],
+          "type": "object"
+        },
+        "working.list": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/Kb8WorkingListResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": ["params", "renderer", "result", "tool"],
+          "type": "object"
+        },
+        "working.reject": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/Kb8WorkingDecideParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/Kb8WorkingDecideResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": ["params", "renderer", "result", "tool"],
+          "type": "object"
+        },
         "workspace.info": {
           "additionalProperties": false,
           "properties": {
@@ -4135,7 +4559,14 @@
         "cheats.adopt",
         "cheats.categories.set",
         "cheats.list",
-        "cheats.unadopt"
+        "cheats.unadopt",
+        "adopt.request",
+        "adopt.revert",
+        "adoptions.list",
+        "evidence.pin",
+        "working.accept",
+        "working.list",
+        "working.reject"
       ],
       "title": "Methods",
       "type": "object"
@@ -6612,7 +7043,14 @@
         "screens_busy",
         "session_not_allowed",
         "approval_cancelled",
-        "recovery_pending"
+        "recovery_pending",
+        "basis_denied",
+        "policy_path",
+        "knowledge_busy",
+        "already_reverted",
+        "change_not_active",
+        "nothing_to_revert",
+        "evidence_missing"
       ],
       "title": "RequestFailedCode",
       "type": "string"
@@ -7355,6 +7793,10 @@
       "additionalProperties": false,
       "description": "디스크 파일로 실행 (M2 계획 2.8 시작 순서). 진행 중인 실행이 있으면 run_busy. 이 daemon의 녹화 세션이 starting·recording·paused면 runner를 띄우기 전에 recording_active (M4, 같은 시작 잠금 안에서 판정)",
       "properties": {
+        "basis": {
+          "description": "M8 3.6 실행 기준: team(팀 파일만) | working(시작 때 작업 기준 덧씌움 고정). 생략하면 작업 연결은 working, 그 밖은 team",
+          "enum": ["team", "working"]
+        },
         "deadline_ms": {
           "maximum": 9007199254740991,
           "minimum": 1,
@@ -8802,6 +9244,14 @@
       "additionalProperties": false,
       "description": "preview = 저장한 파일을 다시 읽어 crop의 정지 화면에서 찾은 결과 (바로 매칭). crop 없이 저장했으면 찾을 정지 화면이 없어 null",
       "properties": {
+        "basis": {
+          "description": "M8 E3: 작업 기준으로 썼으면 working (팀 파일은 그대로)",
+          "enum": ["working"]
+        },
+        "change": {
+          "description": "M8 E3: 쓴 작업 기준 변경 ID",
+          "type": "string"
+        },
         "image": {
           "$ref": "#/$defs/WorkspacePath"
         },

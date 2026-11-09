@@ -29,6 +29,12 @@ class WorkingClaim(BaseModel):
     base_rev: Annotated[int, Field(ge=1)]
     by: By | None = None
     claim: Annotated[Any, Field(description="urn:kookabug:claims:0#/$defs/Claim")]
+    history: Annotated[
+        list[Any] | None,
+        Field(
+            description="이 덧씌움의 지난 작업 rev (보고 항목이 가리킨 rev를 찾을 때, B3). 지우지 않는다"
+        ),
+    ] = None
     ops: list[Literal["mark_conflicted", "revise", "set_status", "supersede"]]
 
 

@@ -128,6 +128,28 @@ TOOLS = {
     "cheats.adopt": "ui_only",
     "cheats.unadopt": "ui_only",
     "cheats.categories.set": "ui_only",
+    # M8 B3 채택·되돌리기·묶음 수락·증거 고정 (사람 전용 — Agent 도구는 B4)
+    **dict.fromkeys(
+        (
+            "adopt.request",
+            "adopt.revert",
+            "adoptions.list",
+            "evidence.pin",
+            "working.accept",
+            "working.list",
+            "working.reject",
+        ),
+        "ui_only",
+    ),
+}
+M8_B3 = {
+    "adopt.request",
+    "adopt.revert",
+    "adoptions.list",
+    "evidence.pin",
+    "working.accept",
+    "working.list",
+    "working.reject",
 }
 AGENT_ONLY_B3 = {"control.click", "control.key", "control.type", "app.launch"}
 AGENT_ONLY_M7 = {"screens.identify", "screens.save", "explore.start", "explore.end"}
@@ -174,6 +196,8 @@ def test_method_table_matches_permission_table() -> None:
         "cheats.adopt",
         "cheats.unadopt",
         "cheats.categories.set",
+        # M8 B3: 렌더러 다리는 B7 보고함과 같이 연다
+        *M8_B3,
     }
     for row in table.values():
         for part in ("params", "result"):

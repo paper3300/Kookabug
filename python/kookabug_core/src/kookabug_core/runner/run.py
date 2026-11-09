@@ -541,6 +541,11 @@ class Runner:
             self._run_json["source"] = spec.source
         if spec.agent is not None:
             self._run_json["agent"] = dict(spec.agent)
+        # 실행 기준 고정 (M8 3.6): 시작 때 감독자가 정한 기준·작업
+        if spec.basis is not None:
+            self._run_json["basis"] = dict(spec.basis)
+        if spec.job is not None:
+            self._run_json["job"] = spec.job
         if spec.record_override is not None:
             # 실행별 기록 강제 (M7 R2): 기록 뷰어 머리 줄 "이미지 기록 없음 · 비밀값 가림"
             self._run_json["record_override"] = dict(spec.record_override)
@@ -556,6 +561,29 @@ class Runner:
         if self.journal is not None:
             with contextlib.suppress(Exception):
                 self.journal.emit(event)
+
+    def _overlay(self) -> dict[str, bytes] | None:
+        """감독자가 실행 폴더에 고정한 덧씌움 바이트 (M8 3.6). sha가 사양과 다르면 시작하지 않는다
+        (`snapshot_failed`) — 고정 뒤 바뀐 바이트로 실행하지 않는다."""
+        import hashlib
+
+        if not self.spec.overlay:
+            return None
+        out: dict[str, bytes] = {}
+        for rel, item in self.spec.overlay.items():
+            path = self.folder.path.joinpath(*str(item["file"]).split("/"))
+            try:
+                data = path.read_bytes()
+            except OSError as exc:
+                raise SnapshotError(
+                    "snapshot_failed", f"덧씌움 사본 '{item['file']}'을(를) 읽지 못했다: {exc}"
+                ) from exc
+            if hashlib.sha256(data).hexdigest() != item["sha256"]:
+                raise SnapshotError(
+                    "snapshot_failed", f"덧씌움 사본 '{item['file']}'이(가) 고정 뒤 바뀌었다"
+                )
+            out[rel] = data
+        return out
 
     def _check(self) -> None:
         """시작 순서 사이의 취소·기한 확인 (주 스레드)."""
@@ -586,6 +614,7 @@ class Runner:
                 self.folder.snapshot,
                 options=RunOptions(settings=dict(spec.settings), profile=spec.profile),
                 graph_value=spec.graph_value,
+                overlay=self._overlay(),
             )
         except SnapshotError as exc:
             return _End.error(exc.code, str(exc))

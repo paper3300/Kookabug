@@ -18,11 +18,17 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+import copy
+import hashlib
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Final
 
-from kookabug_core.documents import DocumentError
+from kookabug_core import basis
+from kookabug_core.canonical import loads_strict, save_text
+from kookabug_core.documents import DocumentError, revision_of
+from kookabug_core.documents import template as documents_template
+from kookabug_core.knowledge.formats import Actor, KnowledgeError
 from kookabug_core.registry import Registry
 from kookabug_core.schema import check_shape
 from kookabug_daemon.documents import (
@@ -35,6 +41,8 @@ from kookabug_daemon.documents import (
 )
 from kookabug_daemon.graph_patch import PatchInvalid, PatchResult, apply_ops
 from kookabug_daemon.methods import Call, MethodSpec
+from kookabug_daemon.methods.adopt import failed
+from kookabug_daemon.methods.working import refuse_policy_path, working_actor
 from kookabug_daemon.methods.workspace import file_kind, graph_entry
 from kookabug_daemon.protocol import InvalidParams, RequestFailed
 from kookabug_daemon.watch import walk
@@ -83,6 +91,22 @@ async def _opened_result(call: Call, opened: Opened) -> dict[str, Any]:
 
 async def _open(call: Call) -> dict[str, Any]:
     where = graph_path(call)
+    actor = working_actor(call)
+    if actor is not None:
+        # 작업 기준 연결은 자기 작업 기준 사본을 본다 (M8 3.6). 사본이 없으면 팀 파일
+        _, change = await asyncio.to_thread(
+            basis.view, call.daemon.root, where.rel, job=actor.job, agent=actor.id
+        )
+        if change is not None:
+            copy_where = resolve_path(
+                call.daemon.root, basis.copy_rel(change.id, where.rel), graph=True
+            )
+            opened = await asyncio.to_thread(
+                call.daemon.documents.open, copy_where, call.connection
+            )
+            result = await _opened_result(call, opened)
+            result.update(basis="working", change=change.id)
+            return result
     opened = await asyncio.to_thread(call.daemon.documents.open, where, call.connection)
     return await _opened_result(call, opened)
 
@@ -129,7 +153,21 @@ def _save_arg(call: Call) -> str:
             "force_not_allowed",
             "에이전트 연결은 force로 덮어쓸 수 없다. 다시 읽어 그 revision으로 고친다",
         )
-    return _doc_arg(call)
+    rel = _doc_arg(call)
+    refuse_policy_path(call, rel)
+    if working_actor(call) is not None:
+        # 작업 기준 연결에는 팀 파일 쓰기 경로가 없다 (E3·R4): 고치기는 graph.patch로
+        raise RequestFailed(
+            "permission_denied",
+            "작업 기준 연결은 graph.save를 쓰지 않는다 — graph.patch로 고친다 (작업 기준에 쓰인다)",
+        )
+    return rel
+
+
+def _write_arg(call: Call) -> str:
+    where = graph_path(call)
+    refuse_policy_path(call, where.given, where.rel)
+    return where.rel
 
 
 class _Applier:
@@ -164,10 +202,74 @@ async def _applier(call: Call, rel: str, ops: list[Mapping[str, Any]]) -> _Appli
     return _Applier(rel, ops, registry)
 
 
+def _write_working(
+    call: Call,
+    where: WsPath,
+    actor: Actor,
+    base_revision: str | None,
+    make: Callable[[Any], Any],
+) -> tuple[str, bool, Any, str | None]:
+    """작업 기준 쓰기 (E3·R4, 막히는 호출): 이 주체의 지금 보기(작업 사본 또는 팀 파일)를 기준
+    revision과 비교하고 `make(값)`의 결과를 작업 기준에 쓴다. 팀 파일은 읽기만. (revision, 썼나,
+    값, 변경 ID). `base_revision`이 None이면 새 파일(보기가 있으면 `exists`)."""
+    root = call.daemon.root
+    data, change = basis.view(root, where.rel, job=actor.job, agent=actor.id)
+    if base_revision is None:
+        if data is not None:
+            raise RequestFailed(
+                "exists", f"'{where.given}'이(가) 이미 있다", revision=revision_of(data)
+            )
+        text: str | None = None
+        value = make(None)
+    else:
+        if data is None:
+            raise RequestFailed("not_found", f"그래프 파일이 없다: {where.given}", path=where.given)
+        if revision_of(data) != base_revision:
+            raise RequestFailed(
+                "revision_conflict",
+                "파일이 밖에서 바뀌었다 (작업 기준 보기가 기준 revision과 다르다)",
+                revision=revision_of(data),
+            )
+        text = data.decode("utf-8")
+        value = make(copy.deepcopy(loads_strict(text)))
+    out = save_text(text, value).encode("utf-8")
+    if data is not None and out == data:
+        return revision_of(data), False, value, None if change is None else change.id
+    try:
+        doc = basis.write(
+            root,
+            {where.rel: out},
+            actor=actor,
+            kind="graph",
+            expect={where.rel: None if data is None else hashlib.sha256(data).hexdigest()},
+        )
+    except KnowledgeError as exc:
+        raise failed(exc) from exc
+    return revision_of(out), True, value, str(doc["id"])
+
+
 async def _patch(call: Call) -> dict[str, Any]:
     params: Mapping[str, Any] = call.params
     where = graph_path(call)
     change = await _applier(call, where.rel, list(params["ops"]))
+    actor = working_actor(call)
+    if actor is not None:
+        revision, wrote, value, change_id = await asyncio.to_thread(
+            _write_working, call, where, actor, str(params["base_revision"]), change
+        )
+        checked = await call.daemon.checker.check(where.rel, value)
+        assert change.applied is not None
+        result: dict[str, Any] = {
+            "revision": revision,
+            "wrote": wrote,
+            "created": change.applied.created,
+            "removed_refs": change.applied.removed_refs,
+            "diagnostics": checked.diagnostics,
+            "basis": "working",
+        }
+        if change_id is not None:
+            result["change"] = change_id
+        return result
     saved, value = await asyncio.to_thread(
         call.daemon.documents.patch, where, str(params["base_revision"]), change
     )
@@ -190,6 +292,26 @@ async def _create(call: Call) -> dict[str, Any]:
     title = params.get("title")
     ops = list(params.get("ops") or [])
     change = await _applier(call, where.rel, ops) if ops else None
+    actor = working_actor(call)
+    if actor is not None:
+        kind = params["kind"]
+        name = None if title is None else str(title)
+
+        def make(_: Any) -> Any:
+            value = documents_template(kind, name)
+            return value if change is None else change(value)
+
+        _, _, _, change_id = await asyncio.to_thread(_write_working, call, where, actor, None, make)
+        assert change_id is not None
+        copy_where = resolve_path(
+            call.daemon.root, basis.copy_rel(change_id, where.rel), graph=True
+        )
+        opened = await asyncio.to_thread(call.daemon.documents.open, copy_where, call.connection)
+        result = await _opened_result(call, opened)
+        result.update(basis="working", change=change_id)
+        if change is not None and change.applied is not None:
+            result["created"] = change.applied.created
+        return result
     opened = await asyncio.to_thread(
         call.daemon.documents.create,
         where,
@@ -265,8 +387,8 @@ METHODS: Final = {
     "graph.open": MethodSpec(_open, _path_arg),
     "graph.validate": MethodSpec(_validate, _doc_arg),
     "graph.save": MethodSpec(_save, _save_arg),
-    "graph.patch": MethodSpec(_patch, _path_arg),
-    "graph.create": MethodSpec(_create, _path_arg),
+    "graph.patch": MethodSpec(_patch, _write_arg),
+    "graph.create": MethodSpec(_create, _write_arg),
     "graph.close": MethodSpec(_close),
     "graph.list": MethodSpec(_list, _list_arg),
     "graph.check": MethodSpec(_check, _path_arg),

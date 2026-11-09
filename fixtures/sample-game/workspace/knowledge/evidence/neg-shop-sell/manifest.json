@@ -1,0 +1,23 @@
+{
+  "by": {
+    "kind": "human"
+  },
+  "files": [
+    {
+      "bytes": 9353,
+      "path": "shop_missing.png",
+      "sha256": "cf39d4e2cd2eca86e6cf6ef1e5b6797d7e29c92ceb932f81e4da0db37668643c"
+    }
+  ],
+  "format": "kookabug.evidence/0",
+  "id": "neg-shop-sell",
+  "negative": {
+    "frames": ["shop_missing.png"],
+    "targets": ["targets/shop/buy.target.json"]
+  },
+  "note": "구매 단추가 없고 판매 단추만 있는 상점 화면. 구매 locator가 여기서 찾아지면 안 된다",
+  "omitted": [],
+  "origin": "예제 준비: 예제 상점 --buy-missing 장면(frames/shop/shop_missing.png)을 그대로 고정했다. 원래 구매 단추 자리 화면이 아니다",
+  "pinned_at": "2026-11-09T00:00:00Z",
+  "run": null
+}

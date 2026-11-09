@@ -214,6 +214,13 @@ class RunSpec:
     """에이전트 제어 실행의 대상 창 (M7 R1). 있으면 창 붙기는 이 바인딩만 쓴다."""
     unattended: bool = False
     """사람 없는 Agent 연결이 시작한 실행 (M8 3.5): 치트 노드는 무인 허용 분류만 통과한다."""
+    overlay: Mapping[str, Mapping[str, str]] | None = None
+    """스냅샷 덧씌움 (M8 3.6): 워크스페이스 기준 경로 → `{file: overlay/<n>.bin, sha256}`. 감독자가
+    시작 때 실행 폴더에 고정한 바이트다."""
+    basis: Mapping[str, Any] | None = None
+    """`run.json basis`에 남길 실행 기준 기록 (M8 3.6)."""
+    job: str | None = None
+    """이 실행을 낸 작업 ID (M8)."""
 
     @classmethod
     def from_json(cls, data: Any) -> RunSpec:
@@ -270,6 +277,9 @@ class RunSpec:
                 else BoundWindow.from_json(spec["bound_window"])
             ),
             unattended=bool(spec.get("unattended", False)),
+            overlay=spec.get("overlay"),
+            basis=spec.get("basis"),
+            job=spec.get("job"),
             **optional,
         )
 
@@ -313,4 +323,11 @@ class RunSpec:
             ),
             **({} if self.bound_window is None else {"bound_window": self.bound_window.to_json()}),
             **({"unattended": True} if self.unattended else {}),
+            **(
+                {}
+                if self.overlay is None
+                else {"overlay": {k: dict(v) for k, v in self.overlay.items()}}
+            ),
+            **({} if self.basis is None else {"basis": dict(self.basis)}),
+            **({} if self.job is None else {"job": self.job}),
         }

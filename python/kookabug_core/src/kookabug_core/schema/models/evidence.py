@@ -86,6 +86,26 @@ class GraphSha(RootModel[str]):
     root: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
 
 
+class Frame(RootModel[str]):
+    root: Annotated[str, Field(pattern="^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")]
+
+
+class Target(RootModel[str]):
+    root: Annotated[str, Field(pattern="^targets/[^\\\\:]+\\.target\\.json$")]
+
+
+class Negative(BaseModel):
+    """
+    음성 대조 프레임 묶음 (M8 3.8 조건 5, R10): 이 묶음의 프레임에서 targets의 locator가 찾아지면 안 된다. 출처(origin) 필수
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    frames: Annotated[list[Frame], Field(min_length=1)]
+    targets: Annotated[list[Target], Field(min_length=1)]
+
+
 class OmittedItem(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -114,6 +134,12 @@ class Evidence(BaseModel):
     format: Literal["kookabug.evidence/0"]
     graph_sha: GraphSha | None = None
     id: Annotated[str, Field(pattern="^[a-z][a-z0-9-]{0,95}$")]
+    negative: Annotated[
+        Negative | None,
+        Field(
+            description="음성 대조 프레임 묶음 (M8 3.8 조건 5, R10): 이 묶음의 프레임에서 targets의 locator가 찾아지면 안 된다. 출처(origin) 필수"
+        ),
+    ] = None
     note: Annotated[str | None, Field(max_length=4000, min_length=1)] = None
     omitted: list[OmittedItem] | None = None
     origin: Annotated[str | None, Field(max_length=4000, min_length=1)] = None

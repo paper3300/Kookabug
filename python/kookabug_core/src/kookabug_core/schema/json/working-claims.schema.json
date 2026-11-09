@@ -50,6 +50,13 @@
           "claim": {
             "$ref": "urn:kookabug:claims:0#/$defs/Claim"
           },
+          "history": {
+            "description": "이 덧씌움의 지난 작업 rev (보고 항목이 가리킨 rev를 찾을 때, B3). 지우지 않는다",
+            "items": {
+              "$ref": "urn:kookabug:claims:0#/$defs/Claim"
+            },
+            "type": "array"
+          },
           "ops": {
             "items": {
               "enum": ["mark_conflicted", "revise", "set_status", "supersede"]
