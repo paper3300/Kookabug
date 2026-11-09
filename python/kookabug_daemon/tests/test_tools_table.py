@@ -62,6 +62,8 @@ M7_DENIED = {
     "screens.layout_set",
 }
 """M7 탐색 세션 목록·화면 지도 승격·버리기·확인·카드 배치 — 사람만 (B3 엄격)."""
+M8_DENIED = {"cheats.list", "cheats.adopt", "cheats.unadopt", "cheats.categories.set"}
+"""M8 치트 채택·분류 — 사람만 (B2 엄격: Agent 권한)."""
 M6_DENIED = {
     "plugins.preview",
     "plugins.install",
@@ -81,7 +83,7 @@ def test_ui_only_methods_agent_denied_or_allowlisted() -> None:
     assert ui_only - AGENT_DENIED == UI_ONLY_AGENT_ALLOWED == ALLOWED_BEFORE_M3
     assert {
         "daemon.shutdown"
-    } | M3_DENIED | M4_DENIED | M5_DENIED | M6_DENIED | M7_DENIED == AGENT_DENIED
+    } | M3_DENIED | M4_DENIED | M5_DENIED | M6_DENIED | M7_DENIED | M8_DENIED == AGENT_DENIED
 
 
 def test_every_plugin_method_but_list_is_agent_denied() -> None:
@@ -102,7 +104,7 @@ class _NoService:
 
 
 @pytest.mark.parametrize(
-    "method", sorted(M3_DENIED | M4_DENIED | M5_DENIED | M6_DENIED | M7_DENIED)
+    "method", sorted(M3_DENIED | M4_DENIED | M5_DENIED | M6_DENIED | M7_DENIED | M8_DENIED)
 )
 def test_agent_denied_before_decision(method: str) -> None:
     authorizer = Authorizer(_NoService())

@@ -193,8 +193,15 @@ def test_example_graphs_follow_design_doc() -> None:
     assert {**swapped_test, "meta": None} == {**read(INVENTORY_OPEN), "meta": None}
 
 
+def game_targets() -> list[Path]:
+    """예제 게임 본체 target (예제 상점 `targets/shop/`은 상점 생성기가 자르고 `test_shop.py`가
+    본다)."""
+    shop = WORKSPACE / "targets" / "shop"
+    return sorted(p for p in WORKSPACE.rglob("*.target.json") if shop not in p.parents)
+
+
 def test_targets_recorded_metadata_present() -> None:
-    targets = sorted(WORKSPACE.rglob("*.target.json"))
+    targets = game_targets()
     assert len(targets) == 13
     for path in targets:
         body = json.loads(path.read_text(encoding="utf-8"))
@@ -217,7 +224,7 @@ def test_targets_cut_from_committed_frames() -> None:
     finally:
         del sys.modules[spec.name]
     assert cut_targets.stale(cut_targets.outputs()) == []
-    committed = {p.relative_to(WORKSPACE).as_posix() for p in WORKSPACE.rglob("*.target.json")}
+    committed = {p.relative_to(WORKSPACE).as_posix() for p in game_targets()}
     assert committed == set(cut_targets.TARGETS)
 
 

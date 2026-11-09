@@ -104,6 +104,10 @@ CODES: Final[dict[str, CodeInfo]] = {
     "video_on_ineffective": _w(
         "record", "record.video 'on'인데 위 층의 영상 정책이 더 세서 효과가 없다"
     ),
+    # M8 qa·치트 (계획 3.5): 실행은 판정 error/qa_config
+    "qa_invalid": _e(
+        "qa", "qa 설정 오류 (주장·rev 없음, 검증 노드 아님, 치트 없음, 치트 구현 누락)"
+    ),
 }
 
 

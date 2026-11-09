@@ -29,6 +29,11 @@ test("test_method_table_tools_and_internal_methods", () => {
     "agent.toolsets.enable",
     "agent.toolsets.get",
     "app.launch",
+    // M8 B2: 치트 채택은 CLI·daemon 사람 연결만 (렌더러 다리는 B7)
+    "cheats.adopt",
+    "cheats.categories.set",
+    "cheats.list",
+    "cheats.unadopt",
     "control.click",
     "control.key",
     "control.type",

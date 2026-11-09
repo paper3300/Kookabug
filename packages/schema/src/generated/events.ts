@@ -18,6 +18,7 @@ export type Event =
   | DebugResumeEvent
   | WorkerStartEvent
   | WorkerExitEvent
+  | CheatCallEvent
   | RunEndEvent;
 /**
  * 실행 ID: 소문자·숫자 8자
@@ -409,6 +410,22 @@ export interface WorkerExitEvent {
     | "unexpected";
   run: RunId;
   seq: Seq;
+  t: Timestamp;
+}
+/**
+ * M8 치트 노드 호출 (core.qa.cheat). 허용 교집합을 통과하고 구현 서브그래프를 부르기 직전. before_assertions: 이 실행에서 아직 성공한 검증 노드가 없다
+ */
+export interface CheatCallEvent {
+  args_digest: string;
+  before_assertions: boolean;
+  cheat: string;
+  digest: string;
+  event: "cheat.call";
+  node: string;
+  rev: number;
+  run: RunId;
+  seq: Seq;
+  step: StepId;
   t: Timestamp;
 }
 /**

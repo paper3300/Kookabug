@@ -306,6 +306,9 @@ class _Engine:
         if pos is None:
             raise KnowledgeError("unknown_id", f"{where}: 없는 항목 ID다", id=item_id)
         team_item = items[pos]
+        if name in ("adopt", "unadopt"):
+            self.adoption(kind, file, loaded, pos, op, where)
+            return
         if name in ("supersede", "mark_conflicted") and kind != "claims":
             raise KnowledgeError("format", f"{where}: {name}은(는) 주장 파일에만 쓴다")
         if name == "attach_evidence" and kind not in ("claims", "lessons"):
@@ -365,6 +368,83 @@ class _Engine:
                     {"type": b.get("type"), "ref": b.get("ref")} for b in new.get("basis", [])
                 ],
                 "fields": fields,
+                "result": "applied",
+            }
+        )
+
+    def adoption(
+        self,
+        kind: Kind,
+        file: str,
+        loaded: store.Loaded,
+        pos: int,
+        op: dict[str, Any],
+        where: str,
+    ) -> None:
+        """치트 채택·풀기 (계획 3.2·R2, 사람 전용). 채택은 정의가 아니라 rev를 올리지 않는다
+        (digest가 정의 rev를 담으므로). digest는 Kookabug가 지금 워크스페이스에서 계산하고,
+        미해결·동적 의존성이 있으면 거부한다(`cheat_not_adoptable`)."""
+        name = str(op["op"])
+        if kind != "cheats":
+            raise KnowledgeError("format", f"{where}: {name}은(는) 치트 파일에만 쓴다")
+        if self.actor.kind != "human":
+            raise KnowledgeError("adoption_reserved", f"{where}: 치트 채택은 사람만 한다")
+        items = _items(loaded.doc, kind)
+        current = items[pos]
+        item_id = str(current.get("id"))
+        if int(op["base_rev"]) != int(current["rev"]):
+            raise KnowledgeError(
+                "revision_conflict",
+                f"{where}: 항목 rev가 다르다 (지금 {current['rev']})",
+                id=item_id,
+                rev=current["rev"],
+            )
+        new = copy.deepcopy(current)
+        if name == "unadopt":
+            if current.get("adoption") is None:
+                self.results.append(
+                    {
+                        "op": name,
+                        "file": file,
+                        "id": item_id,
+                        "rev": current["rev"],
+                        "basis": "team",
+                    }
+                )
+                return
+            new["adoption"] = None
+        else:
+            category = str(op["category"])
+            policy = self.ws.config.get("cheats")
+            categories = policy.get("categories", ()) if isinstance(policy, Mapping) else ()
+            if not any(isinstance(c, Mapping) and c.get("id") == category for c in categories):
+                raise KnowledgeError(
+                    "category_unknown", f"{where}: 분류 '{category}'이(가) kookabug.json에 없다"
+                )
+            from kookabug_core.knowledge.cheats import adoption_digest
+
+            digest, problems = adoption_digest(self.ws, current)
+            if digest is None:
+                raise KnowledgeError(
+                    "cheat_not_adoptable",
+                    f"{where}: 치트 구현에 미해결·동적 의존성이 있다 ({', '.join(problems[:5])})",
+                    id=item_id,
+                )
+            new["adoption"] = {"at": now(), "by": "human", "category": category, "digest": digest}
+        items[pos] = new
+        self.touched.add(file)
+        self.results.append(
+            {"op": name, "file": file, "id": item_id, "rev": current["rev"], "basis": "team"}
+        )
+        self.entries.append(
+            {
+                "op": name,
+                "file": file,
+                "id": item_id,
+                "base_rev": current["rev"],
+                "new_rev": current["rev"],
+                "basis": [],
+                "fields": ["adoption"],
                 "result": "applied",
             }
         )

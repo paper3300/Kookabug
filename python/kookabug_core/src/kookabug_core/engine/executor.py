@@ -79,8 +79,9 @@ from kookabug_core.engine.provenance import Epochs, Origin, StepTrace
 from kookabug_core.engine.pure import nodedef_of, resolve_traced
 from kookabug_core.engine.retry import retry_policy
 from kookabug_core.engine.verdict import Cause, Facts, Judgement, Terminal, Verdict, judge
-from kookabug_core.ir import GRAPH_CALL, GRAPH_ENTRY, Node
+from kookabug_core.ir import GRAPH_CALL, GRAPH_ENTRY, QA_CHEAT, Graph, Node
 from kookabug_core.loader import MAX_CALL_DEPTH, Program
+from kookabug_core.qa import CheatDenied, CheatGate, QaTrace
 from kookabug_core.record.artifacts import CANDIDATE_NODES, FrameRegistry, Recorder
 from kookabug_core.record.policy import (
     RecordPolicy,
@@ -165,6 +166,8 @@ class ExecOptions:
     record_override: Mapping[str, Any] | None = None
     """실행별 기록 강제 (`RunSpec.record_override`, M7 R2). 계층 규칙과 별개로 시작 정책에
     덮는다."""
+    unattended: bool = False
+    """사람 없는 Agent 연결이 시작한 실행 (M8): 치트 노드는 분류가 무인 허용인 치트만 통과한다."""
 
 
 @dataclass(frozen=True)
@@ -183,6 +186,8 @@ class RunResult:
     """스텝별 기록 정책 (실행 뒤 영상 정리 `video_allowed` 등에 쓴다)."""
     reason_secret: bool = False
     """`reason`에 비밀값이 들어 있다 (`run.end.secret_paths`, 에이전트용 분류 M5)."""
+    qa: QaTrace | None = None
+    """루트 그래프에서 실행·통과한 노드와 쓴 치트 (M8 `run.json.qa`)."""
 
 
 class GraphInvalid(Exception):
@@ -303,10 +308,14 @@ class Executor:
         )
         policy = run_record_policy(program, root, options.record_override)
         recorder.redact_secrets = policy.redact_secrets
-        top = Frame(root, (), None, 0, {}, record_policy=policy)
+        top = Frame(root, (), None, 0, {}, record_policy=policy, chain=(root.path,))
         if self.video is not None:
             self.video.set_base(policy.video)
-        judgement = _Run(runtime, options.graph_prefix, self.before_step, self.video).execute(top)
+        gate = CheatGate(
+            program, options.unattended, lambda cheat: self._cheat_digest(program, cheat)
+        )
+        run = _Run(runtime, options.graph_prefix, self.before_step, self.video, gate)
+        judgement = run.execute(top)
         cause = judgement.cause if judgement.verdict != "pass" else None
         return RunResult(
             run=run_id,
@@ -319,7 +328,20 @@ class Executor:
             diagnostics=diagnostics,
             recorder=recorder,
             reason_secret=judgement.secret,
+            qa=run.qa,
         )
+
+    def _cheat_digest(
+        self, program: Program, cheat: Mapping[str, Any]
+    ) -> tuple[str | None, tuple[str, ...]]:
+        """실행 스냅샷(`program.workspace`)에서 그 치트의 채택 digest를 다시 계산한다 (R2) — 채택과
+        같은 함수·같은 폐포 규칙. 레지스트리는 이 실행의 것(코어 노드 구현 revision)."""
+        from kookabug_core.knowledge.cheats import adoption_digest
+
+        try:
+            return adoption_digest(program.workspace, cheat, registry=self.registry)
+        except Exception as exc:  # 폐포를 읽지 못함: 채택 확인 불가 = 거부
+            return None, (f"closure_error:{type(exc).__name__}",)
 
 
 # ---------------------------------------------------------------- 전파
@@ -399,13 +421,18 @@ class _Run:
         graph_prefix: str,
         before_step: Callable[[StepPoint], None] | None = None,
         video: VideoGate | None = None,
+        cheats: CheatGate | None = None,
     ) -> None:
         self.rt = runtime
         self.graph_prefix = graph_prefix
         self.before_step = before_step
         self.video = video
+        self.cheats = cheats
         self.steps = 0
         self.assertions = 0
+        self.assertions_run = 0
+        """실행된(결과와 무관) 검증 노드 수 — 치트 기록의 `before_assertions`."""
+        self.qa = QaTrace()
         self.scopes = LoopScopes(runtime.program, runtime.registry)
 
     def _value(self, value: Any, event: dict[str, Any], field: str) -> Any:
@@ -536,7 +563,7 @@ class _Run:
         rt.recorder.open_step(
             step,
             frame.record_policy.layer(node.record, node_source(frame.graph.path, node.id)),
-            call=node.type == GRAPH_CALL,
+            call=node.type in (GRAPH_CALL, QA_CHEAT),
             loops=frame.loop_chain(node.id),
         )
         began = rt.mark()
@@ -634,8 +661,12 @@ class _Run:
         # 출력 출처 = 스텝 관측 바닥 (끝난 시각의 세대가 아니다, M3 2.4)
         frame.record(node.id, outcome.outputs, trace.output_origins(outcome.outputs))
         rt.recorder.note_outputs(outcome.outputs)
+        if nodedef.assertion:
+            self.assertions_run += 1
         if nodedef.assertion and outcome.kind == "ok":
             self.assertions += 1
+            if frame.depth == 0:
+                self.qa.passed.add(node.id)
         if outcome.kind == "ok" and end["attempt"] > 1:
             # 마지막 확인까지 통과해 성공이 확정된 뒤에만 표시한다 (중단된 스텝에는 없다)
             end["retried"] = True
@@ -675,7 +706,7 @@ class _Run:
     def _video_mode(self, frame: Frame, node: Node, policy: RecordPolicy) -> VideoMode:
         """그 스텝 구간의 영상 정책. 호출 스텝이면 서브그래프 파일의 `record`까지 더한다 — 분류부터
         서브그래프 첫 스텝까지의 순간에도 켜지지 않게 (`_graph_call`의 `restrict`와 같은 값)."""
-        if node.type == GRAPH_CALL:
+        if node.type in (GRAPH_CALL, QA_CHEAT):
             callee = self.rt.program.callee(frame.graph.path, node.id)
             if callee is not None:
                 return policy.layer(callee.record, graph_source(callee.path)).video
@@ -714,6 +745,9 @@ class _Run:
     def _finish(self, end: dict[str, Any], began: Mark, frame: Frame, node: Node) -> None:
         step = end["step"]
         recorder = self.rt.recorder
+        if frame.depth == 0 and end.get("status") != "cancelled":
+            # qa 근거: 루트 그래프에서 실제로 실행된 노드 (결과와 무관, 취소로 끝난 스텝 제외)
+            self.qa.executed.add(node.id)
         self._evidence(node, step, "썸네일", recorder.thumbnail)
         self._evidence(node, step, "OCR 글자 기록", recorder.ocr_artifact)
         evidence = recorder.evidence(step)
@@ -778,6 +812,8 @@ class _Run:
             return self._graph_exit(frame, node, inputs, trace)
         if engine == "graph_call":
             return self._graph_call(frame, node, step, inputs, end, trace, window)
+        if engine == "qa_cheat":
+            return self._cheat(frame, node, step, end, trace, window)
         if engine in _TERMINALS:
             reason = inputs.get("reason")
             secret = isinstance(reason, Secret)
@@ -890,13 +926,7 @@ class _Run:
         trace: StepTrace,
         window: WindowRef | None = None,
     ) -> Result:
-        callee = self.rt.program.callee(frame.graph.path, node.id)
-        if callee is None:
-            raise EngineError("call_target_missing", f"'{node.id}': 부를 서브그래프를 읽지 못했다")
-        if frame.depth + 1 > MAX_CALL_DEPTH:
-            raise EngineError(
-                "call_depth", f"'{node.id}': 서브그래프 호출이 {MAX_CALL_DEPTH}단계를 넘는다"
-            )
+        callee = self._callee(frame, node)
         interface = callee.interface or {}
         values: dict[str, Any] = {}
         origins: dict[str, Origin | None] = {}
@@ -910,6 +940,86 @@ class _Run:
                 raise EngineError(
                     "missing_required_input", f"'{node.id}': 서브그래프 입력 '{name}'이(가) 없다"
                 )
+        done = self._enter(frame, node, step, callee, values, origins, end, window)
+        trace.outputs = done.origins  # exit 입력의 출처가 호출 노드 출력으로
+        message = (
+            f"서브그래프 '{callee.path}'이(가) fail 출구 '{done.exit}'로 나갔다"
+            if done.kind == "fail"
+            else None
+        )
+        return Result(done.exit, done.kind, dict(done.outputs), message)
+
+    def _callee(self, frame: Frame, node: Node) -> Graph:
+        callee = self.rt.program.callee(frame.graph.path, node.id)
+        if callee is None:
+            raise EngineError("call_target_missing", f"'{node.id}': 부를 서브그래프를 읽지 못했다")
+        if frame.depth + 1 > MAX_CALL_DEPTH:
+            raise EngineError(
+                "call_depth", f"'{node.id}': 서브그래프 호출이 {MAX_CALL_DEPTH}단계를 넘는다"
+            )
+        return callee
+
+    def _cheat(
+        self,
+        frame: Frame,
+        node: Node,
+        step: str,
+        end: dict[str, Any],
+        trace: StepTrace,
+        window: WindowRef | None = None,
+    ) -> Result:
+        """`core.qa.cheat` (M8 3.5·R2): 허용 교집합을 통과하면 `cheat.call`을 남기고 구현
+        서브그래프에 `command`(고정 템플릿 + 검사한 인자)를 넣어 부른다. 거부는 이 스텝의 실행
+        오류."""
+        gate = self.cheats
+        if gate is None:
+            raise EngineError("cheat_denied", f"'{node.id}': 이 실행기는 치트를 허용하지 않는다")
+        cheat_id = node.config.get("cheat")
+        try:
+            granted = gate.check(
+                cheat_id, node.config.get("args", {}), frame.chain, nested=frame.in_cheat
+            )
+        except CheatDenied as exc:
+            raise EngineError(exc.code, f"'{node.id}': {exc.message}") from None
+        callee = self._callee(frame, node)
+        assert isinstance(cheat_id, str)
+        self.rt.emit(
+            {
+                "event": "cheat.call",
+                "step": step,
+                "node": node.id,
+                "cheat": cheat_id,
+                "rev": granted.rev,
+                "digest": granted.digest,
+                "args_digest": granted.args_digest,
+                "before_assertions": self.assertions_run == 0,
+            }
+        )
+        used = self.qa.cheats.setdefault(
+            cheat_id, {"cheat": cheat_id, "rev": granted.rev, "digest": granted.digest, "calls": 0}
+        )
+        used["calls"] += 1
+        values = {"command": granted.command}
+        done = self._enter(frame, node, step, callee, values, {"command": None}, end, window, True)
+        trace.outputs = {}
+        if done.kind == "fail":
+            message = f"치트 '{cheat_id}' 구현이 fail 출구 '{done.exit}'로 나갔다"
+            return Result("failed", "fail", {}, message)
+        return Result("done", "ok", {})
+
+    def _enter(
+        self,
+        frame: Frame,
+        node: Node,
+        step: str,
+        callee: Graph,
+        values: dict[str, Any],
+        origins: Mapping[str, Origin | None],
+        end: dict[str, Any],
+        window: WindowRef | None,
+        cheat: bool = False,
+    ) -> FrameExit:
+        """서브그래프를 새 프레임에서 실행해 공개 출구를 돌려준다 (호출·치트 노드 공통)."""
         end["graph"] = self.graph_prefix + callee.path
         # 호출 노드의 record까지 더한 정책 위에 서브그래프의 record (비밀값 입력 표시는 잇지 않는다)
         policy = self.rt.recorder.policy(step).policy.layer(
@@ -928,6 +1038,8 @@ class _Run:
             record_policy=policy,
             input_origins=origins,
             outer_loops=frame.loop_chain(node.id),
+            chain=(*frame.chain, callee.path),
+            in_cheat=frame.in_cheat or cheat,
         )
         done = self._run_frame(inner)
         if done is None:
@@ -936,13 +1048,7 @@ class _Run:
                 f"서브그래프 '{callee.path}'이(가) 공개 exit 없이 끝났다 "
                 "(어느 출구로 나갈지 모른다)",
             )
-        trace.outputs = done.origins  # exit 입력의 출처가 호출 노드 출력으로
-        message = (
-            f"서브그래프 '{callee.path}'이(가) fail 출구 '{done.exit}'로 나갔다"
-            if done.kind == "fail"
-            else None
-        )
-        return Result(done.exit, done.kind, dict(done.outputs), message)
+        return done
 
     def _graph_exit(
         self, frame: Frame, node: Node, inputs: Mapping[str, Any], trace: StepTrace

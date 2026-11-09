@@ -149,7 +149,8 @@ def test_info_profiles_and_status_fields(ws: Path, tmp_path: Path) -> None:
     with ThreadDaemon(ws) as d, d.client() as client:
         info = client.call("workspace.info")
     assert info["root"] == str(ws)
-    assert info["profiles"] == ["login_fail", "maintenance"]
+    # M8: 예제 상점 갈래 프로필 (구매 단추 옮김·없음)
+    assert info["profiles"] == ["login_fail", "maintenance", "shop_missing", "shop_moved"]
     # 보관 정책 (기록 뷰어 상태 바, M3 T11): 없는 값은 기본값
     assert info["retention"] == {"passed_days": 14, "failed_days": 60, "keep_last": 50}
     # 실행 기한 기본값 (툴바 "기본", G11): 예제 워크스페이스의 run.deadline_ms (5분)

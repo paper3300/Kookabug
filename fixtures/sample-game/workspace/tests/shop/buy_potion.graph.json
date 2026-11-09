@@ -1,0 +1,122 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "layout": {
+    "nodes": {
+      "n_assert_gold": {
+        "x": 560,
+        "y": 0
+      },
+      "n_assert_item": {
+        "x": 840,
+        "y": 0
+      },
+      "n_click_buy": {
+        "x": 280,
+        "y": 0
+      },
+      "n_entry": {
+        "x": -280,
+        "y": 0
+      },
+      "n_launch": {
+        "x": 0,
+        "y": 0
+      }
+    }
+  },
+  "meta": {
+    "description": "상점에서 체력 물약을 사면 골드가 가격(100)만큼 줄고 가방에 물약이 들어오는지 확인한다 (주장 shop.potion.price)",
+    "tags": ["shop"],
+    "title": "물약 구매"
+  },
+  "nodes": {
+    "n_assert_gold": {
+      "in": {
+        "equals": "12,245",
+        "region": [140, 96, 220, 76],
+        "timeout_ms": 5000
+      },
+      "next": {
+        "ok": "n_assert_item"
+      },
+      "title": "골드 100 줄었나",
+      "type": "core.assert.text",
+      "version": 1
+    },
+    "n_assert_item": {
+      "in": {
+        "target": {
+          "$target": "targets/shop/potion_bought.target.json"
+        },
+        "timeout_ms": 5000
+      },
+      "title": "물약 1개 들어왔나",
+      "type": "core.assert.visible",
+      "version": 1
+    },
+    "n_click_buy": {
+      "in": {
+        "target": {
+          "$target": "targets/shop/buy.target.json"
+        },
+        "timeout_ms": 5000
+      },
+      "next": {
+        "done": "n_assert_gold"
+      },
+      "title": "구매 단추 클릭",
+      "type": "core.image.click",
+      "version": 1
+    },
+    "n_entry": {
+      "next": {
+        "start": "n_launch"
+      },
+      "title": "시작",
+      "type": "core.graph.entry",
+      "version": 1
+    },
+    "n_launch": {
+      "in": {
+        "args": {
+          "$setting": "shop.args"
+        },
+        "cwd": {
+          "$setting": "game.cwd"
+        },
+        "path": {
+          "$setting": "game.executable"
+        },
+        "timeout_ms": 30000,
+        "window_title": {
+          "$setting": "shop.title"
+        }
+      },
+      "next": {
+        "attached": "n_click_buy"
+      },
+      "title": "상점 실행",
+      "type": "core.app.launch",
+      "version": 1
+    }
+  },
+  "plugins": {
+    "core": "0.1.0"
+  },
+  "qa": {
+    "claims": [
+      {
+        "assertions": ["n_assert_gold", "n_assert_item"],
+        "id": "shop.potion.price",
+        "rev": 1
+      }
+    ],
+    "feature": "shop",
+    "format": "kookabug.qa/0",
+    "repair": {
+      "allowed_changes": ["locator"],
+      "preserve_oracle": true
+    }
+  }
+}

@@ -22,7 +22,7 @@ def test_all_core_categories_present() -> None:
     [doc] = palette.export(default_registry())
     assert {n["category"] for n in doc["nodes"]} == {n["category"] for n in installed["nodes"]}
     assert [n["type"] for n in doc["nodes"]] == sorted(n["type"] for n in installed["nodes"])
-    assert len(doc["nodes"]) == 42
+    assert len(doc["nodes"]) == 43
 
 
 def test_remote_plugin_exported_and_copies_are_independent() -> None:

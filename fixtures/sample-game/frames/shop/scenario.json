@@ -1,0 +1,299 @@
+{
+  "format": "kookabug.fake-scenario/0",
+  "forms": {
+    "console": {
+      "erase_key": "backspace",
+      "expect": {
+        "command": "give_gold 1000"
+      },
+      "fields": [
+        {
+          "name": "command",
+          "rect": [24, 572, 976, 48]
+        }
+      ],
+      "focus": "command",
+      "input_scene": "console",
+      "max_length": 40,
+      "next_key": "tab",
+      "scenes": ["console"]
+    }
+  },
+  "launch": [
+    {
+      "args_contains": "--buy-moved",
+      "variant": "moved"
+    },
+    {
+      "args_contains": "--buy-missing",
+      "variant": "missing"
+    },
+    {
+      "variant": "default"
+    }
+  ],
+  "process": {
+    "name": "python.exe"
+  },
+  "scenes": {
+    "boot": "boot.png",
+    "console": "console.png",
+    "shop": "shop.png",
+    "shop_bought": "shop_bought.png",
+    "shop_closed": "shop_closed.png",
+    "shop_missing": "shop_missing.png",
+    "shop_missing_sold": "shop_missing_sold.png",
+    "shop_moved": "shop_moved.png",
+    "shop_moved_bought": "shop_moved_bought.png",
+    "shop_moved_sold": "shop_moved_sold.png",
+    "shop_purchase_confirm": "shop_purchase_confirm.png",
+    "shop_rich": "shop_rich.png",
+    "shop_sold": "shop_sold.png"
+  },
+  "start": "boot",
+  "transitions": [
+    {
+      "after_frames": 0,
+      "from": "boot",
+      "to": "shop",
+      "variants": ["default"]
+    },
+    {
+      "after_frames": 0,
+      "from": "boot",
+      "to": "shop_moved",
+      "variants": ["moved"]
+    },
+    {
+      "after_frames": 0,
+      "from": "boot",
+      "to": "shop_missing",
+      "variants": ["missing"]
+    },
+    {
+      "after_frames": 0,
+      "from": "console",
+      "on": {
+        "key": "enter",
+        "kind": "key"
+      },
+      "to": "shop_rich",
+      "variants": ["default"],
+      "when": {
+        "form": "console",
+        "valid": true
+      }
+    },
+    {
+      "after_frames": 0,
+      "from": "console",
+      "on": {
+        "key": "enter",
+        "kind": "key"
+      },
+      "to": "shop",
+      "variants": ["default"],
+      "when": {
+        "form": "console",
+        "valid": false
+      }
+    },
+    {
+      "after_frames": 0,
+      "from": "console",
+      "on": {
+        "key": "esc",
+        "kind": "key"
+      },
+      "to": "shop",
+      "variants": ["default"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop",
+      "on": {
+        "key": "`",
+        "kind": "key"
+      },
+      "to": "console",
+      "variants": ["default"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop",
+      "on": {
+        "kind": "click",
+        "rect": [120, 452, 180, 60]
+      },
+      "to": "shop_bought",
+      "variants": ["default"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop",
+      "on": {
+        "kind": "click",
+        "rect": [360, 452, 180, 60]
+      },
+      "to": "shop_sold",
+      "variants": ["default"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop",
+      "on": {
+        "kind": "click",
+        "rect": [40, 560, 140, 52]
+      },
+      "to": "shop_closed",
+      "variants": ["default"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop",
+      "on": {
+        "kind": "click",
+        "rect": [820, 28, 164, 48]
+      },
+      "to": "shop_purchase_confirm",
+      "variants": ["default"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop_bought",
+      "on": {
+        "kind": "click",
+        "rect": [40, 560, 140, 52]
+      },
+      "to": "shop_closed",
+      "variants": ["default"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop_missing",
+      "on": {
+        "kind": "click",
+        "rect": [360, 452, 180, 60]
+      },
+      "to": "shop_missing_sold",
+      "variants": ["missing"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop_missing",
+      "on": {
+        "kind": "click",
+        "rect": [40, 560, 140, 52]
+      },
+      "to": "shop_closed",
+      "variants": ["missing"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop_missing_sold",
+      "on": {
+        "kind": "click",
+        "rect": [40, 560, 140, 52]
+      },
+      "to": "shop_closed",
+      "variants": ["missing"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop_moved",
+      "on": {
+        "kind": "click",
+        "rect": [360, 452, 180, 60]
+      },
+      "to": "shop_moved_sold",
+      "variants": ["moved"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop_moved",
+      "on": {
+        "kind": "click",
+        "rect": [40, 560, 140, 52]
+      },
+      "to": "shop_closed",
+      "variants": ["moved"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop_moved",
+      "on": {
+        "kind": "click",
+        "rect": [700, 556, 180, 60]
+      },
+      "to": "shop_moved_bought",
+      "variants": ["moved"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop_moved_bought",
+      "on": {
+        "kind": "click",
+        "rect": [40, 560, 140, 52]
+      },
+      "to": "shop_closed",
+      "variants": ["moved"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop_moved_sold",
+      "on": {
+        "kind": "click",
+        "rect": [40, 560, 140, 52]
+      },
+      "to": "shop_closed",
+      "variants": ["moved"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop_purchase_confirm",
+      "on": {
+        "kind": "click",
+        "rect": [352, 372, 140, 52]
+      },
+      "to": "shop",
+      "variants": ["default"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop_purchase_confirm",
+      "on": {
+        "kind": "click",
+        "rect": [532, 372, 140, 52]
+      },
+      "to": "shop",
+      "variants": ["default"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop_rich",
+      "on": {
+        "kind": "click",
+        "rect": [40, 560, 140, 52]
+      },
+      "to": "shop_closed",
+      "variants": ["default"]
+    },
+    {
+      "after_frames": 0,
+      "from": "shop_sold",
+      "on": {
+        "kind": "click",
+        "rect": [40, 560, 140, 52]
+      },
+      "to": "shop_closed",
+      "variants": ["default"]
+    }
+  ],
+  "variants": ["default", "missing", "moved"],
+  "window": {
+    "class": "TkTopLevel",
+    "client_size": [1024, 640],
+    "dpi": 96,
+    "title": "SampleRPG 상점"
+  }
+}

@@ -1240,6 +1240,39 @@
       "version": 1
     },
     {
+      "category": "test",
+      "config": {
+        "args": {
+          "default": {},
+          "description": "치트 인자 (정의된 인자만, 상수)",
+          "type": "dict[str,any]"
+        },
+        "cheat": {
+          "description": "부를 치트 ID (knowledge/cheats.json)",
+          "type": "string"
+        }
+      },
+      "description": "채택된 치트를 부른다. 워크스페이스 치트 사용·사람 채택(정의·구현 digest)·무인 분류·루트\n테스트 `qa.cheats.allow`(서브그래프는 줄이기만)·`max_calls`·대상 프로필을 모두 통과해야 하고,\n아니면 실행 오류(`cheat_denied`·`cheat_not_adopted`)다. 통과하면 정의의 고정 템플릿에 검사한\n인자를 넣은 명령을 구현 서브그래프(`command` 입력)로 보낸다.",
+      "engine": "qa_cheat",
+      "exits": [
+        {
+          "kind": "ok",
+          "name": "done",
+          "outputs": []
+        },
+        {
+          "kind": "fail",
+          "name": "failed",
+          "outputs": []
+        }
+      ],
+      "inputs": {},
+      "outputs": {},
+      "title": "치트",
+      "type": "core.qa.cheat",
+      "version": 1
+    },
+    {
       "category": "screen",
       "description": "지금 화면(`region`이 있으면 그 사각형, 클라이언트 픽셀)을 찍어 `steps/<스텝>_<name>.png`로\n남기고 이미지로 내보낸다. 기록 정책(구간 끄기·비밀값 입력)이 막으면 남기지 않는다.",
       "effects": [
@@ -1587,7 +1620,8 @@
       "kookabug_nodes.screen",
       "kookabug_nodes.assert_",
       "kookabug_nodes.ocr",
-      "kookabug_nodes.agent"
+      "kookabug_nodes.agent",
+      "kookabug_nodes.qa"
     ],
     "permissions": [
       "capture",

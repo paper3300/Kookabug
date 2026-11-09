@@ -102,6 +102,17 @@ SAMPLES: dict[str, dict[str, Any]] = {
     "debug.resume": ev("debug.resume"),
     "worker.start": ev("worker.start", pid=77),
     "worker.exit": ev("worker.exit", exit_code=1, pid=77, reason="killed_after_grace"),
+    # M8 B2: 치트 노드 호출 (인자 값은 남기지 않고 digest만)
+    "cheat.call": ev(
+        "cheat.call",
+        args_digest="a" * 64,
+        before_assertions=True,
+        cheat="give_gold",
+        digest="b" * 64,
+        node="n_cheat",
+        rev=1,
+        step="s3",
+    ),
     "run.end": ev(
         "run.end",
         code="assertion_passed",
@@ -150,7 +161,7 @@ def test_samples_cover_every_event_kind() -> None:
         if "event" in d.get("properties", {})
     )
     assert defined == KINDS
-    assert len(defined) == 15
+    assert len(defined) == 16
 
 
 def test_unknown_event_kind_rejected() -> None:

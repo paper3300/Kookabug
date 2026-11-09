@@ -212,6 +212,8 @@ class RunSpec:
     정책에 덮고 `run.json`에 남긴다."""
     bound_window: BoundWindow | None = None
     """에이전트 제어 실행의 대상 창 (M7 R1). 있으면 창 붙기는 이 바인딩만 쓴다."""
+    unattended: bool = False
+    """사람 없는 Agent 연결이 시작한 실행 (M8 3.5): 치트 노드는 무인 허용 분류만 통과한다."""
 
     @classmethod
     def from_json(cls, data: Any) -> RunSpec:
@@ -267,6 +269,7 @@ class RunSpec:
                 if spec.get("bound_window") is None
                 else BoundWindow.from_json(spec["bound_window"])
             ),
+            unattended=bool(spec.get("unattended", False)),
             **optional,
         )
 
@@ -309,4 +312,5 @@ class RunSpec:
                 else {"record_override": dict(self.record_override)}
             ),
             **({} if self.bound_window is None else {"bound_window": self.bound_window.to_json()}),
+            **({"unattended": True} if self.unattended else {}),
         }

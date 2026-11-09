@@ -191,6 +191,8 @@ class StartOptions:
     """실행별 기록 강제 (M7 R2, `record.policy.AGENT_CONTROL_RECORD` — daemon 내부 진입점만)."""
     bound_window: BoundWindow | None = None
     """에이전트 제어 실행의 대상 창 바인딩 (M7 R1 — daemon 내부 진입점만)."""
+    unattended: bool = False
+    """사람 없는 Agent 연결이 시작한 실행 (M8 3.5 치트 무인 분류 — daemon이 주체로 정한다)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,6 +295,7 @@ class Supervisor:
             agent=opts.agent,
             record_override=opts.record_override,
             bound_window=opts.bound_window,
+            unattended=opts.unattended,
         )
         handle = RunHandle(self, spec, folder, job, started_at)
         handle._launch(listener, key)

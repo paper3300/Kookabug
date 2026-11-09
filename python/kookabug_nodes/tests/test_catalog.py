@@ -45,14 +45,14 @@ def node_functions() -> dict[str, NodeFunction]:
 
 def test_core_node_types_exact(schema: dict[str, Any]) -> None:
     types = [n["type"] for n in schema["nodes"]]
-    assert len(types) == 42
+    assert len(types) == 43
     assert set(types) == CORE_NODE_TYPES
     assert schema["plugin"]["id"] == "core"
 
 
 def test_engine_nodes_exact(nodes: dict[str, dict[str, Any]]) -> None:
     assert {t for t, n in nodes.items() if "engine" in n} == ENGINE_NODE_TYPES
-    assert len(ENGINE_NODE_TYPES) == 8
+    assert len(ENGINE_NODE_TYPES) == 9
 
 
 def test_sdk_nodes_exact(nodes: dict[str, dict[str, Any]]) -> None:

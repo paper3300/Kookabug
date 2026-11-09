@@ -674,6 +674,10 @@ export interface RunSpec {
    */
   source?: "agent_control";
   supervisor: ProcessIdent;
+  /**
+   * M8: 사람 없는 Agent 연결이 시작한 실행. 치트 노드는 분류가 무인 허용인 채택 치트만 통과한다. 없으면 false
+   */
+  unattended?: boolean;
   worker_cancel_grace_ms?: number;
   worker_start_timeout_ms?: number;
   workspace_root: string;

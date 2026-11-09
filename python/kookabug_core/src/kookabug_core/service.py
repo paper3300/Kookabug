@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from typing import Final
 
@@ -161,6 +162,9 @@ class WorkspaceService:
         if options is not None:
             refuse_dev_modules(principal, options.plugin_modules)
         decision = self.require(principal, RUN_START_TOOL, graph, approved=approved)
+        if principal.kind == "agent" and not principal.attended:
+            # 사람 없는 에이전트(CLI `KOOKABUG_AGENT` 포함)의 실행은 치트 무인 분류 규칙을 받는다
+            options = replace(options or StartOptions(), unattended=True)
         return self.start_decided(decision, graph, options, approved=approved)
 
     def start_decided(

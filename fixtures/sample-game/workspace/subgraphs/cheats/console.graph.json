@@ -1,0 +1,102 @@
+{
+  "format": "kookabug.graph/0",
+  "interface": {
+    "exits": {
+      "done": {
+        "kind": "ok"
+      }
+    },
+    "inputs": {
+      "command": {
+        "type": "string"
+      }
+    },
+    "outputs": {}
+  },
+  "kind": "subgraph",
+  "layout": {
+    "nodes": {
+      "n_entry": {
+        "x": -280,
+        "y": 0
+      },
+      "n_exit": {
+        "x": 840,
+        "y": 0
+      },
+      "n_open": {
+        "x": 0,
+        "y": 0
+      },
+      "n_run": {
+        "x": 560,
+        "y": 0
+      },
+      "n_type": {
+        "x": 280,
+        "y": 0
+      }
+    }
+  },
+  "meta": {
+    "description": "치트 콘솔 구현: ` 키로 콘솔을 열고 명령 한 줄을 넣고 Enter. 명령은 치트 정의의 고정 템플릿에 검사한 인자만 넣은 글자다",
+    "tags": ["cheat"],
+    "title": "콘솔 치트"
+  },
+  "nodes": {
+    "n_entry": {
+      "next": {
+        "start": "n_open"
+      },
+      "title": "명령",
+      "type": "core.graph.entry",
+      "version": 1
+    },
+    "n_exit": {
+      "config": {
+        "exit": "done"
+      },
+      "title": "끝",
+      "type": "core.graph.exit",
+      "version": 1
+    },
+    "n_open": {
+      "in": {
+        "keys": "`"
+      },
+      "next": {
+        "done": "n_type"
+      },
+      "title": "콘솔 열기",
+      "type": "core.input.key",
+      "version": 1
+    },
+    "n_run": {
+      "in": {
+        "keys": "enter"
+      },
+      "next": {
+        "done": "n_exit"
+      },
+      "title": "실행",
+      "type": "core.input.key",
+      "version": 1
+    },
+    "n_type": {
+      "in": {
+        "text": {
+          "$link": "n_entry.command"
+        }
+      },
+      "next": {
+        "done": "n_run"
+      },
+      "title": "명령 입력",
+      "type": "core.input.type_text",
+      "version": 1
+    }
+  },
+  "plugins": {
+    "core": "0.1.0"
+  }
+}

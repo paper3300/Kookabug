@@ -80,6 +80,29 @@ export interface Run {
    */
   paused_ms?: number;
   plugins?: Plugin[];
+  /**
+   * M8 그래프 qa 결과: 검증 노드가 실제로 실행·통과했나, 쓴 치트, 설정 오류
+   */
+  qa?: {
+    cheats_used: {
+      calls: number;
+      cheat: string;
+      digest: string;
+      rev: number;
+    }[];
+    claims: {
+      assertions: string[];
+      executed: string[];
+      id: string;
+      passed: string[];
+      rev: number;
+    }[];
+    config_errors: string[];
+    /**
+     * qa.profiles가 이번 프로필을 담지 않아 판정 skipped (qa_not_applicable)
+     */
+    not_applicable?: string;
+  };
   reason?: string;
   /**
    * 실행별 기록 강제 (M7 R2): 에이전트 제어 실행은 스크린샷·영상을 끄고 비밀값을 가렸다. 그래프·워크스페이스 기록 정책과 별개

@@ -20,6 +20,7 @@ from kookabug_daemon.protocol import UI_ONLY, RequestFailed
 __all__ = [
     "AGENT_DENIED",
     "AGENT_RAW",
+    "HUMAN_CHEAT_METHODS",
     "HUMAN_SCREEN_METHODS",
     "METHOD_TOOLS",
     "PLUGIN_CHANGE_METHODS",
@@ -81,6 +82,11 @@ HUMAN_SCREEN_METHODS: Final = frozenset(
 """M7 화면 지도의 사람 전용 메서드 (계획 3.7·3.8, 엄격: Agent 권한): 에이전트가 자기 탐색 결과를
 확정하거나 지우지 못하게. 처리기는 B4(승격·버리기·확인)·B5(배치)가 붙인다 — 그 전에도 에이전트
 연결은 판정 전에 `permission_denied`다(전송이 처리기 유무보다 먼저 막는다)."""
+
+HUMAN_CHEAT_METHODS: Final = frozenset(
+    {"cheats.list", "cheats.adopt", "cheats.unadopt", "cheats.categories.set"}
+)
+"""M8 치트 채택·분류 (계획 3.2·3.5·3.13, 엄격: Agent 권한). 처리기는 `methods.cheats`."""
 
 METHOD_TOOLS: Final[dict[str, str]] = {
     "session.hello": UI_ONLY,
@@ -165,6 +171,8 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     # M6 B4: 플러그인 — 목록은 조회(kb_project_info), 변경은 사람만
     "plugins.list": "kb_project_info",
     **dict.fromkeys(sorted(PLUGIN_CHANGE_METHODS), UI_ONLY),
+    # M8 B2: 치트 채택·분류 — 사람만 (Agent는 후보만, 채택·분류는 못 한다)
+    **dict.fromkeys(sorted(HUMAN_CHEAT_METHODS), UI_ONLY),
 }
 
 AGENT_DENIED: Final = frozenset(
@@ -192,6 +200,8 @@ AGENT_DENIED: Final = frozenset(
         "explore.list",
         # 에이전트는 자기 탐색 결과를 승격·버리기·확인하거나 지도 배치를 바꾸지 못한다 (M7 3.7, B3)
         *HUMAN_SCREEN_METHODS,
+        # 에이전트는 치트를 채택·분류하지 못한다 (M8 3.2·3.5, B2)
+        *HUMAN_CHEAT_METHODS,
     }
 )
 """`ui_only`이지만 agent 연결에는 판정 전에 거부하는 메서드. `ui_only`는 판정을 건너뛰므로

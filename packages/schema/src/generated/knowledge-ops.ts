@@ -5,7 +5,14 @@
  * via the `definition` "KnowledgeOp".
  */
 export type KnowledgeOp =
-  OpAdd | OpRevise | OpSupersede | OpMarkConflicted | OpAttachEvidence | OpSetStatus;
+  | OpAdd
+  | OpRevise
+  | OpSupersede
+  | OpMarkConflicted
+  | OpAttachEvidence
+  | OpSetStatus
+  | OpAdopt
+  | OpUnadopt;
 
 /**
  * 제한 지식 변경 요청 kb_knowledge_apply (M8 계획 3.3). 한 요청 전부 적용 또는 전부 거부
@@ -84,4 +91,29 @@ export interface OpSetStatus {
   id: string;
   op: "set_status";
   status: string;
+}
+/**
+ * 치트 채택 (사람 전용 — Agent는 adoption_reserved). digest는 Kookabug가 계산한다
+ */
+export interface OpAdopt {
+  base_rev: number;
+  category: string;
+  /**
+   * features/<기능>·lessons·cheats·unknowns (사건은 cases 도구로만)
+   */
+  file: string;
+  id: string;
+  op: "adopt";
+}
+/**
+ * 치트 채택 풀기 (사람 전용)
+ */
+export interface OpUnadopt {
+  base_rev: number;
+  /**
+   * features/<기능>·lessons·cheats·unknowns (사건은 cases 도구로만)
+   */
+  file: string;
+  id: string;
+  op: "unadopt";
 }

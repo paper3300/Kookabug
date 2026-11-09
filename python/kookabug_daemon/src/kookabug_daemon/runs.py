@@ -621,6 +621,7 @@ class RunManager:
                     record_override=dict(AGENT_CONTROL_RECORD),
                     # daemon이 정한 창에만 붙는다 (M7 R1 — 보호 기록을 쓴 창 = 입력하는 창)
                     bound_window=bound_window,
+                    unattended=not principal.attended,
                 )
                 try:
                     handle = self.service.start_decided(
@@ -765,10 +766,12 @@ class RunManager:
         breakpoints, version = self.breakpoints.snapshot() if request.ui else ((), -1)
         try:
             # 사람이 승인한 ask면 그 사실을 감독자 시작까지 넘긴다 (M5 3.6, 공개 인자 아님)
+            # 사람 없는 Agent 연결의 실행은 치트 무인 분류 규칙을 받는다 (M8 3.5)
+            unattended = request.principal.kind == "agent" and not request.principal.attended
             handle = self.service.start_decided(
                 decision,
                 current.rel,
-                replace(start, run_id=run_id, breakpoints=breakpoints),
+                replace(start, run_id=run_id, breakpoints=breakpoints, unattended=unattended),
                 approved=request.approved,
             )
         except (OSError, RuntimeError) as exc:  # 실행 폴더·Job·파이프를 만들지 못함

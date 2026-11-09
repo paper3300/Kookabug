@@ -1,0 +1,15 @@
+{
+  "click": {
+    "anchor": "center",
+    "offset": [0, 0]
+  },
+  "format": "kookabug.target/0",
+  "image": "buy.png",
+  "recorded": {
+    "client_size": [1024, 640],
+    "dpi": 96
+  },
+  "search": {
+    "region": [0.0781, 0.6594, 0.2539, 0.1875]
+  }
+}

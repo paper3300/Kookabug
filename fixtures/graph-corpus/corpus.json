@@ -18,9 +18,12 @@
     "fixtures/graph-corpus/unknown-keys.graph.json",
     "fixtures/graph-corpus/unknown-node.graph.json",
     "fixtures/sample-game/workspace/subgraphs/broken/enter_world_swapped_target.graph.json",
+    "fixtures/sample-game/workspace/subgraphs/cheats/console.graph.json",
     "fixtures/sample-game/workspace/subgraphs/enter_world.graph.json",
     "fixtures/sample-game/workspace/tests/broken/swapped_target.graph.json",
     "fixtures/sample-game/workspace/tests/inventory_open.graph.json",
+    "fixtures/sample-game/workspace/tests/shop/buy_potion.graph.json",
+    "fixtures/sample-game/workspace/tests/shop/buy_then_close.graph.json",
     "fixtures/sample-game/workspace/tests/smoke_headless.graph.json"
   ]
 }

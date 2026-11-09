@@ -12,6 +12,7 @@
     kookabug plugin add|remove|list|verify|gc ...                                    (plugin_cmd)
     kookabug mcp [--workspace DIR] [--agent-id ID] [--unattended] [--client 이름]   (kookabug_mcp)
     kookabug workspace new <폴더> --name 이름 [--git] [--json]                       (workspace_cmd)
+    kookabug cheat list|adopt|unadopt ... (사람만: KOOKABUG_AGENT면 종료 5)          (cheat_cmd)
     kookabug agent-host --workspace DIR [--env 이름=값] [--secret-env 이름=키] -- 명령 ...
                                                      (앱의 에이전트 패널 세션 도우미)
     kookabug --version
@@ -44,7 +45,7 @@ from pathlib import Path
 from types import FrameType
 from typing import Any, Final, NoReturn, Protocol, TextIO
 
-from kookabug_cli import __version__, daemon_cmd, plugin_cmd, workspace_cmd
+from kookabug_cli import __version__, cheat_cmd, daemon_cmd, plugin_cmd, workspace_cmd
 from kookabug_core.agents import host as agent_host
 from kookabug_core.canonical import loads_strict
 from kookabug_core.permissions import Decision, Principal
@@ -310,6 +311,7 @@ def build_parser() -> argparse.ArgumentParser:
     mcp_cli.add_parser(commands)
     agent_host.add_parser(commands)
     workspace_cmd.add_parser(commands)
+    cheat_cmd.add_parser(commands)
     return parser
 
 
@@ -704,6 +706,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return agent_host.run(args)
     if args.command == "workspace":
         return workspace_cmd.run(args, sys.stdout, sys.stderr)
+    if args.command == "cheat":
+        return cheat_cmd.run(args, sys.stdout, sys.stderr)
     # 비전 명령은 opencv를 불러오므로 쓸 때만 import한다 (`kookabug run` 시작을 가볍게)
     try:
         if args.command == "target":

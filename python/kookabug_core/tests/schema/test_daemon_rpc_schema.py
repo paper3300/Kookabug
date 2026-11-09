@@ -123,6 +123,11 @@ TOOLS = {
     "screens.layout_set": "ui_only",
     # M7 B4 이동 그래프 (조회, 렌더러 화면 지도 탭)
     "screens.map": "kb_screen_list",
+    # M8 B2 치트 채택·분류 사람 전용
+    "cheats.list": "ui_only",
+    "cheats.adopt": "ui_only",
+    "cheats.unadopt": "ui_only",
+    "cheats.categories.set": "ui_only",
 }
 AGENT_ONLY_B3 = {"control.click", "control.key", "control.type", "app.launch"}
 AGENT_ONLY_M7 = {"screens.identify", "screens.save", "explore.start", "explore.end"}
@@ -164,6 +169,11 @@ def test_method_table_matches_permission_table() -> None:
         *AGENT_ONLY_B2,
         *AGENT_ONLY_B3,
         *AGENT_ONLY_M7,
+        # M8 B2: 치트 채택은 CLI·daemon 사람 연결만 (렌더러 다리는 B7 보고함·마법사와 같이 연다)
+        "cheats.list",
+        "cheats.adopt",
+        "cheats.unadopt",
+        "cheats.categories.set",
     }
     for row in table.values():
         for part in ("params", "result"):

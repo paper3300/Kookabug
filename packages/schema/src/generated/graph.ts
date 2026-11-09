@@ -41,6 +41,11 @@ export type ObjectValue = SpecialValue | {[key: string]: Value};
  */
 export type NodeType = string;
 /**
+ * This interface was referenced by `Graph`'s JSON-Schema
+ * via the `definition` "QaCheatArgLimit".
+ */
+export type QaCheatArgLimit = QaCheatArgRange | QaCheatArgEnum;
+/**
  * 노드ID.출력
  *
  * This interface was referenced by `Graph`'s JSON-Schema
@@ -93,6 +98,7 @@ export interface Graph {
   plugins: {
     [k: string]: string | undefined;
   };
+  qa?: Qa;
   record?: RecordPolicy;
 }
 /**
@@ -266,6 +272,65 @@ export interface RetryConfig {
 export interface RecordPolicy {
   screenshots?: "off" | "on";
   video?: "failed_only" | "off" | "on";
+}
+/**
+ * M8 테스트별 QA 옵션 kookabug.qa/0 (KB문서 10장). 지원하지 않는 실행기는 최상위 추가 속성이라 거부한다. 서브그래프는 cheats만 쓰고 상위 허용을 줄이는 방향(교집합)으로만 적용
+ *
+ * This interface was referenced by `Graph`'s JSON-Schema
+ * via the `definition` "Qa".
+ */
+export interface Qa {
+  cheats?: {
+    allow: QaCheatAllow[];
+  };
+  claims?: QaClaim[];
+  feature?: string;
+  format: "kookabug.qa/0";
+  /**
+   * @minItems 1
+   */
+  profiles?: [string, ...string[]];
+  repair?: {
+    allowed_changes?: "locator"[];
+    preserve_oracle?: boolean;
+  };
+}
+/**
+ * 테스트가 요청하는 치트 범위 (권한 부여가 아니다 — 실제 허용은 교집합). max_calls는 루트 실행 전체에서 센다
+ *
+ * This interface was referenced by `Graph`'s JSON-Schema
+ * via the `definition` "QaCheatAllow".
+ */
+export interface QaCheatAllow {
+  args?: {
+    [k: string]: QaCheatArgLimit | undefined;
+  };
+  id: string;
+  max_calls: number;
+}
+export interface QaCheatArgRange {
+  max?: number;
+  min?: number;
+}
+export interface QaCheatArgEnum {
+  /**
+   * @minItems 1
+   */
+  enum: [string, ...string[]];
+}
+/**
+ * 이 테스트가 검증하는 주장 revision과 그 검증 노드
+ *
+ * This interface was referenced by `Graph`'s JSON-Schema
+ * via the `definition` "QaClaim".
+ */
+export interface QaClaim {
+  /**
+   * @minItems 1
+   */
+  assertions: [NodeId, ...NodeId[]];
+  id: string;
+  rev: number;
 }
 /**
  * $로 시작하는 키 하나만 가진 객체. 닫힌 목록

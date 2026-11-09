@@ -599,6 +599,106 @@ class JsonRpcVersion(RootModel[Literal["2.0"]]):
     root: Annotated[Literal["2.0"], Field(title="JsonRpcVersion")]
 
 
+class Kb8CheatAdoptionValue(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    at: Annotated[str, Field(min_length=1)]
+    by: Literal["human"]
+    category: Annotated[str, Field(pattern="^[a-z][a-z0-9_]{0,63}$")]
+    digest: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
+
+
+class Kb8CheatAdoption(RootModel[Kb8CheatAdoptionValue | None]):
+    root: Annotated[Kb8CheatAdoptionValue | None, Field(title="Kb8CheatAdoption")]
+
+
+class Kb8CheatCategoriesSetResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    sha256: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
+
+
+class Kb8CheatCategory(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    description: str | None = None
+    id: Annotated[str, Field(pattern="^[a-z][a-z0-9_]{0,63}$")]
+    title: Annotated[str, Field(min_length=1)]
+    unattended: bool | None = None
+
+
+class Kb8CheatSummary(BaseModel):
+    """
+    cheats.list 항목: 정의 요약과 채택 상태 (adopted: 채택 digest가 지금 정의·구현과 같다)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    adopted: bool
+    adoption: Kb8CheatAdoption | None
+    args: dict[str, Any]
+    category: str | None
+    effect: str
+    id: str
+    problem: Annotated[
+        str | None, Field(description="채택할 수 없거나 채택이 무효인 까닭 (없으면 null)")
+    ]
+    rev: Annotated[int, Field(ge=1)]
+    title: str
+
+
+class Kb8CheatsAdoptParams(BaseModel):
+    """
+    cheats.adopt: 그 rev 정의를 분류와 함께 채택 (사람 전용)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    category: Annotated[str, Field(pattern="^[a-z][a-z0-9_]{0,63}$")]
+    id: Annotated[str, Field(pattern="^[a-z][a-z0-9_]{0,63}$")]
+    rev: Annotated[int, Field(ge=1)]
+
+
+class Kb8CheatsAdoptResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    adoption: Kb8CheatAdoption | None
+    id: str
+    revision: Annotated[int, Field(ge=0)]
+
+
+class Kb8CheatsListResult(BaseModel):
+    """
+    cheats.list: knowledge/cheats.json 치트와 kookabug.json 치트 정책
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    categories: list[Kb8CheatCategory]
+    cheats: list[Kb8CheatSummary]
+    enabled: bool
+    revision: Annotated[int, Field(ge=0)]
+
+
+class Kb8CheatsUnadoptParams(BaseModel):
+    """
+    cheats.unadopt: 채택 풀기 (사람 전용)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: Annotated[str, Field(pattern="^[a-z][a-z0-9_]{0,63}$")]
+    rev: Annotated[int, Field(ge=1)]
+
+
 class LeaseDevice(BaseModel):
     """
     소유자가 입력을 보내는 장치. 다음 획득자가 앞 소유자의 키를 이 장치로 뗀다. none은 입력 장치가 없는 소유자(녹화) — 뗄 것이 없다
@@ -687,6 +787,36 @@ class ApprovalRespond(BaseModel):
     params: ApprovalRespondParams
     renderer: Literal[True]
     result: EmptyResult
+    tool: Literal["ui_only"]
+
+
+class CheatsAdopt(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8CheatsAdoptParams
+    renderer: Literal[False]
+    result: Kb8CheatsAdoptResult
+    tool: Literal["ui_only"]
+
+
+class CheatsList(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[False]
+    result: Kb8CheatsListResult
+    tool: Literal["ui_only"]
+
+
+class CheatsUnadopt(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8CheatsUnadoptParams
+    renderer: Literal[False]
+    result: Kb8CheatsAdoptResult
     tool: Literal["ui_only"]
 
 
@@ -3073,6 +3203,19 @@ class ImageRef(RootModel[ImageRef1 | ImageRef2]):
     ]
 
 
+class Kb8CheatCategoriesSetParams(BaseModel):
+    """
+    cheats.categories.set: kookabug.json cheats 블록 (사람 전용). base_sha256은 지금 kookabug.json 바이트의 sha256 (다르면 revision_conflict)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_sha256: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
+    categories: list[Kb8CheatCategory]
+    enabled: bool
+
+
 class LeaseChangedParams(BaseModel):
     """
     입력 임대권 소유자 (없으면 null). 녹화 세션이면 kind recorder (상태 바 '입력: 녹화')
@@ -3165,6 +3308,16 @@ class ApprovalPreview(BaseModel):
     params: ApprovalIdParams
     renderer: Literal[True]
     result: ApprovalPreviewResult
+    tool: Literal["ui_only"]
+
+
+class CheatsCategoriesSet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8CheatCategoriesSetParams
+    renderer: Literal[False]
+    result: Kb8CheatCategoriesSetResult
     tool: Literal["ui_only"]
 
 
@@ -5540,6 +5693,10 @@ class Methods(BaseModel):
     approval_list: Annotated[ApprovalList, Field(alias="approval.list")]
     approval_preview: Annotated[ApprovalPreview, Field(alias="approval.preview")]
     approval_respond: Annotated[ApprovalRespond, Field(alias="approval.respond")]
+    cheats_adopt: Annotated[CheatsAdopt, Field(alias="cheats.adopt")]
+    cheats_categories_set: Annotated[CheatsCategoriesSet, Field(alias="cheats.categories.set")]
+    cheats_list: Annotated[CheatsList, Field(alias="cheats.list")]
+    cheats_unadopt: Annotated[CheatsUnadopt, Field(alias="cheats.unadopt")]
     control_click: Annotated[ControlClick, Field(alias="control.click")]
     control_key: Annotated[ControlKey, Field(alias="control.key")]
     control_type: Annotated[ControlType, Field(alias="control.type")]

@@ -103,6 +103,14 @@ from kookabug_core.inputs.service import InputService, InputSink
 from kookabug_core.loader import Program
 from kookabug_core.plugins import runtime as plugin_runtime
 from kookabug_core.plugins.layout import LOCK_FILE
+from kookabug_core.qa import (
+    QA_CONFIG,
+    QA_INVALID,
+    QA_NOT_APPLICABLE,
+    QaTrace,
+    not_applicable,
+    run_qa,
+)
 from kookabug_core.record import FileArtifacts, Journal, write_run_json
 from kookabug_core.record.artifacts import FindEvidence, FrameRegistry, find_with_report
 from kookabug_core.record.finalize import (
@@ -632,11 +640,21 @@ class Runner:
         if has_errors(diagnostics):
             errors = [d for d in diagnostics if d.severity == "error"]
             summary = "; ".join(f"{d.code} {d.file or ''}{d.pointer or ''}" for d in errors[:5])
+            if all(d.code == QA_INVALID for d in errors):
+                # qa 설정 오류는 그래프 오류와 구분해 드러낸다 (M8 3.5 — skip으로 묻지 않음)
+                self._set_qa(program, config_errors=[d.message for d in errors])
+                return _End.error(
+                    QA_CONFIG, f"qa 설정 오류 {len(errors)}건: {summary}", diagnostics=diagnostics
+                )
             return _End.error(
                 "graph_invalid",
                 f"실행 전 검증 오류 {len(errors)}건: {summary}",
                 diagnostics=diagnostics,
             )
+        skip = not_applicable(program.qa, spec.profile)
+        if skip is not None:
+            self._set_qa(program, not_applicable_reason=skip)
+            return _End("skipped", QA_NOT_APPLICABLE, skip)
         warnings = [d for d in diagnostics if d.severity == "warning"]
         if warnings:
             # 경고는 실행을 막지 않는다. run.json에 남겨 CLI 요약·기록이 보인다
@@ -951,8 +969,10 @@ class Runner:
                     collect_events=False,
                     capture_timeout_ms=self.spec.capture_timeout_ms,
                     record_override=self.spec.record_override,
+                    unattended=self.spec.unattended,
                 ),
             )
+            self._set_qa(program, trace=result.qa)
         except GraphInvalid as exc:
             return _End.error("graph_invalid", str(exc), diagnostics=exc.diagnostics)
         except Cancelled:
@@ -964,6 +984,24 @@ class Runner:
                 raise _RecordBroken(str(exc)) from exc
             raise
         return _End.of(result)
+
+    def _set_qa(
+        self,
+        program: Program,
+        *,
+        trace: QaTrace | None = None,
+        config_errors: Sequence[str] = (),
+        not_applicable_reason: str | None = None,
+    ) -> None:
+        """`run.json.qa` (M8 3.5): 검증 노드 실행·통과, 쓴 치트, 설정 오류·미적용."""
+        qa = run_qa(
+            program,
+            trace,
+            config_errors=config_errors,
+            not_applicable_reason=not_applicable_reason,
+        )
+        if qa is not None:
+            self._run_json["qa"] = qa
 
     @property
     def journal_broken(self) -> bool:

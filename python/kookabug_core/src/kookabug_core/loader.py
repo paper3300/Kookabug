@@ -9,6 +9,11 @@
 
 서브그래프 출구의 `screen`(화면 ID)은 `screens/`에서 찾아 읽고 그 target까지 따라간다(M1 2.10).
 결과는 `Program.screens`이고, 진단은 `validate.screens`가 낸다.
+
+M8 `qa`·치트: 루트 `qa.claims`가 가리키는 `knowledge/features/<기능>.json`, 치트 노드
+(`core.qa.cheat`)·`qa.cheats`가 있으면 `knowledge/cheats.json`을 읽어 `Program.knowledge`에 두고
+참조 목록에 넣는다 (스냅샷이 복사해 실행 시작 때 고정). 치트 노드의 구현 서브그래프
+(`impl.graph`)는 그 정의에서 찾아 `core.graph.call`처럼 읽고 `Program.calls`에 둔다.
 """
 
 from __future__ import annotations
@@ -23,7 +28,7 @@ from typing import Any, Literal
 from kookabug_core.canonical import loads_strict
 from kookabug_core.codes import diag
 from kookabug_core.diagnostics import Diagnostic, json_pointer
-from kookabug_core.ir import GRAPH_CALL, Graph, Link, LinkRef, Node, Unresolved
+from kookabug_core.ir import GRAPH_CALL, QA_CHEAT, Graph, Link, LinkRef, Node, Unresolved
 from kookabug_core.schema import check_shape
 from kookabug_core.screens import ScreenDef, ScreenFileError, read_screen_file, screen_index
 from kookabug_core.workspace import (
@@ -38,6 +43,7 @@ from kookabug_sdk import Secret
 from kookabug_sdk.types import Target
 
 __all__ = [
+    "CHEATS_FILE",
     "MAX_CALL_DEPTH",
     "CallRef",
     "Program",
@@ -52,6 +58,9 @@ CallStatus = Literal["ok", "missing", "broken", "bad_path", "unloaded"]
 
 MAX_CALL_DEPTH = 16
 """테스트(깊이 0)에서 시작해 중첩 호출 프레임을 16개까지 둔다 (검사는 `validate.subgraph`)."""
+
+CHEATS_FILE = "knowledge/cheats.json"
+"""치트 정의 (M8 3.2). 치트 노드·`qa.cheats`가 있는 실행은 이 파일을 스냅샷에 고정한다."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +134,28 @@ class Program:
     """그래프가 `$setting`으로 쓴 설정 (키 → 찾은 값·계층). 실행 정보(`run.json`)에 남긴다."""
     screens: dict[str, ScreenRef] = field(default_factory=dict[str, ScreenRef])
     """출구 `screen`이 가리킨 화면 ID → 찾은 결과."""
+    knowledge: dict[str, Any] = field(default_factory=dict[str, Any])
+    """M8: 읽은 지식 파일(워크스페이스 기준 경로 → 형식 검사를 통과한 값, 없거나 틀리면 None)."""
+    cheat_checks: dict[str, tuple[str, ...]] = field(default_factory=dict[str, tuple[str, ...]])
+    """M8: 실행 스냅샷이 **원본**에서 본 치트 구현 폐포의 문제 (치트 ID → 문제, 스냅샷만 채운다).
+    문제가 있으면 그 치트 노드는 `cheat_not_adopted`."""
+
+    @property
+    def qa(self) -> Mapping[str, Any] | None:
+        """루트 그래프의 `qa` (없으면 None)."""
+        root = self.graphs.get(self.root)
+        qa = root.data.get("qa") if root is not None else None
+        return qa if isinstance(qa, Mapping) else None
+
+    def cheat(self, cheat_id: str) -> Mapping[str, Any] | None:
+        """`knowledge/cheats.json`의 그 치트 정의 (파일·정의가 없으면 None)."""
+        doc = self.knowledge.get(CHEATS_FILE)
+        if not isinstance(doc, Mapping):
+            return None
+        for item in doc.get("cheats", ()):
+            if isinstance(item, Mapping) and item.get("id") == cheat_id:
+                return item
+        return None
 
     def callee(self, graph: str, node: str) -> Graph | None:
         ref = self.calls.get((graph, node))
@@ -171,6 +202,7 @@ def load_program(
         program.diagnostics.append(
             diag("graph_missing", f"그래프 파일 '{rel}'이(가) 없다", file=rel)
         )
+    loader.load_qa()
     loader.load_screens()
     return program
 
@@ -233,13 +265,13 @@ class _Loader:
                 continue  # 이미 읽음 (호출 순환·여러 번 호출)
             if self._load(rel) != "ok" or depth > MAX_CALL_DEPTH:
                 continue
-            for node in self.program.graphs[rel].nodes_of_type(GRAPH_CALL):
+            for node in self._callers(self.program.graphs[rel]):
                 path = self._call_path(node)
                 if path is not None:
                     queue.append((path, depth + 1))
 
-        for graph in self.program.graphs.values():
-            for node in graph.nodes_of_type(GRAPH_CALL):
+        for graph in list(self.program.graphs.values()):
+            for node in self._callers(graph):
                 path = self._call_path(node)
                 status: CallStatus = (
                     "bad_path" if path is None else self._status.get(path, "unloaded")
@@ -251,11 +283,65 @@ class _Loader:
                 )
         return self._status[root]
 
+    @staticmethod
+    def _callers(graph: Graph) -> list[Node]:
+        """서브그래프를 부르는 노드: `core.graph.call`과 치트 노드 (구현 서브그래프)."""
+        return [n for n in graph.nodes.values() if n.type in (GRAPH_CALL, QA_CHEAT)]
+
     def _call_path(self, node: Node) -> str | None:
+        if node.type == QA_CHEAT:
+            return self._cheat_path(node)
         target = node.config.get("graph")
         if isinstance(target, str) and self.ws.resolve(target) is not None:
             return target
         return None
+
+    def _cheat_path(self, node: Node) -> str | None:
+        """치트 노드의 구현 서브그래프: 지식 파일의 그 치트 `impl.graph`(콘솔 구현만)."""
+        cheat_id = node.config.get("cheat")
+        self.knowledge_doc(CHEATS_FILE, "cheats")
+        cheat = self.program.cheat(cheat_id) if isinstance(cheat_id, str) else None
+        impl = cheat.get("impl") if cheat is not None else None
+        if not isinstance(impl, Mapping) or impl.get("kind") != "console":
+            return None
+        target = impl.get("graph")
+        if isinstance(target, str) and self.ws.resolve(target) is not None:
+            return target
+        return None
+
+    # ------------------------------------------------------------ 지식 (M8)
+
+    def knowledge_doc(self, rel: str, kind: Literal["claims", "cheats"]) -> Any:
+        """지식 파일 하나를 읽어 `Program.knowledge`에 둔다 (한 번만). 참조 목록에 넣으므로 스냅샷이
+        복사한다. 없거나 형식이 틀리면 None (진단은 `validate.qa`)."""
+        knowledge = self.program.knowledge
+        if rel in knowledge:
+            return knowledge[rel]
+        knowledge[rel] = None
+        path = self.ws.resolve(rel)
+        if path is None:
+            return None
+        self.program.references.discovered.add(rel)
+        try:
+            data = loads_strict(path.read_text(encoding="utf-8")) if path.is_file() else None
+        except OSError, UnicodeDecodeError, ValueError:
+            data = None
+        if data is not None and not check_shape(data, kind, file=rel):
+            knowledge[rel] = data
+        return knowledge[rel]
+
+    def load_qa(self) -> None:
+        """루트 `qa`가 가리키는 주장 파일, 치트를 쓰거나 허용하는 그래프면 치트 파일."""
+        qa = self.program.qa
+        if qa is not None:
+            for claim in qa.get("claims", ()):
+                claim_id = claim.get("id") if isinstance(claim, Mapping) else None
+                if isinstance(claim_id, str):
+                    feature = claim_id.split(".", 1)[0]
+                    self.knowledge_doc(f"knowledge/features/{feature}.json", "claims")
+        for graph in self.program.graphs.values():
+            if "cheats" in (graph.data.get("qa") or {}) or graph.nodes_of_type(QA_CHEAT):
+                self.knowledge_doc(CHEATS_FILE, "cheats")
 
     def _load(self, rel: str) -> CallStatus:
         path = self.ws.resolve(rel)

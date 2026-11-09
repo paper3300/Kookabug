@@ -17,6 +17,7 @@ __all__ = [
     "GRAPH_CALL",
     "GRAPH_ENTRY",
     "GRAPH_EXIT",
+    "QA_CHEAT",
     "TEST_TERMINALS",
     "ExecEdge",
     "Graph",
@@ -30,6 +31,8 @@ __all__ = [
 GRAPH_ENTRY = "core.graph.entry"
 GRAPH_EXIT = "core.graph.exit"
 GRAPH_CALL = "core.graph.call"
+QA_CHEAT = "core.qa.cheat"
+"""M8 치트 노드: 구현 서브그래프는 `config.graph`가 아니라 `knowledge/cheats.json` 정의에서 온다."""
 TEST_TERMINALS = frozenset({"core.test.pass", "core.test.fail", "core.test.skip"})
 
 type Path = tuple[str | int, ...]

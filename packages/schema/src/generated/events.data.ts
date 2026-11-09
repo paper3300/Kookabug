@@ -117,6 +117,64 @@ export const eventsSchema: unknown = {
       "title": "CancelRequestedEvent",
       "type": "object"
     },
+    "CheatCallEvent": {
+      "additionalProperties": false,
+      "description": "M8 치트 노드 호출 (core.qa.cheat). 허용 교집합을 통과하고 구현 서브그래프를 부르기 직전. before_assertions: 이 실행에서 아직 성공한 검증 노드가 없다",
+      "properties": {
+        "args_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "before_assertions": {
+          "type": "boolean"
+        },
+        "cheat": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "type": "string"
+        },
+        "digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "event": {
+          "const": "cheat.call"
+        },
+        "node": {
+          "type": "string"
+        },
+        "rev": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "run": {
+          "$ref": "#/$defs/RunId"
+        },
+        "seq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "step": {
+          "$ref": "#/$defs/StepId"
+        },
+        "t": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "args_digest",
+        "before_assertions",
+        "cheat",
+        "digest",
+        "event",
+        "node",
+        "rev",
+        "run",
+        "seq",
+        "step",
+        "t"
+      ],
+      "title": "CheatCallEvent",
+      "type": "object"
+    },
     "ControlLostEvent": {
       "additionalProperties": false,
       "description": "제어 채널이 끊겼다. 감독자는 살아 있으므로 취소가 아니다",
@@ -1313,6 +1371,9 @@ export const eventsSchema: unknown = {
     },
     {
       "$ref": "#/$defs/WorkerExitEvent"
+    },
+    {
+      "$ref": "#/$defs/CheatCallEvent"
     },
     {
       "$ref": "#/$defs/RunEndEvent"

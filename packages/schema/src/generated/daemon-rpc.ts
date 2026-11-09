@@ -340,6 +340,11 @@ export type GraphPatchNodeRef = string;
  */
 export type RequestSeq = number;
 /**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CheatAdoption".
+ */
+export type Kb8CheatAdoption = Kb8CheatAdoptionValue | null;
+/**
  * ready 준비됨 · missing 환경 없음([준비…]) · stale 조건(Python·SDK)이 앱과 다름([다시 잠그기…]) · broken 환경이 깨짐([준비…]로 새로)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -1593,6 +1598,104 @@ export interface GraphValidateResult {
   seq: RequestSeq;
   shapes: NodeShapes;
 }
+export interface Kb8CheatAdoptionValue {
+  at: string;
+  by: "human";
+  category: string;
+  digest: string;
+}
+/**
+ * cheats.categories.set: kookabug.json cheats 블록 (사람 전용). base_sha256은 지금 kookabug.json 바이트의 sha256 (다르면 revision_conflict)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CheatCategoriesSetParams".
+ */
+export interface Kb8CheatCategoriesSetParams {
+  base_sha256: string;
+  categories: Kb8CheatCategory[];
+  enabled: boolean;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CheatCategory".
+ */
+export interface Kb8CheatCategory {
+  description?: string;
+  id: string;
+  title: string;
+  unattended?: boolean;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CheatCategoriesSetResult".
+ */
+export interface Kb8CheatCategoriesSetResult {
+  sha256: string;
+}
+/**
+ * cheats.list 항목: 정의 요약과 채택 상태 (adopted: 채택 digest가 지금 정의·구현과 같다)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CheatSummary".
+ */
+export interface Kb8CheatSummary {
+  adopted: boolean;
+  adoption: Kb8CheatAdoption;
+  args: {
+    [k: string]: unknown | undefined;
+  };
+  category: null | string;
+  effect: string;
+  id: string;
+  /**
+   * 채택할 수 없거나 채택이 무효인 까닭 (없으면 null)
+   */
+  problem: null | string;
+  rev: number;
+  title: string;
+}
+/**
+ * cheats.adopt: 그 rev 정의를 분류와 함께 채택 (사람 전용)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CheatsAdoptParams".
+ */
+export interface Kb8CheatsAdoptParams {
+  category: string;
+  id: string;
+  rev: number;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CheatsAdoptResult".
+ */
+export interface Kb8CheatsAdoptResult {
+  adoption: Kb8CheatAdoption;
+  id: string;
+  revision: number;
+}
+/**
+ * cheats.list: knowledge/cheats.json 치트와 kookabug.json 치트 정책
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CheatsListResult".
+ */
+export interface Kb8CheatsListResult {
+  categories: Kb8CheatCategory[];
+  cheats: Kb8CheatSummary[];
+  enabled: boolean;
+  revision: number;
+}
+/**
+ * cheats.unadopt: 채택 풀기 (사람 전용)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CheatsUnadoptParams".
+ */
+export interface Kb8CheatsUnadoptParams {
+  id: string;
+  rev: number;
+}
 /**
  * 입력 임대권 소유자 (없으면 null). 녹화 세션이면 kind recorder (상태 바 '입력: 녹화')
  *
@@ -1693,6 +1796,30 @@ export interface Methods {
     params: ApprovalRespondParams;
     renderer: true;
     result: EmptyResult;
+    tool: "ui_only";
+  };
+  "cheats.adopt": {
+    params: Kb8CheatsAdoptParams;
+    renderer: false;
+    result: Kb8CheatsAdoptResult;
+    tool: "ui_only";
+  };
+  "cheats.categories.set": {
+    params: Kb8CheatCategoriesSetParams;
+    renderer: false;
+    result: Kb8CheatCategoriesSetResult;
+    tool: "ui_only";
+  };
+  "cheats.list": {
+    params: EmptyParams;
+    renderer: false;
+    result: Kb8CheatsListResult;
+    tool: "ui_only";
+  };
+  "cheats.unadopt": {
+    params: Kb8CheatsUnadoptParams;
+    renderer: false;
+    result: Kb8CheatsAdoptResult;
     tool: "ui_only";
   };
   "control.click": {

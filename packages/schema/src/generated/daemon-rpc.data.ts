@@ -2058,6 +2058,261 @@ export const daemonRpcSchema: unknown = {
       "const": "2.0",
       "title": "JsonRpcVersion"
     },
+    "Kb8CheatAdoption": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "by": {
+              "const": "human"
+            },
+            "category": {
+              "pattern": "^[a-z][a-z0-9_]{0,63}$",
+              "type": "string"
+            },
+            "digest": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "by",
+            "category",
+            "digest"
+          ],
+          "title": "Kb8CheatAdoptionValue",
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Kb8CheatAdoption"
+    },
+    "Kb8CheatCategoriesSetParams": {
+      "additionalProperties": false,
+      "description": "cheats.categories.set: kookabug.json cheats 블록 (사람 전용). base_sha256은 지금 kookabug.json 바이트의 sha256 (다르면 revision_conflict)",
+      "properties": {
+        "base_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "categories": {
+          "items": {
+            "$ref": "#/$defs/Kb8CheatCategory"
+          },
+          "type": "array"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "base_sha256",
+        "categories",
+        "enabled"
+      ],
+      "title": "Kb8CheatCategoriesSetParams",
+      "type": "object"
+    },
+    "Kb8CheatCategoriesSetResult": {
+      "additionalProperties": false,
+      "properties": {
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha256"
+      ],
+      "title": "Kb8CheatCategoriesSetResult",
+      "type": "object"
+    },
+    "Kb8CheatCategory": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "unattended": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "title"
+      ],
+      "title": "Kb8CheatCategory",
+      "type": "object"
+    },
+    "Kb8CheatSummary": {
+      "additionalProperties": false,
+      "description": "cheats.list 항목: 정의 요약과 채택 상태 (adopted: 채택 digest가 지금 정의·구현과 같다)",
+      "properties": {
+        "adopted": {
+          "type": "boolean"
+        },
+        "adoption": {
+          "$ref": "#/$defs/Kb8CheatAdoption"
+        },
+        "args": {
+          "type": "object"
+        },
+        "category": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "effect": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "problem": {
+          "description": "채택할 수 없거나 채택이 무효인 까닭 (없으면 null)",
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "rev": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "adopted",
+        "adoption",
+        "args",
+        "category",
+        "effect",
+        "id",
+        "problem",
+        "rev",
+        "title"
+      ],
+      "title": "Kb8CheatSummary",
+      "type": "object"
+    },
+    "Kb8CheatsAdoptParams": {
+      "additionalProperties": false,
+      "description": "cheats.adopt: 그 rev 정의를 분류와 함께 채택 (사람 전용)",
+      "properties": {
+        "category": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "type": "string"
+        },
+        "rev": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "category",
+        "id",
+        "rev"
+      ],
+      "title": "Kb8CheatsAdoptParams",
+      "type": "object"
+    },
+    "Kb8CheatsAdoptResult": {
+      "additionalProperties": false,
+      "properties": {
+        "adoption": {
+          "$ref": "#/$defs/Kb8CheatAdoption"
+        },
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "adoption",
+        "id",
+        "revision"
+      ],
+      "title": "Kb8CheatsAdoptResult",
+      "type": "object"
+    },
+    "Kb8CheatsListResult": {
+      "additionalProperties": false,
+      "description": "cheats.list: knowledge/cheats.json 치트와 kookabug.json 치트 정책",
+      "properties": {
+        "categories": {
+          "items": {
+            "$ref": "#/$defs/Kb8CheatCategory"
+          },
+          "type": "array"
+        },
+        "cheats": {
+          "items": {
+            "$ref": "#/$defs/Kb8CheatSummary"
+          },
+          "type": "array"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "revision": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "categories",
+        "cheats",
+        "enabled",
+        "revision"
+      ],
+      "title": "Kb8CheatsListResult",
+      "type": "object"
+    },
+    "Kb8CheatsUnadoptParams": {
+      "additionalProperties": false,
+      "description": "cheats.unadopt: 채택 풀기 (사람 전용)",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "type": "string"
+        },
+        "rev": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "rev"
+      ],
+      "title": "Kb8CheatsUnadoptParams",
+      "type": "object"
+    },
     "LeaseChangedParams": {
       "additionalProperties": false,
       "description": "입력 임대권 소유자 (없으면 null). 녹화 세션이면 kind recorder (상태 바 '입력: 녹화')",
@@ -2500,6 +2755,102 @@ export const daemonRpcSchema: unknown = {
             },
             "result": {
               "$ref": "#/$defs/EmptyResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "cheats.adopt": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/Kb8CheatsAdoptParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/Kb8CheatsAdoptResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "cheats.categories.set": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/Kb8CheatCategoriesSetParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/Kb8CheatCategoriesSetResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "cheats.list": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/EmptyParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/Kb8CheatsListResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "cheats.unadopt": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/Kb8CheatsUnadoptParams"
+            },
+            "renderer": {
+              "const": false
+            },
+            "result": {
+              "$ref": "#/$defs/Kb8CheatsAdoptResult"
             },
             "tool": {
               "const": "ui_only"
@@ -4699,7 +5050,11 @@ export const daemonRpcSchema: unknown = {
         "windows.list",
         "workspace.info",
         "workspace.read",
-        "workspace.tree"
+        "workspace.tree",
+        "cheats.adopt",
+        "cheats.categories.set",
+        "cheats.list",
+        "cheats.unadopt"
       ],
       "title": "Methods",
       "type": "object"

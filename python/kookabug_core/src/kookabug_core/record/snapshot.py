@@ -149,6 +149,11 @@ def take_snapshot(
             if not queue:
                 break
         if copier.changed() is None:
+            # 치트 구현의 위치 판정은 원본에서 (스냅샷 복사는 정션·링크를 일반 파일로 만든다).
+            # 복사할 때 실경로가 knowledge/였던 파일도 더한다 — 판정과 복사 사이의 바꿔치기 대비
+            from kookabug_core.knowledge.cheats import source_checks
+
+            program.cheat_checks = source_checks(workspace, program, aliased=copier.knowledge_real)
             return Snapshot(
                 root,
                 snap,
@@ -203,6 +208,8 @@ class _Copier:
         self.absent: set[str] = set()
         self.written: set[str] = set()
         """원본이 아니라 값으로 쓴 파일 (`graph_value`). 고정점의 변경 검사 대상이 아니다."""
+        self.knowledge_real: set[str] = set()
+        """복사할 때 실경로가 `knowledge/` 아래였던 경로 (적힌 경로와 무관 — 치트 위치 판정)."""
         self.total = 0
 
     def done(self) -> set[str]:
@@ -254,6 +261,8 @@ class _Copier:
             raise SnapshotError("snapshot_failed", f"'{rel}'을(를) 복사하지 못했다: {exc}") from exc
         self.copied[rel] = sig
         self.total += sig[0]
+        if self._first_real(src) == "knowledge":
+            self.knowledge_real.add(rel)
         if self.on_copy is not None:
             self.on_copy(rel, self.attempt)
 
@@ -271,6 +280,13 @@ class _Copier:
         except ValueError, IndexError:
             first = ""
         return first.casefold() == PRIVATE_DIR.casefold()
+
+    def _first_real(self, src: Path) -> str:
+        """실경로(대소문자·짧은 이름·링크·정션 해석)의 워크스페이스 첫 폴더 이름 (소문자)."""
+        try:
+            return src.resolve(strict=True).relative_to(self.source_root).parts[0].casefold()
+        except OSError, ValueError, IndexError:
+            return ""
 
     def changed(self) -> str | None:
         """복사 때와 서명이 달라진 첫 원본 (없으면 None)."""

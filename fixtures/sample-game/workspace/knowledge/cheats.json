@@ -1,0 +1,30 @@
+{
+  "cheats": [
+    {
+      "adoption": null,
+      "args": {
+        "amount": {
+          "max": 100000,
+          "min": 1,
+          "type": "integer"
+        }
+      },
+      "effect": "현재 캐릭터 골드를 amount만큼 늘린다",
+      "env": {},
+      "id": "give_gold",
+      "impl": {
+        "graph": "subgraphs/cheats/console.graph.json",
+        "kind": "console",
+        "template": "give_gold {amount}"
+      },
+      "origin": {
+        "kind": "human"
+      },
+      "preconditions": ["상점 화면"],
+      "rev": 1,
+      "title": "골드 지급"
+    }
+  ],
+  "format": "kookabug.cheats/0",
+  "revision": 1
+}

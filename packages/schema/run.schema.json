@@ -368,6 +368,83 @@
       },
       "type": "array"
     },
+    "qa": {
+      "additionalProperties": false,
+      "description": "M8 그래프 qa 결과: 검증 노드가 실제로 실행·통과했나, 쓴 치트, 설정 오류",
+      "properties": {
+        "cheats_used": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "calls": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "cheat": {
+                "type": "string"
+              },
+              "digest": {
+                "type": "string"
+              },
+              "rev": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": ["calls", "cheat", "digest", "rev"],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "claims": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assertions": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "executed": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "type": "string"
+              },
+              "passed": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "rev": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": ["assertions", "executed", "id", "passed", "rev"],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "config_errors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "not_applicable": {
+          "description": "qa.profiles가 이번 프로필을 담지 않아 판정 skipped (qa_not_applicable)",
+          "type": "string"
+        }
+      },
+      "required": ["cheats_used", "claims", "config_errors"],
+      "type": "object"
+    },
     "reason": {
       "type": "string"
     },

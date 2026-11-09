@@ -956,6 +956,12 @@ class RunSpec(BaseModel):
         Field(description="실행 출처 (M5: agent_control = 에이전트 게임 조작). run.json에 남는다"),
     ] = None
     supervisor: ProcessIdent
+    unattended: Annotated[
+        bool | None,
+        Field(
+            description="M8: 사람 없는 Agent 연결이 시작한 실행. 치트 노드는 분류가 무인 허용인 채택 치트만 통과한다. 없으면 false"
+        ),
+    ] = None
     worker_cancel_grace_ms: Annotated[int | None, Field(ge=0)] = None
     worker_start_timeout_ms: Annotated[int | None, Field(ge=1)] = None
     workspace_root: str

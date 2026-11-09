@@ -97,19 +97,29 @@ def make_fake_game(
     draw: bool = True,
     scenario_patch: Any = None,
     screens: bool = True,
+    scenario: str = "game",
+    variant: str | None = None,
 ) -> FakeGame:
     """예제 워크스페이스 사본 + 가짜 게임 사양. `scenario_patch(dict)`로 장면 표를 고칠 수 있다.
-    `screens=False`면 확정 화면 지도(`screens/`)를 지운다 — 처음부터 탐색하는 검사용."""
+    `screens=False`면 확정 화면 지도(`screens/`)를 지운다 — 처음부터 탐색하는 검사용.
+
+    `scenario="shop"`이면 예제 상점(M8 3.16, `frames/shop/`) 장면 표를 쓰고, `variant`
+    (`moved`·`missing`)를 주면 이미 떠 있는 상점과 새로 띄우는 상점이 모두 그 갈래다."""
     root = copy_sample_workspace(tmp_path / "ws")
     if not screens:
         shutil.rmtree(root / "screens", ignore_errors=True)
     frames = tmp_path / "frames"
-    shutil.copytree(REPO_ROOT / "fixtures" / "sample-game" / "frames", frames)
-    scenario = json.loads((frames / "scenario.json").read_text(encoding="utf-8"))
-    scenario["running"] = True
+    source = REPO_ROOT / "fixtures" / "sample-game" / "frames"
+    shutil.copytree(source / "shop" if scenario == "shop" else source, frames)
+    table = json.loads((frames / "scenario.json").read_text(encoding="utf-8"))
+    table["running"] = True
+    if variant is not None:
+        if variant not in table["variants"]:
+            raise ValueError(f"장면 표에 없는 갈래 {variant!r}")
+        table["launch"] = [{"variant": variant}]
     if scenario_patch is not None:
-        scenario_patch(scenario)
-    (frames / "scenario.json").write_text(json.dumps(scenario), encoding="utf-8")
+        scenario_patch(table)
+    (frames / "scenario.json").write_text(json.dumps(table), encoding="utf-8")
     log = tmp_path / "input.jsonl"
     state = tmp_path / "game-state.json"
     spec = tmp_path / "platform.json"
@@ -119,7 +129,10 @@ def make_fake_game(
         "state_file": str(state),
     }
     if draw:
-        body["draw_fields"] = {"login": ["account", "password"]}
+        forms = (
+            {"console": ["command"]} if scenario == "shop" else {"login": ["account", "password"]}
+        )
+        body["draw_fields"] = forms
     spec.write_text(json.dumps(body), encoding="utf-8")
     local = root / ".kookabug" / "local.json"
     local.parent.mkdir(exist_ok=True)

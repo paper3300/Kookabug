@@ -20,6 +20,44 @@ class FailurePath(RootModel[list[str]]):
     root: Annotated[list[str], Field(min_length=1)]
 
 
+class CheatsUsedItem(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    calls: Annotated[int, Field(ge=1)]
+    cheat: str
+    digest: str
+    rev: Annotated[int, Field(ge=1)]
+
+
+class Claim(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    assertions: list[str]
+    executed: list[str]
+    id: str
+    passed: list[str]
+    rev: Annotated[int, Field(ge=1)]
+
+
+class Qa(BaseModel):
+    """
+    M8 그래프 qa 결과: 검증 노드가 실제로 실행·통과했나, 쓴 치트, 설정 오류
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    cheats_used: list[CheatsUsedItem]
+    claims: list[Claim]
+    config_errors: list[str]
+    not_applicable: Annotated[
+        str | None,
+        Field(description="qa.profiles가 이번 프로필을 담지 않아 판정 skipped (qa_not_applicable)"),
+    ] = None
+
+
 class RecordOverride(BaseModel):
     """
     실행별 기록 강제 (M7 R2): 에이전트 제어 실행은 스크린샷·영상을 끄고 비밀값을 가렸다. 그래프·워크스페이스 기록 정책과 별개
@@ -238,6 +276,12 @@ class Run(BaseModel):
         int | None, Field(description="멈춰 있던 시간 (M3부터 기한에서 뺀다)", ge=0)
     ] = None
     plugins: list[Plugin] | None = None
+    qa: Annotated[
+        Qa | None,
+        Field(
+            description="M8 그래프 qa 결과: 검증 노드가 실제로 실행·통과했나, 쓴 치트, 설정 오류"
+        ),
+    ] = None
     reason: str | None = None
     record_override: Annotated[
         RecordOverride | None,

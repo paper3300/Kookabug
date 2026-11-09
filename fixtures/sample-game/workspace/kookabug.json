@@ -1,4 +1,24 @@
 {
+  "automation": {
+    "forbidden": [
+      {
+        "kind": "text",
+        "value": "결제"
+      }
+    ],
+    "format": "kookabug.automation/0"
+  },
+  "cheats": {
+    "categories": [
+      {
+        "description": "예제 상점 개발 서버에서만 쓰는 무해한 치트 (무인 실행 허용)",
+        "id": "dev_safe",
+        "title": "개발 서버 무해",
+        "unattended": true
+      }
+    ],
+    "enabled": true
+  },
   "format": "kookabug.workspace/0",
   "profiles": {
     "login_fail": {
@@ -9,6 +29,16 @@
     "maintenance": {
       "settings": {
         "game.args": ["-m", "sample_game", "--maintenance"]
+      }
+    },
+    "shop_missing": {
+      "settings": {
+        "shop.args": ["-m", "sample_shop", "--buy-missing"]
+      }
+    },
+    "shop_moved": {
+      "settings": {
+        "shop.args": ["-m", "sample_shop", "--buy-moved"]
       }
     }
   },
@@ -23,6 +53,16 @@
     "game.args": ["-m", "sample_game"],
     "game.cwd": null,
     "game.executable": null,
-    "game.title": "SampleRPG"
-  }
+    "game.title": "SampleRPG",
+    "shop.args": ["-m", "sample_shop"],
+    "shop.title": "SampleRPG 상점"
+  },
+  "sources": [
+    {
+      "id": "item_table",
+      "kind": "data",
+      "path": "sources/items.csv",
+      "title": "아이템 테이블"
+    }
+  ]
 }

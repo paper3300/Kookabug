@@ -177,6 +177,64 @@
           "required": ["base_rev", "file", "id", "op", "status"],
           "title": "OpSetStatus",
           "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "치트 채택 (사람 전용 — Agent는 adoption_reserved). digest는 Kookabug가 계산한다",
+          "properties": {
+            "base_rev": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "category": {
+              "pattern": "^[a-z][a-z0-9_]{0,63}$",
+              "type": "string"
+            },
+            "file": {
+              "description": "features/<기능>·lessons·cheats·unknowns (사건은 cases 도구로만)",
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "op": {
+              "const": "adopt"
+            }
+          },
+          "required": ["base_rev", "category", "file", "id", "op"],
+          "title": "OpAdopt",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "치트 채택 풀기 (사람 전용)",
+          "properties": {
+            "base_rev": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "file": {
+              "description": "features/<기능>·lessons·cheats·unknowns (사건은 cases 도구로만)",
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            "id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "op": {
+              "const": "unadopt"
+            }
+          },
+          "required": ["base_rev", "file", "id", "op"],
+          "title": "OpUnadopt",
+          "type": "object"
         }
       ],
       "title": "KnowledgeOp"

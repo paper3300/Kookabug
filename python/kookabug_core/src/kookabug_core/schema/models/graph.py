@@ -117,6 +117,54 @@ class Position(BaseModel):
     y: float
 
 
+class Profile(RootModel[str]):
+    root: Annotated[str, Field(max_length=200, min_length=1)]
+
+
+class Repair(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    allowed_changes: list[Literal["locator"]] | None = None
+    preserve_oracle: bool | None = None
+
+
+class QaCheatArgRange(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    max: int | None = None
+    min: int | None = None
+
+
+class EnumItem(RootModel[str]):
+    root: Annotated[str, Field(pattern="^[A-Za-z0-9_.-]{1,64}$")]
+
+
+class QaCheatArgEnum(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    enum: Annotated[list[EnumItem], Field(min_length=1)]
+
+
+class QaCheatArgLimit(RootModel[QaCheatArgRange | QaCheatArgEnum]):
+    root: Annotated[QaCheatArgRange | QaCheatArgEnum, Field(title="QaCheatArgLimit")]
+
+
+class QaClaim(BaseModel):
+    """
+    이 테스트가 검증하는 주장 revision과 그 검증 노드
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    assertions: Annotated[list[NodeId], Field(min_length=1)]
+    id: Annotated[str, Field(pattern="^[a-z][a-z0-9_.]{0,127}$")]
+    rev: Annotated[int, Field(ge=1)]
+
+
 class RecordPolicy(BaseModel):
     """
     기록 정책. 상위(워크스페이스 → 테스트 → 서브그래프 → 노드)에서 끈 것은 하위에서 켤 수 없다
@@ -204,6 +252,25 @@ class NodeConfig(BaseModel):
         extra="allow",
     )
     retry: RetryConfig | None = None
+
+
+class QaCheatAllow(BaseModel):
+    """
+    테스트가 요청하는 치트 범위 (권한 부여가 아니다 — 실제 허용은 교집합). max_calls는 루트 실행 전체에서 센다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    args: (
+        dict[
+            Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,31}$")],
+            QaCheatArgLimit,
+        ]
+        | None
+    ) = None
+    id: Annotated[str, Field(pattern="^[a-z][a-z0-9_]{0,63}$")]
+    max_calls: Annotated[int, Field(ge=1, le=1000)]
 
 
 class SpecialValue(BaseModel):
@@ -299,6 +366,29 @@ class Node(BaseModel):
     version: Annotated[int, Field(ge=1)]
 
 
+class Cheats(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    allow: list[QaCheatAllow]
+
+
+class Qa(BaseModel):
+    """
+    M8 테스트별 QA 옵션 kookabug.qa/0 (KB문서 10장). 지원하지 않는 실행기는 최상위 추가 속성이라 거부한다. 서브그래프는 cheats만 쓰고 상위 허용을 줄이는 방향(교집합)으로만 적용
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    cheats: Cheats | None = None
+    claims: list[QaClaim] | None = None
+    feature: Annotated[str | None, Field(pattern="^[a-z][a-z0-9_]{0,63}$")] = None
+    format: Literal["kookabug.qa/0"]
+    profiles: Annotated[list[Profile] | None, Field(min_length=1)] = None
+    repair: Repair | None = None
+
+
 class Graph(BaseModel):
     """
     테스트·서브그래프 그래프 파일 (*.graph.json). 테스트와 서브그래프는 같은 형식이고 kind만 다르다
@@ -323,4 +413,5 @@ class Graph(BaseModel):
         ],
         Field(description="그래프가 쓰는 플러그인 ID → 버전"),
     ]
+    qa: Qa | None = None
     record: RecordPolicy | None = None

@@ -12,6 +12,8 @@ ENGINE_NODE_TYPES: Final = frozenset(
         "core.test.skip",
         "core.flow.repeat",
         "core.flow.while",
+        # M8 B2: 치트 (구현 서브그래프를 실행기가 부른다)
+        "core.qa.cheat",
     }
 )
 
@@ -93,4 +95,5 @@ CORE_NODE_MODULES: Final = (
     "kookabug_nodes.assert_",
     "kookabug_nodes.ocr",
     "kookabug_nodes.agent",
+    "kookabug_nodes.qa",
 )

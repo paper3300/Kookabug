@@ -316,6 +316,27 @@ class CancelRequestedEvent(BaseModel):
     t: Timestamp
 
 
+class CheatCallEvent(BaseModel):
+    """
+    M8 치트 노드 호출 (core.qa.cheat). 허용 교집합을 통과하고 구현 서브그래프를 부르기 직전. before_assertions: 이 실행에서 아직 성공한 검증 노드가 없다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    args_digest: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
+    before_assertions: bool
+    cheat: Annotated[str, Field(pattern="^[a-z][a-z0-9_]{0,63}$")]
+    digest: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
+    event: Literal["cheat.call"]
+    node: str
+    rev: Annotated[int, Field(ge=1)]
+    run: RunId
+    seq: Seq
+    step: StepId
+    t: Timestamp
+
+
 class ControlLostEvent(BaseModel):
     """
     제어 채널이 끊겼다. 감독자는 살아 있으므로 취소가 아니다
@@ -615,6 +636,7 @@ class Event(
         | DebugResumeEvent
         | WorkerStartEvent
         | WorkerExitEvent
+        | CheatCallEvent
         | RunEndEvent
     ]
 ):
@@ -633,6 +655,7 @@ class Event(
         | DebugResumeEvent
         | WorkerStartEvent
         | WorkerExitEvent
+        | CheatCallEvent
         | RunEndEvent,
         Field(
             description="events.jsonl 한 줄 (실행 이벤트 하나). event 값으로 종류를 고른다",

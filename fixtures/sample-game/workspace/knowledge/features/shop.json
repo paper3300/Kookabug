@@ -1,0 +1,27 @@
+{
+  "claims": [
+    {
+      "basis": [
+        {
+          "hash": "sha256:5bb36410c06462405e65f6640975874e50bd5f380318456d2d80fe74ca1a1b16",
+          "ref": "sources:item_table#potion",
+          "seen_at": "2026-11-09T00:00:00Z",
+          "type": "source",
+          "verified": true
+        }
+      ],
+      "id": "shop.potion.price",
+      "kind": "expected",
+      "property": "price",
+      "rev": 1,
+      "statement": "체력 물약 가격은 100골드다",
+      "status": "supported",
+      "subject": "shop.potion",
+      "unit": "gold",
+      "value": 100
+    }
+  ],
+  "feature": "shop",
+  "format": "kookabug.claims/0",
+  "revision": 1
+}

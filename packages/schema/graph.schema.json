@@ -322,6 +322,150 @@
       "title": "Position",
       "type": "object"
     },
+    "Qa": {
+      "additionalProperties": false,
+      "description": "M8 테스트별 QA 옵션 kookabug.qa/0 (KB문서 10장). 지원하지 않는 실행기는 최상위 추가 속성이라 거부한다. 서브그래프는 cheats만 쓰고 상위 허용을 줄이는 방향(교집합)으로만 적용",
+      "properties": {
+        "cheats": {
+          "additionalProperties": false,
+          "properties": {
+            "allow": {
+              "items": {
+                "$ref": "#/$defs/QaCheatAllow"
+              },
+              "type": "array"
+            }
+          },
+          "required": ["allow"],
+          "type": "object"
+        },
+        "claims": {
+          "items": {
+            "$ref": "#/$defs/QaClaim"
+          },
+          "type": "array"
+        },
+        "feature": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "type": "string"
+        },
+        "format": {
+          "const": "kookabug.qa/0"
+        },
+        "profiles": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "repair": {
+          "additionalProperties": false,
+          "properties": {
+            "allowed_changes": {
+              "items": {
+                "enum": ["locator"]
+              },
+              "type": "array"
+            },
+            "preserve_oracle": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": ["format"],
+      "title": "Qa",
+      "type": "object"
+    },
+    "QaCheatAllow": {
+      "additionalProperties": false,
+      "description": "테스트가 요청하는 치트 범위 (권한 부여가 아니다 — 실제 허용은 교집합). max_calls는 루트 실행 전체에서 센다",
+      "properties": {
+        "args": {
+          "additionalProperties": {
+            "$ref": "#/$defs/QaCheatArgLimit"
+          },
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]{0,31}$"
+          },
+          "type": "object"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "type": "string"
+        },
+        "max_calls": {
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": ["id", "max_calls"],
+      "title": "QaCheatAllow",
+      "type": "object"
+    },
+    "QaCheatArgLimit": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "max": {
+              "type": "integer"
+            },
+            "min": {
+              "type": "integer"
+            }
+          },
+          "title": "QaCheatArgRange",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "enum": {
+              "items": {
+                "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            }
+          },
+          "required": ["enum"],
+          "title": "QaCheatArgEnum",
+          "type": "object"
+        }
+      ],
+      "title": "QaCheatArgLimit"
+    },
+    "QaClaim": {
+      "additionalProperties": false,
+      "description": "이 테스트가 검증하는 주장 revision과 그 검증 노드",
+      "properties": {
+        "assertions": {
+          "items": {
+            "$ref": "#/$defs/NodeId"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_.]{0,127}$",
+          "type": "string"
+        },
+        "rev": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": ["assertions", "id", "rev"],
+      "title": "QaClaim",
+      "type": "object"
+    },
     "RecordPolicy": {
       "additionalProperties": false,
       "description": "기록 정책. 상위(워크스페이스 → 테스트 → 서브그래프 → 노드)에서 끈 것은 하위에서 켤 수 없다",
@@ -469,6 +613,9 @@
         "$ref": "#/$defs/PluginId"
       },
       "type": "object"
+    },
+    "qa": {
+      "$ref": "#/$defs/Qa"
     },
     "record": {
       "$ref": "#/$defs/RecordPolicy"

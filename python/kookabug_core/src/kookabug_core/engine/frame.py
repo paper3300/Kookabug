@@ -83,6 +83,10 @@ class Frame:
     """변수의 관측 출처 (값과 같이 저장한다)."""
     outer_loops: tuple[tuple[int, int], ...] = ()
     """이 프레임을 부른 호출 스텝을 감싼 반복 회차들 `(일련번호, 회차)` (바깥부터)."""
+    chain: tuple[str, ...] = ()
+    """루트 테스트부터 이 프레임까지의 그래프 경로 (치트 허용의 서브그래프 `qa` 교집합, M8)."""
+    in_cheat: bool = False
+    """치트 구현 서브그래프 안이다 (그 아래 치트 노드는 거부 — 중첩 금지)."""
 
     def node_path(self, node: str) -> tuple[str, ...]:
         return (*self.path, node)

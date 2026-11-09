@@ -1,0 +1,27 @@
+{
+  "font_sha256": "7a183cf1c6c56b9609fcc16eda8b5229fbc11758a21e669ec00343239b02192f",
+  "format": "kookabug.sample-shop-frames/0",
+  "frames": {
+    "boot": "d7604cd0a6ed705e725dcd61fa0cca27bc9156d677fdb54f0542d667251a0413",
+    "console": "cc791afd4019eb9a235d1ebda1bca08b11e9c19276a12bfcdfd3726efa964e23",
+    "shop": "db1a1062d808ca3e20506c4997346ea831ce874daf7c3c39031e4ecefe836e0b",
+    "shop_bought": "950a45001c7f2e984ba01bc0b2fc3251c0942a4397a151b2a0153316fa7ee63b",
+    "shop_closed": "b888545d75db3ad61c7d335760769199bbee996a75aa86efa893d8240586da94",
+    "shop_missing": "cf39d4e2cd2eca86e6cf6ef1e5b6797d7e29c92ceb932f81e4da0db37668643c",
+    "shop_missing_sold": "4f3b2b22547b495615ebb988ebca347112d145e75558f21dc861e2df62c187e3",
+    "shop_moved": "7d3a45f3ca2dbb5ba71012af5c605f36907fa07f1bc00170f1920bd1ae9da5d7",
+    "shop_moved_bought": "60445289e4b04754d4af29f75aa456814880b866a1b4d307aa4f6a5feda5e332",
+    "shop_moved_sold": "968395aa21e8c10ed5febce1921cb6a5b0e4c0705066db971701b776fa9509d5",
+    "shop_purchase_confirm": "c72e54dd83430911f508322e5da8d9a6e54f40f97beed8fbaaea49a5ea5b0af1",
+    "shop_rich": "94684b689fb73515d86972fc63fd6aba029b5c96d6939a6d82b1767b96752d7a",
+    "shop_sold": "00ece158b0763348c7c78c893264f8222c64778bca93e8ccadd63fb3bb8d30e7"
+  },
+  "sources": {
+    "sample_shop/__init__.py": "a587c65ffe203fdc4f08019713fd3444ab58256adf01a970686334eee707601e",
+    "sample_shop/flow.py": "5b453c47593164424ef188372a72ac66d585b02ffdaed6c0d06a38ea4521f562",
+    "sample_shop/render.py": "a6c0282d8489c0e44b5cace453d27bca06e4de2b537a90e425eec44ab88ef523",
+    "sample_shop/scenario.py": "d3b3ff2587a653c3445cc72e983a936e735ea84dc0ee1268579555d6f8feb541",
+    "tools/gen_shop_scenario.py": "e497708309f4f70ff92b90c607b0e95ace827d99eeb6e417a0d4d83b4eac0859"
+  },
+  "windows": "10.0.26200"
+}

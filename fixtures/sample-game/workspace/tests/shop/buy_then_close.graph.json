@@ -1,0 +1,105 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "layout": {
+    "nodes": {
+      "n_assert_closed": {
+        "x": 840,
+        "y": 0
+      },
+      "n_click_buy": {
+        "x": 280,
+        "y": 0
+      },
+      "n_click_close": {
+        "x": 560,
+        "y": 0
+      },
+      "n_entry": {
+        "x": -280,
+        "y": 0
+      },
+      "n_launch": {
+        "x": 0,
+        "y": 0
+      }
+    }
+  },
+  "meta": {
+    "description": "물약을 산 뒤 닫기로 상점을 나갈 수 있는지 확인한다 (구매 target을 같이 쓰는 영향 테스트)",
+    "tags": ["shop"],
+    "title": "구매 뒤 닫기"
+  },
+  "nodes": {
+    "n_assert_closed": {
+      "in": {
+        "target": {
+          "$target": "targets/shop/closed_title.target.json"
+        },
+        "timeout_ms": 5000
+      },
+      "title": "상점이 닫혔나",
+      "type": "core.assert.visible",
+      "version": 1
+    },
+    "n_click_buy": {
+      "in": {
+        "target": {
+          "$target": "targets/shop/buy.target.json"
+        },
+        "timeout_ms": 5000
+      },
+      "next": {
+        "done": "n_click_close"
+      },
+      "title": "구매 단추 클릭",
+      "type": "core.image.click",
+      "version": 1
+    },
+    "n_click_close": {
+      "in": {
+        "point": [110, 586]
+      },
+      "next": {
+        "done": "n_assert_closed"
+      },
+      "title": "닫기 클릭",
+      "type": "core.input.click",
+      "version": 1
+    },
+    "n_entry": {
+      "next": {
+        "start": "n_launch"
+      },
+      "title": "시작",
+      "type": "core.graph.entry",
+      "version": 1
+    },
+    "n_launch": {
+      "in": {
+        "args": {
+          "$setting": "shop.args"
+        },
+        "cwd": {
+          "$setting": "game.cwd"
+        },
+        "path": {
+          "$setting": "game.executable"
+        },
+        "timeout_ms": 30000,
+        "window_title": {
+          "$setting": "shop.title"
+        }
+      },
+      "next": {
+        "attached": "n_click_buy"
+      },
+      "title": "상점 실행",
+      "type": "core.app.launch",
+      "version": 1
+    }
+  },
+  "plugins": {
+    "core": "0.1.0"
+  }
+}

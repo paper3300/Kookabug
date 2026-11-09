@@ -112,11 +112,70 @@ class OpSetStatus(BaseModel):
     status: Annotated[str, Field(max_length=200, min_length=1)]
 
 
+class OpAdopt(BaseModel):
+    """
+    치트 채택 (사람 전용 — Agent는 adoption_reserved). digest는 Kookabug가 계산한다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_rev: Annotated[int, Field(ge=0)]
+    category: Annotated[str, Field(pattern="^[a-z][a-z0-9_]{0,63}$")]
+    file: Annotated[
+        str,
+        Field(
+            description="features/<기능>·lessons·cheats·unknowns (사건은 cases 도구로만)",
+            max_length=80,
+            min_length=1,
+        ),
+    ]
+    id: Annotated[str, Field(max_length=128, min_length=1)]
+    op: Literal["adopt"]
+
+
+class OpUnadopt(BaseModel):
+    """
+    치트 채택 풀기 (사람 전용)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_rev: Annotated[int, Field(ge=0)]
+    file: Annotated[
+        str,
+        Field(
+            description="features/<기능>·lessons·cheats·unknowns (사건은 cases 도구로만)",
+            max_length=80,
+            min_length=1,
+        ),
+    ]
+    id: Annotated[str, Field(max_length=128, min_length=1)]
+    op: Literal["unadopt"]
+
+
 class KnowledgeOp(
-    RootModel[OpAdd | OpRevise | OpSupersede | OpMarkConflicted | OpAttachEvidence | OpSetStatus]
+    RootModel[
+        OpAdd
+        | OpRevise
+        | OpSupersede
+        | OpMarkConflicted
+        | OpAttachEvidence
+        | OpSetStatus
+        | OpAdopt
+        | OpUnadopt
+    ]
 ):
     root: Annotated[
-        OpAdd | OpRevise | OpSupersede | OpMarkConflicted | OpAttachEvidence | OpSetStatus,
+        OpAdd
+        | OpRevise
+        | OpSupersede
+        | OpMarkConflicted
+        | OpAttachEvidence
+        | OpSetStatus
+        | OpAdopt
+        | OpUnadopt,
         Field(title="KnowledgeOp"),
     ]
 
