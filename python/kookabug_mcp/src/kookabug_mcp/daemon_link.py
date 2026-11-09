@@ -55,6 +55,7 @@ class DaemonLink:
         attended: bool,
         name: str,
         attacher: Attacher = _default_attach,
+        job_token: str | None = None,
     ) -> None:
         self.root = root
         self.client_info: dict[str, Any] = {
@@ -64,6 +65,9 @@ class DaemonLink:
             "name": name,
             "version": __version__,
         }
+        if job_token is not None:
+            # 작업 토큰 (M8 R7): hello에만 싣는다. 로그·오류에는 넣지 않는다
+            self.client_info["job_token"] = job_token
         self.attacher = attacher
         self.principal: dict[str, Any] | None = None
         self.toolsets: frozenset[str] = frozenset({"core"})

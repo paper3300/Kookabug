@@ -49,7 +49,16 @@ def test_disabled_toolset_rejected_before_decide(tmp_path: Path) -> None:
         with d.client(AGENT) as agent:
             assert agent.call("agent.toolsets.get") == {
                 "enabled": ["core"],
-                "available": ["core", "graph_edit", "run", "observe", "control", "screens"],
+                "available": [
+                    "core",
+                    "graph_edit",
+                    "run",
+                    "observe",
+                    "control",
+                    "screens",
+                    "knowledge",
+                    "cases",
+                ],
             }
             service.calls.clear()
             for method, params in (
@@ -84,6 +93,6 @@ def test_disabled_toolset_rejected_before_decide(tmp_path: Path) -> None:
             assert again.call("agent.toolsets.get")["enabled"] == ["core"]
         # ui 연결은 툴셋과 무관하다
         with d.client() as ui:
-            assert len(ui.call("agent.toolsets.get")["enabled"]) == 6
+            assert len(ui.call("agent.toolsets.get")["enabled"]) == 8  # M8 knowledge·cases
             ui.call("graph.create", {"path": NEW, "kind": "test"})
         assert (root / NEW).exists()

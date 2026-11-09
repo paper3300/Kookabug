@@ -473,6 +473,7 @@ class Transport:
                 start_id=start_id,
                 workspace=workspace,
                 connection=conn.number,
+                jobs=getattr(self.host, "jobs", None),
             )
         except RequestFailed as failed:
             log.warning("연결 %d: 인증 실패 (%s)", conn.number, failed.code)

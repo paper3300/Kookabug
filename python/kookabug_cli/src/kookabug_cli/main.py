@@ -56,6 +56,7 @@ from kookabug_core.service import (
     RUN_START_TOOL,
     ApprovalRequired,
     DevModulesRefused,
+    ForbiddenUnavailable,
     PermissionDenied,
     WorkspaceService,
     cli_principal,
@@ -656,6 +657,9 @@ def run_command(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     try:
         handle = service.start_run(principal, rel, options)
     except DevModulesRefused as exc:  # 에이전트 + 개발 모듈: 판정 전에 거부 (M6 3.7)
+        report.error = str(exc)
+        return finish(EXIT_DENIED)
+    except ForbiddenUnavailable as exc:  # 에이전트·무인 + 금지 목록 못 읽음 (M8 R6 fail closed)
         report.error = str(exc)
         return finish(EXIT_DENIED)
     except (PermissionDenied, ApprovalRequired) as exc:

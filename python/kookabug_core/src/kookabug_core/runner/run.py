@@ -72,6 +72,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Final, cast
 
 import kookabug_core
+from kookabug_core import forbidden
 from kookabug_core.diagnostics import Diagnostic, has_errors
 from kookabug_core.engine import (
     Cancelled,
@@ -277,6 +278,12 @@ class RunnerPlatform:
         if self._frames is None:
             raise PlatformUnavailable(self._reason or "이 플랫폼에서는 화면을 캡처할 수 없다")
         return self._frames.capture(window, region)
+
+    def peek_frame(self, window: WindowRef | None) -> Image:
+        """지금 프레임 (차례를 넘기지 않는다 — M8 금지 동작 판정용)."""
+        if self._frames is None:
+            raise PlatformUnavailable(self._reason or "이 플랫폼에서는 화면을 캡처할 수 없다")
+        return self._frames.peek_frame(window)
 
     def _engines(self) -> Any:
         if self.engines is None:
@@ -704,7 +711,9 @@ class Runner:
             if self.plugins is None
             else {p.id for env in self.plugins.envs for p in env.plugins}
         )
-        if _uses_ocr(program, registry, installed):
+        forbidden_text = any(i.get("kind") == "text" for i in spec.forbidden or ())
+        if forbidden_text or _uses_ocr(program, registry, installed):
+            # 금지 문구 판정(M8 R6)도 입력 직전에 OCR을 쓴다 — 노드 기한 밖에서 미리 준비한다
             self._prepare_ocr()
 
         # 8. 입력 임대권 → 입력 액터
@@ -986,6 +995,38 @@ class Runner:
                 gate.close()
                 self.video.request_stop()
 
+    def _input_guard(self) -> Callable[[WindowRef | None], None] | None:
+        """Agent 주체 실행의 금지 동작 판정 (M8 3.7·R6). 사양에 금지 목록이 없거나 비면 None."""
+        items = forbidden.from_spec(self.spec.forbidden or ())
+        if not items:
+            return None
+        root = self.spec.workspace_root
+        platform = self.platform
+
+        def guard(window: WindowRef | None) -> None:
+            engines: Any = getattr(platform, "engines", None)
+            sight: forbidden.PixelSight | None
+            try:
+                if engines is None:
+                    raise PlatformUnavailable("이 플랫폼에는 비전·OCR 엔진이 없다")
+                # 가짜 장면은 차례를 넘기지 않고 지금 화면을 본다 (실제 창은 캡처 한 장)
+                peek = getattr(platform, "peek_frame", None)
+                image = peek(window) if peek is not None else platform.capture(window, None)
+                pixels = engines.pixels_of(image)
+            except Exception:
+                sight = None  # 프레임 없음 → 확인 못 함(거부)
+            else:
+                reader = None
+                with contextlib.suppress(Exception):
+                    reader = engines.text_reader()
+                sight = forbidden.PixelSight(root, pixels, reader=reader)
+            refusal = forbidden.judge(items, sight)
+            if refusal is not None:
+                # 걸린 항목(정책 값)과 고정 사유만 — 화면 글자는 남기지 않는다
+                raise EngineError(refusal.code, refusal.message())
+
+        return guard
+
     def _run_executor(self, executor: Executor, program: Program, remaining_ms: int) -> _End:
         try:
             result = executor.run(
@@ -999,6 +1040,7 @@ class Runner:
                     capture_timeout_ms=self.spec.capture_timeout_ms,
                     record_override=self.spec.record_override,
                     unattended=self.spec.unattended,
+                    input_guard=self._input_guard(),
                 ),
             )
             self._set_qa(program, trace=result.qa)

@@ -7,7 +7,9 @@
    `daemon.shutdown`만 받는다 — 앱이 판이 다른 daemon을 "다시 시작"할 수 있어야 하기
    때문이다 (2.3 "프로토콜 판"). 그래서 토큰·판은 params 전체 형식 검사보다 먼저 본다
 3. params 형식이 틀리면 `invalid_params` (연결을 닫는다)
-4. 주체를 정하고 결과를 돌려준다
+4. `client.job_token`이 있으면 작업 토큰을 확인한다(M8 R7). 틀리면 `job_token_invalid` (연결을
+   닫는다)
+5. 주체를 정하고 결과를 돌려준다
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from typing import Any, Final
 from kookabug_core.diagnostics import Diagnostic
 from kookabug_core.permissions import Principal
 from kookabug_core.schema import check_shape
+from kookabug_daemon.jobs import JobRegistry
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.principal import principal_json, principal_of
 from kookabug_daemon.protocol import DAEMON_VERSION, PROTOCOL, RequestFailed, params_problems
@@ -53,7 +56,13 @@ class HelloOutcome:
 
 
 def hello(
-    params: Any, *, token: str, start_id: str, workspace: str, connection: int
+    params: Any,
+    *,
+    token: str,
+    start_id: str,
+    workspace: str,
+    connection: int,
+    jobs: JobRegistry | None = None,
 ) -> HelloOutcome:
     given = params.get("token") if isinstance(params, dict) else None
     if not isinstance(given, str) or not hmac.compare_digest(
@@ -77,7 +86,14 @@ def hello(
         return HelloOutcome(principal, None, mismatch, client_kind=kind)
     if problems := params_problems("session.hello", fields):
         raise InvalidHello(problems)
-    principal = principal_of(fields["client"], connection)
+    client = fields["client"]
+    job: str | None = None
+    if "job_token" in client:
+        # 작업 토큰 (M8 R7): 살아 있는 작업·같은 주체일 때만 묶는다. 아니면 연결을 닫는다
+        if jobs is None:
+            raise RequestFailed("job_token_invalid", "이 daemon은 작업 토큰을 받지 않는다")
+        job = jobs.bind(str(client["job_token"]), str(client["id"])).id
+    principal = principal_of(client, connection, job)
     return HelloOutcome(
         principal,
         {

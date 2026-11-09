@@ -13,7 +13,8 @@ export type Timestamp = string;
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "Toolset".
  */
-export type Toolset = "control" | "core" | "graph_edit" | "observe" | "run" | "screens";
+export type Toolset =
+  "cases" | "control" | "core" | "graph_edit" | "knowledge" | "observe" | "run" | "screens";
 /**
  * 그래프 파일 revision: 디스크 바이트의 sha256 hex
  *
@@ -49,7 +50,13 @@ export type MethodName = string;
  * via the `definition` "ToolName".
  */
 export type ToolName =
+  | "kb_adopt_request"
   | "kb_app_launch"
+  | "kb_case_get"
+  | "kb_case_list"
+  | "kb_case_open"
+  | "kb_case_update"
+  | "kb_evidence_pin"
   | "kb_explore_end"
   | "kb_explore_start"
   | "kb_graph_create"
@@ -61,10 +68,14 @@ export type ToolName =
   | "kb_input_click"
   | "kb_input_key"
   | "kb_input_type"
+  | "kb_knowledge_apply"
+  | "kb_knowledge_get"
+  | "kb_knowledge_search"
   | "kb_log_search"
   | "kb_node_search"
   | "kb_ocr_read"
   | "kb_project_info"
+  | "kb_report_note"
   | "kb_run_artifact_get"
   | "kb_run_cancel"
   | "kb_run_compare"
@@ -78,6 +89,8 @@ export type ToolName =
   | "kb_screen_save"
   | "kb_target_create"
   | "kb_toolset_enable"
+  | "kb_triage_signals"
+  | "kb_wiki_write"
   | "ui_only";
 /**
  * 워크스페이스 루트 기준 경로 ('/' 구분). daemon이 루트 밖·.kookabug/ 안을 거부한다
@@ -142,7 +155,7 @@ export type DaemonErrorCode = -32700 | -32600 | -32601 | -32602 | -32603 | -3210
  */
 export type DaemonErrorObject = DaemonStandardError | DaemonRequestFailedError;
 /**
- * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 비밀값 — data.field), secret_unchecked(비밀값 검사 불가 — 키를 못 읽음·보호 기록 손상), screens_busy(화면 지도 잠금)
+ * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 비밀값 — data.field), secret_unchecked(비밀값 검사 불가 — 키를 못 읽음·보호 기록 손상), screens_busy(화면 지도 잠금) M8 B4: job_token_invalid(작업 토큰이 틀림·만료·폐기 — 연결 거부), job_only(작업 토큰 연결 전용 메서드), forbidden_visible(금지 문구·target·화면이 보여 입력하지 않음 — data.kind·value), forbidden_unverifiable(화면·OCR·target 확인 실패로 입력하지 않음), stalled_repeat(같은 작업에서 같은 실패 3번 — 그 테스트를 다시 돌리지 않음), case_resolution_reserved(사건 resolved·closed는 Kookabug·사람만), case_closed(닫힌 사건), verification_active(자동 채택 검증 실행 중이라 게임 입력을 받지 않음), 지식 연산 거부(duplicate_id·basis_required·basis_unknown·basis_hash_mismatch·basis_derived·human_basis_reserved·adoption_reserved·answer_reserved·too_large·path_alias)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RequestFailedCode".
@@ -240,7 +253,25 @@ export type RequestFailedCode =
   | "already_reverted"
   | "change_not_active"
   | "nothing_to_revert"
-  | "evidence_missing";
+  | "evidence_missing"
+  | "job_token_invalid"
+  | "job_only"
+  | "forbidden_visible"
+  | "forbidden_unverifiable"
+  | "stalled_repeat"
+  | "case_resolution_reserved"
+  | "verification_active"
+  | "duplicate_id"
+  | "basis_required"
+  | "basis_unknown"
+  | "basis_hash_mismatch"
+  | "basis_derived"
+  | "human_basis_reserved"
+  | "adoption_reserved"
+  | "answer_reserved"
+  | "too_large"
+  | "path_alias"
+  | "case_closed";
 /**
  * 플러그인 작업 ID (= 설치 거래 ID, 작업 로그 이름)
  *
@@ -565,6 +596,10 @@ export interface AgentClientInfo {
    * 에이전트 주체 ID
    */
   id: string;
+  /**
+   * M8 3.14·R7: agent-job이 준 작업 토큰. 살아 있는 작업이면 주체에 그 작업이 붙고, 틀리거나 만료·폐기됐거나 다른 작업·주체의 토큰이면 job_token_invalid로 연결을 닫는다
+   */
+  job_token?: string;
   kind: "agent";
   name: string;
   version: string;
@@ -963,7 +998,7 @@ export interface DaemonRequestFailedError {
   message: string;
 }
 /**
- * error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message. M5 B3: approval_required → decision·reason. M6: plugin_failed → plugin_error, op_not_found → op_id. M7: frame_protected·sensitive_region → reason·message(안내), secret_in_text → field, secret_unchecked → reason(못 읽은 키 이름)
+ * error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message. M5 B3: approval_required → decision·reason. M6: plugin_failed → plugin_error, op_not_found → op_id. M7: frame_protected·sensitive_region → reason·message(안내), secret_in_text → field, secret_unchecked → reason(못 읽은 키 이름). M8: forbidden_visible·forbidden_unverifiable → kind·value·reason(고정 사유), job_token_invalid → message 없음, permission_denied → reason job_scope(작업 허용 범위 밖)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RequestFailedData".
@@ -990,6 +1025,10 @@ export interface RequestFailedData {
    * M7 B4 recovery_pending: 남은 승격 거래 저널 ID
    */
   journals?: string[];
+  /**
+   * M8 forbidden_visible·forbidden_unverifiable: 걸린 금지 항목 종류 (text·target·screen, 모르면 null)
+   */
+  kind?: string | null;
   line?: number | null;
   message?: string;
   op_id?: string;
@@ -1010,6 +1049,10 @@ export interface RequestFailedData {
   state?: RecorderState;
   steps?: RecorderStepId[];
   toolset?: Toolset;
+  /**
+   * M8 forbidden_*: 걸린 금지 항목 값 (정책의 문구·target 경로·화면 ID — 화면 글자가 아니다, 모르면 null)
+   */
+  value?: string | null;
 }
 /**
  * 검증 진단 (kookabug_core.diagnostics.Diagnostic.to_dict)
@@ -2256,6 +2299,140 @@ export interface Kb8AdoptionsListResult {
     [k: string]: unknown | undefined;
   }[];
 }
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CaseGetResult".
+ */
+export interface Kb8CaseGetResult {
+  case: {
+    [k: string]: unknown | undefined;
+  };
+  sha256: string;
+}
+/**
+ * 사건 하나 (cases.get·cases.signals)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CaseIdParams".
+ */
+export interface Kb8CaseIdParams {
+  id: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CaseRevisionResult".
+ */
+export interface Kb8CaseRevisionResult {
+  case: string;
+  revision: number;
+}
+/**
+ * cases.signals (kb_triage_signals): 판단 재료만 모은다. 원인을 판정하지 않는다 (3.13)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CaseSignalsResult".
+ */
+export interface Kb8CaseSignalsResult {
+  case: string;
+  claims: {
+    [k: string]: unknown | undefined;
+  }[];
+  diff: {
+    [k: string]: unknown | undefined;
+  } | null;
+  not_comparable: {
+    [k: string]: unknown | undefined;
+  }[];
+  reruns: {
+    [k: string]: unknown | undefined;
+  };
+  screen: {
+    [k: string]: unknown | undefined;
+  };
+  sources: {
+    [k: string]: unknown | undefined;
+  }[];
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CaseSummary".
+ */
+export interface Kb8CaseSummary {
+  id: string;
+  revision: number;
+  runs: number;
+  signature: string;
+  state: string;
+  symptom: {
+    [k: string]: unknown | undefined;
+  };
+  title: string;
+}
+/**
+ * cases.close (사람 전용): 사건을 resolved·closed로 (resolution by human)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CasesCloseParams".
+ */
+export interface Kb8CasesCloseParams {
+  base_revision: number;
+  id: string;
+  note?: string;
+  state?: "closed" | "resolved";
+}
+/**
+ * cases.list (kb_case_list): 사건 목록
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CasesListParams".
+ */
+export interface Kb8CasesListParams {
+  state?: "closed" | "needs_info" | "open" | "resolved" | "watching";
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CasesListResult".
+ */
+export interface Kb8CasesListResult {
+  cases: Kb8CaseSummary[];
+}
+/**
+ * cases.open (kb_case_open): 실패 실행으로 사건을 연다. 같은 시그니처 사건이 있으면 새로 열지 않고 그 사건 runs에 붙인다(attached). 원래 실패 증거는 Kookabug가 고정한다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CasesOpenParams".
+ */
+export interface Kb8CasesOpenParams {
+  run: string;
+  title?: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CasesOpenResult".
+ */
+export interface Kb8CasesOpenResult {
+  attached: boolean;
+  case: string;
+  evidence: string | null;
+  hypotheses: {
+    [k: string]: unknown | undefined;
+  }[];
+  revision: number;
+  signature: string;
+}
+/**
+ * cases.update (kb_case_update): 제목·상태(open·needs_info·watching)·가설·조치·필요 정보·재확인·연결. resolved·closed는 case_resolution_reserved, original·runs·signature·symptom·resolution은 바꾸지 못한다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8CasesUpdateParams".
+ */
+export interface Kb8CasesUpdateParams {
+  base_revision: number;
+  changes: {
+    [k: string]: unknown | undefined;
+  };
+  id: string;
+}
 export interface Kb8CheatAdoptionValue {
   at: string;
   by: "human";
@@ -2355,6 +2532,27 @@ export interface Kb8CheatsUnadoptParams {
   rev: number;
 }
 /**
+ * project.automation.set·project.sources.set (사람 전용): kookabug.json의 그 블록만 바꾼다. 지금 sha가 다르면 revision_conflict
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8ConfigBlockParams".
+ */
+export interface Kb8ConfigBlockParams {
+  base_sha256: string;
+  value:
+    | unknown[]
+    | {
+        [k: string]: unknown | undefined;
+      };
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8ConfigBlockResult".
+ */
+export interface Kb8ConfigBlockResult {
+  sha256: string;
+}
+/**
  * evidence.pin: 실행 기록에서 가림 처리한 최소 증거 묶음을 knowledge/evidence/에 고정 (지우거나 고치는 도구 없음)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -2375,6 +2573,290 @@ export interface Kb8EvidencePinResult {
   omitted: {
     [k: string]: unknown | undefined;
   }[];
+}
+/**
+ * job.begin (사람 전용, agent-job CLI): 작업을 만들고 작업 토큰을 준다. 토큰은 이 응답에만 있고 daemon은 해시만 둔다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobBeginParams".
+ */
+export interface Kb8JobBeginParams {
+  basis?: "team" | "working";
+  budget?: {
+    minutes?: number;
+    runs?: number;
+  };
+  playbook: string;
+  toolsets?: Toolset[];
+  trigger?: "ci" | "manual" | "schedule";
+  ttl_s?: number;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobBeginResult".
+ */
+export interface Kb8JobBeginResult {
+  agent_id: string;
+  expires_at: string;
+  job: string;
+  token: string;
+}
+/**
+ * M8: 작업 예산 상한에 닿음 (ui 연결에만)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobBudgetParams".
+ */
+export interface Kb8JobBudgetParams {
+  job: string;
+  limit: {
+    [k: string]: unknown | undefined;
+  };
+  used: {
+    [k: string]: unknown | undefined;
+  };
+}
+/**
+ * M8: 작업 상태가 바뀜 (ui 연결에만)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobChangedParams".
+ */
+export interface Kb8JobChangedParams {
+  job: string;
+  state: string;
+  used: {
+    [k: string]: unknown | undefined;
+  };
+}
+/**
+ * job.end (사람 전용): 작업 토큰을 먼저 폐기하고 그 작업의 실행을 취소한다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobEndParams".
+ */
+export interface Kb8JobEndParams {
+  job: string;
+  reason: "budget_exhausted" | "cancelled" | "done" | "failed" | "interrupted" | "timeout";
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobEndResult".
+ */
+export interface Kb8JobEndResult {
+  cancelled: string[];
+  job: string;
+}
+/**
+ * job.finish (사람 전용, B5): CLI가 끝났다 → 보고 생성
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobFinishParams".
+ */
+export interface Kb8JobFinishParams {
+  exit_code?: number | null;
+  job: string;
+  state?: "budget_exhausted" | "cancelled" | "done" | "failed" | "interrupted" | "prep_failed";
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobIdParams".
+ */
+export interface Kb8JobIdParams {
+  job: string;
+}
+/**
+ * job.note (kb_report_note): 작업 토큰 연결 전용. 보고의 Agent 요약 글 (4 KB, 글자 검사)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobNoteParams".
+ */
+export interface Kb8JobNoteParams {
+  text: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobNoteResult".
+ */
+export interface Kb8JobNoteResult {
+  bytes: number;
+  job: string;
+}
+/**
+ * knowledge.apply (kb_knowledge_apply): 제한 변경 연산 묶음 (M8 3.3, kookabug.knowledge-ops/0). 전부 적용하거나 아무것도 쓰지 않는다. 같은 request_id 재요청은 지난 결과
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8KnowledgeApplyParams".
+ */
+export interface Kb8KnowledgeApplyParams {
+  /**
+   * @minItems 1
+   * @maxItems 200
+   */
+  ops: [
+    {
+      [k: string]: unknown | undefined;
+    },
+    ...{
+      [k: string]: unknown | undefined;
+    }[]
+  ];
+  request_id: string;
+}
+/**
+ * 적용 결과 (코어 knowledge.ops.apply 그대로): applied·conflicts·working 등
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8KnowledgeApplyResult".
+ */
+export interface Kb8KnowledgeApplyResult {
+  [k: string]: unknown | undefined;
+}
+/**
+ * M8: knowledge/·wiki/가 바뀜 (ui 연결에만)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8KnowledgeChangedParams".
+ */
+export interface Kb8KnowledgeChangedParams {
+  files: string[];
+}
+/**
+ * knowledge.get (kb_knowledge_get): 지식 파일(features/<기능>·lessons·cheats·unknowns) 또는 그 항목 하나. 주장 파일은 작업 기준 덧씌움(working)도 함께 준다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8KnowledgeGetParams".
+ */
+export interface Kb8KnowledgeGetParams {
+  file: string;
+  id?: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8KnowledgeGetResult".
+ */
+export interface Kb8KnowledgeGetResult {
+  doc?: {
+    [k: string]: unknown | undefined;
+  };
+  file: string;
+  item?: {
+    [k: string]: unknown | undefined;
+  };
+  revision: number;
+  sha256: string | null;
+  working: {
+    [k: string]: unknown | undefined;
+  }[];
+}
+/**
+ * knowledge.search (kb_knowledge_search): 지식 항목(주장·경험칙·치트·미지수)의 ID·글자에서 찾는다 (대소문자·공백 무시 포함)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8KnowledgeSearchParams".
+ */
+export interface Kb8KnowledgeSearchParams {
+  /**
+   * @maxItems 64
+   */
+  files?: string[];
+  limit?: number;
+  query: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8KnowledgeSearchResult".
+ */
+export interface Kb8KnowledgeSearchResult {
+  matches: {
+    file: string;
+    id: string;
+    kind: string | null;
+    rev: number | null;
+    status: string | null;
+    text: string;
+  }[];
+  truncated: boolean;
+}
+/**
+ * M8 다음 묶음(B5·B7)이 모양을 정하는 결과
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8LooseResult".
+ */
+export interface Kb8LooseResult {
+  [k: string]: unknown | undefined;
+}
+/**
+ * report.decide (사람 전용, B5): 보고 묶음 결정 → working.accept/reject
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8ReportDecideParams".
+ */
+export interface Kb8ReportDecideParams {
+  decision: "accept" | "reject";
+  group: string;
+  job: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8SourcesCheckResult".
+ */
+export interface Kb8SourcesCheckResult {
+  sources: {
+    [k: string]: unknown | undefined;
+  }[];
+}
+/**
+ * unknowns.answer (사람 전용): 미지수에 사람 답을 단다 (basis.type human으로 쓸 수 있다)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8UnknownsAnswerParams".
+ */
+export interface Kb8UnknownsAnswerParams {
+  base_rev: number;
+  id: string;
+  text: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8UnknownsAnswerResult".
+ */
+export interface Kb8UnknownsAnswerResult {
+  id: string;
+  rev: number;
+}
+/**
+ * wiki.write (kb_wiki_write): 산문 위키 페이지 하나 (wiki/** /*.md, index·log·reports 제외)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8WikiWriteParams".
+ */
+export interface Kb8WikiWriteParams {
+  base_sha256: string | null;
+  path: string;
+  text: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8WikiWriteResult".
+ */
+export interface Kb8WikiWriteResult {
+  path: string;
+  rendered_claims: boolean;
+  sha256: string;
+  warnings: string[];
+}
+/**
+ * wizard.set (사람 전용, B7)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8WizardSetParams".
+ */
+export interface Kb8WizardSetParams {
+  wizard: {
+    [k: string]: unknown | undefined;
+  };
 }
 /**
  * working.accept·working.reject: 작업 기준 변경(파일)과 작업 주장 rev를 한 거래로 수락하거나 덧씌움에서 뺀다 (사람 전용). claims의 rev는 보고가 가리킨 작업 rev — 지금과 다르면 revision_conflict
@@ -2468,7 +2950,7 @@ export interface Methods {
     params: Kb8AdoptRequestParams;
     renderer: false;
     result: Kb8AdoptRequestResult;
-    tool: "ui_only";
+    tool: "kb_adopt_request";
   };
   "adopt.revert": {
     params: Kb8AdoptRevertParams;
@@ -2542,6 +3024,42 @@ export interface Methods {
     result: EmptyResult;
     tool: "ui_only";
   };
+  "cases.close": {
+    params: Kb8CasesCloseParams;
+    renderer: false;
+    result: Kb8CaseRevisionResult;
+    tool: "ui_only";
+  };
+  "cases.get": {
+    params: Kb8CaseIdParams;
+    renderer: false;
+    result: Kb8CaseGetResult;
+    tool: "kb_case_get";
+  };
+  "cases.list": {
+    params: Kb8CasesListParams;
+    renderer: false;
+    result: Kb8CasesListResult;
+    tool: "kb_case_list";
+  };
+  "cases.open": {
+    params: Kb8CasesOpenParams;
+    renderer: false;
+    result: Kb8CasesOpenResult;
+    tool: "kb_case_open";
+  };
+  "cases.signals": {
+    params: Kb8CaseIdParams;
+    renderer: false;
+    result: Kb8CaseSignalsResult;
+    tool: "kb_triage_signals";
+  };
+  "cases.update": {
+    params: Kb8CasesUpdateParams;
+    renderer: false;
+    result: Kb8CaseRevisionResult;
+    tool: "kb_case_update";
+  };
   "cheats.adopt": {
     params: Kb8CheatsAdoptParams;
     renderer: false;
@@ -2606,7 +3124,7 @@ export interface Methods {
     params: Kb8EvidencePinParams;
     renderer: false;
     result: Kb8EvidencePinResult;
-    tool: "ui_only";
+    tool: "kb_evidence_pin";
   };
   "explore.end": {
     params: ExploreEndParams;
@@ -2673,6 +3191,54 @@ export interface Methods {
     renderer: true;
     result: GraphValidateResult;
     tool: "kb_graph_validate";
+  };
+  "job.begin": {
+    params: Kb8JobBeginParams;
+    renderer: false;
+    result: Kb8JobBeginResult;
+    tool: "ui_only";
+  };
+  "job.end": {
+    params: Kb8JobEndParams;
+    renderer: false;
+    result: Kb8JobEndResult;
+    tool: "ui_only";
+  };
+  "job.finish": {
+    params: Kb8JobFinishParams;
+    renderer: false;
+    result: Kb8LooseResult;
+    tool: "ui_only";
+  };
+  "job.note": {
+    params: Kb8JobNoteParams;
+    renderer: false;
+    result: Kb8JobNoteResult;
+    tool: "kb_report_note";
+  };
+  "jobs.list": {
+    params: EmptyParams;
+    renderer: false;
+    result: Kb8LooseResult;
+    tool: "ui_only";
+  };
+  "knowledge.apply": {
+    params: Kb8KnowledgeApplyParams;
+    renderer: false;
+    result: Kb8KnowledgeApplyResult;
+    tool: "kb_knowledge_apply";
+  };
+  "knowledge.get": {
+    params: Kb8KnowledgeGetParams;
+    renderer: false;
+    result: Kb8KnowledgeGetResult;
+    tool: "kb_knowledge_get";
+  };
+  "knowledge.search": {
+    params: Kb8KnowledgeSearchParams;
+    renderer: false;
+    result: Kb8KnowledgeSearchResult;
+    tool: "kb_knowledge_search";
   };
   "nodes.list": {
     params: EmptyParams;
@@ -2744,6 +3310,18 @@ export interface Methods {
     params: PluginsUpgradeParams;
     renderer: true;
     result: PluginsPreviewResult;
+    tool: "ui_only";
+  };
+  "project.automation.set": {
+    params: Kb8ConfigBlockParams;
+    renderer: false;
+    result: Kb8ConfigBlockResult;
+    tool: "ui_only";
+  };
+  "project.sources.set": {
+    params: Kb8ConfigBlockParams;
+    renderer: false;
+    result: Kb8ConfigBlockResult;
     tool: "ui_only";
   };
   "recorder.commit_abort": {
@@ -2828,6 +3406,24 @@ export interface Methods {
     params: RecorderMaterializeParams;
     renderer: true;
     result: RecorderWrittenTarget;
+    tool: "ui_only";
+  };
+  "report.decide": {
+    params: Kb8ReportDecideParams;
+    renderer: false;
+    result: Kb8LooseResult;
+    tool: "ui_only";
+  };
+  "reports.get": {
+    params: Kb8JobIdParams;
+    renderer: false;
+    result: Kb8LooseResult;
+    tool: "ui_only";
+  };
+  "reports.list": {
+    params: EmptyParams;
+    renderer: false;
+    result: Kb8LooseResult;
     tool: "ui_only";
   };
   "run.artifact": {
@@ -3034,6 +3630,12 @@ export interface Methods {
     result: SessionHelloResult;
     tool: "ui_only";
   };
+  "sources.check": {
+    params: EmptyParams;
+    renderer: false;
+    result: Kb8SourcesCheckResult;
+    tool: "ui_only";
+  };
   "target.capture": {
     params: TargetCaptureParams;
     renderer: true;
@@ -3070,11 +3672,35 @@ export interface Methods {
     result: TargetSaveResult;
     tool: "kb_target_create";
   };
+  "unknowns.answer": {
+    params: Kb8UnknownsAnswerParams;
+    renderer: false;
+    result: Kb8UnknownsAnswerResult;
+    tool: "ui_only";
+  };
+  "wiki.write": {
+    params: Kb8WikiWriteParams;
+    renderer: false;
+    result: Kb8WikiWriteResult;
+    tool: "kb_wiki_write";
+  };
   "windows.list": {
     params: EmptyParams;
     renderer: true;
     result: WindowsListResult;
     tool: "kb_screen_capture";
+  };
+  "wizard.get": {
+    params: EmptyParams;
+    renderer: false;
+    result: Kb8LooseResult;
+    tool: "ui_only";
+  };
+  "wizard.set": {
+    params: Kb8WizardSetParams;
+    renderer: false;
+    result: Kb8LooseResult;
+    tool: "ui_only";
   };
   "working.accept": {
     params: Kb8WorkingDecideParams;
@@ -3192,6 +3818,10 @@ export interface PermissionsLayer {
 export interface Principal {
   attended: boolean;
   id: string;
+  /**
+   * M8: 작업 토큰으로 묶인 연결이면 그 작업 ID (없으면 키 없음)
+   */
+  job?: string;
   kind: "agent" | "user";
 }
 /**
@@ -5134,6 +5764,15 @@ export interface Notifications {
   "graph.changed": {
     params: GraphChangedParams;
   };
+  "job.budget": {
+    params: Kb8JobBudgetParams;
+  };
+  "job.changed": {
+    params: Kb8JobChangedParams;
+  };
+  "knowledge.changed": {
+    params: Kb8KnowledgeChangedParams;
+  };
   "lease.changed": {
     params: LeaseChangedParams;
   };
@@ -5148,6 +5787,9 @@ export interface Notifications {
   };
   "recorder.changed": {
     params: RecorderChangedParams;
+  };
+  "reports.changed": {
+    params: EmptyParams;
   };
   "run.ended": {
     params: RunEndedParams;

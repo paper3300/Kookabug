@@ -27,7 +27,7 @@ from __future__ import annotations
 import contextlib
 import threading
 import time
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -232,6 +232,19 @@ class _Preparation:
         return int((time.monotonic() - start) * 1000)
 
 
+class _PreparedReader:
+    """`RunEngines`의 OCR을 준비가 끝난 뒤 읽는 `TextReader` (`screens.evaluate_screen`과 같은
+    모양)."""
+
+    def __init__(self, engines: RunEngines) -> None:
+        self._engines = engines
+
+    def read(self, pixels: Pixels, *, region: Sequence[int] | None = None) -> Any:
+        reader = self._engines._reader()  # pyright: ignore[reportPrivateUsage]
+        self._engines._await_ocr(reader, None)  # pyright: ignore[reportPrivateUsage]
+        return reader.read(pixels, region=region)
+
+
 class RunEngines:
     """한 실행의 비전·OCR. `store`가 있으면 참조 이미지를 그 저장소로 읽는다. 여러 스레드에서
     불러도 된다."""
@@ -278,6 +291,15 @@ class RunEngines:
         pixels = decode_image(path.read_bytes())
         with self._lock:
             return self._files.setdefault(path, pixels)
+
+    def pixels_of(self, image: Image) -> Pixels:
+        """바이트·파일 이미지의 픽셀 (M8 금지 동작 판정 — 저장소에 넣지 않는 캡처)."""
+        return self._pixels(image)
+
+    def text_reader(self) -> _PreparedReader:
+        """이 실행의 OCR (M8 금지 동작 판정 — 준비를 기다린 뒤 읽는다. 결과 글자는 판정에만
+        쓴다)."""
+        return _PreparedReader(self)
 
     def _file_meta(self, image: Image, pixels: Pixels) -> FrameMeta:
         return FrameMeta(

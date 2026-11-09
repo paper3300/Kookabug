@@ -268,11 +268,17 @@ class Permissions(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    preset: Literal["explorer", "full", "graph_author", "read_only", "runner"] | None = None
+    preset: (
+        Literal["curator", "explorer", "full", "graph_author", "qa_runner", "read_only", "runner"]
+        | None
+    ) = None
     rules: list[PermissionRule] | None = None
     toolsets: (
         dict[
-            Literal["control", "core", "graph_edit", "observe", "run", "screens"], PermissionVerdict
+            Literal[
+                "cases", "control", "core", "graph_edit", "knowledge", "observe", "run", "screens"
+            ],
+            PermissionVerdict,
         ]
         | None
     ) = None

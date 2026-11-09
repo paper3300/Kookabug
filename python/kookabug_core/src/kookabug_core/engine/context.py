@@ -184,6 +184,9 @@ class ObservingPlatform(Protocol):
     ) -> OcrResult: ...
 
 
+FORBIDDEN_CODES: Final = frozenset({"forbidden_visible", "forbidden_unverifiable"})
+"""금지 동작 거부 코드 (M8 R6, `kookabug_core.forbidden`)."""
+
 OCR_NODE_TYPES: Final = frozenset(
     {"core.assert.text", "core.ocr.read", "core.ocr.wait_text", "core.ocr.click_text"}
 )
@@ -304,6 +307,11 @@ class Runtime:
     """이 실행에서 현재 창이 처음 정해질 때 그 창을 앞으로 가져오기를 했다 (D1, 한 번만)."""
     judge_env: JudgeEnv | None = None
     """판단 노드의 바깥(사용자 설정·비밀값·임시 폴더, M5 3.11). 없으면 이 프로세스 환경에서."""
+    input_guard: Callable[[WindowRef | None], None] | None = None
+    """Agent가 시작한 실행의 금지 동작 판정 (M8 3.7·R6, `kookabug_core.forbidden.judge`). 있으면
+    `ctx.input`의 모든 입력(코어·워커 노드)이 그 직전에 부른다. 거부면 `EngineError`
+    (`forbidden_visible`·`forbidden_unverifiable`) — 입력은 나가지 않는다. 떼기·복구는 부르지
+    않는다."""
 
     @property
     def epoch(self) -> int:
@@ -510,10 +518,13 @@ class StepArtifacts:
 
 
 class CheckedInput:
-    """입력 앞뒤로 취소·전체 기한을 확인한다 (취소된 뒤에는 게임에 입력하지 않는다)."""
+    """입력 앞뒤로 취소·전체 기한을 확인한다 (취소된 뒤에는 게임에 입력하지 않는다). Agent가 시작한
+    실행이면 입력 직전에 금지 동작 판정(`Runtime.input_guard`)도 한다 — 코어 노드와 워커 노드의
+    `ctx.input`이 모두 여기를 지난다(입력 경로 하나)."""
 
     def __init__(self, runtime: Runtime, ctx: StepContext) -> None:
         self._runtime = runtime
+        self._window = ctx.window
         platform = runtime.platform
         self._input: InputApi = (
             platform.input_for(ctx.step, ctx.window, ctx, runtime.wait_hold)
@@ -521,28 +532,35 @@ class CheckedInput:
             else platform.input
         )
 
-    def click(self, at: Where, *, button: str = "left", count: int = 1) -> None:
+    def _before(self) -> None:
         self._runtime.check()
+        guard = self._runtime.input_guard
+        if guard is not None:
+            guard(self._window)
+
+    def click(self, at: Where, *, button: str = "left", count: int = 1) -> None:
+        self._before()
         self._input.click(at, button=button, count=count)
         self._runtime.check()
 
     def drag(self, start: Where, end: Where, *, duration_ms: int = 0, button: str = "left") -> None:
-        self._runtime.check()
+        self._before()
         self._input.drag(start, end, duration_ms=duration_ms, button=button)
         self._runtime.check()
 
     def scroll(self, at: Where, amount: int) -> None:
-        self._runtime.check()
+        self._before()
         self._input.scroll(at, amount)
         self._runtime.check()
 
     def key(self, key: str, *, hold_ms: int = 0) -> None:
-        self._runtime.check()
+        # 누르고 있기의 떼기는 입력 서비스 안에서 판정 없이 간다 (누른 채 남지 않게)
+        self._before()
         self._input.key(key, hold_ms=hold_ms)
         self._runtime.check()
 
     def type_text(self, text: str | Secret) -> None:
-        self._runtime.check()
+        self._before()
         self._input.type_text(text)
         self._runtime.check()
 
@@ -696,6 +714,11 @@ class _RecordedInput:
         except StaleObservation as exc:
             self._ctx.stale = exc
             raise
+        except EngineError as exc:
+            # 금지 동작 거부(M8 R6): 노드·워커가 예외를 삼켜도 스텝은 그 오류로 끝난다
+            if exc.code in FORBIDDEN_CODES:
+                self._ctx.forbidden = exc
+            raise
 
     def click(self, at: Where, *, button: str = "left", count: int = 1) -> None:
         self._guarded(lambda: self._inner.click(at, button=button, count=count))
@@ -744,6 +767,8 @@ class StepContext:
         self._pure = pure
         self.stale: StaleObservation | None = None
         """이 스텝의 입력이 재검증으로 거부됐다 (노드가 삼켜도 처리되지 않은 fail)."""
+        self.forbidden: EngineError | None = None
+        """이 스텝의 입력이 금지 동작으로 거부됐다 (M8 R6 — 노드가 삼켜도 그 오류로 끝난다)."""
         self.brought_forward: WindowRef | None = None
         """이 스텝의 `set_window`가 실행 첫 창으로 앞으로 가져온 창 (뒤따르는 `activate`는
         건너뛴다)."""

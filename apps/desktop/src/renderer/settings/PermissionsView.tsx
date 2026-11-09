@@ -26,6 +26,9 @@ export const PRESETS: [string, string][] = [
   ["runner", "실행 — 작성 + 실행, 입력은 확인 후"],
   // M7 3.11 U1: 조회·화면 지도 쓰기·탐색 세션 허용, 게임 조작 확인 후, 그래프 편집·실행 거부
   ["explorer", "탐색 — 화면 지도 쓰기, 게임 조작은 확인 후 (편집·실행 없음)"],
+  // M8 3.14: 지식 관리(편집은 작업 기준에만), QA 실행(팀 기준 실행·사건 기록만)
+  ["curator", "지식 관리 — 지식·사건·작업 기준 편집, 게임 조작은 확인 후"],
+  ["qa_runner", "QA 실행 — 팀 기준 테스트 실행·사건 기록만 (편집·직접 조작 없음)"],
   ["full", "전체 (주의)"],
 ];
 
@@ -37,6 +40,8 @@ export const TOOLSETS: [string, string, string][] = [
   ["observe", "화면 보기", "캡처, 이미지 찾기, OCR (읽기만)"],
   ["control", "게임 조작", "게임 창에 클릭·키·글자 입력, 게임 실행"],
   ["screens", "화면 지도", "화면 지도 조회·식별, 탐색 세션과 후보 저장 (승격·버리기는 사람만)"],
+  ["knowledge", "지식", "주장·경험칙·치트 후보·미지수 읽기와 제한 연산, 위키 쓰기"],
+  ["cases", "사건", "사건 열기·고치기·조사 신호, 증거 고정, 자동 채택 요청, 보고 메모"],
 ];
 
 const VERDICT_TEXT: Record<Verdict, string> = { allow: "허용", ask: "확인", deny: "거부" };
@@ -48,7 +53,7 @@ async function load() {
 
 const VERDICTS = new Set(["allow", "ask", "deny"]);
 const PRESET_IDS = new Set(PRESETS.map(([id]) => id));
-const TOOLSET_IDS = new Set(["core", "graph_edit", "run", "observe", "control", "screens"]);
+const TOOLSET_IDS = new Set(TOOLSETS.map(([id]) => id));
 
 /**
  * 계층 파일의 permissions 값을 형식대로 읽는다 (검수 B5 M1). 틀리면 null — 화면은 진단을 보이고 그 계층 편집을

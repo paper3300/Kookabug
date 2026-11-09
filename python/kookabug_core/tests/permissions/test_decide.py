@@ -209,28 +209,46 @@ def test_default_preset_graph_author() -> None:
 
 
 # 계획 2.10 프리셋 표 그대로 (read_only, graph_author, runner, full) + M7 3.11 explorer
+# + M8 3.14 curator·qa_runner
 CORE = ["kb_project_info", "kb_toolset_enable", "kb_graph_list", "kb_graph_get",
         "kb_graph_validate", "kb_node_search", "kb_run_status", "kb_log_search"]  # fmt: skip
-PRESET_ORDER: tuple[Preset, ...] = ("read_only", "graph_author", "runner", "full", "explorer")
-ALLOW5: tuple[Verdict, ...] = ("allow",) * 5
+PRESET_ORDER: tuple[Preset, ...] = (
+    "read_only", "graph_author", "runner", "full", "explorer", "curator", "qa_runner"
+)  # fmt: skip
+ALLOW5: tuple[Verdict, ...] = ("allow",) * 7
 PRESET_TABLE: list[tuple[list[str], tuple[Verdict, ...]]] = [
     (CORE, ALLOW5),
     (
         ["kb_graph_create", "kb_graph_patch", "kb_target_create"],
-        ("deny", "ask", "ask", "allow", "deny"),
+        ("deny", "ask", "ask", "allow", "deny", "allow", "deny"),
     ),
-    (["kb_run_start", "kb_run_cancel"], ("deny", "deny", "allow", "allow", "deny")),
+    (
+        ["kb_run_start", "kb_run_cancel"],
+        ("deny", "deny", "allow", "allow", "deny", "allow", "allow"),
+    ),
     (["kb_run_events", "kb_run_artifact_get", "kb_run_compare"], ALLOW5),
     (["kb_screen_capture", "kb_image_find", "kb_ocr_read"], ALLOW5),
     (
         ["kb_input_click", "kb_input_key", "kb_input_type", "kb_app_launch"],
-        ("deny", "deny", "ask", "allow", "ask"),
+        ("deny", "deny", "ask", "allow", "ask", "ask", "deny"),
     ),
     (["kb_screen_list", "kb_screen_get"], ALLOW5),
-    (["kb_screen_save"], ("deny", "ask", "ask", "allow", "allow")),
+    (["kb_screen_save"], ("deny", "ask", "ask", "allow", "allow", "allow", "deny")),
     # M7 식별(조회)·탐색 세션 시작(변경)·끝(조회 — 늘 허용, B3 Low 8)
     (["kb_screen_identify", "kb_explore_end"], ALLOW5),
-    (["kb_explore_start"], ("deny", "ask", "ask", "allow", "allow")),
+    (["kb_explore_start"], ("deny", "ask", "ask", "allow", "allow", "allow", "deny")),
+    # M8 지식·사건 (3.14): 조회는 모두 allow, qa_runner는 채택 요청만 deny
+    (["kb_knowledge_search", "kb_knowledge_get"], ALLOW5),
+    (
+        ["kb_knowledge_apply", "kb_wiki_write"],
+        ("deny", "ask", "ask", "allow", "deny", "allow", "deny"),
+    ),
+    (["kb_case_list", "kb_case_get", "kb_triage_signals"], ALLOW5),
+    (
+        ["kb_case_open", "kb_case_update", "kb_evidence_pin", "kb_report_note"],
+        ("deny", "deny", "ask", "allow", "deny", "allow", "allow"),
+    ),
+    (["kb_adopt_request"], ("deny", "deny", "ask", "allow", "deny", "allow", "deny")),
 ]
 PRESET_CASES = [
     (preset, tool, values[i])

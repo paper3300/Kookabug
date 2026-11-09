@@ -200,6 +200,8 @@ class StartOptions:
     """`run.json basis` 기록 (M8 3.6)."""
     job: str | None = None
     """이 실행을 낸 작업 ID (M8)."""
+    forbidden: tuple[Mapping[str, str], ...] | None = None
+    """Agent 주체 실행의 금지 동작 (M8 3.7·R6 — daemon이 시작 때 `kookabug.json`에서 고정)."""
 
 
 def _write_overlay(run_dir: Path, overlay: Mapping[str, bytes]) -> dict[str, dict[str, str]]:
@@ -325,6 +327,7 @@ class Supervisor:
             overlay=overlay,
             basis=opts.basis,
             job=opts.job,
+            forbidden=opts.forbidden,
         )
         handle = RunHandle(self, spec, folder, job, started_at)
         handle._launch(listener, key)

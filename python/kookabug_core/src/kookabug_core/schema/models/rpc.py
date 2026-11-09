@@ -308,6 +308,14 @@ class Control(BaseModel):
     pipe: str
 
 
+class ForbiddenItem(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["screen", "target", "text"]
+    value: Annotated[str, Field(min_length=1)]
+
+
 class Overlay(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -925,6 +933,12 @@ class RunSpec(BaseModel):
         Field(description="제어 채널: 감독자가 연 파이프 이름과 상호 인증 키(32바이트 hex)"),
     ]
     deadline_ms: Annotated[int, Field(description="테스트 전체 기한 (runner 시작부터)", ge=1)]
+    forbidden: Annotated[
+        list[ForbiddenItem] | None,
+        Field(
+            description="M8 3.7·R6: Agent 주체 실행의 금지 동작 (daemon이 시작 때 kookabug.json automation.forbidden에서 고정). 있으면 runner가 입력마다 금지 판정을 한다. 사람 실행·검증 실행에는 없다"
+        ),
+    ] = None
     frame_budget_mib: Annotated[
         int | None,
         Field(

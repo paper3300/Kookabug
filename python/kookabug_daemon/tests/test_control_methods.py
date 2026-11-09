@@ -89,6 +89,11 @@ def make_rig(
     local.parent.mkdir(exist_ok=True)
     body = {"format": "kookabug.local/0", "permissions": dict(permissions or {"preset": "full"})}
     local.write_text(json.dumps(body), encoding="utf-8")
+    # 이 파일은 제어 실행 경로만 본다: 예제의 금지 동작(M8 "결제")은 비운다 — 비밀값 입력 뒤 칸
+    # 상자를 모르는 보호 화면에서는 Agent 입력이 확인 못 함으로 거부된다(`test_forbidden.py`)
+    config = json.loads((root / "kookabug.json").read_text(encoding="utf-8"))
+    config["automation"]["forbidden"] = []
+    (root / "kookabug.json").write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
     env = cli_env(tmp_path, None, KOOKABUG_SECRET_ACC_PW=SECRET)
     env["KOOKABUG_USER_CONFIG_DIR"] = str(tmp_path / "user")
     return Rig(root, env, spec, log)

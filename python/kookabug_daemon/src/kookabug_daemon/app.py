@@ -59,6 +59,7 @@ from kookabug_daemon.frame_guard import FILE as GUARD_FILE
 from kookabug_daemon.frame_guard import FrameGuard
 from kookabug_daemon.frames import FrameCache
 from kookabug_daemon.image_cache import EditorCache
+from kookabug_daemon.jobs import JobRegistry
 from kookabug_daemon.lease_watch import LeaseWatcher, lease_dir
 from kookabug_daemon.methods import MethodSpec, RunsLike, registry
 from kookabug_daemon.methods.screens import in_screens
@@ -252,7 +253,9 @@ class Daemon:
         self.config = config
         self.root = config.workspace.resolve()
         self.service = service or WorkspaceService(self.root)
-        self._authorizer = Authorizer(self.service)
+        self.jobs = JobRegistry(str(self.root))
+        """작업 토큰 (M8 R7, `job.begin`·`session.hello`의 `client.job_token`)."""
+        self._authorizer = Authorizer(self.service, jobs=self.jobs)
         self._documents = DocumentTable(self.root)
         plugin_environ = os.environ if config.plugin_environ is None else config.plugin_environ
         self.plugin_jobs = PluginJobs(self.root, plugin_environ, self)
@@ -426,6 +429,11 @@ class Daemon:
             self.post(lambda: self.notify_ui("screens.changed", {"revision": revision}))
 
         threading.Thread(target=work, name="screens-changed", daemon=True).start()
+
+    def knowledge_changed(self, files: list[str]) -> None:
+        """지식·위키·사건이 바뀌었다: 사람 연결에 `knowledge.changed{files}` (M8 3.13)."""
+        params = {"files": list(files)}
+        self.post(lambda: self.notify_ui("knowledge.changed", params))
 
     def _explore_changed(self) -> None:
         """탐색 세션·후보가 바뀌었다: ui 연결에 목록을 알린다 (`explore.changed`)."""

@@ -15,6 +15,7 @@ from typing import Final, Protocol
 
 from kookabug_core.permissions import TOOLS, Decision, Principal
 from kookabug_core.service import ApprovalRequired, PermissionDenied
+from kookabug_daemon.jobs import JobRegistry
 from kookabug_daemon.protocol import UI_ONLY, RequestFailed
 
 __all__ = [
@@ -22,6 +23,8 @@ __all__ = [
     "AGENT_RAW",
     "HUMAN_BASIS_METHODS",
     "HUMAN_CHEAT_METHODS",
+    "HUMAN_KNOWLEDGE_METHODS",
+    "HUMAN_ONLY_M8",
     "HUMAN_SCREEN_METHODS",
     "METHOD_TOOLS",
     "PLUGIN_CHANGE_METHODS",
@@ -91,18 +94,42 @@ HUMAN_CHEAT_METHODS: Final = frozenset(
 
 HUMAN_BASIS_METHODS: Final = frozenset(
     {
-        "adopt.request",
         "adopt.revert",
         "adoptions.list",
-        "evidence.pin",
         "working.accept",
         "working.list",
         "working.reject",
     }
 )
 """M8 두 기준·채택 (계획 3.8·3.13, B3, 엄격: Agent 권한). 되돌리기·묶음 수락·거절·목록은 사람
-전용. `adopt.request`·`evidence.pin`은 B4가 툴셋 `cases`의 도구(`kb_adopt_request`·
-`kb_evidence_pin`)로 옮길 때까지 사람 연결만 (에이전트 연결은 판정 전에 거부)."""
+전용. `adopt.request`·`evidence.pin`은 B4부터 툴셋 `cases`의 도구(`kb_adopt_request`·
+`kb_evidence_pin`)로 판정한다."""
+
+HUMAN_KNOWLEDGE_METHODS: Final = frozenset(
+    {
+        "cases.close",
+        "unknowns.answer",
+        "project.automation.set",
+        "project.sources.set",
+        "sources.check",
+        "job.begin",
+        "job.end",
+        "job.finish",
+        "jobs.list",
+        "reports.list",
+        "reports.get",
+        "report.decide",
+        "wizard.get",
+        "wizard.set",
+    }
+)
+"""M8 사건 닫기·미지수 답·정책·원본·작업·보고함·마법사 (계획 3.13, B4, 엄격: Agent 권한). Agent는
+사건을 닫거나 정책·원본을 바꾸거나 작업을 만들지 못한다(재귀 금지, E11). 처리기가 없는
+메서드(B5·B7)도 에이전트 연결은 판정 전에 거부된다."""
+
+HUMAN_ONLY_M8: Final = HUMAN_CHEAT_METHODS | HUMAN_BASIS_METHODS | HUMAN_KNOWLEDGE_METHODS
+"""M8 사람 전용 메서드 전부 — 이 표 하나가 출처다 (`test_all_human_methods_denied_for_agent`가
+여기서 검사를 만들고, M8 이름공간의 `ui_only` 메서드가 빠짐없이 여기 있는지도 본다)."""
 
 METHOD_TOOLS: Final[dict[str, str]] = {
     "session.hello": UI_ONLY,
@@ -187,10 +214,21 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     # M6 B4: 플러그인 — 목록은 조회(kb_project_info), 변경은 사람만
     "plugins.list": "kb_project_info",
     **dict.fromkeys(sorted(PLUGIN_CHANGE_METHODS), UI_ONLY),
-    # M8 B2: 치트 채택·분류 — 사람만 (Agent는 후보만, 채택·분류는 못 한다)
-    **dict.fromkeys(sorted(HUMAN_CHEAT_METHODS), UI_ONLY),
-    # M8 B3: 채택·되돌리기·묶음 수락·증거 고정 — 지금은 사람만 (B4가 Agent 도구를 붙인다)
-    **dict.fromkeys(sorted(HUMAN_BASIS_METHODS), UI_ONLY),
+    # M8 사람 전용: 치트 채택·분류(B2), 되돌리기·묶음 수락(B3), 사건 닫기·정책·작업·보고함(B4)
+    **dict.fromkeys(sorted(HUMAN_ONLY_M8), UI_ONLY),
+    # M8 B4 지식·사건 도구 (계획 3.13·3.14)
+    "knowledge.search": "kb_knowledge_search",
+    "knowledge.get": "kb_knowledge_get",
+    "knowledge.apply": "kb_knowledge_apply",
+    "wiki.write": "kb_wiki_write",
+    "cases.list": "kb_case_list",
+    "cases.get": "kb_case_get",
+    "cases.signals": "kb_triage_signals",
+    "cases.open": "kb_case_open",
+    "cases.update": "kb_case_update",
+    "evidence.pin": "kb_evidence_pin",
+    "adopt.request": "kb_adopt_request",
+    "job.note": "kb_report_note",
 }
 
 AGENT_DENIED: Final = frozenset(
@@ -218,10 +256,9 @@ AGENT_DENIED: Final = frozenset(
         "explore.list",
         # 에이전트는 자기 탐색 결과를 승격·버리기·확인하거나 지도 배치를 바꾸지 못한다 (M7 3.7, B3)
         *HUMAN_SCREEN_METHODS,
-        # 에이전트는 치트를 채택·분류하지 못한다 (M8 3.2·3.5, B2)
-        *HUMAN_CHEAT_METHODS,
-        # 에이전트는 채택을 되돌리거나 작업 기준을 팀에 수락하지 못한다 (M8 3.8, B3)
-        *HUMAN_BASIS_METHODS,
+        # 에이전트는 치트를 채택·분류하거나 채택을 되돌리거나 작업 기준을 팀에 수락하거나 사건을
+        # 닫거나 정책·원본을 바꾸거나 작업을 만들지 못한다 (M8 3.13, B2~B4)
+        *HUMAN_ONLY_M8,
     }
 )
 """`ui_only`이지만 agent 연결에는 판정 전에 거부하는 메서드. `ui_only`는 판정을 건너뛰므로
@@ -265,15 +302,23 @@ class ServiceLike(Protocol):
 class Authorizer:
     """연결의 주체로 메서드 하나를 판정한다. 거부·승인 필요는 `RequestFailed`."""
 
-    def __init__(self, service: ServiceLike) -> None:
+    def __init__(self, service: ServiceLike, *, jobs: JobRegistry | None = None) -> None:
         self.service = service
+        self.jobs = jobs
+        """작업 토큰 (M8 R7). 작업 연결의 요청마다 작업이 살아 있는지·허용 범위 안인지 본다."""
 
     def gate(self, principal: Principal, method: str, toolsets: Collection[str]) -> None:
-        """판정 전 거부 (M5 계획 3.6 1~2단계): `AGENT_DENIED` → 툴셋 꺼짐(`toolset_disabled`).
+        """판정 전 거부 (M5 계획 3.6 1~2단계): 작업 토큰 만료·폐기(`job_token_invalid`, M8) →
+        `AGENT_DENIED` → 툴셋 꺼짐(`toolset_disabled`) → 작업 허용 범위 밖(`permission_denied`).
         사람(user) 연결은 툴셋과 무관하다. 전송이 모든 요청(스스로 판정하는 메서드 포함)에
         부른다."""
         if principal.kind != "agent":
             return
+        job = None
+        if principal.job is not None:
+            if self.jobs is None:
+                raise RequestFailed("job_token_invalid", "이 daemon은 작업 연결을 받지 않는다")
+            job = self.jobs.require_alive(principal)
         if method in AGENT_RAW:
             raise agent_use_safe_api(method)
         tool = METHOD_TOOLS[method]
@@ -289,6 +334,12 @@ class Authorizer:
                 "toolset_disabled",
                 f"툴셋 {toolset}이(가) 꺼져 있다 ({tool}). kb_toolset_enable로 먼저 켠다",
                 toolset=toolset,
+            )
+        if job is not None and job.toolsets is not None and toolset not in job.toolsets:
+            raise RequestFailed(
+                "permission_denied",
+                f"이 작업의 허용 범위 밖 툴셋이다 ({toolset})",
+                reason="job_scope",
             )
 
     def peek(self, principal: Principal, method: str, arg: str = "") -> Decision | None:

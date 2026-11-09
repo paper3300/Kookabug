@@ -16,7 +16,7 @@ import posixpath
 from typing import Any, Final
 
 from kookabug_core import adopt as rules
-from kookabug_core import basis
+from kookabug_core import basis, forbidden
 from kookabug_core.knowledge import store
 from kookabug_core.knowledge.formats import Actor
 from kookabug_core.permissions import effective_preset
@@ -41,16 +41,37 @@ def working_actor(call: Call) -> Actor | None:
 
 
 def refuse_policy_path(call: Call, *rels: str) -> None:
-    """Agent 연결은 `knowledge/`·`wiki/` 아래를 그래프·target 도구로 쓰지 못한다."""
+    """Agent 연결은 `knowledge/`·`wiki/` 아래와 금지 동작이 가리키는 target·화면 파일(M8 3.7 —
+    `forbidden.protected_paths`)을 그래프·target 도구로 쓰지 못한다. 금지 목록을 읽을 수 없으면
+    쓰지 않는다(fail closed)."""
     if call.principal.kind != "agent":
         return
-    for rel in rels:
-        # `.`·`..`·빈 조각·대소문자까지 풀어 첫 폴더를 본다 (`./knowledge/x`·`a/../wiki/x`)
-        head = rules.path_key(posixpath.normpath(rel.replace("\\", "/"))).split("/", 1)[0]
-        if head in _POLICY_ROOTS:
+    root = call.daemon.root
+    # 적힌 철자(`.`·`..`·빈 조각·대소문자를 푼 것)와 실제 경로(링크·정션을 푼 것)를 모두 본다 —
+    # 별칭으로 쓰는 경로·별칭으로 적힌 금지 경로 어느 쪽도 비교에서 빠지지 않게 (`real_key`)
+    keys = [rules.path_key(posixpath.normpath(rel.replace("\\", "/"))) for rel in rels]
+    try:
+        real = [forbidden.real_key(root, rel) for rel in rels]
+    except forbidden.UnresolvablePath as exc:
+        raise RequestFailed(
+            "policy_path", "실제 경로로 풀 수 없거나 워크스페이스 밖이라 Agent가 쓰지 않는다"
+        ) from exc
+    for key in (*keys, *real):
+        if key.split("/", 1)[0] in _POLICY_ROOTS:
             raise RequestFailed(
                 "policy_path", "그래프·target 도구로 knowledge/·wiki/ 아래를 쓰지 않는다"
             )
+    try:
+        protected = forbidden.protected_paths(root, forbidden.load_items(root))
+    except forbidden.ForbiddenConfigError as exc:
+        # 목록 형식 오류·보호 경로를 실제 경로로 풀 수 없음 → 쓰기 전부 거부 (fail closed)
+        raise RequestFailed(
+            "policy_path", "금지 동작 목록을 확인하지 못해 Agent의 target·그래프 쓰기를 하지 않는다"
+        ) from exc
+    if any(key in protected for key in real):
+        raise RequestFailed(
+            "policy_path", "금지 동작이 가리키는 target·화면 파일은 Agent가 고치지 않는다"
+        )
 
 
 def _list_sync(call: Call) -> dict[str, Any]:

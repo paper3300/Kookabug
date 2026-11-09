@@ -70,6 +70,12 @@ class FakePlatform:
     def capture(self, window: WindowRef | None, region: Rect | None) -> Image:
         return self._next(window, region)[1]
 
+    def peek_frame(self, window: WindowRef | None) -> Image:
+        """지금 보이는 프레임 (차례를 넘기지 않는다 — M8 금지 동작 판정용)."""
+        if not self.frames:
+            raise RuntimeError("FakePlatform에 frames가 없다")
+        return self.frames[min(max(self.captured - 1, 0), len(self.frames) - 1)]
+
     def capture_staged(
         self,
         window: WindowRef | None,

@@ -393,7 +393,7 @@ def _log_search(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
 
 def _run_start(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     params: dict[str, Any] = {"path": args["path"], "idempotency_key": args["idempotency_key"]}
-    for key in ("profile", "deadline_ms", "settings"):
+    for key in ("profile", "deadline_ms", "settings", "basis"):
         if key in args:
             params[key] = args[key]
     started = _daemon(link, "run.start", params)
@@ -633,6 +633,104 @@ def _app_launch(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     return ok_result(f"게임을 띄웠다 (PID {launched['pid']})", launched)
 
 
+# ---------------------------------------------------------------- 처리기 (knowledge·cases, M8)
+
+
+def _knowledge_search(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params = {k: args[k] for k in ("query", "files", "limit") if k in args}
+    found = _daemon(link, "knowledge.search", params)
+    more = " (더 있음)" if found["truncated"] else ""
+    return ok_result(f"지식 항목 {len(found['matches'])}개{more}", found)
+
+
+def _knowledge_get(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params = {k: args[k] for k in ("file", "id") if k in args}
+    got = _daemon(link, "knowledge.get", params)
+    return ok_result(f"{got['file']} (revision {got['revision']})", got)
+
+
+def _knowledge_apply(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    done = _daemon(link, "knowledge.apply", {"request_id": args["request_id"], "ops": args["ops"]})
+    conflicts = len(done.get("conflicts") or [])
+    note = f" · 의미 충돌 {conflicts}건 (둘 다 conflicted)" if conflicts else ""
+    return ok_result(f"지식 연산 {len(args['ops'])}개를 적용했다{note}", done)
+
+
+def _wiki_write(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params = {"path": args["path"], "text": args["text"], "base_sha256": args.get("base_sha256")}
+    done = _daemon(link, "wiki.write", params)
+    return ok_result(f"{done['path']}를 썼다 (sha256 {done['sha256'][:12]})", done)
+
+
+def _case_list(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params = {"state": args["state"]} if "state" in args else {}
+    found = _daemon(link, "cases.list", params)
+    return ok_result(f"사건 {len(found['cases'])}개", found)
+
+
+def _case_get(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    got = _daemon(link, "cases.get", {"id": args["case"]})
+    case = got["case"]
+    return ok_result(f"사건 {case['id']} ({case['state']}, revision {case['revision']})", got)
+
+
+def _triage_signals(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    got = _daemon(link, "cases.signals", {"id": args["case"]})
+    gaps = len(got["not_comparable"])
+    return ok_result(
+        f"사건 {args['case']}의 판단 재료 (원인은 판정하지 않는다, 비교할 수 없는 것 {gaps}개)", got
+    )
+
+
+def _case_open(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params: dict[str, Any] = {"run": args["run"]}
+    if "title" in args:
+        params["title"] = args["title"]
+    done = _daemon(link, "cases.open", params)
+    what = "기존 사건에 붙였다" if done["attached"] else "새 사건을 열었다"
+    return ok_result(f"{what}: {done['case']} (원래 실패 증거 {done['evidence']})", done)
+
+
+def _case_update(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    done = _daemon(
+        link,
+        "cases.update",
+        {"id": args["case"], "base_revision": args["base_revision"], "changes": args["changes"]},
+    )
+    return ok_result(f"사건 {done['case']}을 고쳤다 (revision {done['revision']})", done)
+
+
+def _evidence_pin(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params: dict[str, Any] = {"run": args["run"], "note": args["note"]}
+    if "step" in args:
+        params["step"] = args["step"]
+    done = _daemon(link, "evidence.pin", params)
+    return ok_result(f"증거 묶음 {done['id']}를 고정했다 (파일 {len(done['files'])}개)", done)
+
+
+def _adopt_request(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params: dict[str, Any] = {"case": args["case"], "change": args["change"]}
+    if args.get("negatives"):
+        params["negatives"] = args["negatives"]
+    done = _daemon(link, "adopt.request", params)
+    if done["adopted"]:
+        return ok_result(f"자동 채택했다: {done['adoption']}", done)
+    failed = done.get("failed") or {}
+    return ok_result(
+        f"채택하지 않았다 (조건 {failed.get('condition')} {failed.get('code')}). "
+        "변경은 작업 기준에 남는다",
+        done,
+    )
+
+
+def _report_note(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    done = _daemon(link, "job.note", {"text": args["text"]})
+    return ok_result(f"작업 {done['job']} 보고 메모를 남겼다 ({done['bytes']}바이트)", done)
+
+
+CASE_ID: Final = {"type": "string", "pattern": "^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$"}
+
+
 # ---------------------------------------------------------------- 정의
 
 TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
@@ -648,7 +746,8 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_toolset_enable",
         "툴셋 켜기",
-        "툴셋을 켠다(graph_edit·run·observe·control·screens). 켠 뒤 tools/list를 다시 받는다. "
+        "툴셋을 켠다(graph_edit·run·observe·control·screens·knowledge·cases). 켠 뒤 tools/list를 "
+        "다시 받는다. "
         "켜도 도구마다의 권한은 그대로다",
         _schema(
             {
@@ -772,7 +871,9 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_run_start",
         "실행 시작",
-        "그래프를 실행한다. idempotency_key가 같으면 다시 보내도 실행 하나",
+        "그래프를 실행한다. idempotency_key가 같으면 다시 보내도 실행 하나. basis는 실행 기준"
+        "(team = 팀 파일만, working = 작업 기준 덧씌움 — 생략하면 작업 연결은 working, 그 밖은 "
+        "team. qa_runner는 team만)",
         _schema(
             {
                 "path": PATH,
@@ -780,6 +881,7 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
                 "profile": {"type": "string"},
                 "deadline_ms": {"type": "integer", "minimum": 1},
                 "settings": {"type": "object"},
+                "basis": {"enum": ["team", "working"]},
             },
             ("path", "idempotency_key"),
         ),
@@ -961,6 +1063,108 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "저장된다",
         daemon_def("ScreensSaveParams"),
         _screen_save,
+    ),
+    # knowledge (M8 3.3·3.14)
+    ToolDef(
+        "kb_knowledge_search",
+        "지식 찾기",
+        "주장·경험칙·치트·미지수의 ID·글자에서 찾는다 (공백·대소문자 무시)",
+        daemon_def("Kb8KnowledgeSearchParams"),
+        _knowledge_search,
+    ),
+    ToolDef(
+        "kb_knowledge_get",
+        "지식 읽기",
+        "지식 파일(features/<기능>·lessons·cheats·unknowns) 또는 그 항목 하나와 revision. 주장 "
+        "파일은 작업 기준 덧씌움(working)도 준다. 고칠 때 revision·rev를 base로 준다",
+        daemon_def("Kb8KnowledgeGetParams"),
+        _knowledge_get,
+    ),
+    ToolDef(
+        "kb_knowledge_apply",
+        "지식 연산",
+        "제한 연산(add·revise·supersede·mark_conflicted·attach_evidence·set_status) 묶음을 "
+        "원자로 적용한다. 근거 형식은 source·evidence·run뿐(human은 사람만, 위키·주장 인용 없음). "
+        "expected 주장의 고치기는 작업 기준에 남고 사람이 수락한다. 같은 request_id는 지난 결과",
+        daemon_def("Kb8KnowledgeApplyParams"),
+        _knowledge_apply,
+    ),
+    ToolDef(
+        "kb_wiki_write",
+        "위키 쓰기",
+        "산문 위키 페이지(wiki/**/*.md, index·log·reports 제외)를 쓴다. 새 파일은 base_sha256 "
+        "null. 판정 근거로 쓰이지 않는다",
+        daemon_def("Kb8WikiWriteParams"),
+        _wiki_write,
+    ),
+    # cases (M8 3.2·3.8·3.14)
+    ToolDef(
+        "kb_case_list",
+        "사건 목록",
+        "조사 사건 목록 (상태·증상·실행 수)",
+        daemon_def("Kb8CasesListParams"),
+        _case_list,
+    ),
+    ToolDef(
+        "kb_case_get",
+        "사건 읽기",
+        "사건 하나 (원래 실패·가설·필요 정보·연결). 고칠 때 revision을 base_revision으로 준다",
+        _schema({"case": CASE_ID}, ("case",)),
+        _case_get,
+    ),
+    ToolDef(
+        "kb_triage_signals",
+        "조사 신호",
+        "사건의 판단 재료: 지난 성공과 비교·실패 화면 식별·변경 없는 재실행 결과·원본 변화·관련 "
+        "주장. 원인은 판정하지 않는다 (not_comparable에 비교할 수 없는 이유)",
+        _schema({"case": CASE_ID}, ("case",)),
+        _triage_signals,
+    ),
+    ToolDef(
+        "kb_case_open",
+        "사건 열기",
+        "실패 실행으로 사건을 연다. 원래 실패 증거는 Kookabug가 고정한다. 같은 시그니처의 열린 "
+        "사건이 있으면 그 사건에 붙이고 지난 가설을 준다(같은 원인 확정은 아님)",
+        daemon_def("Kb8CasesOpenParams"),
+        _case_open,
+    ),
+    ToolDef(
+        "kb_case_update",
+        "사건 고치기",
+        "사건의 제목·상태(open·needs_info·watching)·가설·조치·필요 정보·재확인·연결을 고친다. "
+        "resolved·closed는 자동 채택이나 사람만 (case_resolution_reserved)",
+        _schema(
+            {
+                "case": CASE_ID,
+                "base_revision": {"type": "integer", "minimum": 1},
+                "changes": {"type": "object"},
+            },
+            ("case", "base_revision", "changes"),
+        ),
+        _case_update,
+    ),
+    ToolDef(
+        "kb_evidence_pin",
+        "증거 고정",
+        "실행 기록에서 최소 증거 묶음을 고정한다 (가린 안전 필드·보호 아닌 이미지 480px). 지우거나 "
+        "고치는 도구는 없다",
+        daemon_def("Kb8EvidencePinParams"),
+        _evidence_pin,
+    ),
+    ToolDef(
+        "kb_adopt_request",
+        "자동 채택 요청",
+        "사건의 작업 기준 변경(target 제자리 수리) 하나를 자동 채택 조건 1~8로 검사해 팀에 "
+        "게시한다. 검증 실행은 Kookabug가 고르고 돌린다. 실패해도 변경은 작업 기준에 남는다",
+        daemon_def("Kb8AdoptRequestParams"),
+        _adopt_request,
+    ),
+    ToolDef(
+        "kb_report_note",
+        "보고 메모",
+        "이 작업 보고의 요약 글 (4 KB, 작업 연결 전용). 보고 항목은 Kookabug가 기록에서 만든다",
+        daemon_def("Kb8JobNoteParams"),
+        _report_note,
     ),
 )
 

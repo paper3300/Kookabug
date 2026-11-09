@@ -221,6 +221,9 @@ class RunSpec:
     """`run.json basis`에 남길 실행 기준 기록 (M8 3.6)."""
     job: str | None = None
     """이 실행을 낸 작업 ID (M8)."""
+    forbidden: tuple[Mapping[str, str], ...] | None = None
+    """Agent 주체 실행의 금지 동작 (M8 3.7·R6, daemon이 시작 때 고정). 있으면 runner가 입력마다
+    `forbidden.judge`를 부른다. 사람·검증 실행에는 없다."""
 
     @classmethod
     def from_json(cls, data: Any) -> RunSpec:
@@ -280,6 +283,9 @@ class RunSpec:
             overlay=spec.get("overlay"),
             basis=spec.get("basis"),
             job=spec.get("job"),
+            forbidden=(
+                None if spec.get("forbidden") is None else tuple(dict(i) for i in spec["forbidden"])
+            ),
             **optional,
         )
 
@@ -330,4 +336,5 @@ class RunSpec:
             ),
             **({} if self.basis is None else {"basis": dict(self.basis)}),
             **({} if self.job is None else {"job": self.job}),
+            **({} if self.forbidden is None else {"forbidden": [dict(i) for i in self.forbidden]}),
         }

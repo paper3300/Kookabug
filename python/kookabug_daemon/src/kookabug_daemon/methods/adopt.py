@@ -1,8 +1,8 @@
-"""`adopt.request`·`adopt.revert`·`adoptions.list`·`evidence.pin` (M8 계획 3.8·3.13, B3).
+"""`adopt.request`·`adopt.revert`·`adoptions.list`·`evidence.pin` (M8 계획 3.8·3.13, B3·B4).
 
-모두 지금은 `ui_only` + `AGENT_DENIED`다(에이전트 연결은 판정 전에 `permission_denied`). Agent용
-MCP 도구(`kb_adopt_request`·`kb_evidence_pin`)와 툴셋 `cases`·프리셋 판정은 B4가 붙인다 — 그때
-`adopt.request`·`evidence.pin`을 도구로 옮기고, `adopt.revert`는 사람 전용 그대로 둔다.
+`adopt.request`·`evidence.pin`은 툴셋 `cases`의 도구(`kb_adopt_request`·`kb_evidence_pin`)로
+판정한다 (B4 — `qa_runner`는 `kb_adopt_request` deny). `adopt.revert`·`adoptions.list`는 사람 전용
+(`ui_only` + `AGENT_DENIED`).
 
 - `adopt.request`: 조건 1~8을 Kookabug가 결정적으로 검사한다(`kookabug_daemon.adopt`). 검증 실행은
   Kookabug가 고른다 — 요청은 실행 ID를 받지 않는다. 요청이 준 음성 프레임은 **이 연결이 만든** 정지
@@ -14,18 +14,19 @@ MCP 도구(`kb_adopt_request`·`kb_evidence_pin`)와 툴셋 `cases`·프리셋 �
 from __future__ import annotations
 
 import asyncio
+import threading
 from collections.abc import Callable, Mapping
 from typing import Any, Final
 
 from kookabug_core import adopt as rules
 from kookabug_core.filetx import TxError
-from kookabug_core.knowledge.formats import Actor, KnowledgeError, secret_checker
+from kookabug_core.knowledge.formats import Actor, KnowledgeError, SecretCheck, secret_checker
 from kookabug_core.workspace import Workspace, WorkspaceError, default_secrets
 from kookabug_daemon.adopt import Adopter, RunVerifier, pin_run, request_negatives, secret_keys_of
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.protocol import RequestFailed
 
-__all__ = ["METHODS", "failed", "guarded"]
+__all__ = ["METHODS", "actor_of", "checker_of", "failed", "guarded", "pin_of"]
 
 _PASS: Final = frozenset(
     {
@@ -96,8 +97,9 @@ def _negatives(call: Call, items: list[Mapping[str, Any]]) -> list[Any]:
     return request_negatives(out)
 
 
-def _checker(call: Call) -> Any:
-    """보호 기록의 비밀값 키로 만든 글자 검사기 (채택 기록·감사 이력·증거 묶음)."""
+def checker_of(call: Call) -> SecretCheck:
+    """보호 기록의 비밀값 키로 만든 글자 검사기 (지식 연산·위키·사건·채택 기록·감사 이력·증거 묶음·
+    보고 메모 — M7 3.5b와 같은 규칙. 키를 못 읽거나 보호 기록이 손상됐으면 `secret_unchecked`)."""
     guard = call.daemon.guard
     workspace = Workspace.open(call.daemon.root)
     return secret_checker(
@@ -111,13 +113,28 @@ async def _request(call: Call) -> dict[str, Any]:
     p = call.params
     extra = _negatives(call, list(p.get("negatives") or []))
     try:
-        check = _checker(call)
+        check = checker_of(call)
     except WorkspaceError as exc:
         raise RequestFailed("io_error", str(exc), message=str(exc)) from exc
-    adopter = Adopter(call.daemon.root, RunVerifier(call.daemon.run_manager), check_secrets=check)
-    return await asyncio.to_thread(
-        guarded, adopter.request, str(p["case"]), str(p["change"]), extra
-    )
+    cancelled = threading.Event()
+    case_id, change_id = str(p["case"]), str(p["change"])
+
+    def work() -> dict[str, Any]:
+        # 검증 세션은 작업 스레드 안에서 열고 **스레드가 실제로 끝날 때** 닫는다 (R7): 요청 Task가
+        # 취소돼도(연결 끊김) 스레드는 계속 돌므로 그동안 Agent 입력 차단을 유지한다
+        verifier = RunVerifier(call.daemon.run_manager)
+        try:
+            adopter = Adopter(call.daemon.root, verifier, check_secrets=check, cancelled=cancelled)
+            return guarded(adopter.request, case_id, change_id, extra)
+        finally:
+            verifier.close()
+
+    try:
+        return await asyncio.to_thread(work)
+    except asyncio.CancelledError:
+        # 요청 취소·연결 끊김: 남은 검증·게시를 하지 않게 표시한다 (이미 게시 거래면 끝까지 간다)
+        cancelled.set()
+        raise
 
 
 async def _revert(call: Call) -> dict[str, Any]:
@@ -133,7 +150,13 @@ async def _list(call: Call) -> dict[str, Any]:
 
 def _pin_sync(call: Call) -> dict[str, Any]:
     p = call.params
-    run_id = str(p["run"])
+    step = p.get("step")
+    return pin_of(call, str(p["run"]), None if step is None else str(step), str(p["note"]))
+
+
+def pin_of(call: Call, run_id: str, step: str | None, note: str | None) -> dict[str, Any]:
+    """그 실행의 증거 묶음을 고정한다 (`evidence.pin`과 사건 열기의 원래 실패 자동 고정이 같은
+    길)."""
     where = call.daemon.run_manager.locate(run_id)
     guard = call.daemon.guard
     workspace = Workspace.open(call.daemon.root)
@@ -151,13 +174,12 @@ def _pin_sync(call: Call) -> dict[str, Any]:
 
     actor = actor_of(call)
     by = {"kind": actor.kind} | ({"id": actor.id} if actor.id else {})
-    step = p.get("step")
     return pin_run(
         call.daemon.root,
         where.folder,
         where.run_id,
-        step=None if step is None else str(step),
-        note=str(p["note"]),
+        step=step,
+        note=note,
         by=by,
         actor=actor,
         check_secrets=check,

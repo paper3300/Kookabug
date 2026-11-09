@@ -168,6 +168,8 @@ class ExecOptions:
     덮는다."""
     unattended: bool = False
     """사람 없는 Agent 연결이 시작한 실행 (M8): 치트 노드는 분류가 무인 허용인 치트만 통과한다."""
+    input_guard: Callable[[WindowRef | None], None] | None = None
+    """Agent가 시작한 실행의 금지 동작 판정 (M8 3.7·R6 — `Runtime.input_guard`)."""
 
 
 @dataclass(frozen=True)
@@ -305,6 +307,7 @@ class Executor:
             epochs=self.epochs if self.epochs is not None else Epochs(),
             on_observed=self.on_observed,
             judge_env=self.judge_env,
+            input_guard=options.input_guard,
         )
         policy = run_record_policy(program, root, options.record_override)
         recorder.redact_secrets = policy.redact_secrets
@@ -868,6 +871,9 @@ class _Run:
             if ctx.stale is not None:
                 # 노드가 재검증 실패를 삼키고 끝났어도 그 입력은 하지 않았다
                 raise ctx.stale
+            if ctx.forbidden is not None:
+                # 금지 동작 거부(M8 R6)를 노드가 삼켰어도 이 스텝은 그 오류다 (재시도 없음)
+                raise ctx.forbidden
             if not policy.again(result, attempt):
                 break
             # 시도 중에 생긴 취소·기한 초과는 중간 실패로 남기지 않고 이 스텝의 error로 전파한다

@@ -46,7 +46,18 @@ def accept_secret(scenario: dict[str, Any]) -> None:
 def game(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ocr_models: Path) -> FakeGame:
     monkeypatch.setenv("KOOKABUG_SECRET_ACC_PW", SECRET)  # daemon 사전 검증 (이 프로세스)
     monkeypatch.setenv("KOOKABUG_OCR_MODELS", str(ocr_models))
-    return make_fake_game(tmp_path, scenario_patch=accept_secret)
+    return without_forbidden(make_fake_game(tmp_path, scenario_patch=accept_secret))
+
+
+def without_forbidden(game: FakeGame) -> FakeGame:
+    """이 파일은 보호 판정만 본다: 예제 워크스페이스의 금지 동작(M8 "결제")을 비운다. 금지 문구가
+    있으면 칸 상자를 모르는 보호 화면에서는 Agent 입력이 확인 못 함으로 거부된다(M8 R6 —
+    `test_forbidden.py`가 본다)."""
+    path = game.root / "kookabug.json"
+    config = json.loads(path.read_text(encoding="utf-8"))
+    config["automation"]["forbidden"] = []
+    path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
+    return game
 
 
 def env_of(game: FakeGame) -> dict[str, str]:

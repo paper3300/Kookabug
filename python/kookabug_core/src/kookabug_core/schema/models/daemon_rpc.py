@@ -33,6 +33,13 @@ class AgentClientInfo(BaseModel):
         bool | None, Field(description="사람이 지켜보는 연결인가 (생략하면 false)")
     ] = None
     id: Annotated[str, Field(description="에이전트 주체 ID", min_length=1)]
+    job_token: Annotated[
+        str | None,
+        Field(
+            description="M8 3.14·R7: agent-job이 준 작업 토큰. 살아 있는 작업이면 주체에 그 작업이 붙고, 틀리거나 만료·폐기됐거나 다른 작업·주체의 토큰이면 job_token_invalid로 연결을 닫는다",
+            min_length=16,
+        ),
+    ] = None
     kind: Literal["agent"]
     name: str
     version: str
@@ -669,6 +676,132 @@ class Kb8AdoptionsListResult(BaseModel):
     adoptions: list[dict[str, Any]]
 
 
+class Kb8CaseGetResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    case: dict[str, Any]
+    sha256: str
+
+
+class Kb8CaseIdParams(BaseModel):
+    """
+    사건 하나 (cases.get·cases.signals)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: Annotated[str, Field(pattern="^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+
+
+class Kb8CaseRevisionResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    case: str
+    revision: int
+
+
+class Kb8CaseSignalsResult(BaseModel):
+    """
+    cases.signals (kb_triage_signals): 판단 재료만 모은다. 원인을 판정하지 않는다 (3.13)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    case: str
+    claims: list[dict[str, Any]]
+    diff: dict[str, Any] | None
+    not_comparable: list[dict[str, Any]]
+    reruns: dict[str, Any]
+    screen: dict[str, Any]
+    sources: list[dict[str, Any]]
+
+
+class Kb8CaseSummary(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: str
+    revision: int
+    runs: int
+    signature: str
+    state: str
+    symptom: dict[str, Any]
+    title: str
+
+
+class Kb8CasesCloseParams(BaseModel):
+    """
+    cases.close (사람 전용): 사건을 resolved·closed로 (resolution by human)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_revision: Annotated[int, Field(ge=1)]
+    id: Annotated[str, Field(pattern="^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+    note: Annotated[str | None, Field(min_length=1)] = None
+    state: Literal["closed", "resolved"] | None = None
+
+
+class Kb8CasesListParams(BaseModel):
+    """
+    cases.list (kb_case_list): 사건 목록
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    state: Literal["closed", "needs_info", "open", "resolved", "watching"] | None = None
+
+
+class Kb8CasesListResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    cases: list[Kb8CaseSummary]
+
+
+class Kb8CasesOpenParams(BaseModel):
+    """
+    cases.open (kb_case_open): 실패 실행으로 사건을 연다. 같은 시그니처 사건이 있으면 새로 열지 않고 그 사건 runs에 붙인다(attached). 원래 실패 증거는 Kookabug가 고정한다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    run: Annotated[str, Field(min_length=1)]
+    title: Annotated[str | None, Field(min_length=1)] = None
+
+
+class Kb8CasesOpenResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    attached: bool
+    case: str
+    evidence: str | None
+    hypotheses: list[dict[str, Any]]
+    revision: int
+    signature: str
+
+
+class Kb8CasesUpdateParams(BaseModel):
+    """
+    cases.update (kb_case_update): 제목·상태(open·needs_info·watching)·가설·조치·필요 정보·재확인·연결. resolved·closed는 case_resolution_reserved, original·runs·signature·symptom·resolution은 바꾸지 못한다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_revision: Annotated[int, Field(ge=1)]
+    changes: dict[str, Any]
+    id: Annotated[str, Field(pattern="^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+
+
 class Kb8CheatAdoptionValue(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -769,6 +902,25 @@ class Kb8CheatsUnadoptParams(BaseModel):
     rev: Annotated[int, Field(ge=1)]
 
 
+class Kb8ConfigBlockParams(BaseModel):
+    """
+    project.automation.set·project.sources.set (사람 전용): kookabug.json의 그 블록만 바꾼다. 지금 sha가 다르면 revision_conflict
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_sha256: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
+    value: list[Any] | dict[str, Any]
+
+
+class Kb8ConfigBlockResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    sha256: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
+
+
 class Kb8EvidencePinParams(BaseModel):
     """
     evidence.pin: 실행 기록에서 가림 처리한 최소 증거 묶음을 knowledge/evidence/에 고정 (지우거나 고치는 도구 없음)
@@ -789,6 +941,287 @@ class Kb8EvidencePinResult(BaseModel):
     files: list[str]
     id: str
     omitted: list[dict[str, Any]]
+
+
+class Budget(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    minutes: Annotated[int | None, Field(ge=1)] = None
+    runs: Annotated[int | None, Field(ge=1)] = None
+
+
+class Kb8JobBeginResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    agent_id: str
+    expires_at: str
+    job: str
+    token: str
+
+
+class Kb8JobBudgetParams(BaseModel):
+    """
+    M8: 작업 예산 상한에 닿음 (ui 연결에만)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    job: str
+    limit: dict[str, Any]
+    used: dict[str, Any]
+
+
+class Kb8JobChangedParams(BaseModel):
+    """
+    M8: 작업 상태가 바뀜 (ui 연결에만)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    job: str
+    state: str
+    used: dict[str, Any]
+
+
+class Kb8JobEndParams(BaseModel):
+    """
+    job.end (사람 전용): 작업 토큰을 먼저 폐기하고 그 작업의 실행을 취소한다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    job: Annotated[str, Field(pattern="^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+    reason: Literal["budget_exhausted", "cancelled", "done", "failed", "interrupted", "timeout"]
+
+
+class Kb8JobEndResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    cancelled: list[str]
+    job: str
+
+
+class Kb8JobFinishParams(BaseModel):
+    """
+    job.finish (사람 전용, B5): CLI가 끝났다 → 보고 생성
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    exit_code: int | None = None
+    job: Annotated[str, Field(pattern="^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+    state: (
+        Literal["budget_exhausted", "cancelled", "done", "failed", "interrupted", "prep_failed"]
+        | None
+    ) = None
+
+
+class Kb8JobIdParams(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    job: Annotated[str, Field(pattern="^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+
+
+class Kb8JobNoteParams(BaseModel):
+    """
+    job.note (kb_report_note): 작업 토큰 연결 전용. 보고의 Agent 요약 글 (4 KB, 글자 검사)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    text: Annotated[str, Field(min_length=1)]
+
+
+class Kb8JobNoteResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    bytes: int
+    job: str
+
+
+class Kb8KnowledgeApplyParams(BaseModel):
+    """
+    knowledge.apply (kb_knowledge_apply): 제한 변경 연산 묶음 (M8 3.3, kookabug.knowledge-ops/0). 전부 적용하거나 아무것도 쓰지 않는다. 같은 request_id 재요청은 지난 결과
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    ops: Annotated[list[dict[str, Any]], Field(max_length=200, min_length=1)]
+    request_id: Annotated[str, Field(min_length=1)]
+
+
+class Kb8KnowledgeApplyResult(BaseModel):
+    """
+    적용 결과 (코어 knowledge.ops.apply 그대로): applied·conflicts·working 등
+    """
+
+
+class Kb8KnowledgeChangedParams(BaseModel):
+    """
+    M8: knowledge/·wiki/가 바뀜 (ui 연결에만)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    files: list[str]
+
+
+class Kb8KnowledgeGetParams(BaseModel):
+    """
+    knowledge.get (kb_knowledge_get): 지식 파일(features/<기능>·lessons·cheats·unknowns) 또는 그 항목 하나. 주장 파일은 작업 기준 덧씌움(working)도 함께 준다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    file: Annotated[str, Field(min_length=1)]
+    id: Annotated[str | None, Field(min_length=1)] = None
+
+
+class Kb8KnowledgeGetResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    doc: dict[str, Any] | None = None
+    file: str
+    item: dict[str, Any] | None = None
+    revision: int
+    sha256: str | None
+    working: list[dict[str, Any]]
+
+
+class File(RootModel[str]):
+    root: Annotated[str, Field(min_length=1)]
+
+
+class Kb8KnowledgeSearchParams(BaseModel):
+    """
+    knowledge.search (kb_knowledge_search): 지식 항목(주장·경험칙·치트·미지수)의 ID·글자에서 찾는다 (대소문자·공백 무시 포함)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    files: Annotated[list[File] | None, Field(max_length=64)] = None
+    limit: Annotated[int | None, Field(ge=1, le=200)] = None
+    query: Annotated[str, Field(min_length=1)]
+
+
+class Match(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    file: str
+    id: str
+    kind: str | None
+    rev: int | None
+    status: str | None
+    text: str
+
+
+class Kb8KnowledgeSearchResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    matches: list[Match]
+    truncated: bool
+
+
+class Kb8LooseResult(BaseModel):
+    """
+    M8 다음 묶음(B5·B7)이 모양을 정하는 결과
+    """
+
+
+class Kb8ReportDecideParams(BaseModel):
+    """
+    report.decide (사람 전용, B5): 보고 묶음 결정 → working.accept/reject
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    decision: Literal["accept", "reject"]
+    group: Annotated[str, Field(min_length=1)]
+    job: Annotated[str, Field(pattern="^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+
+
+class Kb8SourcesCheckResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    sources: list[dict[str, Any]]
+
+
+class Kb8UnknownsAnswerParams(BaseModel):
+    """
+    unknowns.answer (사람 전용): 미지수에 사람 답을 단다 (basis.type human으로 쓸 수 있다)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_rev: Annotated[int, Field(ge=1)]
+    id: Annotated[str, Field(pattern="^u-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+    text: Annotated[str, Field(min_length=1)]
+
+
+class Kb8UnknownsAnswerResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: str
+    rev: int
+
+
+class BaseSha256(RootModel[str]):
+    root: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
+
+
+class Kb8WikiWriteParams(BaseModel):
+    """
+    wiki.write (kb_wiki_write): 산문 위키 페이지 하나 (wiki/**/*.md, index·log·reports 제외)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_sha256: BaseSha256 | None
+    path: Annotated[str, Field(min_length=1)]
+    text: str
+
+
+class Kb8WikiWriteResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    path: str
+    rendered_claims: bool
+    sha256: str
+    warnings: list[str]
+
+
+class Kb8WizardSetParams(BaseModel):
+    """
+    wizard.set (사람 전용, B7)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    wizard: dict[str, Any]
 
 
 class Change(RootModel[str]):
@@ -902,7 +1335,7 @@ class AdoptRequest(BaseModel):
     params: Kb8AdoptRequestParams
     renderer: Literal[False]
     result: Kb8AdoptRequestResult
-    tool: Literal["ui_only"]
+    tool: Literal["kb_adopt_request"]
 
 
 class AdoptRevert(BaseModel):
@@ -953,6 +1386,66 @@ class ApprovalRespond(BaseModel):
     renderer: Literal[True]
     result: EmptyResult
     tool: Literal["ui_only"]
+
+
+class CasesClose(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8CasesCloseParams
+    renderer: Literal[False]
+    result: Kb8CaseRevisionResult
+    tool: Literal["ui_only"]
+
+
+class CasesGet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8CaseIdParams
+    renderer: Literal[False]
+    result: Kb8CaseGetResult
+    tool: Literal["kb_case_get"]
+
+
+class CasesList(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8CasesListParams
+    renderer: Literal[False]
+    result: Kb8CasesListResult
+    tool: Literal["kb_case_list"]
+
+
+class CasesOpen(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8CasesOpenParams
+    renderer: Literal[False]
+    result: Kb8CasesOpenResult
+    tool: Literal["kb_case_open"]
+
+
+class CasesSignals(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8CaseIdParams
+    renderer: Literal[False]
+    result: Kb8CaseSignalsResult
+    tool: Literal["kb_triage_signals"]
+
+
+class CasesUpdate(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8CasesUpdateParams
+    renderer: Literal[False]
+    result: Kb8CaseRevisionResult
+    tool: Literal["kb_case_update"]
 
 
 class CheatsAdopt(BaseModel):
@@ -1022,7 +1515,7 @@ class EvidencePin(BaseModel):
     params: Kb8EvidencePinParams
     renderer: Literal[False]
     result: Kb8EvidencePinResult
-    tool: Literal["ui_only"]
+    tool: Literal["kb_evidence_pin"]
 
 
 class ExploreEnd(BaseModel):
@@ -1042,6 +1535,176 @@ class GraphClose(BaseModel):
     params: GraphCloseParams
     renderer: Literal[True]
     result: EmptyResult
+    tool: Literal["ui_only"]
+
+
+class JobEnd(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8JobEndParams
+    renderer: Literal[False]
+    result: Kb8JobEndResult
+    tool: Literal["ui_only"]
+
+
+class JobFinish(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8JobFinishParams
+    renderer: Literal[False]
+    result: Kb8LooseResult
+    tool: Literal["ui_only"]
+
+
+class JobNote(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8JobNoteParams
+    renderer: Literal[False]
+    result: Kb8JobNoteResult
+    tool: Literal["kb_report_note"]
+
+
+class JobsList(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[False]
+    result: Kb8LooseResult
+    tool: Literal["ui_only"]
+
+
+class KnowledgeApply(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8KnowledgeApplyParams
+    renderer: Literal[False]
+    result: Kb8KnowledgeApplyResult
+    tool: Literal["kb_knowledge_apply"]
+
+
+class KnowledgeGet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8KnowledgeGetParams
+    renderer: Literal[False]
+    result: Kb8KnowledgeGetResult
+    tool: Literal["kb_knowledge_get"]
+
+
+class KnowledgeSearch(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8KnowledgeSearchParams
+    renderer: Literal[False]
+    result: Kb8KnowledgeSearchResult
+    tool: Literal["kb_knowledge_search"]
+
+
+class ProjectAutomationSet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8ConfigBlockParams
+    renderer: Literal[False]
+    result: Kb8ConfigBlockResult
+    tool: Literal["ui_only"]
+
+
+class ProjectSourcesSet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8ConfigBlockParams
+    renderer: Literal[False]
+    result: Kb8ConfigBlockResult
+    tool: Literal["ui_only"]
+
+
+class ReportDecide(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8ReportDecideParams
+    renderer: Literal[False]
+    result: Kb8LooseResult
+    tool: Literal["ui_only"]
+
+
+class ReportsGet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8JobIdParams
+    renderer: Literal[False]
+    result: Kb8LooseResult
+    tool: Literal["ui_only"]
+
+
+class ReportsList(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[False]
+    result: Kb8LooseResult
+    tool: Literal["ui_only"]
+
+
+class SourcesCheck(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[False]
+    result: Kb8SourcesCheckResult
+    tool: Literal["ui_only"]
+
+
+class UnknownsAnswer(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8UnknownsAnswerParams
+    renderer: Literal[False]
+    result: Kb8UnknownsAnswerResult
+    tool: Literal["ui_only"]
+
+
+class WikiWrite(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8WikiWriteParams
+    renderer: Literal[False]
+    result: Kb8WikiWriteResult
+    tool: Literal["kb_wiki_write"]
+
+
+class WizardGet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[False]
+    result: Kb8LooseResult
+    tool: Literal["ui_only"]
+
+
+class WizardSet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8WizardSetParams
+    renderer: Literal[False]
+    result: Kb8LooseResult
     tool: Literal["ui_only"]
 
 
@@ -1101,6 +1764,34 @@ class DebugBreakpointsChanged(BaseModel):
         extra="forbid",
     )
     params: BreakpointsResult
+
+
+class JobBudget(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8JobBudgetParams
+
+
+class JobChanged(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8JobChangedParams
+
+
+class KnowledgeChanged(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8KnowledgeChangedParams
+
+
+class ReportsChanged(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
 
 
 class OutputShape(BaseModel):
@@ -1390,6 +2081,9 @@ class Principal(BaseModel):
     )
     attended: bool
     id: str
+    job: Annotated[
+        str | None, Field(description="M8: 작업 토큰으로 묶인 연결이면 그 작업 ID (없으면 키 없음)")
+    ] = None
     kind: Literal["agent", "user"]
 
 
@@ -1818,6 +2512,24 @@ class RequestFailedCode(
             "change_not_active",
             "nothing_to_revert",
             "evidence_missing",
+            "job_token_invalid",
+            "job_only",
+            "forbidden_visible",
+            "forbidden_unverifiable",
+            "stalled_repeat",
+            "case_resolution_reserved",
+            "verification_active",
+            "duplicate_id",
+            "basis_required",
+            "basis_unknown",
+            "basis_hash_mismatch",
+            "basis_derived",
+            "human_basis_reserved",
+            "adoption_reserved",
+            "answer_reserved",
+            "too_large",
+            "path_alias",
+            "case_closed",
         ]
     ]
 ):
@@ -1916,9 +2628,27 @@ class RequestFailedCode(
             "change_not_active",
             "nothing_to_revert",
             "evidence_missing",
+            "job_token_invalid",
+            "job_only",
+            "forbidden_visible",
+            "forbidden_unverifiable",
+            "stalled_repeat",
+            "case_resolution_reserved",
+            "verification_active",
+            "duplicate_id",
+            "basis_required",
+            "basis_unknown",
+            "basis_hash_mismatch",
+            "basis_derived",
+            "human_basis_reserved",
+            "adoption_reserved",
+            "answer_reserved",
+            "too_large",
+            "path_alias",
+            "case_closed",
         ],
         Field(
-            description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 비밀값 — data.field), secret_unchecked(비밀값 검사 불가 — 키를 못 읽음·보호 기록 손상), screens_busy(화면 지도 잠금)",
+            description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 비밀값 — data.field), secret_unchecked(비밀값 검사 불가 — 키를 못 읽음·보호 기록 손상), screens_busy(화면 지도 잠금) M8 B4: job_token_invalid(작업 토큰이 틀림·만료·폐기 — 연결 거부), job_only(작업 토큰 연결 전용 메서드), forbidden_visible(금지 문구·target·화면이 보여 입력하지 않음 — data.kind·value), forbidden_unverifiable(화면·OCR·target 확인 실패로 입력하지 않음), stalled_repeat(같은 작업에서 같은 실패 3번 — 그 테스트를 다시 돌리지 않음), case_resolution_reserved(사건 resolved·closed는 Kookabug·사람만), case_closed(닫힌 사건), verification_active(자동 채택 검증 실행 중이라 게임 입력을 받지 않음), 지식 연산 거부(duplicate_id·basis_required·basis_unknown·basis_hash_mismatch·basis_derived·human_basis_reserved·adoption_reserved·answer_reserved·too_large·path_alias)",
             title="RequestFailedCode",
         ),
     ]
@@ -2118,7 +2848,7 @@ class RunSearchParams(BaseModel):
     runs: list[RunId] | None = None
 
 
-class Match(BaseModel):
+class Match1(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
@@ -2133,7 +2863,7 @@ class RunSearchResult(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    matches: list[Match]
+    matches: list[Match1]
     skipped: list[str]
     truncated: bool
 
@@ -2763,7 +3493,13 @@ class Timestamp(RootModel[str]):
 class ToolName(
     RootModel[
         Literal[
+            "kb_adopt_request",
             "kb_app_launch",
+            "kb_case_get",
+            "kb_case_list",
+            "kb_case_open",
+            "kb_case_update",
+            "kb_evidence_pin",
             "kb_explore_end",
             "kb_explore_start",
             "kb_graph_create",
@@ -2775,10 +3511,14 @@ class ToolName(
             "kb_input_click",
             "kb_input_key",
             "kb_input_type",
+            "kb_knowledge_apply",
+            "kb_knowledge_get",
+            "kb_knowledge_search",
             "kb_log_search",
             "kb_node_search",
             "kb_ocr_read",
             "kb_project_info",
+            "kb_report_note",
             "kb_run_artifact_get",
             "kb_run_cancel",
             "kb_run_compare",
@@ -2792,13 +3532,21 @@ class ToolName(
             "kb_screen_save",
             "kb_target_create",
             "kb_toolset_enable",
+            "kb_triage_signals",
+            "kb_wiki_write",
             "ui_only",
         ]
     ]
 ):
     root: Annotated[
         Literal[
+            "kb_adopt_request",
             "kb_app_launch",
+            "kb_case_get",
+            "kb_case_list",
+            "kb_case_open",
+            "kb_case_update",
+            "kb_evidence_pin",
             "kb_explore_end",
             "kb_explore_start",
             "kb_graph_create",
@@ -2810,10 +3558,14 @@ class ToolName(
             "kb_input_click",
             "kb_input_key",
             "kb_input_type",
+            "kb_knowledge_apply",
+            "kb_knowledge_get",
+            "kb_knowledge_search",
             "kb_log_search",
             "kb_node_search",
             "kb_ocr_read",
             "kb_project_info",
+            "kb_report_note",
             "kb_run_artifact_get",
             "kb_run_cancel",
             "kb_run_compare",
@@ -2827,6 +3579,8 @@ class ToolName(
             "kb_screen_save",
             "kb_target_create",
             "kb_toolset_enable",
+            "kb_triage_signals",
+            "kb_wiki_write",
             "ui_only",
         ],
         Field(
@@ -2836,9 +3590,13 @@ class ToolName(
     ]
 
 
-class Toolset(RootModel[Literal["control", "core", "graph_edit", "observe", "run", "screens"]]):
+class Toolset(
+    RootModel[
+        Literal["cases", "control", "core", "graph_edit", "knowledge", "observe", "run", "screens"]
+    ]
+):
     root: Annotated[
-        Literal["control", "core", "graph_edit", "observe", "run", "screens"],
+        Literal["cases", "control", "core", "graph_edit", "knowledge", "observe", "run", "screens"],
         Field(description="MCP 툴셋 (구현 계획 7장). core는 늘 켜져 있다", title="Toolset"),
     ]
 
@@ -3440,6 +4198,22 @@ class Kb8CheatCategoriesSetParams(BaseModel):
     enabled: bool
 
 
+class Kb8JobBeginParams(BaseModel):
+    """
+    job.begin (사람 전용, agent-job CLI): 작업을 만들고 작업 토큰을 준다. 토큰은 이 응답에만 있고 daemon은 해시만 둔다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    basis: Literal["team", "working"] | None = None
+    budget: Budget | None = None
+    playbook: Annotated[str, Field(min_length=1)]
+    toolsets: list[Toolset] | None = None
+    trigger: Literal["ci", "manual", "schedule"] | None = None
+    ttl_s: Annotated[int | None, Field(ge=1, le=86400)] = None
+
+
 class LeaseChangedParams(BaseModel):
     """
     입력 임대권 소유자 (없으면 null). 녹화 세션이면 kind recorder (상태 바 '입력: 녹화')
@@ -3633,6 +4407,16 @@ class GraphSave(BaseModel):
     renderer: Literal[True]
     result: GraphSaveResult
     tool: Literal["kb_graph_patch"]
+
+
+class JobBegin(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8JobBeginParams
+    renderer: Literal[False]
+    result: Kb8JobBeginResult
+    tool: Literal["ui_only"]
 
 
 class PluginsCancel(BaseModel):
@@ -4462,7 +5246,7 @@ class Request(BaseModel):
 
 class RequestFailedData(BaseModel):
     """
-    error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message. M5 B3: approval_required → decision·reason. M6: plugin_failed → plugin_error, op_not_found → op_id. M7: frame_protected·sensitive_region → reason·message(안내), secret_in_text → field, secret_unchecked → reason(못 읽은 키 이름)
+    error.data (code -32100). 종류별 추가 필드: unauthenticated·protocol_mismatch → protocol, not_found·path_outside_workspace·private_path → path, invalid_json → message·line·column(위치를 모르면 null), doc_not_open·revision_conflict·exists → revision(지금 디스크, 없으면 null), idempotency_conflict·run_busy·run_active·run_not_found·run_not_debuggable·not_paused → run_id, read_only → path, validation_failed·frame_expired·target_invalid → diagnostics, permission_denied·approval_required → decision, io_error·shutting_down → message. M4: input_lease_busy → owner(살아 있음이 확인된 소유자, 모르면 null), recording_active·not_owner·recorder_state_invalid → state, classification_pending·text_review_required·secret_unresolved·target_missing·secret_region_overlap → steps(걸린 스텝). M5: toolset_disabled → toolset, patch_invalid → index·message. M5 B3: approval_required → decision·reason. M6: plugin_failed → plugin_error, op_not_found → op_id. M7: frame_protected·sensitive_region → reason·message(안내), secret_in_text → field, secret_unchecked → reason(못 읽은 키 이름). M8: forbidden_visible·forbidden_unverifiable → kind·value·reason(고정 사유), job_token_invalid → message 없음, permission_denied → reason job_scope(작업 허용 범위 밖)
     """
 
     model_config = ConfigDict(
@@ -4486,6 +5270,12 @@ class RequestFailedData(BaseModel):
     ] = None
     journals: Annotated[
         list[str] | None, Field(description="M7 B4 recovery_pending: 남은 승격 거래 저널 ID")
+    ] = None
+    kind: Annotated[
+        str | None,
+        Field(
+            description="M8 forbidden_visible·forbidden_unverifiable: 걸린 금지 항목 종류 (text·target·screen, 모르면 null)"
+        ),
     ] = None
     line: Annotated[int | None, Field(ge=1, le=9007199254740991)] = None
     message: str | None = None
@@ -4511,6 +5301,12 @@ class RequestFailedData(BaseModel):
     state: RecorderState | None = None
     steps: list[RecorderStepId] | None = None
     toolset: Toolset | None = None
+    value: Annotated[
+        str | None,
+        Field(
+            description="M8 forbidden_*: 걸린 금지 항목 값 (정책의 문구·target 경로·화면 ID — 화면 글자가 아니다, 모르면 null)"
+        ),
+    ] = None
 
 
 class RunArtifactParams(BaseModel):
@@ -5510,11 +6306,15 @@ class Notifications(BaseModel):
     ]
     explore_changed: Annotated[ExploreChanged, Field(alias="explore.changed")]
     graph_changed: Annotated[GraphChanged, Field(alias="graph.changed")]
+    job_budget: Annotated[JobBudget, Field(alias="job.budget")]
+    job_changed: Annotated[JobChanged, Field(alias="job.changed")]
+    knowledge_changed: Annotated[KnowledgeChanged, Field(alias="knowledge.changed")]
     lease_changed: Annotated[LeaseChanged, Field(alias="lease.changed")]
     plugins_changed: Annotated[PluginsChanged, Field(alias="plugins.changed")]
     plugins_done: Annotated[PluginsDone, Field(alias="plugins.done")]
     plugins_progress: Annotated[PluginsProgress, Field(alias="plugins.progress")]
     recorder_changed: Annotated[RecorderChanged, Field(alias="recorder.changed")]
+    reports_changed: Annotated[ReportsChanged, Field(alias="reports.changed")]
     run_ended: Annotated[RunEnded, Field(alias="run.ended")]
     run_event: Annotated[RunEvent, Field(alias="run.event")]
     run_lagged: Annotated[RunLagged, Field(alias="run.lagged")]
@@ -5936,6 +6736,12 @@ class Methods(BaseModel):
     approval_list: Annotated[ApprovalList, Field(alias="approval.list")]
     approval_preview: Annotated[ApprovalPreview, Field(alias="approval.preview")]
     approval_respond: Annotated[ApprovalRespond, Field(alias="approval.respond")]
+    cases_close: Annotated[CasesClose, Field(alias="cases.close")]
+    cases_get: Annotated[CasesGet, Field(alias="cases.get")]
+    cases_list: Annotated[CasesList, Field(alias="cases.list")]
+    cases_open: Annotated[CasesOpen, Field(alias="cases.open")]
+    cases_signals: Annotated[CasesSignals, Field(alias="cases.signals")]
+    cases_update: Annotated[CasesUpdate, Field(alias="cases.update")]
     cheats_adopt: Annotated[CheatsAdopt, Field(alias="cheats.adopt")]
     cheats_categories_set: Annotated[CheatsCategoriesSet, Field(alias="cheats.categories.set")]
     cheats_list: Annotated[CheatsList, Field(alias="cheats.list")]
@@ -5958,6 +6764,14 @@ class Methods(BaseModel):
     graph_patch: Annotated[GraphPatch, Field(alias="graph.patch")]
     graph_save: Annotated[GraphSave, Field(alias="graph.save")]
     graph_validate: Annotated[GraphValidate, Field(alias="graph.validate")]
+    job_begin: Annotated[JobBegin, Field(alias="job.begin")]
+    job_end: Annotated[JobEnd, Field(alias="job.end")]
+    job_finish: Annotated[JobFinish, Field(alias="job.finish")]
+    job_note: Annotated[JobNote, Field(alias="job.note")]
+    jobs_list: Annotated[JobsList, Field(alias="jobs.list")]
+    knowledge_apply: Annotated[KnowledgeApply, Field(alias="knowledge.apply")]
+    knowledge_get: Annotated[KnowledgeGet, Field(alias="knowledge.get")]
+    knowledge_search: Annotated[KnowledgeSearch, Field(alias="knowledge.search")]
     nodes_list: Annotated[NodesList, Field(alias="nodes.list")]
     permissions_get: Annotated[PermissionsGet, Field(alias="permissions.get")]
     permissions_set: Annotated[PermissionsSet, Field(alias="permissions.set")]
@@ -5970,6 +6784,8 @@ class Methods(BaseModel):
     plugins_remove: Annotated[PluginsRemove, Field(alias="plugins.remove")]
     plugins_sync: Annotated[PluginsSync, Field(alias="plugins.sync")]
     plugins_upgrade: Annotated[PluginsUpgrade, Field(alias="plugins.upgrade")]
+    project_automation_set: Annotated[ProjectAutomationSet, Field(alias="project.automation.set")]
+    project_sources_set: Annotated[ProjectSourcesSet, Field(alias="project.sources.set")]
     recorder_commit_abort: Annotated[RecorderCommitAbort, Field(alias="recorder.commit_abort")]
     recorder_commit_finish: Annotated[RecorderCommitFinish, Field(alias="recorder.commit_finish")]
     recorder_commit_prepare: Annotated[
@@ -5988,6 +6804,9 @@ class Methods(BaseModel):
     recorder_target_materialize: Annotated[
         RecorderTargetMaterialize, Field(alias="recorder.target.materialize")
     ]
+    report_decide: Annotated[ReportDecide, Field(alias="report.decide")]
+    reports_get: Annotated[ReportsGet, Field(alias="reports.get")]
+    reports_list: Annotated[ReportsList, Field(alias="reports.list")]
     run_artifact: Annotated[RunArtifact, Field(alias="run.artifact")]
     run_cancel: Annotated[RunCancel, Field(alias="run.cancel")]
     run_children: Annotated[RunChildren, Field(alias="run.children")]
@@ -6022,13 +6841,18 @@ class Methods(BaseModel):
     secrets_create: Annotated[SecretsCreate, Field(alias="secrets.create")]
     secrets_list: Annotated[SecretsList, Field(alias="secrets.list")]
     session_hello: Annotated[SessionHello, Field(alias="session.hello")]
+    sources_check: Annotated[SourcesCheck, Field(alias="sources.check")]
     target_capture: Annotated[TargetCapture, Field(alias="target.capture")]
     target_load_image: Annotated[TargetLoadImage, Field(alias="target.load_image")]
     target_open: Annotated[TargetOpen, Field(alias="target.open")]
     target_preview: Annotated[TargetPreview, Field(alias="target.preview")]
     target_read_text: Annotated[TargetReadText, Field(alias="target.read_text")]
     target_save: Annotated[TargetSave, Field(alias="target.save")]
+    unknowns_answer: Annotated[UnknownsAnswer, Field(alias="unknowns.answer")]
+    wiki_write: Annotated[WikiWrite, Field(alias="wiki.write")]
     windows_list: Annotated[WindowsList, Field(alias="windows.list")]
+    wizard_get: Annotated[WizardGet, Field(alias="wizard.get")]
+    wizard_set: Annotated[WizardSet, Field(alias="wizard.set")]
     working_accept: Annotated[WorkingAccept, Field(alias="working.accept")]
     working_list: Annotated[WorkingList, Field(alias="working.list")]
     working_reject: Annotated[WorkingReject, Field(alias="working.reject")]

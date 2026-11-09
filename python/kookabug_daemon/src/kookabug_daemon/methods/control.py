@@ -25,11 +25,13 @@ from collections.abc import Mapping
 from typing import Any, Final
 
 from kookabug_core.documents import template
+from kookabug_core.engine.context import FORBIDDEN_CODES
 from kookabug_core.permissions import Decision
 from kookabug_core.runner.spec import BoundWindow
 from kookabug_daemon.agent_view import MASK
 from kookabug_daemon.documents import resolve_path
 from kookabug_daemon.explore import StepReservation
+from kookabug_daemon.forbidden import check_agent_input
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.protocol import RequestFailed
 
@@ -133,6 +135,19 @@ def _result(run_id: str, outcome: Any) -> dict[str, Any]:
                 "다른 주체가 입력 임대권을 쥐고 있어 게임을 조작하지 않았다",
                 run_id=run_id,
             )
+        if code in FORBIDDEN_CODES:
+            # runner가 입력 직전 판정에서 막았다 (사유는 정책 항목·고정 글자뿐 — `Refusal.message`)
+            reason = run_end.get("reason")
+            raise RequestFailed(
+                code,
+                str(reason)
+                if isinstance(reason, str) and not run_end.get("secret_paths")
+                else "입력 직전 금지 동작 판정에 걸려 입력하지 않았다",
+                kind=None,
+                value=None,
+                reason="runner",
+                run_id=run_id,
+            )
         # 사유는 실행 때 분류(3.8)대로 가린다: 비밀값이 든 사유면 ***
         reason = run_end.get("reason")
         secret = "/reason" in (run_end.get("secret_paths") or ())
@@ -188,6 +203,13 @@ async def _reserved(
         if len(found) == 1
         else BoundWindow(0, 0, "", title)
     )
+    # 자동 채택 검증 중이면 Agent 입력을 받지 않는다 (M8 R7 — 시작 예약 안에서 다시 본다)
+    manager.refuse_agent_during_verification(call.principal)
+    # 금지 동작 (M8 3.7·R6): 창이 하나로 정해졌으면 보내기 전에 그 창 한 장으로 판정한다(비밀값
+    # 보호 기록을 쓰기 전 — 이 입력이 만들 보호로 자기 자신을 막지 않게). 창이 없으면 제어 실행이
+    # 창 붙기에서 입력 없이 끝난다. 어느 쪽이든 runner가 입력 직전에 같은 판정을 다시 한다
+    if bindings:
+        await asyncio.to_thread(check_agent_input, call.daemon, call.principal, bindings)
     before = None
     if point is not None and bindings:
         before = await asyncio.to_thread(guard.before_click, bindings)
@@ -232,7 +254,11 @@ async def _launch(call: Call) -> dict[str, Any]:
     await call.daemon.approvals.authorize(call, "")
     profile = call.params.get("profile")
     pid = await asyncio.to_thread(
-        call.daemon.run_manager.launch_app, None if profile is None else str(profile)
+        functools.partial(
+            call.daemon.run_manager.launch_app,
+            None if profile is None else str(profile),
+            agent=call.principal.kind == "agent",
+        )
     )
     return {"pid": pid}
 

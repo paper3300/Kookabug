@@ -169,3 +169,7 @@ class FakeVerifier:
             qa=qa,
             snapshot=snapshot,
         )
+
+    def intervened(self) -> bool:
+        """검증 세션 중 다른 입력 (대역은 늘 없음)."""
+        return False

@@ -15,7 +15,7 @@ import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 from kb_testing.display import DISPLAY_ENV, tk_env
 from kookabug_core.win import Process, ProcessId, is_alive
@@ -27,6 +27,7 @@ __all__ = [
     "Spawned",
     "assert_no_live",
     "barrier",
+    "count_inputs",
     "direct_env",
     "faults_env",
     "inner_pytest",
@@ -143,6 +144,34 @@ def read_fake_input_log(path: Path) -> list[dict[str, Any]]:
         return []
     lines = path.read_bytes().split(b"\n")
     return [json.loads(line) for line in lines[:-1] if line.strip()]
+
+
+def count_inputs(
+    lines: Sequence[Mapping[str, Any]],
+    kind: Literal["click", "key", "text"],
+    *,
+    at: tuple[int, int] | None = None,
+    key: str | None = None,
+) -> int:
+    """가짜 입력 기록(`read_fake_input_log`, 실제 형식 `device`·`op`·`at`) 집계 — "입력 0" 단언은
+    모두 이것으로 센다. `click`은 마우스 `down`(위치 `at` — 줄에 없으면 바로 앞 `move` 위치),
+    `key`는 키보드 `down`(`key`가 있으면 그 키만, 대소문자 무시), `text`는 글자 입력 줄."""
+    count = 0
+    pos: tuple[int, int] | None = None
+    for line in lines:
+        op, device = line.get("op"), line.get("device")
+        here = tuple(line["at"]) if isinstance(line.get("at"), list) else None
+        if device == "mouse" and here is not None:
+            pos = (int(here[0]), int(here[1]))
+        if kind == "click" and device == "mouse" and op == "down":
+            if at is None or pos == tuple(at):
+                count += 1
+        elif kind == "key" and device == "keyboard" and op == "down":
+            if key is None or str(line.get("key", "")).casefold() == key.casefold():
+                count += 1
+        elif kind == "text" and op == "text":
+            count += 1
+    return count
 
 
 def read_tree(out_dir: Path) -> dict[int, dict[str, Any]]:

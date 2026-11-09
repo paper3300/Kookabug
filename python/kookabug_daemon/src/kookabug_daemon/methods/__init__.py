@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from kookabug_daemon.frame_guard import FrameGuard
     from kookabug_daemon.frames import FrameCache
     from kookabug_daemon.image_cache import EditorCache
+    from kookabug_daemon.jobs import JobRegistry
     from kookabug_daemon.permission_files import PermissionFiles
     from kookabug_daemon.plugin_jobs import PluginJobs
     from kookabug_daemon.runs import RunManager
@@ -157,6 +158,15 @@ class DaemonContext(Protocol):
         """플러그인 작업 (M6 3.8 `plugins.*`)."""
         ...
 
+    @property
+    def jobs(self) -> JobRegistry:
+        """작업 토큰 (M8 R7 `job.*`)."""
+        ...
+
+    def knowledge_changed(self, files: list[str]) -> None:
+        """지식·위키·사건이 바뀌었다: 사람 연결에 `knowledge.changed` (어느 스레드에서나, M8)."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class Call:
@@ -196,11 +206,14 @@ def registry() -> dict[str, MethodSpec]:
         agent,
         agents,
         approval,
+        cases,
         cheats,
         control,
         debug,
         explore,
         graph,
+        jobs,
+        knowledge,
         nodes,
         permissions,
         plugins,
@@ -218,6 +231,9 @@ def registry() -> dict[str, MethodSpec]:
 
     return {
         **adopt.METHODS,
+        **cases.METHODS,
+        **jobs.METHODS,
+        **knowledge.METHODS,
         **working.METHODS,
         **agent.METHODS,
         **agents.METHODS,

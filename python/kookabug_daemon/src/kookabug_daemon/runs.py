@@ -111,6 +111,7 @@ from kookabug_core.runner.spec import BoundWindow, PlatformSpec
 from kookabug_core.schema import check_shape
 from kookabug_core.service import (
     DevModulesRefused,
+    ForbiddenUnavailable,
     WorkspaceService,
     refuse_dev_modules,
     start_options,
@@ -120,6 +121,7 @@ from kookabug_core.supervisor import (
     ResumeRefused,
     RunHandle,
     RunOutcome,
+    StartOptions,
     run_exit_code,
 )
 from kookabug_core.validate import check_graph, check_graph_value
@@ -134,6 +136,7 @@ from kookabug_daemon.run_index import Located, RunRecords
 __all__ = [
     "IDEMPOTENCY_TTL_S",
     "TAIL_SIZE",
+    "InputBetweenVerifications",
     "LagRecord",
     "RecordingReservation",
     "RecordingState",
@@ -172,11 +175,18 @@ CONTROL_GRAPH: Final = "agent_control.graph.json"
 """에이전트 제어 실행의 그래프 자리 (스냅샷 안에만 쓴다 — 워크스페이스 파일이 아니다)."""
 CONTROL_DEADLINE_MS: Final = 30_000
 """제어 실행 하나의 기한 (M5 3.9)."""
+STALL_REPEATS: Final = 3
+"""정체 감지: 같은 작업에서 같은 시그니처 실패가 이만큼 이어지면 그 테스트를 다시 돌리지 않는다."""
 _DETACHED_FLAGS: Final = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(
     subprocess, "DETACHED_PROCESS", 0
 )
 _BREAKAWAY: Final = 0x01000000
 """CREATE_BREAKAWAY_FROM_JOB: daemon을 띄운 쪽(앱 등)의 Job에 묶이지 않게."""
+
+
+class InputBetweenVerifications(Exception):
+    """검증 세션을 연 뒤 검증 실행이 아닌 입력이 시작됐다 (M8 R7) — 그 검증 실행을 예약하지 않는다.
+    내부 진입점(`start_verify`)만 내고 `RunVerifier`가 받는다(공개 RPC 오류가 아니다)."""
 
 
 class RunSink(Protocol):
@@ -312,6 +322,8 @@ class _Run:
     """브레이크포인트 밀어 넣기를 한 번에 하나씩 (늘 지금 파일 값을 보낸다)."""
     paused: bool = False
     """따라 읽은 이벤트로 본 멈춤 (`debug.pause` 뒤 `debug.resume`·`run.end` 전)."""
+    settings_digest: str | None = None
+    """시작 때 계산한 실효 설정 digest (정체 감지 재료, 메모리에만). 못 구했으면 None."""
 
     @property
     def managed(self) -> bool:
@@ -378,6 +390,121 @@ class RunManager:
         self._runs_bytes: tuple[float, int] | None = None
         """(잰 시각, `runs/` 합계 크기)."""
         self._runs_bytes_lock = threading.Lock()
+        self._verify_holds = 0
+        """진행 중인 자동 채택 검증 세션 수 (M8 R7): 있는 동안 Agent 입력(제어·실행·게임 띄우기)을
+        `verification_active`로 거부한다."""
+        self._input_epoch = 0
+        """검증 실행이 아닌 입력 가능 시작(실행·제어·녹화·게임 띄우기)마다 1 오른다 (R7: 검증 사이
+        입력이면 그 검증은 무효)."""
+
+    # ---------------------------------------------------------------- 검증 세션 (M8 R7)
+
+    def begin_verification(self) -> int:
+        """검증 세션 시작. 지금 입력 세대를 돌려준다."""
+        with self._lock:
+            self._verify_holds += 1
+            return self._input_epoch
+
+    def end_verification(self) -> None:
+        with self._lock:
+            self._verify_holds = max(0, self._verify_holds - 1)
+
+    def input_epoch(self) -> int:
+        with self._lock:
+            return self._input_epoch
+
+    def refuse_agent_during_verification(self, principal: Principal) -> None:
+        """검증 세션 중 Agent 입력 거부 (`control.*`이 화면 판정 전에도 부른다)."""
+        self._refuse_agent_during_verification(principal)
+
+    def _refuse_agent_during_verification(self, principal: Principal) -> None:
+        if principal.kind != "agent":
+            return
+        with self._lock:
+            holding = self._verify_holds > 0
+        if holding:
+            raise RequestFailed(
+                "verification_active",
+                "자동 채택 검증 실행 중이라 Agent 입력을 받지 않는다 — 검증이 끝난 뒤 다시 한다",
+            )
+
+    # ---------------------------------------------------------------- 작업 (M8)
+
+    def cancel_job(self, job: str) -> list[str]:
+        """그 작업이 낸 실행을 모두 취소한다 (작업 끝 — 토큰을 먼저 폐기한 뒤에 부른다)."""
+        with self._lock:
+            mine = [
+                r
+                for r in self._runs.values()
+                if r.handle is not None
+                and r.request is not None
+                and r.request.principal.job == job
+                and not r.done.is_set()
+            ]
+        for run in mine:
+            assert run.handle is not None
+            run.handle.cancel()
+        return sorted(r.run_id for r in mine)
+
+    def _refuse_stalled(self, request: StartRequest, rel: str) -> None:
+        """정체 감지 (M8 3.13 v1): 같은 작업에서 그 테스트의 마지막 실행 3번이 같은 시그니처로
+        실패했고, **이번 요청의 실효 재료**(루트 그래프 sha·덧씌움을 적용한 스냅샷 폐포 digest·
+        프로필·원본 해시·실효 설정 digest·요청 기한 — 실행 전에 알 수 있는 것)도 그 실패와 같을
+        때만 그 테스트를 다시 돌리지 않는다(`stalled_repeat`). 그래프·target·작업 사본·프로필·설정
+        (요청·`local.json`)·기한이 바뀌었으면 돌린다. 재료를
+        계산하지 못하면 거부하지 않는다(편의 기능)."""
+        principal = request.principal
+        if principal.job is None:
+            return
+        from kookabug_daemon.case_facts import failed_facts, planned_unchanged, settings_digest
+
+        with self._lock:
+            mine = sorted(
+                (
+                    r
+                    for r in self._runs.values()
+                    if r.request is not None
+                    and r.request.principal.job == principal.job
+                    and path_key(r.graph) == path_key(rel)
+                    and r.done.is_set()
+                ),
+                key=lambda r: r.order,
+            )[-STALL_REPEATS:]
+        if len(mine) < STALL_REPEATS:
+            return
+        facts = [failed_facts(self.root, r.run_id, r.folder) for r in mine]
+        if any(f is None for f in facts):
+            return
+        if len({f.signature() for f in facts if f is not None}) != 1:
+            return
+        last = facts[-1]
+        assert last is not None
+        # 실효 설정($setting 값은 그래프 파일·스냅샷 바이트에 없다): 지난 실패들의 시작 때 digest와
+        # 이번 요청 digest가 모두 같아야 한다. 하나라도 못 구했으면 거부하지 않는다
+        now = settings_digest(self.root, request.settings, request.profile)
+        if now is None or any(r.settings_digest != now for r in mine):
+            return
+        # 요청 기한도 실행 전에 아는 실효 재료다 (기한 초과로 실패했다면 늘려 다시 돌릴 수 있다)
+        if any(r.request is None or r.request.deadline_ms != request.deadline_ms for r in mine):
+            return
+        try:
+            overlay = self._freeze(request).overlay
+        except RequestFailed:
+            return  # 기준을 못 정하면 정체 판정을 하지 않는다 (시작 단계가 그 오류를 낸다)
+        if planned_unchanged(
+            self.root,
+            rel,
+            overlay=overlay,
+            profile=request.profile,
+            settings=request.settings,
+            last=last,
+        ):
+            raise RequestFailed(
+                "stalled_repeat",
+                f"이 작업에서 {rel}이(가) 바뀌지 않은 채 같은 실패를 {STALL_REPEATS}번 냈다 — "
+                "다시 돌리지 않는다 (사건·가설로 남긴다)",
+                path=rel,
+            )
 
     # ---------------------------------------------------------------- 수명 (RunsLike)
 
@@ -421,10 +548,17 @@ class RunManager:
             run.done.wait(CLOSE_WAIT_S)
         self._closed.set()
 
-    def _reserve(self, *, restarting: str | None = None) -> str:
+    def _reserve(self, *, restarting: str | None = None, verify_epoch: int | None = None) -> str:
         """③ 시작 예약 (시작 잠금 안). 겹치지 않는 실행 ID를 미리 뽑는다. `restarting`이면 그
-        재시작 예약을 이 시작 예약으로 바꾼다(그 사이 빈틈 없이)."""
+        재시작 예약을 이 시작 예약으로 바꾼다(그 사이 빈틈 없이).
+
+        입력 세대 (M8 R7): 검증 실행이 아닌 예약은 세대를 올린다(입력이 나가기 전에). 검증 실행
+        (`verify_epoch`)은 같은 잠금 안에서 세대가 세션을 연 때 그대로인지 보고, 다르면
+        `input_between_verifications`로 예약하지 않는다 — 확인과 예약 사이에 다른 입력이 끼지
+        못한다(세대를 올리는 곳은 모두 이 잠금 안이다)."""
         with self._lock:
+            if verify_epoch is not None and verify_epoch != self._input_epoch:
+                raise InputBetweenVerifications()
             if self._closing:
                 if restarting is not None and self._restarting == restarting:
                     self._restarting = None
@@ -445,6 +579,8 @@ class RunManager:
             self._reserved = run_id
             if restarting is not None:
                 self._restarting = None
+            if verify_epoch is None:
+                self._input_epoch += 1
             return run_id
 
     # ---------------------------------------------------------------- 녹화 예약 (M4 계획 2.3)
@@ -467,6 +603,8 @@ class RunManager:
             reservation = RecordingReservation(self)
             self._recording = reservation
             self._recording_state = "starting"
+            # 녹화는 사람 입력을 게임에 보낸다: 그 사이 자동 채택 검증은 무효 (M8 R7)
+            self._input_epoch += 1
             return reservation
 
     def recording_state(self) -> RecordingState | None:
@@ -551,6 +689,9 @@ class RunManager:
             assert decision is not None  # run.start는 ui_only가 아니다
             if previous is not None:
                 return dict(previous.result)
+            # M8: 검증 세션 중 Agent 실행 거부(R7), 같은 작업의 같은 실패 반복(정체 감지)
+            self._refuse_agent_during_verification(principal)
+            self._refuse_stalled(request, where.rel)
             # ③ 시작 예약 (실행 중·종료 결정과 같은 잠금)
             reserved = self._reserve()
             key = None if scope is None else (scope, args)
@@ -566,11 +707,13 @@ class RunManager:
     ) -> dict[str, Any]:
         """④~⑥ (시작 잠금 안, 예약을 쥔 채). 실패하면 예약을 푼다."""
         try:
-            handle, current, version = self._prepare_and_launch(request, where, decision, reserved)
+            handle, current, version, digest = self._prepare_and_launch(
+                request, where, decision, reserved
+            )
         except BaseException:
             self._unreserve(reserved)
             raise
-        return self._register(request, handle, current, version, key)
+        return self._register(request, handle, current, version, key, settings_digest=digest)
 
     # ---------------------------------------------------------------- 내부 진입점 (M5 3.9)
 
@@ -599,6 +742,8 @@ class RunManager:
         self.refuse_dev_modules(principal)
         request = StartRequest(principal=principal, path=CONTROL_GRAPH)
         with self._start_lock:
+            # 검증 세션 중이면 다른 control 입력을 받지 않는다 (M8 R7)
+            self._refuse_agent_during_verification(principal)
             reserved = self._reserve()
             try:
                 workspace = _open_workspace(self.root)
@@ -630,14 +775,13 @@ class RunManager:
                     # daemon이 정한 창에만 붙는다 (M7 R1 — 보호 기록을 쓴 창 = 입력하는 창)
                     bound_window=bound_window,
                     unattended=not principal.attended,
+                    job=principal.job,
                 )
-                try:
-                    handle = self.service.start_decided(
-                        decision, CONTROL_GRAPH, options, approved=approved
-                    )
-                except (OSError, RuntimeError) as exc:
-                    text = f"실행을 시작할 수 없다: {exc}"
-                    raise RequestFailed("io_error", text, message=text) from exc
+                # 입력 직전 금지 동작 판정은 공용 진입점이 싣는다 (M8 R6 — daemon 판정 뒤 runner가
+                # 다시 본다)
+                handle = self._start_decided(
+                    principal, decision, CONTROL_GRAPH, options, approved=approved
+                )
             except BaseException:
                 self._unreserve(reserved)
                 raise
@@ -651,11 +795,16 @@ class RunManager:
             return None
         return run.outcome
 
-    def launch_app(self, profile: str | None) -> int:
+    def launch_app(self, profile: str | None, *, agent: bool = False) -> int:
         """`app.launch` (M5 C5): 프로필 계층까지 본 설정 `game.executable`·`game.args`·`game.cwd`로
         게임을 띄운다. 실행 Job 밖이다(실행이 끝나도 게임은 남는다). 시작 예약과 같은 잠금 안에서
-        실행 중·예약·녹화 중이면 거부한다 (막히는 호출). PID를 돌려준다."""
+        실행 중·예약·녹화 중이면 거부한다 (막히는 호출). PID를 돌려준다. Agent 연결이면 검증 세션
+        중 거부(M8 R7), 띄우면 입력 세대를 올린다(검증 사이 게임 상태가 바뀜)."""
         with self._start_lock, self._lock:
+            if agent and self._verify_holds > 0:
+                raise RequestFailed(
+                    "verification_active", "자동 채택 검증 실행 중이라 게임을 띄우지 않는다"
+                )
             if self._closing:
                 text = "daemon이 끝나는 중이다"
                 raise RequestFailed("shutting_down", text, message=text)
@@ -692,6 +841,7 @@ class RunManager:
             except OSError as exc:
                 raise RequestFailed("launch_failed", f"게임을 띄우지 못했다: {exc}") from exc
             log.info("게임을 띄웠다: PID %d (%s)", proc.pid, command.argv[0])
+            self._input_epoch += 1  # 게임 상태가 바뀌었다 (M8 R7: 그 사이 검증은 무효)
             return proc.pid
 
     def _register(
@@ -701,8 +851,10 @@ class RunManager:
         current: str,
         version: int,
         key: tuple[tuple[str, str, str], str] | None,
+        *,
+        settings_digest: str | None = None,
     ) -> dict[str, Any]:
-        # ⑥ 등록 (예약 → 진행 중)
+        # ⑥ 등록 (예약 → 진행 중). 입력 세대는 예약 때 올렸다 (M8 R7)
         run = _Run(
             handle.run_id,
             handle.run_dir,
@@ -711,6 +863,7 @@ class RunManager:
             order=next(self._order),
             request=request,
             breakpoints_version=version,
+            settings_digest=settings_digest,
         )
         result = {"run_id": run.run_id, "run_dir": str(run.folder), "graph": run.graph}
         with self._lock:
@@ -743,13 +896,14 @@ class RunManager:
         """실행 기준 (M8 3.6): 요청 값, 없으면 작업 연결은 working·그 밖은 team. `qa_runner`
         프리셋 Agent는 team만(`basis_denied`)."""
         principal = request.principal
-        kind = request.basis or ("working" if principal.job is not None else "team")
-        if kind == "working" and principal.kind == "agent":
-            preset = effective_preset(self.service.policy())
-            if preset == "qa_runner":
-                raise RequestFailed(
-                    "basis_denied", "qa_runner 프리셋은 팀 기준(basis: team)으로만 실행한다"
-                )
+        preset = effective_preset(self.service.policy()) if principal.kind == "agent" else None
+        # qa_runner는 작업 연결이어도 기본이 팀 기준이다 (R3 — 작업 기준 실행이 없다)
+        default = "working" if principal.job is not None and preset != "qa_runner" else "team"
+        kind = request.basis or default
+        if kind == "working" and preset == "qa_runner":
+            raise RequestFailed(
+                "basis_denied", "qa_runner 프리셋은 팀 기준(basis: team)으로만 실행한다"
+            )
         try:
             return freeze_basis(
                 self.root,
@@ -768,18 +922,20 @@ class RunManager:
         overlay: Mapping[str, bytes],
         profile: str | None,
         basis: Mapping[str, Any],
+        epoch: int,
         deadline_ms: int | None = None,
     ) -> str:
         """자동 채택 검증 실행 (M8 3.8 조건 4·6, R1·E5). **공개 RPC가 아니다** — `adopt.request`
         처리기만 부른다. Kookabug가 고른 테스트를 manifest 바이트(`overlay` — 의존성 폐포 전체)로만,
         무인(치트는 무인 분류만)으로 돈다. 그래프 편집·임의 입력 경로가 없다. 시작 예약은
         `run.start`와 같다(실행 중·녹화 중·종료 중이면 `run_busy`·`recording_active`·
-        `shutting_down`). 실행 ID를 돌려준다 (막히는 호출)."""
+        `shutting_down`). `epoch`는 검증 세션을 연 때의 입력 세대 — 예약과 같은 잠금 안에서
+        다르면 `input_between_verifications`(R7). 실행 ID를 돌려준다 (막히는 호출)."""
         principal = Principal("user", "kookabug:adopt", attended=False)
         request = StartRequest(principal=principal, path=graph, profile=profile)
         decision = Decision("allow", "allow", None, "kookabug:adopt", "human")
         with self._start_lock:
-            reserved = self._reserve()
+            reserved = self._reserve(verify_epoch=epoch)
             try:
                 workspace = _open_workspace(self.root)
                 start = start_options(
@@ -793,15 +949,13 @@ class RunManager:
                 options = replace(
                     start,
                     run_id=reserved,
+                    # 무인 실행: 공용 진입점이 금지 동작 판정을 싣는다 — 검증 실행은 Agent가 준
+                    # locator로 누른다 (보이면 입력하지 않고 검증 실패 — 채택 안 함)
                     unattended=True,
                     overlay=dict(overlay),
                     basis=dict(basis),
                 )
-                try:
-                    handle = self.service.start_decided(decision, graph, options)
-                except (OSError, RuntimeError) as exc:
-                    text = f"실행을 시작할 수 없다: {exc}"
-                    raise RequestFailed("io_error", text, message=text) from exc
+                handle = self._start_decided(principal, decision, graph, options)
             except BaseException:
                 self._unreserve(reserved)
                 raise
@@ -809,8 +963,10 @@ class RunManager:
 
     def _prepare_and_launch(
         self, request: StartRequest, where: WsPath, decision: Decision, run_id: str
-    ) -> tuple[RunHandle, str, int]:
-        """④ 사전 검증 → ⑤ 시작. (핸들, 실행한 그래프 경로)."""
+    ) -> tuple[RunHandle, str, int, str | None]:
+        """④ 사전 검증 → ⑤ 시작. (핸들, 실행한 그래프 경로, 브레이크포인트 판, 실효 설정 digest)."""
+        from kookabug_daemon.case_facts import settings_digest
+
         # ④ 사전 검증 (경로는 잠금 뒤·연산 직전에 다시 해석한다)
         current = recheck_path(self.root, where)
         # 실행 기준 고정 (M8 3.6): 이 순간의 작업 기준 덧씌움을 메모리로 읽는다
@@ -845,28 +1001,55 @@ class RunManager:
             platform=self.platform,
         )
         breakpoints, version = self.breakpoints.snapshot() if request.ui else ((), -1)
+        # 정체 감지 재료: 이 실행을 시작하는 순간의 실효 설정 (작업 연결 실행만 비교에 쓴다)
+        digest = (
+            settings_digest(self.root, settings, request.profile)
+            if request.principal.job is not None
+            else None
+        )
+        # 사람이 승인한 ask면 그 사실을 감독자 시작까지 넘긴다 (M5 3.6, 공개 인자 아님). 무인 분류
+        # (M8 3.5)와 Agent·무인 실행의 금지 동작 판정(3.7·R6)은 공용 진입점이 주체로 정한다
+        handle = self._start_decided(
+            request.principal,
+            decision,
+            current.rel,
+            replace(
+                start,
+                run_id=run_id,
+                breakpoints=breakpoints,
+                overlay=frozen.overlay or None,
+                basis=frozen.record,
+                job=request.principal.job,
+            ),
+            approved=request.approved,
+        )
+        return handle, current.rel, version, digest
+
+    def _start_decided(
+        self,
+        principal: Principal,
+        decision: Decision,
+        graph: str,
+        options: StartOptions,
+        *,
+        approved: bool = False,
+    ) -> RunHandle:
+        """공용 실행 진입점(`WorkspaceService.start_decided`)을 부르고 실패를 RPC 오류로 바꾼다."""
         try:
-            # 사람이 승인한 ask면 그 사실을 감독자 시작까지 넘긴다 (M5 3.6, 공개 인자 아님)
-            # 사람 없는 Agent 연결의 실행은 치트 무인 분류 규칙을 받는다 (M8 3.5)
-            unattended = request.principal.kind == "agent" and not request.principal.attended
-            handle = self.service.start_decided(
-                decision,
-                current.rel,
-                replace(
-                    start,
-                    run_id=run_id,
-                    breakpoints=breakpoints,
-                    unattended=unattended,
-                    overlay=frozen.overlay or None,
-                    basis=frozen.record,
-                    job=request.principal.job,
-                ),
-                approved=request.approved,
+            return self.service.start_decided(
+                decision, graph, options, principal=principal, approved=approved
             )
+        except ForbiddenUnavailable as exc:
+            raise RequestFailed(
+                "forbidden_unverifiable",
+                "금지 동작 목록을 읽지 못해 Agent·무인 실행을 시작하지 않았다",
+                kind=None,
+                value=None,
+                reason=exc.reason,
+            ) from exc
         except (OSError, RuntimeError) as exc:  # 실행 폴더·Job·파이프를 만들지 못함
             text = f"실행을 시작할 수 없다: {exc}"
             raise RequestFailed("io_error", text, message=text) from exc
-        return handle, current.rel, version
 
     def _key(self, scope: tuple[str, str, str], now: float) -> _Key | None:
         with self._lock:

@@ -896,6 +896,26 @@ def publish_auto(
     return record
 
 
+def log_cancelled(root: Path, case_id: str, change_id: str) -> None:
+    """취소된 자동 채택 요청을 감사 이력에 남긴다 (게시하지 않았다 — 사건·작업 기준 변경은 그대로).
+    ID 두 개는 요청이 준 값이지만 이미 있는 사건·변경 ID로 확인된 것이다."""
+    from kookabug_core import filetx
+    from kookabug_core.knowledge.formats import Actor
+    from kookabug_core.knowledge.ops import log_into
+
+    entry = {
+        "op": "adopt",
+        "file": case_rel(case_id),
+        "id": change_id,
+        "result": "refused",
+        "code": "adopt_cancelled",
+    }
+    with filetx.file_lock(root, ADOPT_LOCK), filetx.locked(root):
+        tx = filetx.Tx(root)
+        log_into(root, tx, [entry], Actor("kookabug", "adopt"))
+        tx.commit()
+
+
 def _encode(doc: Mapping[str, Any], kind: str) -> bytes:
     from kookabug_core.knowledge import store
     from kookabug_core.knowledge.formats import KnowledgeError, shape_problem

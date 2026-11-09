@@ -554,6 +554,23 @@ class FrameGuard:
         if not guard.clear:
             raise guard.refusal()
 
+    def secret_boxes(self, frame: EditorFrame) -> list[Box] | None:
+        """그 창의 비밀값 칸 상자 전부 (M8 금지 동작 판정이 그 칸을 가린 뒤 나머지 글자를 읽는다).
+        기록이 없으면 빈 목록. 상자를 모르는 칸이 있거나 DPI가 다르거나 기록이 손상됐으면 None
+        (가릴 곳을 모름 — 호출자는 글자를 읽지 않는다)."""
+        if self.corrupt:
+            return None
+        with self._lock:
+            record = None if frame.binding is None else self._records.get(frame.binding)
+        if record is None:
+            return [] if frame.binding is not None else None
+        boxes: list[Box] = []
+        for f in record.fields:
+            if f.box is None or f.dpi is None or f.dpi != frame.dpi:
+                return None
+            boxes.append(f.box)
+        return boxes
+
     def protection_set(self, frame: EditorFrame) -> Any:
         """그 창의 알려진 칸 상자를 `ProtectionSet`으로 (crop 경계 이중 방어 — 끝난 보호, 자를
         프레임에서 칸이 없다는 근거가 있을 때만 겹침 허용). 기록이 없으면 None."""

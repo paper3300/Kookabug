@@ -274,6 +274,13 @@ class Workspace:
         layers.append(("workspace", _settings_of(self.config)))
         return layers
 
+    def effective_settings(self, options: RunOptions) -> dict[str, Any]:
+        """키마다 `lookup_setting`이 고를 값 전체 (같은 `setting_layers` — 앞 계층이 이긴다)."""
+        merged: dict[str, Any] = {}
+        for _, settings in reversed(self.setting_layers(options)):
+            merged.update(settings)
+        return merged
+
     def lookup_setting(self, key: str, options: RunOptions | None = None) -> SettingLookup:
         for layer, settings in self.setting_layers(options or RunOptions()):
             if key in settings:

@@ -9,13 +9,14 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import copy
 import hashlib
 from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any, Final
 
-from kookabug_core import basis
+from kookabug_core import basis, forbidden
 from kookabug_core.canonical import loads_strict, save_text
 from kookabug_core.knowledge.formats import Actor, KnowledgeError
 from kookabug_core.workspace import Workspace
@@ -147,6 +148,16 @@ async def _load_image_handler(call: Call) -> dict[str, Any]:
 
 async def _open(call: Call) -> dict[str, Any]:
     where = target_path(call.daemon.root, str(call.params["path"]))
+    actor = working_actor(call)
+    if actor is not None:
+        # 작업 기준 연결은 자기 작업 기준 사본을 본다 (M8 3.6, `graph.open`과 같은 규칙). revision은
+        # 사본의 것이라 다음 `target.save`의 base_revision과 맞는다. 사본이 없으면 팀 파일
+        _, change = await asyncio.to_thread(
+            basis.view, call.daemon.root, where.rel, job=actor.job, agent=actor.id
+        )
+        if change is not None:
+            copy_where = target_path(call.daemon.root, basis.copy_rel(change.id, where.rel))
+            return await asyncio.to_thread(call.daemon.targets.open, copy_where)
     return await asyncio.to_thread(call.daemon.targets.open, where)
 
 
@@ -298,10 +309,11 @@ def _guard_crop(call: Call, frame: EditorFrame, rect: Any) -> None:
 async def _save(call: Call) -> dict[str, Any]:
     params: Mapping[str, Any] = call.params
     where = target_path(call.daemon.root, str(params["path"]), save=True)
-    if call.principal.kind == "agent" and any(
-        rel.replace("\\", "/").casefold().startswith(SCREEN_TARGETS)
-        for rel in (where.given, where.rel)
-    ):
+    seen = [rel.replace("\\", "/").casefold() for rel in (where.given, where.rel)]
+    with contextlib.suppress(forbidden.UnresolvablePath):
+        # 정션 별칭으로 가리킨 화면 지도 자리도 같은 자리다 (풀 수 없으면 아래 경로 검사가 거부)
+        seen.append(forbidden.real_key(call.daemon.root, where.rel))
+    if call.principal.kind == "agent" and any(rel.startswith(SCREEN_TARGETS) for rel in seen):
         # 확정 화면 지도의 target 자리는 사람의 승격만 쓴다 (M7 3.7 — 에이전트는 탐색 세션 폴더)
         raise RequestFailed(
             "permission_denied",
@@ -380,6 +392,12 @@ def _save_working(
         )
     stem = where.path.name[: -len(".target.json")]
     name = str(current["image"]) if current is not None and "image" in current else f"{stem}.png"
+    # 제자리 수리는 지금 보기의 `image`(다른 target과 함께 쓰는 PNG일 수 있다)를 덮는다: 그 PNG가
+    # 금지 판정이 읽는 파일이면 쓰지 않는다 (옆 경로 — target 경로 검사만으로는 안 막힌다)
+    written = image_rel(where.rel, {"image": name})
+    if written is None:
+        raise RequestFailed("target_invalid", "target image 경로가 틀렸다", diagnostics=[])
+    refuse_policy_path(call, written)
     value = _fill_defaults(params["spec"], name)
     files: dict[str, bytes] = {}
     preview: Any = None

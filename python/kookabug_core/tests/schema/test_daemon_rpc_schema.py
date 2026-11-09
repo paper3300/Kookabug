@@ -128,16 +128,41 @@ TOOLS = {
     "cheats.adopt": "ui_only",
     "cheats.unadopt": "ui_only",
     "cheats.categories.set": "ui_only",
-    # M8 B3 채택·되돌리기·묶음 수락·증거 고정 (사람 전용 — Agent 도구는 B4)
+    # M8 B3 되돌리기·묶음 수락 (사람 전용). 채택 요청·증거 고정은 B4부터 cases 도구
+    **dict.fromkeys(
+        ("adopt.revert", "adoptions.list", "working.accept", "working.list", "working.reject"),
+        "ui_only",
+    ),
+    "adopt.request": "kb_adopt_request",
+    "evidence.pin": "kb_evidence_pin",
+    # M8 B4 지식·사건 도구 (3.13·3.14)
+    "knowledge.search": "kb_knowledge_search",
+    "knowledge.get": "kb_knowledge_get",
+    "knowledge.apply": "kb_knowledge_apply",
+    "wiki.write": "kb_wiki_write",
+    "cases.list": "kb_case_list",
+    "cases.get": "kb_case_get",
+    "cases.signals": "kb_triage_signals",
+    "cases.open": "kb_case_open",
+    "cases.update": "kb_case_update",
+    "job.note": "kb_report_note",
+    # M8 B4 사람 전용 (사건 닫기·미지수 답·정책·원본·작업·보고함·마법사)
     **dict.fromkeys(
         (
-            "adopt.request",
-            "adopt.revert",
-            "adoptions.list",
-            "evidence.pin",
-            "working.accept",
-            "working.list",
-            "working.reject",
+            "cases.close",
+            "unknowns.answer",
+            "project.automation.set",
+            "project.sources.set",
+            "sources.check",
+            "job.begin",
+            "job.end",
+            "job.finish",
+            "jobs.list",
+            "reports.list",
+            "reports.get",
+            "report.decide",
+            "wizard.get",
+            "wizard.set",
         ),
         "ui_only",
     ),
@@ -151,6 +176,11 @@ M8_B3 = {
     "working.list",
     "working.reject",
 }
+M8_B4 = {name for name, tool in TOOLS.items() if name.split(".")[0] in {
+    "knowledge", "wiki", "cases", "job", "jobs", "reports", "report", "unknowns", "project",
+    "sources", "wizard",
+}}  # fmt: skip
+"""M8 B4 메서드: 렌더러 다리는 B7(마법사·보고함)이 연다 — 지금은 모두 렌더러 밖."""
 AGENT_ONLY_B3 = {"control.click", "control.key", "control.type", "app.launch"}
 AGENT_ONLY_M7 = {"screens.identify", "screens.save", "explore.start", "explore.end"}
 AGENT_ONLY_B2 = {
@@ -198,6 +228,7 @@ def test_method_table_matches_permission_table() -> None:
         "cheats.categories.set",
         # M8 B3: 렌더러 다리는 B7 보고함과 같이 연다
         *M8_B3,
+        *M8_B4,
     }
     for row in table.values():
         for part in ("params", "result"):
@@ -216,11 +247,15 @@ def test_notification_table() -> None:
         "debug.breakpoints.changed",
         "explore.changed",  # M7 탐색 세션·후보 (ui 연결에만)
         "graph.changed",
+        "job.budget",  # M8 작업 예산 상한 (ui 연결에만, B5가 보낸다)
+        "job.changed",  # M8 작업 상태 (ui 연결에만, B5가 보낸다)
+        "knowledge.changed",  # M8 B4 지식·위키·사건 변경 (ui 연결에만)
         "lease.changed",
         "plugins.changed",
         "plugins.done",
         "plugins.progress",
         "recorder.changed",
+        "reports.changed",  # M8 보고함 (ui 연결에만, B5가 보낸다)
         "run.ended",
         "run.event",
         "run.lagged",

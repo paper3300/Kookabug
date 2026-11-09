@@ -5,8 +5,7 @@
 - 기존 프리셋(작업 밖)은 지금처럼 팀 파일에 쓴다 (회귀 없음)
 - Agent 연결은 그래프·target 도구로 `knowledge/`·`wiki/` 아래를 쓰지 못한다
 
-프리셋 `curator`의 정책 등록과 작업 토큰 연결은 B4다. 여기서는 daemon이 같은 프로세스에서 도므로
-쓰기 분기가 보는 값(프리셋 이름·주체의 작업)을 바꿔 검사한다.
+B4부터 실제 정책의 프리셋(`curator`)과 실제 작업 토큰(`job.begin` → hello `job_token`)으로 검사한다.
 """
 
 from __future__ import annotations
@@ -23,7 +22,6 @@ import pytest
 from kb_testing.daemon import ThreadDaemon
 from kb_testing.sample_game import copy_example_workspace
 from kookabug_core import basis
-from kookabug_core.permissions import Principal
 from kookabug_daemon.client import DaemonClient, DaemonError
 
 pytestmark = [pytest.mark.process, pytest.mark.timeout(300)]
@@ -31,7 +29,6 @@ pytestmark = [pytest.mark.process, pytest.mark.timeout(300)]
 TEST = "tests/shop/buy_potion.graph.json"
 TARGET = "targets/shop/buy.target.json"
 AGENT = {"kind": "agent", "name": "mcp", "version": "0", "id": "agent-w", "attended": True}
-JOB = "j-20261109-000000-00aa"
 
 
 @pytest.fixture
@@ -86,10 +83,12 @@ def save_target(client: DaemonClient) -> dict[str, Any]:
 
 
 @pytest.fixture
-def curator(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    import kookabug_daemon.methods.working as working
-
-    monkeypatch.setattr(working, "effective_preset", lambda _policy: "curator")
+def curator(ws: Path) -> Iterator[None]:
+    """B4: 실제 정책에 등록된 프리셋 `curator` (B3는 프리셋 이름을 바꿔 끼워 검사했다)."""
+    local = ws / ".kookabug" / "local.json"
+    body = json.loads(local.read_text("utf-8"))
+    body["permissions"] = {"preset": "curator"}
+    local.write_text(json.dumps(body), encoding="utf-8")
     yield
 
 
@@ -121,6 +120,12 @@ def check_working_only(ws: Path, client: DaemonClient) -> None:
     assert created["basis"] == "working"
     saved = save_target(client)
     assert saved["basis"] == "working" and saved["image"] == "targets/shop/buy.png"
+    # target.open도 자기 작업 사본을 보여 준다 (B4) — 그 revision으로 다시 저장할 수 있다
+    reopened = client.call("target.open", {"path": TARGET})
+    region = reopened["spec"]["search"]["region"]
+    assert region == pytest.approx([0.6445, 0.8125, 0.2539, 0.1875], abs=1e-3)  # 팀은 0.0781…
+    assert reopened["revision"] == saved["revision"]
+    assert save_target(client)["basis"] == "working"
     # knowledge/·wiki/ 아래는 그래프·target 도구로 쓰지 않는다
     for path in (f"knowledge/working/{patched['change']}/files/{TEST}", "wiki/x.graph.json"):
         assert refused(client, "graph.create", {"path": path, "kind": "test"}).kind == "policy_path"
@@ -140,22 +145,16 @@ def test_curator_never_writes_team_files(ws: Path, curator: None) -> None:
     assert {c.agent for c in changes} == {"agent-w"} and {c.job for c in changes} == {None}
 
 
-def test_full_job_cannot_write_team(ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """R4: 작업 토큰이 붙은 연결은 `full` 프리셋이어도 작업 기준으로만 쓴다."""
-    import kookabug_daemon.methods.session as session
-
-    original = session.principal_of
-
-    def with_job(client: Any, connection: int) -> Principal:
-        found = original(client, connection)
-        if found.kind == "agent":
-            return Principal(found.kind, found.id, found.attended, job=JOB)
-        return found
-
-    monkeypatch.setattr(session, "principal_of", with_job)
-    with ThreadDaemon(ws) as d, d.client(AGENT) as agent:
-        check_working_only(ws, agent)
-    assert {c.job for c in basis.load_changes(ws)} == {JOB}
+def test_full_job_cannot_write_team(ws: Path) -> None:
+    """R4: 작업 토큰이 붙은 연결은 `full` 프리셋이어도 작업 기준으로만 쓴다 (B4: 실제 토큰 경로)."""
+    with ThreadDaemon(ws) as d:
+        with d.client() as ui:
+            job = ui.call("job.begin", {"playbook": "repair"})
+        info = {**AGENT, "id": job["agent_id"], "job_token": job["token"]}
+        with d.client(info) as agent:
+            check_working_only(ws, agent)
+    assert {c.job for c in basis.load_changes(ws)} == {job["job"]}
+    assert {c.agent for c in basis.load_changes(ws)} == {job["agent_id"]}
 
 
 def test_legacy_presets_still_write_team(ws: Path) -> None:

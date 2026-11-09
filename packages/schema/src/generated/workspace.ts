@@ -108,7 +108,7 @@ export interface OcrSettings {
  * via the `definition` "Permissions".
  */
 export interface Permissions {
-  preset?: "explorer" | "full" | "graph_author" | "read_only" | "runner";
+  preset?: "curator" | "explorer" | "full" | "graph_author" | "qa_runner" | "read_only" | "runner";
   rules?: PermissionRule[];
   toolsets?: {
     [k: string]: PermissionVerdict | undefined;

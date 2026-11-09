@@ -57,8 +57,10 @@ __all__ = [
 ]
 
 Verdict = Literal["allow", "ask", "deny"]
-Toolset = Literal["core", "graph_edit", "run", "observe", "control", "screens"]
-Preset = Literal["read_only", "graph_author", "runner", "full", "explorer"]
+Toolset = Literal[
+    "core", "graph_edit", "run", "observe", "control", "screens", "knowledge", "cases"
+]  # fmt: skip
+Preset = Literal["read_only", "graph_author", "runner", "full", "explorer", "curator", "qa_runner"]
 LayerName = Literal["user", "project", "team"]
 Reason = Literal[
     "human", "policy_invalid", "unknown_tool", "rule", "toolset", "preset", "team_ceiling",
@@ -103,23 +105,76 @@ TOOLS: Final[Mapping[str, ToolInfo]] = {
     # 늘 허용한다 — screens 변경이 ask·deny인 프리셋에서도 에이전트가 세션을 끝낼 수 있게 (B3)
     **_tools("screens", True, "kb_screen_save", "kb_explore_start"),
     **_tools("screens", False, "kb_explore_end"),
+    # M8 지식·사건 (계획 3.14). 사건 열기·증거 고정·채택 요청·보고 메모는 변경 도구
+    **_tools("knowledge", False, "kb_knowledge_search", "kb_knowledge_get"),
+    **_tools("knowledge", True, "kb_knowledge_apply", "kb_wiki_write"),
+    **_tools("cases", False, "kb_case_list", "kb_case_get", "kb_triage_signals"),
+    **_tools(
+        "cases", True,
+        "kb_case_open", "kb_case_update", "kb_evidence_pin", "kb_adopt_request", "kb_report_note",
+    ),
 }  # fmt: skip
 
-# 프리셋의 변경 도구 값 (툴셋별). 조회 도구는 모든 프리셋에서 allow
+# 프리셋의 변경 도구 값 (툴셋별). 조회 도구는 모든 프리셋에서 allow. 툴셋은 빠짐없이 적는다
 _PRESET_MUTATING: Final[dict[Preset, dict[Toolset, Verdict]]] = {
-    "read_only": {"graph_edit": "deny", "run": "deny", "control": "deny", "screens": "deny"},
-    "graph_author": {"graph_edit": "ask", "run": "deny", "control": "deny", "screens": "ask"},
-    "runner": {"graph_edit": "ask", "run": "allow", "control": "ask", "screens": "ask"},
-    "full": {"graph_edit": "allow", "run": "allow", "control": "allow", "screens": "allow"},
+    "read_only": {
+        "graph_edit": "deny", "run": "deny", "control": "deny", "screens": "deny",
+        "knowledge": "deny", "cases": "deny",
+    },
+    "graph_author": {
+        "graph_edit": "ask", "run": "deny", "control": "deny", "screens": "ask",
+        "knowledge": "ask", "cases": "deny",
+    },
+    "runner": {
+        "graph_edit": "ask", "run": "allow", "control": "ask", "screens": "ask",
+        "knowledge": "ask", "cases": "ask",
+    },
+    "full": {
+        "graph_edit": "allow", "run": "allow", "control": "allow", "screens": "allow",
+        "knowledge": "allow", "cases": "allow",
+    },
     # M7 탐색(U1): 화면 지도 쓰기 allow, 게임 조작 ask, 그래프 편집·실행 deny
-    "explorer": {"graph_edit": "deny", "run": "deny", "control": "ask", "screens": "allow"},
+    "explorer": {
+        "graph_edit": "deny", "run": "deny", "control": "ask", "screens": "allow",
+        "knowledge": "deny", "cases": "deny",
+    },
+    # M8 지식 관리(3.14): 그래프 편집 allow는 작업 기준 쓰기뿐(E3), 게임 조작은 ask
+    # (R0: 작업 안에서는 allow — _JOB_PRESET)
+    "curator": {
+        "graph_edit": "allow", "run": "allow", "control": "ask", "screens": "allow",
+        "knowledge": "allow", "cases": "allow",
+    },
+    # M8 QA 실행(R3): 팀 기준 테스트 실행·사건 기록만. 쓰기·직접 입력·지식 쓰기 없음
+    "qa_runner": {
+        "graph_edit": "deny", "run": "allow", "control": "deny", "screens": "deny",
+        "knowledge": "deny", "cases": "allow",
+    },
+}  # fmt: skip
+
+_PRESET_TOOL: Final[dict[Preset, dict[str, Verdict]]] = {
+    # qa_runner는 사건 툴셋 안에서도 채택 요청을 못 한다 (3.14)
+    "qa_runner": {"kb_adopt_request": "deny"},
 }
+"""프리셋 표에서 툴셋 값과 다른 도구 하나 (도구 값이 툴셋 값보다 먼저)."""
+
+_JOB_PRESET: Final[dict[Preset, dict[Toolset, Verdict]]] = {
+    "curator": {"control": "allow"},
+}
+"""사람이 시작한 `agent-job` 작업 토큰 연결에서만 바뀌는 프리셋 값 (M8 9장 R0). 명시 규칙·툴셋 값·
+팀 상한은 그대로 먼저 적용된다 — 바뀌는 것은 프리셋 표의 값뿐이다."""
 
 
-def preset_verdict(preset: Preset, tool: str) -> Verdict:
-    """프리셋 표의 값. `tool`은 `TOOLS`에 있는 이름이어야 한다."""
+def preset_verdict(preset: Preset, tool: str, *, job: bool = False) -> Verdict:
+    """프리셋 표의 값. `tool`은 `TOOLS`에 있는 이름이어야 한다. `job`이면 작업 토큰 연결의
+    값(R0)."""
     info = TOOLS[tool]
-    return _PRESET_MUTATING[preset][info.toolset] if info.mutating else "allow"
+    if not info.mutating:
+        return "allow"
+    if (by_tool := _PRESET_TOOL.get(preset, {}).get(tool)) is not None:
+        return by_tool
+    if job and (in_job := _JOB_PRESET.get(preset, {}).get(info.toolset)) is not None:
+        return in_job
+    return _PRESET_MUTATING[preset][info.toolset]
 
 
 def _toolset_verdict(value: Verdict, info: ToolInfo) -> Verdict:
@@ -316,6 +371,9 @@ def decide(policy: Policy, principal: Principal, tool: str, arg: str = "") -> De
     4. 툴셋 값이 없으면 프리셋 표(프리셋: 프로젝트 → 사용자 → 기본 `graph_author`)
     5. 팀 계층의 툴셋 값(없으면 프리셋 값)은 상한: 결과보다 엄격하면 팀 값
     6. 사람이 없고(`attended: false`) ask면 deny
+
+    작업 토큰 연결(`principal.job`, M8 R0·R7)은 4·5의 **프리셋 표 값만** 작업 값(`curator`의 control
+    allow)으로 본다. 명시 규칙(2)·툴셋 값(3)·팀 툴셋 상한(5)은 그대로라 명시 deny·ask가 이긴다.
     """
     if principal.kind == "user":
         return Decision("allow", "allow", None, "principal:user", "human")
@@ -328,12 +386,15 @@ def decide(policy: Policy, principal: Principal, tool: str, arg: str = "") -> De
     if info is None:
         return Decision("deny", "deny", None, f"tool:{tool}", "unknown_tool")
 
+    # 작업 값(R0)은 유효 프리셋이 curator인 작업 연결에만 쓴다 — 다른 프리셋(full·graph_author 등)의
+    # 작업 연결은 팀 상한을 그대로 받는다 (작업 여부가 팀 curator의 ask를 넓히지 않게)
+    job = principal.job is not None and effective_preset(policy) in _JOB_PRESET
     pick = (
         _by_rules(policy, tool, arg)
         or _by_toolset(policy, info)
-        or _by_preset(policy, tool)
+        or _by_preset(policy, tool, job=job)
     )  # fmt: skip
-    ceiling = _team_ceiling(policy.team, tool, info)
+    ceiling = _team_ceiling(policy.team, tool, info, job=job)
     if ceiling is not None and _STRICTNESS[ceiling.verdict] > _STRICTNESS[pick.verdict]:
         pick = ceiling
 
@@ -370,18 +431,26 @@ def effective_preset(policy: Policy) -> str:
     return DEFAULT_PRESET
 
 
-def _by_preset(policy: Policy, tool: str) -> _Pick:
+def _by_preset(policy: Policy, tool: str, *, job: bool = False) -> _Pick:
     for layer in (policy.project, policy.user):
         if layer.preset is not None:
             return _Pick(
-                preset_verdict(layer.preset, tool), layer.layer, f"preset:{layer.preset}", "preset"
+                preset_verdict(layer.preset, tool, job=job),
+                layer.layer,
+                f"preset:{layer.preset}",
+                "preset",
             )
     return _Pick(
-        preset_verdict(DEFAULT_PRESET, tool), "default", f"preset:{DEFAULT_PRESET}", "preset"
+        preset_verdict(DEFAULT_PRESET, tool, job=job),
+        "default",
+        f"preset:{DEFAULT_PRESET}",
+        "preset",
     )
 
 
-def _team_ceiling(team: LayerPolicy, tool: str, info: ToolInfo) -> _Pick | None:
+def _team_ceiling(
+    team: LayerPolicy, tool: str, info: ToolInfo, *, job: bool = False
+) -> _Pick | None:
     # 팀 계층 안에서도 툴셋 값이 프리셋보다 먼저다 (다른 계층과 같은 순서)
     value = team.toolsets.get(info.toolset)
     if value is not None:
@@ -390,7 +459,10 @@ def _team_ceiling(team: LayerPolicy, tool: str, info: ToolInfo) -> _Pick | None:
         )
     if team.preset is not None:
         return _Pick(
-            preset_verdict(team.preset, tool), "team", f"preset:{team.preset}", "team_ceiling"
+            preset_verdict(team.preset, tool, job=job),
+            "team",
+            f"preset:{team.preset}",
+            "team_ceiling",
         )
     return None
 

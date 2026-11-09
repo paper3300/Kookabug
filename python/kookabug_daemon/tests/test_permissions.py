@@ -31,7 +31,15 @@ ATTENDED = {"kind": "agent", "name": "mcp", "version": "0", "id": "agent-p", "at
 UNATTENDED = {**ATTENDED, "attended": False}
 
 # 계획 3.11 표의 explorer 열 (툴셋 → 변경 도구 값). 조회 도구는 모두 allow
-EXPLORER = {"graph_edit": "deny", "run": "deny", "control": "ask", "screens": "allow"}
+EXPLORER = {
+    "graph_edit": "deny",
+    "run": "deny",
+    "control": "ask",
+    "screens": "allow",
+    # M8 3.14: explorer는 지식·사건 변경 없음
+    "knowledge": "deny",
+    "cases": "deny",
+}
 # 3.11 표 행 그대로 (도구 → explorer 값)
 TABLE_3_11 = {
     "kb_screen_list": "allow",

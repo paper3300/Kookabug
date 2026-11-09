@@ -36,9 +36,11 @@ __all__ = [
     "RUN_START_TOOL",
     "ApprovalRequired",
     "DevModulesRefused",
+    "ForbiddenUnavailable",
     "PermissionDenied",
     "WorkspaceService",
     "cli_principal",
+    "guard_options",
     "refuse_dev_modules",
     "start_options",
 ]
@@ -80,6 +82,41 @@ def refuse_dev_modules(principal: Principal, modules: tuple[str, ...]) -> None:
     """에이전트 주체 + 개발 모듈이면 `DevModulesRefused` (실행을 시작하기 전에 부른다)."""
     if modules and principal.kind == "agent":
         raise DevModulesRefused(tuple(modules))
+
+
+class ForbiddenUnavailable(Exception):
+    """Agent·무인 실행인데 금지 동작 목록(`automation.forbidden`)을 읽지 못했다 (M8 3.7·R6 fail
+    closed). 아무것도 시작하지 않았다."""
+
+    code: Final = "forbidden_unverifiable"
+    reason: Final = "config_unreadable"
+
+    def __init__(self) -> None:
+        super().__init__(
+            f"{self.code} ({self.reason}): 금지 동작 목록을 읽지 못해 Agent·무인 실행을 시작하지 "
+            "않았다"
+        )
+
+
+def guard_options(root: Path, principal: Principal, options: StartOptions | None) -> StartOptions:
+    """주체로 정하는 실행 조건 (공용 진입점 `start_decided`만 부른다).
+
+    - 사람 없는 Agent(CLI `KOOKABUG_AGENT` 포함)의 실행은 무인(치트 무인 분류, M8 3.5)
+    - Agent 주체이거나 무인인 실행은 입력마다 금지 동작 판정(M8 3.7·R6): 시작 때 `kookabug.json`
+      목록을 고정한다. 목록이 비면 None(판정 없음). 읽지 못하면 `ForbiddenUnavailable`
+    - 사람 실행은 금지 목록을 싣지 않는다(호출자가 넣었어도 지운다 — 출처는 여기 하나)"""
+    from kookabug_core import forbidden
+
+    opts = options or StartOptions()
+    unattended = opts.unattended or (principal.kind == "agent" and not principal.attended)
+    spec: tuple[dict[str, str], ...] | None = None
+    if principal.kind == "agent" or unattended:
+        try:
+            items = forbidden.load_items(root)
+        except forbidden.ForbiddenConfigError as exc:
+            raise ForbiddenUnavailable() from exc
+        spec = tuple(forbidden.to_spec(items)) or None
+    return replace(opts, unattended=unattended, forbidden=spec)
 
 
 class ApprovalRequired(Exception):
@@ -162,10 +199,7 @@ class WorkspaceService:
         if options is not None:
             refuse_dev_modules(principal, options.plugin_modules)
         decision = self.require(principal, RUN_START_TOOL, graph, approved=approved)
-        if principal.kind == "agent" and not principal.attended:
-            # 사람 없는 에이전트(CLI `KOOKABUG_AGENT` 포함)의 실행은 치트 무인 분류 규칙을 받는다
-            options = replace(options or StartOptions(), unattended=True)
-        return self.start_decided(decision, graph, options, approved=approved)
+        return self.start_decided(decision, graph, options, principal=principal, approved=approved)
 
     def start_decided(
         self,
@@ -173,13 +207,20 @@ class WorkspaceService:
         graph: str,
         options: StartOptions | None = None,
         *,
+        principal: Principal,
         approved: bool = False,
     ) -> RunHandle:
         """이미 집행한 판정(`require`의 결과)으로 실행을 시작한다. 다시 판정하지 않는다. 거부이거나
-        승인 없는 ask인 판정을 넘기면 아무것도 만들지 않고 `ValueError`(호출자의 버그)."""
+        승인 없는 ask인 판정을 넘기면 아무것도 만들지 않고 `ValueError`(호출자의 버그).
+
+        **실행 시작의 공용 진입점**이다 (CLI `start_run`·daemon `run.start`·제어 실행·자동 채택 검증
+        실행이 모두 지난다). 주체로 무인 여부와 금지 동작 목록을 여기서 정한다(`guard_options`) —
+        호출자가 넘긴 `forbidden`은 쓰지 않는다. 금지 목록을 읽지 못하면 아무것도 만들지 않고
+        `ForbiddenUnavailable`(fail closed)."""
         if decision.final == "deny" or (decision.final == "ask" and not approved):
             raise ValueError(f"허용되지 않은 판정으로는 시작할 수 없다: {decision.final}")
-        handle = self.supervisor.start(self.root, graph, options)
+        guarded = guard_options(self.root, principal, options)
+        handle = self.supervisor.start(self.root, graph, guarded)
         handle.decision = decision
         return handle
 

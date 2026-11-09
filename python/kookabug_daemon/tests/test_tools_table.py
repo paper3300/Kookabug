@@ -65,16 +65,31 @@ M7_DENIED = {
 M8_DENIED = {"cheats.list", "cheats.adopt", "cheats.unadopt", "cheats.categories.set"}
 """M8 치트 채택·분류 — 사람만 (B2 엄격: Agent 권한)."""
 M8_DENIED |= {
-    "adopt.request",
     "adopt.revert",
     "adoptions.list",
-    "evidence.pin",
     "working.accept",
     "working.list",
     "working.reject",
 }
-"""M8 B3 채택 되돌리기·묶음 수락·거절·목록 — 사람만. `adopt.request`·`evidence.pin`은 B4가 Agent
-도구로 옮길 때까지 사람만."""
+"""M8 B3 채택 되돌리기·묶음 수락·거절·목록 — 사람만. `adopt.request`·`evidence.pin`은 B4부터
+`cases` 툴셋 도구."""
+M8_DENIED |= {
+    "cases.close",
+    "unknowns.answer",
+    "project.automation.set",
+    "project.sources.set",
+    "sources.check",
+    "job.begin",
+    "job.end",
+    "job.finish",
+    "jobs.list",
+    "reports.list",
+    "reports.get",
+    "report.decide",
+    "wizard.get",
+    "wizard.set",
+}
+"""M8 B4 사건 닫기·미지수 답·정책·원본·작업·보고함·마법사 — 사람만 (계획 3.13)."""
 M6_DENIED = {
     "plugins.preview",
     "plugins.install",

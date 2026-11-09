@@ -421,6 +421,17 @@ class ScenarioState:
         self._pending, self.forms = pending, forms
         return True
 
+    def peek(self) -> str:
+        """다음 캡처에 보일 장면 (상태·캡처 차례를 바꾸지 않는다 — M8 금지 동작 판정용: 실제 창에서
+        입력 직전 "지금 화면"에 해당한다)."""
+        if self._pending is not None:
+            edge, remaining = self._pending
+            return str(edge["to"]) if remaining <= 0 else self.scene
+        auto = self._candidates(lambda on: on is None)
+        if auto and self._shown >= auto[0].get("after_frames", 0):
+            return str(auto[0]["to"])
+        return self.scene
+
     def capture(self) -> str:
         """캡처 한 번. 이 캡처에 보이는 장면."""
         if self._pending is not None:
@@ -864,6 +875,11 @@ class ScenarioPlatform:
 
     def capture(self, window: WindowRef | None, region: Rect | None) -> Image:
         return self.scenario.frame(self._game(window))
+
+    def peek_frame(self, window: WindowRef | None) -> Image:
+        """지금 장면 PNG (캡처 차례·지연 전이를 넘기지 않는다 — M8 금지 동작 판정용)."""
+        game = self._game(window)
+        return Image(*self.scenario.client_size, path=self.scenario.scene_path(game.state.peek()))
 
     def capture_staged(
         self, window: WindowRef | None, region: Rect | None, limits: Any = None

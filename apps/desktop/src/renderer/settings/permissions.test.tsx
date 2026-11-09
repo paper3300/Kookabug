@@ -5,7 +5,15 @@ import { parsePerms, PRESETS } from "./PermissionsView";
 
 type Preset = NonNullable<local.Permissions["preset"]>;
 /** 계약의 프리셋 전부 (하나라도 빠지거나 더해지면 타입 검사가 실패한다) */
-const PRESET_SET: Record<Preset, true> = { explorer: true, full: true, graph_author: true, read_only: true, runner: true };
+const PRESET_SET: Record<Preset, true> = {
+  curator: true,
+  explorer: true,
+  full: true,
+  graph_author: true,
+  qa_runner: true,
+  read_only: true,
+  runner: true,
+};
 const PRESET_ENUM = Object.keys(PRESET_SET);
 
 describe("parsePerms", () => {

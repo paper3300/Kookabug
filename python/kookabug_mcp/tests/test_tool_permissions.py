@@ -25,6 +25,7 @@ type Start = Callable[..., McpClient]
 
 GRAPH = "tests/inventory_open.graph.json"
 REV = "a" * 64
+CASE = "c-20261109-000000-abcd"
 
 # 도구 → 입력 형태들 (처리기가 있는 core·graph_edit 도구 전부)
 CASES: dict[str, list[dict[str, Any]]] = {
@@ -84,6 +85,20 @@ CASES: dict[str, list[dict[str, Any]]] = {
                        {"key": "title", "frame_id": "f_x", "title": "타이틀",
                         "detect": {"all": [{"image": [0, 0, 2, 2]}]},
                         "moves": [{"via": {"key": "esc"}, "to": None, "status": "untried"}]}],
+    # M8 B4: knowledge·cases 툴셋
+    "kb_knowledge_search": [{"query": "shop"}, {"query": "shop", "files": ["lessons"], "limit": 3}],
+    "kb_knowledge_get": [{"file": "features/shop"}, {"file": "features/shop", "id": "shop.x"}],
+    "kb_knowledge_apply": [{"request_id": "r1", "ops": [{"op": "add", "file": "lessons",
+                                                          "base_revision": 0, "item": {}}]}],
+    "kb_wiki_write": [{"path": "wiki/notes.md", "text": "x", "base_sha256": None}],
+    "kb_case_list": [{}, {"state": "open"}],
+    "kb_case_get": [{"case": CASE}],
+    "kb_triage_signals": [{"case": CASE}],
+    "kb_case_open": [{"run": "abcd1234"}, {"run": "abcd1234", "title": "t"}],
+    "kb_case_update": [{"case": CASE, "base_revision": 1, "changes": {"title": "t"}}],
+    "kb_evidence_pin": [{"run": "abcd1234", "note": "n"}],
+    "kb_adopt_request": [{"case": CASE, "change": "w-20261109-000000-abcd"}],
+    "kb_report_note": [{"text": "요약"}],
 }  # fmt: skip
 PROCESS_SKIP = {"kb_run_cancel"}
 """daemon이 판정 전에 대표 인자(실행의 그래프 경로)를 구하다 `run_not_found`가 되는 도구 — 정적
@@ -152,6 +167,23 @@ class RecordingLink:
                             "counts": {"screens": 0, "moves": 0, "untried": 0}},
             "screens.save": {"path": "p", "key": "title", "revision": "r", "also_matches": [],
                              "shot": "saved"},
+            "knowledge.search": {"matches": [], "truncated": False},
+            "knowledge.get": {"file": "features/shop", "revision": 1, "sha256": None,
+                              "working": []},
+            "knowledge.apply": {"conflicts": []},
+            "wiki.write": {"path": "wiki/notes.md", "sha256": "0" * 64, "rendered_claims": False,
+                           "warnings": []},
+            "cases.list": {"cases": []},
+            "cases.get": {"case": {"id": CASE, "state": "open", "revision": 1}, "sha256": "s"},
+            "cases.signals": {"case": CASE, "diff": None, "screen": {}, "reruns": {},
+                              "sources": [], "claims": [], "not_comparable": []},
+            "cases.open": {"case": CASE, "revision": 1, "attached": False, "signature": "s",
+                           "evidence": None, "hypotheses": []},
+            "cases.update": {"case": CASE, "revision": 2},
+            "evidence.pin": {"id": "e-x", "files": [], "omitted": []},
+            "adopt.request": {"adopted": False, "adoption": None, "failed": None,
+                              "kept": "working", "manifest": None, "negatives": [], "runs": []},
+            "job.note": {"job": "j-20261109-000000-abcd", "bytes": 6},
         }[method]  # fmt: skip
 
     def enable(self, toolsets: list[str]) -> dict[str, Any]:

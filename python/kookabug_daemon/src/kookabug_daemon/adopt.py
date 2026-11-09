@@ -32,6 +32,7 @@ import os
 import posixpath
 import re
 import shutil
+import threading
 import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
@@ -40,7 +41,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Final, Protocol, cast
 
 from kookabug_core import adopt as rules
-from kookabug_core import basis, evidence, filetx
+from kookabug_core import basis, evidence, filetx, forbidden
 from kookabug_core.canonical import canonical_dumps
 from kookabug_core.knowledge.formats import KnowledgeError
 from kookabug_core.record.runfolder import RUN_JSON_FILE, SNAPSHOT_DIR
@@ -65,6 +66,8 @@ log = logging.getLogger(__name__)
 BUSY_CODES: Final = frozenset({"run_busy", "recording_active", "input_lease_busy", "shutting_down"})
 VERIFY_TIMEOUT_S: Final = 600.0
 CACHE_DIR: Final = (".kookabug", "cache", "adopt")
+CANCELLED: Final = "adopt_cancelled"
+"""요청이 취소돼(연결 끊김 포함) 검증·게시를 하지 않았다."""
 
 
 @dataclass(slots=True)
@@ -89,6 +92,10 @@ class Verifier(Protocol):
         basis: Mapping[str, Any],
     ) -> VerifyOutcome: ...
 
+    def intervened(self) -> bool:
+        """검증 세션 중 다른 입력이 있었다 (R7 — 게시 직전에도 본다)."""
+        ...
+
 
 def snapshot_shas(folder: Path) -> dict[str, str]:
     """실행 폴더 `snapshot/`의 파일 → sha (워크스페이스 기준 경로)."""
@@ -105,11 +112,27 @@ def snapshot_shas(folder: Path) -> dict[str, str]:
 
 
 class RunVerifier:
-    """daemon 실행 관리자로 검증 실행을 돌린다 (`RunManager.start_verify` — 공개 RPC 아님)."""
+    """daemon 실행 관리자로 검증 실행을 돌린다 (`RunManager.start_verify` — 공개 RPC 아님).
+
+    만들 때 **검증 세션**을 연다(R7): 닫을 때(`close`)까지 Agent의 제어 입력·실행·게임 띄우기는
+    `verification_active`로 거부되고, 검증 실행이 아닌 실행·제어·녹화·게임 띄우기가 하나라도
+    시작되면 입력 세대가 올라 그 뒤 검증은 무효(`verify_error`, `input_between_verifications`)다."""
 
     def __init__(self, manager: RunManager, *, timeout_s: float = VERIFY_TIMEOUT_S) -> None:
         self.manager = manager
         self.timeout_s = timeout_s
+        self._epoch = manager.begin_verification()
+        self._closed = False
+
+    def close(self) -> None:
+        if not self._closed:
+            self._closed = True
+            self.manager.end_verification()
+
+    def intervened(self) -> bool:
+        """세션을 연 뒤 검증 실행이 아닌 입력(실행·제어·녹화·게임 띄우기)이 시작됐다 (R7). 검증
+        결과를 받아들이기 전과 게시 직전 재확인(채택 잠금 안)이 부른다."""
+        return self.manager.input_epoch() != self._epoch
 
     def run(
         self,
@@ -119,8 +142,17 @@ class RunVerifier:
         profile: str | None,
         basis: Mapping[str, Any],
     ) -> VerifyOutcome:
+        from kookabug_daemon.runs import InputBetweenVerifications
+
+        between = VerifyOutcome(None, error="verify_error", code="input_between_verifications")
         try:
-            run_id = self.manager.start_verify(graph, overlay=overlay, profile=profile, basis=basis)
+            # 세대 확인과 예약은 실행 관리자의 같은 잠금 안에서 한다 (확인 → 예약 사이 틈 없음)
+            run_id = self.manager.start_verify(
+                graph, overlay=overlay, profile=profile, basis=basis, epoch=self._epoch
+            )
+        except InputBetweenVerifications:
+            # 검증 사이(또는 세션을 연 뒤) 다른 입력이 있었다: 초기 상태가 아니므로 무효
+            return between
         except RequestFailed as exc:
             if exc.code in BUSY_CODES:
                 return VerifyOutcome(None, error="input_busy")
@@ -130,6 +162,10 @@ class RunVerifier:
             with contextlib.suppress(RequestFailed):
                 self.manager.cancel(run_id)
             return VerifyOutcome(run_id, error="verify_error", code="verify_timeout")
+        if self.intervened():
+            # 실행이 끝난 뒤 결과를 받아들이기 전에 다시 본다 (마지막 검증 뒤 끼어든 입력)
+            between.run_id = run_id
+            return between
         run_json = outcome.run_json or {}
         if not run_json:
             try:
@@ -354,9 +390,13 @@ class Adopter:
         verifier: Verifier,
         *,
         check_secrets: Callable[[Sequence[tuple[str, str]]], None] | None = None,
+        cancelled: threading.Event | None = None,
     ) -> None:
         self.root = root
         self.verifier = verifier
+        self.cancelled = cancelled or threading.Event()
+        """요청이 취소됐다(연결 끊김 포함): 다음 검증·게시를 하지 않는다. 이미 게시 거래에
+        들어갔으면 그 거래는 끝까지 간다 (filetx 원자성)."""
         self.check_secrets = check_secrets
         """채택 기록·감사 이력에 들어갈 글자(요청 메모·경로·ID) 검사기 (daemon이 보호 기록 키로)."""
         self.runs: list[str] = []
@@ -379,6 +419,20 @@ class Adopter:
             "negatives": [str(n["frame"]) for n in self.negatives],
             "runs": list(self.runs),
         }
+
+    def _failed(self, case_id: str, change_id: str, problem: rules.Problem) -> dict[str, Any]:
+        if problem.code == CANCELLED:
+            # 사건·작업 기준 변경은 그대로 두고 감사 이력에 취소만 남긴다 (못 남겨도 결과는 같다)
+            try:
+                rules.log_cancelled(self.root, case_id, change_id)
+            except (KnowledgeError, filetx.TxError) as exc:
+                log.warning("취소된 채택 요청을 감사 이력에 남기지 못했다: %s", exc.code)
+        return self._result(None, problem)
+
+    def _cancel_problem(self) -> rules.Problem | None:
+        if self.cancelled.is_set():
+            return rules.Problem(8, CANCELLED, "채택 요청이 취소되어 검증·게시를 하지 않았다")
+        return None
 
     # ------------------------------------------------------------ 본체
 
@@ -409,7 +463,7 @@ class Adopter:
         try:
             problem = self._verify(ctx, extra)
             if problem is not None:
-                return self._result(None, problem)
+                return self._failed(case_id, change_id, problem)
             assert self.manifest is not None
             try:
                 record = rules.publish_auto(
@@ -423,7 +477,7 @@ class Adopter:
                     check_secrets=self.check_secrets,
                 )
             except rules.AdoptFailed as exc:
-                return self._result(None, exc.problem)
+                return self._failed(case_id, change_id, exc.problem)
             except filetx.TxError as exc:
                 if exc.code == "revision_conflict":
                     return self._result(None, rules.Problem(8, "revision_conflict", exc.message))
@@ -588,6 +642,8 @@ class Adopter:
         self, ctx: _Context, test: str, *, condition: int, claims: Sequence[Mapping[str, Any]]
     ) -> rules.Problem | None:
         assert self.manifest is not None
+        if (cancelled := self._cancel_problem()) is not None:
+            return cancelled
         overlay = ctx.closures[test]
         record = {
             "kind": "working",
@@ -702,6 +758,27 @@ class Adopter:
 
     def _recheck(self, ctx: _Context) -> rules.Problem | None:
         assert self.manifest is not None
+        # 채택 잠금 안, 게시 거래 직전: 취소된 요청은 게시하지 않는다(그 뒤 거래는 끝까지 간다).
+        # 마지막 검증 뒤(또는 결과를 받은 뒤) 끼어든 입력이면 검증이 무효다 (R7)
+        if (cancelled := self._cancel_problem()) is not None:
+            return cancelled
+        if self.verifier.intervened():
+            return rules.Problem(
+                8,
+                "verify_error",
+                "검증 세션 중 다른 입력이 있었다 (input_between_verifications) — 게시하지 않았다",
+            )
+        # 금지 판정이 읽는 파일(실제 경로 기준)은 자동 채택으로 바꾸지 않는다 — 작업 기준에 쓴 뒤
+        # 금지 목록이 바뀐 경우까지 (Agent 쓰기 거부와 같은 함수·같은 키)
+        try:
+            protected = forbidden.protected_paths(self.root, forbidden.load_items(self.root))
+            touched = {forbidden.real_key(self.root, rel) for rel in self.manifest.candidate}
+        except forbidden.ForbiddenConfigError:
+            return rules.Problem(8, "policy_path", "금지 동작 목록을 확인하지 못해 게시하지 않았다")
+        if touched & protected:
+            return rules.Problem(
+                8, "policy_path", "금지 판정이 읽는 파일은 자동 채택으로 바꾸지 않는다"
+            )
         workspace = Workspace.open(self.root)
         if rules.policy_sha(workspace.automation()) != self.manifest.policy_sha:
             return rules.Problem(8, "revision_conflict", "자동화 정책이 검증 뒤 바뀌었다")

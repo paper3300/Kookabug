@@ -628,6 +628,13 @@ export interface RunSpec {
    */
   deadline_ms: number;
   /**
+   * M8 3.7·R6: Agent 주체 실행의 금지 동작 (daemon이 시작 때 kookabug.json automation.forbidden에서 고정). 있으면 runner가 입력마다 금지 판정을 한다. 사람 실행·검증 실행에는 없다
+   */
+  forbidden?: {
+    kind: "screen" | "target" | "text";
+    value: string;
+  }[];
+  /**
    * 프레임 저장소 바이트 예산 (MiB). 넘으면 출력 참조 프레임부터 버린다. 없으면 512
    */
   frame_budget_mib?: number;
