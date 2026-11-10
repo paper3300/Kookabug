@@ -396,6 +396,20 @@ class RunManager:
         self._input_epoch = 0
         """검증 실행이 아닌 입력 가능 시작(실행·제어·녹화·게임 띄우기)마다 1 오른다 (R7: 검증 사이
         입력이면 그 검증은 무효)."""
+        self.job_runs: Callable[[str], None] | None = None
+        """작업 실행 예산 (M8 3.9 — `JobRegistry.take_run`): 작업 연결의 `run.start` 예약 뒤 부른다.
+        상한이면 `job_budget_exhausted`를 내고 예약을 푼다."""
+        self.job_stalled: Callable[[str, str], None] | None = None
+        """정체 감지로 거부한 테스트를 작업 기록에 남긴다 (보고 `stalled`)."""
+        self.job_basis: Callable[[str], str | None] | None = None
+        """작업의 기준 (`job.begin`의 `basis`) — 작업 연결 실행의 기본 기준."""
+        self.job_gate: Callable[[str], None] | None = None
+        """작업이 종료 경로에 들어갔으면 거부한다 (R8 — 제어 실행처럼 예산을 쓰지 않는 시작도 시작
+        잠금 안에서 본다: 종료 경로의 `cancel_job`이 시작 잠금을 잡은 뒤에는 새로 시작하지
+        못한다)."""
+        self.job_busy: Callable[[], str | None] | None = None
+        """끝나지 않은 작업의 ID (`JobRegistry.active_id`) — 작업 중이면 작업 토큰 없는 Agent의
+        실행·제어·재시작·게임 띄우기를 `job_active`로 거부한다 (R8: 작업 예산·종료 감독 우회)."""
 
     # ---------------------------------------------------------------- 검증 세션 (M8 R7)
 
@@ -430,9 +444,31 @@ class RunManager:
 
     # ---------------------------------------------------------------- 작업 (M8)
 
+    def refuse_job_bypass(self, principal: Principal) -> None:
+        """작업 판정 (R8, 시작 잠금 안에서 부른다 — 화면 판정 전 이른 거부로도 부른다).
+
+        - 작업 토큰 연결: 그 작업이 종료 경로에 들어갔으면 `job_token_invalid` (`job_gate`)
+        - 작업 토큰 없는 Agent: 이 워크스페이스에 끝나지 않은 작업(`running`·`ending`)이 있으면
+          `job_active` (작업 밖 패널이나 표시를 지운 작업 안 Agent가 예산·종료 감독을 피하지 못하게)
+        - 사람: 그대로"""
+        if principal.job is not None:
+            if self.job_gate is not None:
+                self.job_gate(principal.job)
+            return
+        if principal.kind != "agent" or self.job_busy is None:
+            return
+        busy = self.job_busy()
+        if busy is not None:
+            raise RequestFailed(
+                "job_active",
+                f"작업 {busy}이(가) 도는 중이라 작업 밖 Agent의 실행·입력을 받지 않는다 — "
+                "작업이 끝난 뒤 다시 한다",
+            )
+
     def cancel_job(self, job: str) -> list[str]:
-        """그 작업이 낸 실행을 모두 취소한다 (작업 끝 — 토큰을 먼저 폐기한 뒤에 부른다)."""
-        with self._lock:
+        """그 작업이 낸 실행을 모두 취소한다 (작업 끝 — 토큰을 먼저 폐기한 뒤에 부른다). 시작 잠금을
+        잡아 진행 중인 시작(예약 → 등록)이 끝난 뒤 본다 — 막 등록된 실행도 빠지지 않는다."""
+        with self._start_lock, self._lock:
             mine = [
                 r
                 for r in self._runs.values()
@@ -689,11 +725,25 @@ class RunManager:
             assert decision is not None  # run.start는 ui_only가 아니다
             if previous is not None:
                 return dict(previous.result)
-            # M8: 검증 세션 중 Agent 실행 거부(R7), 같은 작업의 같은 실패 반복(정체 감지)
+            # M8: 검증 세션 중 Agent 실행 거부(R7), 끝나는 작업·작업 중 비작업 Agent(R8), 같은
+            # 작업의 같은 실패 반복(정체 감지)
             self._refuse_agent_during_verification(principal)
-            self._refuse_stalled(request, where.rel)
+            self.refuse_job_bypass(principal)
+            try:
+                self._refuse_stalled(request, where.rel)
+            except RequestFailed as exc:
+                if exc.code == "stalled_repeat" and principal.job and self.job_stalled:
+                    self.job_stalled(principal.job, where.rel)
+                raise
             # ③ 시작 예약 (실행 중·종료 결정과 같은 잠금)
             reserved = self._reserve()
+            if principal.job is not None and self.job_runs is not None:
+                # 작업 실행 예산 (3.9): 예약에 성공한 시작만 센다. 상한이면 예약을 푼다
+                try:
+                    self.job_runs(principal.job)
+                except BaseException:
+                    self._unreserve(reserved)
+                    raise
             key = None if scope is None else (scope, args)
             return self._launch_reserved(request, where, decision, reserved, key)
 
@@ -744,6 +794,9 @@ class RunManager:
         with self._start_lock:
             # 검증 세션 중이면 다른 control 입력을 받지 않는다 (M8 R7)
             self._refuse_agent_during_verification(principal)
+            # 끝나는 작업의 제어 입력은 시작하지 않는다 (R8 — 종료 경로 취소 뒤에 끼지 못하게).
+            # 작업 중이면 작업 토큰 없는 Agent의 제어(탐색 입력 포함)도 `job_active`
+            self.refuse_job_bypass(principal)
             reserved = self._reserve()
             try:
                 workspace = _open_workspace(self.root)
@@ -795,12 +848,62 @@ class RunManager:
             return None
         return run.outcome
 
-    def launch_app(self, profile: str | None, *, agent: bool = False) -> int:
+    def job_run_ids(self, job: str) -> list[str]:
+        """그 작업 연결이 낸 실행 (이 daemon이 띄운 것, 끝난 것 포함)."""
+        with self._lock:
+            return sorted(
+                r.run_id
+                for r in self._runs.values()
+                if r.handle is not None and r.request is not None and r.request.principal.job == job
+            )
+
+    def run_settled(self, run_id: str, timeout: float, *, force: bool = False) -> bool:
+        """그 실행의 감독자 마무리(입력 복구)를 **확인**한다 (M8 R8 작업 종료 경로). 이 daemon이
+        띄운 실행이 아니면 True. 확인 = 마무리가 끝났고 복구 기록 오류가 없고 임대권을 못 얻어
+        떼지 못한 것(`lease_busy`)이 아니다.
+
+        `force`(감독자 강제 복구 경로): 아직 안 끝난 runner는 하드 종료하고 마무리를 기다리며,
+        끝났는데 확인되지 않았으면 복구 경로(`RunHandle.recover`, 멱등)를 다시 부른다."""
+        with self._lock:
+            run = self._runs.get(run_id)
+        if run is None or run.handle is None:
+            return True
+        handle = run.handle
+        if not run.done.wait(0 if force else timeout):
+            if not force:
+                return False
+            try:
+                outcome: RunOutcome | None = handle.force_stop(timeout)
+            except Exception:  # runner가 기한 안에 끝나지 않았다 (TimeoutError 등)
+                log.warning("실행 %s: 강제 종료 뒤에도 마무리를 확인하지 못했다", run_id)
+                return False
+        else:
+            outcome = run.outcome
+        if _recovery_confirmed(outcome):
+            return True
+        if not force:
+            return False
+        try:
+            again = handle.recover()
+        except Exception:
+            log.warning("실행 %s: 복구 경로를 다시 불렀지만 실패했다", run_id, exc_info=True)
+            return False
+        return again.finalize.input_recovery != "lease_busy"
+
+    def launch_app(self, profile: str | None, *, principal: Principal | None = None) -> int:
         """`app.launch` (M5 C5): 프로필 계층까지 본 설정 `game.executable`·`game.args`·`game.cwd`로
         게임을 띄운다. 실행 Job 밖이다(실행이 끝나도 게임은 남는다). 시작 예약과 같은 잠금 안에서
         실행 중·예약·녹화 중이면 거부한다 (막히는 호출). PID를 돌려준다. Agent 연결이면 검증 세션
-        중 거부(M8 R7), 띄우면 입력 세대를 올린다(검증 사이 게임 상태가 바뀜)."""
-        with self._start_lock, self._lock:
+        중 거부(M8 R7), 띄우면 입력 세대를 올린다(검증 사이 게임 상태가 바뀜). 작업 판정(R8)은
+        `refuse_job_bypass`와 같다 (`principal`이 없으면 사람 UI로 본다)."""
+        agent = principal is not None and principal.kind == "agent"
+        with self._start_lock:
+            if principal is not None:
+                self.refuse_job_bypass(principal)
+            return self._launch_locked(profile, agent=agent)
+
+    def _launch_locked(self, profile: str | None, *, agent: bool) -> int:
+        with self._lock:
             if agent and self._verify_holds > 0:
                 raise RequestFailed(
                     "verification_active", "자동 채택 검증 실행 중이라 게임을 띄우지 않는다"
@@ -899,6 +1002,9 @@ class RunManager:
         preset = effective_preset(self.service.policy()) if principal.kind == "agent" else None
         # qa_runner는 작업 연결이어도 기본이 팀 기준이다 (R3 — 작업 기준 실행이 없다)
         default = "working" if principal.job is not None and preset != "qa_runner" else "team"
+        if principal.job is not None and preset != "qa_runner" and self.job_basis is not None:
+            # 작업 연결의 기본은 그 작업의 기준이다 (3.9 `agent-job --basis`, 3.6)
+            default = self.job_basis(principal.job) or default
         kind = request.basis or default
         if kind == "working" and preset == "qa_runner":
             raise RequestFailed(
@@ -1434,6 +1540,9 @@ class RunManager:
             with self._start_lock:
                 where = resolve_path(self.root, request.path, graph=True)
                 decision = self.authorizer.require(request.principal, "run.start", where.rel)
+                # 작업 판정 (R8): 재시작은 사람 UI 실행만이라 지금은 늘 통과하지만 같은 자리에서
+                # 본다
+                self.refuse_job_bypass(request.principal)
                 assert decision is not None
                 reserved = self._reserve(restarting=run_id)
                 fresh = replace(request, idempotency_key=None)
@@ -1607,6 +1716,15 @@ class RecordingReservation:
     def release(self) -> None:
         """예약을 푼다 (여러 번 불러도 된다). 이 뒤로 `run.start`를 받는다."""
         self._manager.release_recording(self)
+
+
+def _recovery_confirmed(outcome: RunOutcome | None) -> bool:
+    """감독자 마무리가 입력 복구까지 확인됐다 (R8). runner를 못 띄운 실행(`recovered` 없음, 오류
+    없음)은 입력이 없었다."""
+    if outcome is None or outcome.recover_error is not None:
+        return False
+    recovered = outcome.recovered
+    return recovered is None or recovered.finalize.input_recovery != "lease_busy"
 
 
 def _recording_active(state: RecordingState) -> RequestFailed:

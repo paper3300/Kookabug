@@ -13,6 +13,7 @@
     kookabug mcp [--workspace DIR] [--agent-id ID] [--unattended] [--client 이름]   (kookabug_mcp)
     kookabug workspace new <폴더> --name 이름 [--git] [--json]                       (workspace_cmd)
     kookabug cheat list|adopt|unadopt ... (사람만: KOOKABUG_AGENT면 종료 5)          (cheat_cmd)
+    kookabug agent-job run|status|list|cancel|probe|schedule|playbooks ... (사람만)  (agent_job_cmd)
     kookabug agent-host --workspace DIR [--env 이름=값] [--secret-env 이름=키] -- 명령 ...
                                                      (앱의 에이전트 패널 세션 도우미)
     kookabug --version
@@ -28,6 +29,8 @@
   `--platform-fake 사양.json`(`frames`·`scenario`·`input_log`·`hooks`)
 - 주체: `KOOKABUG_AGENT=<연결 ID>`가 있으면 사람 없는 에이전트(ask = 거부), 없으면 사람. CLI는
   에이전트에게 승인을 주지 않는다
+- 작업 우회 금지(M8 R8): 작업 토큰 환경이 있거나 `KOOKABUG_AGENT=job:…`이거나, Agent 주체인데 그
+  워크스페이스에 작업이 돌면(`jobs.lock`) 종료 7 `job_active` (`WorkspaceService.start_run`)
 - Ctrl+C: 첫 번째는 취소 요청, 두 번째는 runner를 바로 끝낸다. 결과(기록 마무리)는 주 흐름의
   `wait()`가 받는다 — 신호 처리기는 기다리는 호출을 하지 않는다
 """
@@ -45,7 +48,14 @@ from pathlib import Path
 from types import FrameType
 from typing import Any, Final, NoReturn, Protocol, TextIO
 
-from kookabug_cli import __version__, cheat_cmd, daemon_cmd, plugin_cmd, workspace_cmd
+from kookabug_cli import (
+    __version__,
+    agent_job_cmd,
+    cheat_cmd,
+    daemon_cmd,
+    plugin_cmd,
+    workspace_cmd,
+)
 from kookabug_core.agents import host as agent_host
 from kookabug_core.canonical import loads_strict
 from kookabug_core.permissions import Decision, Principal
@@ -57,6 +67,7 @@ from kookabug_core.service import (
     ApprovalRequired,
     DevModulesRefused,
     ForbiddenUnavailable,
+    JobRunRefused,
     PermissionDenied,
     WorkspaceService,
     cli_principal,
@@ -84,6 +95,7 @@ __all__ = [
     "EXIT_ERROR",
     "EXIT_FAIL",
     "EXIT_INVALID",
+    "EXIT_JOB_ACTIVE",
     "EXIT_PASS",
     "EXIT_SKIPPED",
     "EXIT_USAGE",
@@ -104,6 +116,9 @@ EXIT_DENIED: Final = 5
 """권한 거부·승인 필요. 실행 폴더도 프로세스도 만들지 않았다."""
 EXIT_USAGE: Final = 6
 """사용법·환경 오류 (argparse 오류 포함)."""
+EXIT_JOB_ACTIVE: Final = 7
+"""작업 우회 거부 (`job_active`, M8 R8). 실행 폴더도 프로세스도 만들지 않았다. 판정 `skipped`(3)와
+겹치지 않게 따로 둔다 (`agent-job`의 `job_active` 종료 3과는 다른 명령이다)."""
 
 _VERDICT_WORDS: Final = {"pass": "통과", "fail": "실패", "error": "오류", "skipped": "건너뜀"}
 _STATUS_WORDS: Final = {"success": "성공", "fail": "실패", "error": "오류", "cancelled": "취소"}
@@ -152,7 +167,8 @@ def build_parser() -> argparse.ArgumentParser:
         "run",
         help="그래프를 실행한다",
         description="그래프를 실행하고 판정을 종료 코드로 돌려준다 "
-        "(0 통과, 1 실패, 2 오류, 3 건너뜀, 4 실행 전 검증 오류, 5 권한 거부, 6 사용법 오류)",
+        "(0 통과, 1 실패, 2 오류, 3 건너뜀, 4 실행 전 검증 오류, 5 권한 거부, 6 사용법 오류, "
+        "7 작업 중이라 거부)",
     )
     run.add_argument("graph", help="실행할 그래프 파일")
     run.add_argument(
@@ -313,6 +329,7 @@ def build_parser() -> argparse.ArgumentParser:
     agent_host.add_parser(commands)
     workspace_cmd.add_parser(commands)
     cheat_cmd.add_parser(commands)
+    agent_job_cmd.add_parser(commands)
     return parser
 
 
@@ -656,6 +673,9 @@ def run_command(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     # 판정은 start_run 안에서 한 번만 한다. 보고하는 판정 = 집행한 판정 (핸들·예외가 돌려준다)
     try:
         handle = service.start_run(principal, rel, options)
+    except JobRunRefused as exc:  # 작업 안 Agent·작업 중 Agent의 CLI 실행 (M8 R8 예산 우회 금지)
+        report.error = str(exc)  # "job_active: …"
+        return finish(EXIT_JOB_ACTIVE)
     except DevModulesRefused as exc:  # 에이전트 + 개발 모듈: 판정 전에 거부 (M6 3.7)
         report.error = str(exc)
         return finish(EXIT_DENIED)
@@ -712,6 +732,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return workspace_cmd.run(args, sys.stdout, sys.stderr)
     if args.command == "cheat":
         return cheat_cmd.run(args, sys.stdout, sys.stderr)
+    if args.command == "agent-job":
+        return agent_job_cmd.run(args, sys.stdout, sys.stderr)
     # 비전 명령은 opencv를 불러오므로 쓸 때만 import한다 (`kookabug run` 시작을 가볍게)
     try:
         if args.command == "target":

@@ -33,15 +33,19 @@ from kookabug_core.workspace import WORKSPACE_FILE, RunConditions, WorkspaceErro
 __all__ = [
     "AGENT_ENV",
     "DEV_MODULES_AGENT",
+    "JOB_ENV_NAMES",
+    "JOB_TOKEN_ENV",
     "RUN_START_TOOL",
     "ApprovalRequired",
     "DevModulesRefused",
     "ForbiddenUnavailable",
+    "JobRunRefused",
     "PermissionDenied",
     "WorkspaceService",
     "cli_principal",
     "guard_options",
     "refuse_dev_modules",
+    "refuse_job_bypass",
     "start_options",
 ]
 
@@ -117,6 +121,51 @@ def guard_options(root: Path, principal: Principal, options: StartOptions | None
             raise ForbiddenUnavailable() from exc
         spec = tuple(forbidden.to_spec(items)) or None
     return replace(opts, unattended=unattended, forbidden=spec)
+
+
+JOB_TOKEN_ENV: Final = "KOOKABUG_JOB_TOKEN"
+"""작업 토큰 환경 변수 (`agent_job.profiles.TOKEN_ENV`와 같은 이름 — 작업 안 Agent의 자식 환경)."""
+JOB_ENV_NAMES: Final = (
+    JOB_TOKEN_ENV,
+    "KOOKABUG_JOB_ID",
+    "KOOKABUG_JOB_DIR",
+    "KOOKABUG_JOB_MCP_CONFIG",
+)
+"""`agent-job`이 자식에게만 넣는 작업 변수 (`agent_job.profiles`). 하나라도 있으면 작업 안
+프로세스다."""
+
+
+class JobRunRefused(Exception):
+    """작업(`agent-job`) 안팎의 Agent가 CLI로 실행을 시작하려 했다 (M8 R8 — 작업 예산·종료 감독
+    우회). 아무것도 시작하지 않았다. CLI 종료 7."""
+
+    code: Final = "job_active"
+
+    def __init__(self, why: str) -> None:
+        super().__init__(f"job_active: {why} — CLI 실행을 시작하지 않았다")
+        self.why = why
+
+
+def refuse_job_bypass(root: Path, principal: Principal, environ: Mapping[str, str]) -> None:
+    """CLI 실행 시작의 작업 우회 판정 (공용 진입점 `start_run`이 판정 전에 부른다). 다음이면
+    `JobRunRefused`:
+
+    - 작업 변수(`JOB_ENV_NAMES`: 토큰·작업 ID·작업 폴더·MCP 설정)가 하나라도 있다 — 작업 안에서
+      띄운 프로세스다(주체 표시와 무관)
+    - `KOOKABUG_AGENT`가 `job:`로 시작한다 — 작업 안 Agent는 MCP 작업 연결만 쓴다
+    - Agent 주체이고 이 워크스페이스의 `jobs.lock`이 잡혀 있다(작업이 돌고 있다)
+
+    작업이 없을 때의 Agent CLI 실행과 사람 실행은 그대로다."""
+    from kookabug_core.agent_job import jobdir
+
+    found = [name for name in JOB_ENV_NAMES if environ.get(name)]
+    if found:
+        raise JobRunRefused(f"작업 환경({found[0]})이 있다 (작업 안 프로세스)")
+    agent = environ.get(AGENT_ENV)
+    if agent is not None and agent.strip().lower().startswith("job:"):
+        raise JobRunRefused("작업 안 Agent(KOOKABUG_AGENT=job:…)는 MCP 작업 연결만 쓴다")
+    if principal.kind == "agent" and jobdir.job_running(root):
+        raise JobRunRefused("이 워크스페이스에서 작업이 돌고 있다 (jobs.lock)")
 
 
 class ApprovalRequired(Exception):
@@ -195,7 +244,13 @@ class WorkspaceService:
         함 등)는 핸들의 결과(`wait()`)로 알린다.
 
         판정은 한 번만 한다. 집행한 그 판정을 핸들(`handle.decision`)이나 예외(`exc.decision`)로
-        돌려주므로, 호출자는 따로 `authorize()`를 부르지 않고 이것을 보고한다."""
+        돌려주므로, 호출자는 따로 `authorize()`를 부르지 않고 이것을 보고한다.
+
+        CLI 실행의 공용 진입점이다: 작업 우회(`refuse_job_bypass`)를 판정 전에 본다 — 작업 안
+        Agent는 작업 토큰 연결(daemon)로만 실행해 예산·종료 감독을 지난다."""
+        refuse_job_bypass(
+            self.root, principal, os.environ if self._environ is None else self._environ
+        )
         if options is not None:
             refuse_dev_modules(principal, options.plugin_modules)
         decision = self.require(principal, RUN_START_TOOL, graph, approved=approved)

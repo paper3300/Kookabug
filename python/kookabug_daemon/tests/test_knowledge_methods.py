@@ -58,8 +58,7 @@ def log(ws: Path) -> list[dict[str, Any]]:
 
 def test_expected_revise_via_daemon_stays_working(ws: Path, daemon: ThreadDaemon) -> None:
     team = (ws / SHOP).read_bytes()
-    with daemon.client() as ui:
-        job = ui.call("job.begin", {"playbook": "repair"})
+    job = daemon.begin_job({"playbook": "repair"})
     info = {**AGENT, "id": job["agent_id"], "attended": False, "job_token": job["token"]}
     with daemon.client(info) as agent:
         done = agent.call("knowledge.apply", {"request_id": "r1", "ops": [revise(120, 1)]})

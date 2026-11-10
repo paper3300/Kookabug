@@ -115,6 +115,7 @@ HUMAN_KNOWLEDGE_METHODS: Final = frozenset(
         "job.begin",
         "job.end",
         "job.finish",
+        "job.heartbeat",
         "jobs.list",
         "reports.list",
         "reports.get",
@@ -229,6 +230,8 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     "evidence.pin": "kb_evidence_pin",
     "adopt.request": "kb_adopt_request",
     "job.note": "kb_report_note",
+    # M8 B5: 플레이북 판·원본 상태·자동화 정책 (kb_project_info가 함께 준다)
+    "project.qa_info": "kb_project_info",
 }
 
 AGENT_DENIED: Final = frozenset(
@@ -322,6 +325,9 @@ class Authorizer:
         if method in AGENT_RAW:
             raise agent_use_safe_api(method)
         tool = METHOD_TOOLS[method]
+        if job is not None and self.jobs is not None:
+            # 작업의 Kookabug 도구 호출 수 (3.9 예산 집계 — 거부된 호출도 센다)
+            self.jobs.count_call(job.id, tool)
         if tool == UI_ONLY:
             if method in AGENT_DENIED:
                 raise RequestFailed(

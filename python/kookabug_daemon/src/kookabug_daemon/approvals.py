@@ -40,7 +40,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal
 from kookabug_core import documents as core_documents
 from kookabug_core.documents import DocumentError
 from kookabug_core.permissions import TOOLS, Decision, Principal, exact_rule
-from kookabug_daemon.explore import ExploreSession, check_texts
+from kookabug_daemon.explore import ExploreSession, check_texts, job_secrets
 from kookabug_daemon.graph_patch import PatchInvalid, apply_ops
 from kookabug_daemon.methods.tools import METHOD_TOOLS, Authorizer
 from kookabug_daemon.protocol import RequestFailed
@@ -428,7 +428,12 @@ class ApprovalBroker:
         }
         if arg and len(arg) <= AUDIT_ARG_MAX:
             try:
-                check_texts([("arg", arg)], self.daemon.guard, self.daemon.root)
+                check_texts(
+                    [("arg", arg)],
+                    self.daemon.guard,
+                    self.daemon.root,
+                    job_secrets(self.daemon),
+                )
             except RequestFailed:
                 pass  # 비밀값이 들었거나 검사할 수 없다: 창 제목을 적지 않는다
             else:

@@ -124,6 +124,8 @@ class RecordingLink:
         opened = {"doc_id": "d_1", "revision": REV, "value": {}, "diagnostics": []}
         return {
             "workspace.info": {"root": "r", "profiles": [], "plugins": [], "diagnostics": []},
+            "project.qa_info": {"playbooks": {}, "sources": [], "automation": {},
+                                "cheats": {}, "warnings": [], "job": None},
             "agent.toolsets.enable": {"enabled": ["core", "run"], "tools": []},
             "graph.list": {"graphs": []},
             "graph.check": {"diagnostics": []},

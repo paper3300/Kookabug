@@ -51,8 +51,7 @@ def test_tools_listed_by_toolset(tmp_path: Path, spawned: Spawned) -> None:
     ws = workspace(tmp_path, "curator")
     environ = {"KOOKABUG_USER_CONFIG_DIR": str(tmp_path / "user")}
     with ThreadDaemon(ws, environ=environ, agent_toolsets=("core",)) as d:
-        with d.client() as ui:
-            job = ui.call("job.begin", {"playbook": "triage"})
+        job = d.begin_job({"playbook": "triage"})
         env = {**daemon_env(tmp_path), "KB_TEST_JOB_TOKEN": job["token"]}
         args = (
             "--unattended",
@@ -116,7 +115,10 @@ def test_tools_listed_by_toolset(tmp_path: Path, spawned: Spawned) -> None:
             for path in ("AGENTS.md", "wiki/index.md", "knowledge/evidence/x.md"):
                 error = mcp.error("kb_wiki_write", {"path": path, "text": "x", "base_sha256": None})
                 assert error["code"] == "policy_path", path
-            note = mcp.data("kb_report_note", {"text": "요약"})
+            # 작업 토큰 원문이 든 메모는 거부한다 (R9 — 보고에 남지 않게)
+            leaked = mcp.error("kb_report_note", {"text": f"토큰 {job['token']}"})
+            assert leaked["code"] == "secret_in_text"
+            note = mcp.data("kb_report_note", {"text": "요약"})  # 양성 대조
             assert note["job"] == job["job"]
             assert mcp.close() == 0
         finally:
@@ -137,6 +139,18 @@ def test_job_token_env_missing_or_invalid(tmp_path: Path, spawned: Spawned) -> N
                 assert mcp.proc.wait(60) == 6  # 붙지 못함 (토큰 없음·틀림)
             finally:
                 mcp.__exit__(None, None, None)
+        # 작업 안(토큰 환경·job: 주체)인데 토큰 연결 없이 붙으면 종료 3 (작업 감독 우회 금지, R8)
+        inside = [
+            ({**daemon_env(tmp_path), "KOOKABUG_JOB_TOKEN": "x" * 43}, ()),
+            (daemon_env(tmp_path), ("--agent-id", "job:j-20261110-010203-abcd")),
+            ({**daemon_env(tmp_path), "KOOKABUG_AGENT": "job:j-20261110-010203-abcd"}, ()),
+        ]
+        for n, (env_in, args_in) in enumerate(inside):
+            mcp = McpClient.start(spawned, ws, tmp_path / f"mcp-inside-{n}", *args_in, env=env_in)
+            try:
+                assert mcp.proc.wait(60) == 3, n
+            finally:
+                mcp.__exit__(None, None, None)
 
 
 def call(mcp: McpClient, tool: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -148,8 +162,7 @@ def test_qa_runner_no_control_no_working(tmp_path: Path, spawned: Spawned) -> No
     ws = workspace(tmp_path, "qa_runner")
     environ = {"KOOKABUG_USER_CONFIG_DIR": str(tmp_path / "user")}
     with ThreadDaemon(ws, environ=environ, platform_fake=ws / "fake-platform-shop.json") as d:
-        with d.client() as ui:
-            job = ui.call("job.begin", {"playbook": "triage"})
+        job = d.begin_job({"playbook": "triage"})
         env = {**daemon_env(tmp_path), "KB_TEST_JOB_TOKEN": job["token"]}
         args = (
             "--unattended",

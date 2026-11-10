@@ -1,0 +1,6 @@
+{
+  "description": "연결 시험 (플레이북 probe): kb_project_info를 한 번 부르고 끝낸다",
+  "steps": [
+    {"tool": "kb_project_info", "expect": "ok"}
+  ]
+}

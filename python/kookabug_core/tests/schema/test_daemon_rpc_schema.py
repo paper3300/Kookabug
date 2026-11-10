@@ -163,9 +163,13 @@ TOOLS = {
             "report.decide",
             "wizard.get",
             "wizard.set",
+            # M8 B5 작업 소유 연결 heartbeat (R8)
+            "job.heartbeat",
         ),
         "ui_only",
     ),
+    # M8 B5 플레이북 판·원본 상태 (kb_project_info가 함께 준다)
+    "project.qa_info": "kb_project_info",
 }
 M8_B3 = {
     "adopt.request",

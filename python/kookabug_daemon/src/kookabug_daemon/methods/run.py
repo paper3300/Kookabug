@@ -49,6 +49,8 @@ async def _start(call: Call) -> dict[str, Any]:
     deadline = params.get("deadline_ms")
     # 개발 모듈 daemon의 에이전트 실행은 사람 확인을 묻기 전에 거부 (M6 3.7)
     call.daemon.run_manager.refuse_dev_modules(call.principal)
+    # 작업 판정(M8 R8)도 사람 확인 전에 한 번 본다 (시작 잠금 안에서 다시 본다)
+    call.daemon.run_manager.refuse_job_bypass(call.principal)
     # ask면 시작 잠금 밖에서 사람 확인을 받는다 (M5 3.6). 판정 자체는 ② 단계에서 다시 한다
     approved = await call.daemon.approvals.approve(call, _path_arg(call))
     request = StartRequest(

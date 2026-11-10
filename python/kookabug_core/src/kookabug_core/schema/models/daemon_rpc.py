@@ -955,10 +955,14 @@ class Kb8JobBeginResult(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    agent_id: str
-    expires_at: str
+    agent_id: str | None = None
+    expires_at: str | None = None
     job: str
-    token: str
+    reason: Literal["input_lease", "recording", "shutting_down"] | None = None
+    report: str | None = None
+    started_at: str | None = None
+    state: Literal["prep_failed", "running"]
+    token: str | None = None
 
 
 class Kb8JobBudgetParams(BaseModel):
@@ -999,17 +1003,9 @@ class Kb8JobEndParams(BaseModel):
     reason: Literal["budget_exhausted", "cancelled", "done", "failed", "interrupted", "timeout"]
 
 
-class Kb8JobEndResult(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    cancelled: list[str]
-    job: str
-
-
 class Kb8JobFinishParams(BaseModel):
     """
-    job.finish (사람 전용, B5): CLI가 끝났다 → 보고 생성
+    job.finish (사람 전용): CLI가 끝났다 → 같은 종료 경로로 끝내고 보고를 만든다
     """
 
     model_config = ConfigDict(
@@ -1017,10 +1013,22 @@ class Kb8JobFinishParams(BaseModel):
     )
     exit_code: int | None = None
     job: Annotated[str, Field(pattern="^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+    prep_reason: Annotated[
+        str | None,
+        Field(description="prep_failed 사유 (고정 코드, 값·경로 없음)", pattern="^[a-z_]{1,64}$"),
+    ] = None
     state: (
         Literal["budget_exhausted", "cancelled", "done", "failed", "interrupted", "prep_failed"]
         | None
     ) = None
+
+
+class Kb8JobHeartbeatResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    job: str
+    state: Literal["running"]
 
 
 class Kb8JobIdParams(BaseModel):
@@ -1047,6 +1055,26 @@ class Kb8JobNoteResult(BaseModel):
     )
     bytes: int
     job: str
+
+
+class Kb8JobUsed(BaseModel):
+    """
+    작업이 쓴 예산 (실행 수는 run.start·자동 채택 검증 실행, 도구 호출 수는 작업 연결 요청)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    minutes: Annotated[int, Field(ge=0)]
+    runs: Annotated[int, Field(ge=0)]
+    tool_calls: Annotated[int, Field(ge=0)]
+
+
+class Kb8JobsListResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    jobs: list[dict[str, Any]]
 
 
 class Kb8KnowledgeApplyParams(BaseModel):
@@ -1145,6 +1173,25 @@ class Kb8LooseResult(BaseModel):
     """
 
 
+type PlaybooksAdditionalProperty = Annotated[int, Field(ge=1)]
+
+
+class Kb8ProjectQaInfoResult(BaseModel):
+    """
+    project.qa_info (kb_project_info): 플레이북 판·원본 상태·자동화 정책·치트 설정·경고 (M8 3.4·3.10·3.12)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    automation: dict[str, Any]
+    cheats: dict[str, Any]
+    job: dict[str, Any] | None
+    playbooks: dict[str, PlaybooksAdditionalProperty]
+    sources: list[dict[str, Any]]
+    warnings: list[str]
+
+
 class Kb8ReportDecideParams(BaseModel):
     """
     report.decide (사람 전용, B5): 보고 묶음 결정 → working.accept/reject
@@ -1156,6 +1203,30 @@ class Kb8ReportDecideParams(BaseModel):
     decision: Literal["accept", "reject"]
     group: Annotated[str, Field(min_length=1)]
     job: Annotated[str, Field(pattern="^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+
+
+class Kb8ReportDecideResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    decision: Literal["accept", "reject"]
+    group: str
+    job: str
+    result: dict[str, Any]
+
+
+class Kb8ReportGetResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    report: dict[str, Any]
+
+
+class Kb8ReportsListResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    reports: list[dict[str, Any]]
 
 
 class Kb8SourcesCheckResult(BaseModel):
@@ -1538,23 +1609,13 @@ class GraphClose(BaseModel):
     tool: Literal["ui_only"]
 
 
-class JobEnd(BaseModel):
+class JobHeartbeat(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    params: Kb8JobEndParams
+    params: Kb8JobIdParams
     renderer: Literal[False]
-    result: Kb8JobEndResult
-    tool: Literal["ui_only"]
-
-
-class JobFinish(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    params: Kb8JobFinishParams
-    renderer: Literal[False]
-    result: Kb8LooseResult
+    result: Kb8JobHeartbeatResult
     tool: Literal["ui_only"]
 
 
@@ -1574,7 +1635,7 @@ class JobsList(BaseModel):
     )
     params: EmptyParams
     renderer: Literal[False]
-    result: Kb8LooseResult
+    result: Kb8JobsListResult
     tool: Literal["ui_only"]
 
 
@@ -1618,6 +1679,16 @@ class ProjectAutomationSet(BaseModel):
     tool: Literal["ui_only"]
 
 
+class ProjectQaInfo(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[False]
+    result: Kb8ProjectQaInfoResult
+    tool: Literal["kb_project_info"]
+
+
 class ProjectSourcesSet(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1634,7 +1705,7 @@ class ReportDecide(BaseModel):
     )
     params: Kb8ReportDecideParams
     renderer: Literal[False]
-    result: Kb8LooseResult
+    result: Kb8ReportDecideResult
     tool: Literal["ui_only"]
 
 
@@ -1644,7 +1715,7 @@ class ReportsGet(BaseModel):
     )
     params: Kb8JobIdParams
     renderer: Literal[False]
-    result: Kb8LooseResult
+    result: Kb8ReportGetResult
     tool: Literal["ui_only"]
 
 
@@ -1654,7 +1725,7 @@ class ReportsList(BaseModel):
     )
     params: EmptyParams
     renderer: Literal[False]
-    result: Kb8LooseResult
+    result: Kb8ReportsListResult
     tool: Literal["ui_only"]
 
 
@@ -2530,6 +2601,9 @@ class RequestFailedCode(
             "too_large",
             "path_alias",
             "case_closed",
+            "job_budget_exhausted",
+            "job_ended",
+            "job_active",
         ]
     ]
 ):
@@ -2646,6 +2720,9 @@ class RequestFailedCode(
             "too_large",
             "path_alias",
             "case_closed",
+            "job_budget_exhausted",
+            "job_ended",
+            "job_active",
         ],
         Field(
             description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 비밀값 — data.field), secret_unchecked(비밀값 검사 불가 — 키를 못 읽음·보호 기록 손상), screens_busy(화면 지도 잠금) M8 B4: job_token_invalid(작업 토큰이 틀림·만료·폐기 — 연결 거부), job_only(작업 토큰 연결 전용 메서드), forbidden_visible(금지 문구·target·화면이 보여 입력하지 않음 — data.kind·value), forbidden_unverifiable(화면·OCR·target 확인 실패로 입력하지 않음), stalled_repeat(같은 작업에서 같은 실패 3번 — 그 테스트를 다시 돌리지 않음), case_resolution_reserved(사건 resolved·closed는 Kookabug·사람만), case_closed(닫힌 사건), verification_active(자동 채택 검증 실행 중이라 게임 입력을 받지 않음), 지식 연산 거부(duplicate_id·basis_required·basis_unknown·basis_hash_mismatch·basis_derived·human_basis_reserved·adoption_reserved·answer_reserved·too_large·path_alias)",
@@ -4200,18 +4277,52 @@ class Kb8CheatCategoriesSetParams(BaseModel):
 
 class Kb8JobBeginParams(BaseModel):
     """
-    job.begin (사람 전용, agent-job CLI): 작업을 만들고 작업 토큰을 준다. 토큰은 이 응답에만 있고 daemon은 해시만 둔다
+    job.begin (사람 전용, agent-job CLI): 작업을 만들고 작업 토큰을 준다. 토큰은 이 응답에만 있고 daemon은 해시만 둔다. 부른 연결이 소유 연결이다(R8 — job.heartbeat, 끊기면 작업 끝). 사람 입력 임대권·녹화 중이면 토큰 없이 prep_failed
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
+    agent: Annotated[
+        str | None,
+        Field(description="Agent 프로필 이름 (보고 표시용)", pattern="^[A-Za-z0-9_.-]{1,64}$"),
+    ] = None
     basis: Literal["team", "working"] | None = None
     budget: Budget | None = None
-    playbook: Annotated[str, Field(min_length=1)]
+    playbook: Literal["author", "explore", "init", "lint", "probe", "repair", "triage"]
     toolsets: list[Toolset] | None = None
     trigger: Literal["ci", "manual", "schedule"] | None = None
     ttl_s: Annotated[int | None, Field(ge=1, le=86400)] = None
+
+
+class Kb8JobEndResult(BaseModel):
+    """
+    작업 종료 경로(R8) 결과: 토큰 폐기 → 실행·채택 검증 취소 → 감독자 입력 복구 완료 → 보고. 같은 작업을 다시 끝내면 첫 결과. 입력 복구를 확인하지 못했으면 state ending·settled false·report null (보고·끝 알림 없음, 작업 슬롯 유지 — 다시 부르면 같은 완료를 기다린다)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    cancelled: list[str]
+    job: str
+    probe_ok: Annotated[
+        bool | None, Field(description="작업 연결이 kb_project_info를 불렀다 (agent-job probe)")
+    ] = None
+    report: str | None = None
+    settled: bool | None = None
+    state: (
+        Literal[
+            "budget_exhausted",
+            "cancelled",
+            "done",
+            "ending",
+            "failed",
+            "interrupted",
+            "prep_failed",
+        ]
+        | None
+    ) = None
+    used: Kb8JobUsed | None = None
 
 
 class LeaseChangedParams(BaseModel):
@@ -4416,6 +4527,26 @@ class JobBegin(BaseModel):
     params: Kb8JobBeginParams
     renderer: Literal[False]
     result: Kb8JobBeginResult
+    tool: Literal["ui_only"]
+
+
+class JobEnd(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8JobEndParams
+    renderer: Literal[False]
+    result: Kb8JobEndResult
+    tool: Literal["ui_only"]
+
+
+class JobFinish(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8JobFinishParams
+    renderer: Literal[False]
+    result: Kb8JobEndResult
     tool: Literal["ui_only"]
 
 
@@ -6767,6 +6898,7 @@ class Methods(BaseModel):
     job_begin: Annotated[JobBegin, Field(alias="job.begin")]
     job_end: Annotated[JobEnd, Field(alias="job.end")]
     job_finish: Annotated[JobFinish, Field(alias="job.finish")]
+    job_heartbeat: Annotated[JobHeartbeat, Field(alias="job.heartbeat")]
     job_note: Annotated[JobNote, Field(alias="job.note")]
     jobs_list: Annotated[JobsList, Field(alias="jobs.list")]
     knowledge_apply: Annotated[KnowledgeApply, Field(alias="knowledge.apply")]
@@ -6785,6 +6917,7 @@ class Methods(BaseModel):
     plugins_sync: Annotated[PluginsSync, Field(alias="plugins.sync")]
     plugins_upgrade: Annotated[PluginsUpgrade, Field(alias="plugins.upgrade")]
     project_automation_set: Annotated[ProjectAutomationSet, Field(alias="project.automation.set")]
+    project_qa_info: Annotated[ProjectQaInfo, Field(alias="project.qa_info")]
     project_sources_set: Annotated[ProjectSourcesSet, Field(alias="project.sources.set")]
     recorder_commit_abort: Annotated[RecorderCommitAbort, Field(alias="recorder.commit_abort")]
     recorder_commit_finish: Annotated[RecorderCommitFinish, Field(alias="recorder.commit_finish")]

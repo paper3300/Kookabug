@@ -200,8 +200,7 @@ def test_signals_no_cause_verdict(ws: Path, daemon: ThreadDaemon) -> None:
 
 
 def test_stalled_repeat(ws: Path, daemon: ThreadDaemon) -> None:
-    with daemon.client() as ui:
-        job = ui.call("job.begin", {"playbook": "triage"})
+    job = daemon.begin_job({"playbook": "triage"})
     info = {**AGENT, "id": job["agent_id"], "attended": False, "job_token": job["token"]}
     with daemon.client(info) as agent:
         for n in range(3):
@@ -221,8 +220,7 @@ def test_stalled_repeat(ws: Path, daemon: ThreadDaemon) -> None:
 
 def stalled_agent(daemon: ThreadDaemon) -> dict[str, Any]:
     """작업 토큰 Agent 연결 정보 (그 작업 안에서 정체 감지)."""
-    with daemon.client() as ui:
-        job = ui.call("job.begin", {"playbook": "triage"})
+    job = daemon.begin_job({"playbook": "triage"})
     return {**AGENT, "id": job["agent_id"], "attended": False, "job_token": job["token"]}
 
 

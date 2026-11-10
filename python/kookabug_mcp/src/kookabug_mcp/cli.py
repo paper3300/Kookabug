@@ -9,6 +9,8 @@
   (`KOOKABUG_AGENT`와 같음)
 - `--job-token-env`(M8 R7): 그 환경 변수의 작업 토큰으로 붙는다 — 주체가 그 작업에 묶인다(자기
   신고가 아님). 토큰이 틀리거나 만료됐으면 daemon이 연결을 거부한다(종료 코드 6)
+- 작업 안(`KOOKABUG_JOB_TOKEN`이 있거나 `--agent-id`·`KOOKABUG_AGENT`가 `job:`)인데
+  `--job-token-env`가 없으면 붙지 않고 종료 코드 3 (`job_active` — 작업 예산·종료 감독 우회 금지)
 - daemon에 붙지 못하거나 판이 다르면 종료 코드 6. stdin이 끝나면 0
 - stdout은 프로토콜 전용, 로그는 stderr
 """
@@ -25,6 +27,8 @@ from typing import Any, BinaryIO, Final
 __all__ = ["EXIT_OK", "EXIT_USAGE", "add_parser", "run"]
 
 EXIT_OK: Final = 0
+EXIT_JOB_ACTIVE: Final = 3
+"""작업 안에서 토큰 없이 붙으려 했다 (`job_active`, M8 R8)."""
 EXIT_USAGE: Final = 6
 
 
@@ -50,6 +54,17 @@ def add_parser(commands: Any) -> None:
         help="작업 토큰을 읽을 환경 변수 이름 (agent-job이 정한다. 값은 인자로 받지 않는다)",
     )
     mcp.add_argument("--log-level", default="info", choices=["debug", "info", "warning", "error"])
+
+
+def _inside_job(agent_id: str | None) -> bool:
+    """작업 안에서 띄운 프로세스다: 작업 변수(토큰·작업 ID·작업 폴더·MCP 설정)가 있거나 주체 ID·
+    `KOOKABUG_AGENT`가 `job:`."""
+    from kookabug_core.service import JOB_ENV_NAMES
+
+    if any(os.environ.get(name) for name in JOB_ENV_NAMES):
+        return True
+    ids = (agent_id or "", os.environ.get("KOOKABUG_AGENT") or "")
+    return any(i.strip().lower().startswith("job:") for i in ids)
 
 
 def _workspace(given: str | None) -> Path:
@@ -85,6 +100,13 @@ def run(
         return EXIT_USAGE
     job_token: str | None = None
     env_name = getattr(args, "job_token_env", None)
+    if not env_name and _inside_job(args.agent_id):
+        # 작업 안에서 토큰 없이 붙으면 작업 예산·종료 감독을 피하는 Agent 연결이 된다 (M8 R8)
+        print(
+            "오류: job_active — 작업 안 Agent는 작업 토큰 연결(--job-token-env)로만 붙는다",
+            file=sys.stderr,
+        )
+        return EXIT_JOB_ACTIVE
     if env_name:
         # 토큰은 환경 변수로만 받는다 (argv·로그에 남지 않게, M8 R9). 없으면 붙지 않는다
         job_token = os.environ.get(str(env_name)) or None

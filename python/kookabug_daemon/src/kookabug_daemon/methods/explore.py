@@ -10,7 +10,7 @@ import asyncio
 from typing import Any, Final
 
 from kookabug_core.workspace import Workspace
-from kookabug_daemon.explore import DEFAULT_MAX_STEPS, check_texts
+from kookabug_daemon.explore import DEFAULT_MAX_STEPS, check_texts, job_secrets
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.protocol import InvalidParams, RequestFailed
 
@@ -66,7 +66,7 @@ def _start(call: Call) -> dict[str, Any]:
         )
         if v
     ]
-    check_texts(texts, call.daemon.guard, call.daemon.root)
+    check_texts(texts, call.daemon.guard, call.daemon.root, job_secrets(call.daemon))
     session = call.daemon.explore.start(
         call.connection,
         agent_id,

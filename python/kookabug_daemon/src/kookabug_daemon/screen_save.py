@@ -40,7 +40,13 @@ from kookabug_core.screens import (
     screen_index,
 )
 from kookabug_core.workspace import Workspace
-from kookabug_daemon.explore import ExploreSession, check_texts, plain_path, write_lock
+from kookabug_daemon.explore import (
+    ExploreSession,
+    check_texts,
+    job_secrets,
+    plain_path,
+    write_lock,
+)
 from kookabug_daemon.protocol import InvalidParams, RequestFailed
 
 if TYPE_CHECKING:
@@ -315,7 +321,7 @@ def save(call: Any, frame: EditorFrame, session: ExploreSession) -> dict[str, An
             raise _bad(f"elements[{i}]은(는) 객체다")
         _length(f"elements[{i}].name", cast(dict[str, Any], e).get("name"), _LIMITS["element"])
     # 3.5b: 글자 필드 전부 비밀값 검사 — 아무것도 쓰기 전에
-    check_texts(_texts(params), daemon.guard, root)
+    check_texts(_texts(params), daemon.guard, root, job_secrets(daemon))
 
     workspace = Workspace.open(root)
     confirmed = screen_index(workspace)

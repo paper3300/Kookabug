@@ -24,6 +24,14 @@ export interface Report {
   notes?: string | null;
   playbook: string;
   rendered?: string | null;
+  /**
+   * 생성 시점에 고정한 revision (렌더가 이 값을 쓴다 — 결정 뒤 다시 렌더해도 그대로)
+   */
+  revisions?: {
+    claims: {
+      [k: string]: number | undefined;
+    };
+  };
   started_at: string;
   state:
     | "budget_exhausted"

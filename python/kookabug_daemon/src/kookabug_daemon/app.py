@@ -51,6 +51,7 @@ from kookabug_core.service import (
 )
 from kookabug_core.validate.plugins import plugin_diagnostics, used_plugins
 from kookabug_core.workspace import Workspace, WorkspaceError
+from kookabug_daemon.adopt import JobAdopts
 from kookabug_daemon.agent_cache import AgentCache
 from kookabug_daemon.approvals import APPROVAL_TIMEOUT_S, ApprovalBroker
 from kookabug_daemon.documents import DocumentTable, GraphChecker
@@ -59,7 +60,7 @@ from kookabug_daemon.frame_guard import FILE as GUARD_FILE
 from kookabug_daemon.frame_guard import FrameGuard
 from kookabug_daemon.frames import FrameCache
 from kookabug_daemon.image_cache import EditorCache
-from kookabug_daemon.jobs import JobRegistry
+from kookabug_daemon.jobs import HEARTBEAT_S, Job, JobRegistry, JobSupervisor
 from kookabug_daemon.lease_watch import LeaseWatcher, lease_dir
 from kookabug_daemon.methods import MethodSpec, RunsLike, registry
 from kookabug_daemon.methods.screens import in_screens
@@ -155,6 +156,8 @@ class DaemonConfig:
     plugin_environ: Mapping[str, str] | None = None
     """플러그인 작업(uv·앱 SDK wheel 찾기)의 환경 변수. None이면 이 프로세스의 것 (검사 헬퍼만
     바꾼다)."""
+    job_heartbeat_s: float = HEARTBEAT_S
+    """작업 소유 연결 heartbeat 간격 (M8 R8: 3번 놓치면 유실). 검사 헬퍼만 바꾼다."""
 
 
 class PluginRegistry:
@@ -255,6 +258,16 @@ class Daemon:
         self.service = service or WorkspaceService(self.root)
         self.jobs = JobRegistry(str(self.root))
         """작업 토큰 (M8 R7, `job.begin`·`session.hello`의 `client.job_token`)."""
+        self.jobs.on_budget = lambda job: self.post(
+            lambda: self.notify_ui(
+                "job.budget",
+                {"job": job.id, "used": job.used(self.jobs.now()), "limit": dict(job.budget)},
+            )
+        )
+        self.job_adopts = JobAdopts()
+        """작업 연결이 낸 자동 채택 요청 (R8: 작업이 끝나면 취소 표시·검증 실행 취소)."""
+        self.job_supervisor = JobSupervisor(self.jobs, self)
+        """작업 종료 경로 하나 (R8)."""
         self._authorizer = Authorizer(self.service, jobs=self.jobs)
         self._documents = DocumentTable(self.root)
         plugin_environ = os.environ if config.plugin_environ is None else config.plugin_environ
@@ -289,6 +302,12 @@ class Daemon:
             platform=run_platform(config),
             plugin_modules=config.plugin_modules,
         )
+        # 작업 예산(실행 수)·정체 감지 기록 (M8 3.9·3.13)
+        self._run_manager.job_runs = self.jobs.take_run
+        self._run_manager.job_stalled = self.jobs.mark_stalled
+        self._run_manager.job_gate = self.jobs.require_running
+        self._run_manager.job_busy = self.jobs.active_id
+        self._run_manager.job_basis = self.jobs.basis_of
         self._runs: RunsLike = runs or self._run_manager
         # 상태 폴더는 runner에 넘기는 환경으로 정한다 (판정만 하는 서비스 대역에는 감독자가 없다)
         supervisor = getattr(self.service, "supervisor", None)
@@ -435,6 +454,212 @@ class Daemon:
         params = {"files": list(files)}
         self.post(lambda: self.notify_ui("knowledge.changed", params))
 
+    # ---------------------------------------------------------------- 작업 (M8 3.9, R8)
+
+    def input_busy(self) -> str | None:
+        """사람 입력 임대권·녹화 중이면 그 이유 (`job.begin` 준비 실패, 3.9). 막히는 호출."""
+        if self.shutting_down:
+            return "shutting_down"
+        if self._run_manager.recording_state() is not None:
+            return "recording"
+        owner = self._lease.current()
+        if owner is not None:
+            # 깨끗하게 놓지 않고 죽은 소유자는 다음 획득자가 복구한다 — 살아 있을 때만 바쁨
+            from kookabug_core.win import ProcessId, is_alive
+
+            try:
+                alive = is_alive(ProcessId.from_json(owner))
+            except Exception:
+                alive = True  # 소유자를 확인하지 못하면 안전 쪽(바쁨)
+            if alive:
+                return "input_lease"
+        return None
+
+    def _end_running_jobs(self) -> None:
+        """daemon이 끝난다: 아직 도는 작업을 `interrupted`로 끝낸다 (이미 끝나는 중이면 그 결과를
+        기다린다 — 멱등)."""
+        for job in self.jobs.all():
+            if not job.ended.is_set():
+                try:
+                    ended = self.job_supervisor.end(job.id, "interrupted", wait_s=30.0)
+                    if ended.get("state") == "ending":
+                        # 입력 복구를 확인하지 못한 채 daemon이 끝난다: 남은 runner는 감독자 유실로
+                        # 스스로 풀고 끝난다. 다음 daemon 시작(_recover_jobs)이 확인을 이어받는다
+                        self._mark_unconfirmed(job)
+                except Exception:
+                    log.exception("작업 %s을(를) 끝내지 못했다", job.id)
+
+    def _mark_unconfirmed(self, job: Job) -> None:
+        """`job.json`에 `recovery_unconfirmed`를 남긴다 (감독하던 agent-job이 없을 때만 — 있으면
+        그쪽이 같은 표시를 쓴다)."""
+        from kookabug_core.agent_job import jobdir
+
+        doc = jobdir.read_job(self.root, job.id)
+        if doc is None or doc.get("state") not in ("running",) or not jobdir.lock_free(self.root):
+            return
+        try:
+            body = {k: v for k, v in doc.items() if k != "format"}
+            jobdir.write_job(self.root, {**body, "state": jobdir.UNCONFIRMED, "target": job.target})
+        except Exception:
+            log.exception("작업 %s의 job.json을 맞추지 못했다", job.id)
+
+    def _end_job_async(self, job_id: str, state: str) -> None:
+        threading.Thread(
+            target=self._end_job_quiet, args=(job_id, state), name="job-end", daemon=True
+        ).start()
+
+    def _end_job_quiet(self, job_id: str, state: str) -> None:
+        try:
+            self.job_supervisor.end(job_id, state)
+        except Exception:
+            log.exception("작업 %s을(를) 끝내지 못했다", job_id)
+
+    async def _job_watch(self) -> None:
+        """소유 연결 heartbeat·기한 감독 (R8). 끝낼 작업은 종료 경로 스레드로 넘긴다."""
+        interval = max(0.05, min(1.0, self.config.job_heartbeat_s / 4))
+        retrying: asyncio.Task[None] | None = None
+        while not self._shutting_down:
+            for job, state in self.jobs.overdue(self.config.job_heartbeat_s):
+                log.warning("작업 %s: 감독이 끝낸다 (%s)", job.id, state)
+                self._end_job_async(job.id, state)
+            # 입력 복구를 확인하지 못한 작업: 강제 복구를 다시 한다 (한 번에 하나)
+            if (retrying is None or retrying.done()) and self.jobs.unsettled():
+                retrying = asyncio.ensure_future(
+                    asyncio.to_thread(self.job_supervisor.retry_unsettled)
+                )
+            await asyncio.sleep(interval)
+
+    # JobHost (jobs.JobSupervisor가 부른다 — 이벤트 루프 밖 스레드)
+
+    def cancel_job_runs(self, job: str) -> list[str]:
+        """그 작업의 실행 취소 + 그 작업이 낸 채택 요청에 취소 표시·도는 검증 실행 취소."""
+        runs = self._run_manager.cancel_job(job)
+        verify = self.job_adopts.cancel(job)
+        return sorted({*runs, *verify})
+
+    def _job_runs(self, job: str, runs: list[str]) -> list[str]:
+        """확인할 실행: 종료 경로가 취소한 것(채택 검증 포함) + 그 작업 연결이 낸 모든 실행."""
+        return sorted({*runs, *self._run_manager.job_run_ids(job)})
+
+    def wait_job_settled(self, job: str, runs: list[str], timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        settled = self.job_adopts.wait(job, max(0.0, deadline - time.monotonic()))
+        # 종료 경로 앞에서 막 예약된 실행이 있었으면 취소한다 (토큰이 폐기돼 새로 생기지 않는다)
+        self._run_manager.cancel_job(job)
+        for run_id in self._job_runs(job, runs):
+            left = max(0.0, deadline - time.monotonic())
+            if not self._run_manager.run_settled(run_id, left):
+                settled = False
+        return settled
+
+    def force_settle(self, job: str, runs: list[str], timeout: float) -> bool:
+        self.job_adopts.cancel(job)
+        settled = self.job_adopts.wait(job, timeout)
+        self._run_manager.cancel_job(job)
+        for run_id in self._job_runs(job, runs):
+            if not self._run_manager.run_settled(run_id, timeout, force=True):
+                settled = False
+        return settled
+
+    def write_report(self, job: Job, state: str, prep: str | None) -> str | None:
+        from kookabug_core.agent_job import report as reports
+        from kookabug_daemon.methods.adopt import text_checker
+
+        meta = {
+            "id": job.id,
+            "playbook": job.playbook,
+            "trigger": job.trigger,
+            "agent": {"profile": job.profile},
+            "started_at": job.started_at,
+            "budget": dict(job.budget),
+        }
+        notes = job.notes[-1] if job.notes else None
+        if notes is not None:
+            # 메모는 job.note 때 검사했지만 그 뒤 비밀값이 더해졌을 수 있다 — 같은 검사기로 다시
+            # 본다 (작업 토큰은 폐기했어도 보고를 쓸 때까지 메모리에 있어 검사 대상이다)
+            try:
+                text_checker(self)([("notes", notes)])
+            except Exception:
+                notes = None  # 확인하지 못한 글은 보고에 넣지 않는다
+        rendered: str | None = None
+        try:
+            built = reports.build(
+                self.root,
+                meta,
+                state=state,
+                used=job.used(self.jobs.now()),
+                notes=notes,
+                stalled=sorted(job.stalled),
+                prep=prep,
+            )
+            written = reports.write(self.root, built)
+            self.post(lambda: self.notify_ui("reports.changed", {}))
+            rendered = str(written.get("rendered") or "") or None
+        except Exception:
+            # 복구는 확인됐다: 보고 없이 끝낸다 (슬롯은 풀리고 jobs.list의 report는 null)
+            log.warning("작업 %s: 보고를 쓰지 못했다 — report 없이 끝낸다", job.id, exc_info=True)
+        self._settle_job_file(job, state, rendered)
+        return rendered
+
+    def _settle_job_file(self, job: Job, state: str, rendered: str | None) -> None:
+        """감독하던 `agent-job`이 없어졌으면(`jobs.lock`이 풀림) 남은 `job.json`을 끝 상태로
+        맞춘다 — 살아 있으면 그쪽이 쓴다(두 쓰는 쪽이 겹치지 않게)."""
+        from kookabug_core.agent_job import jobdir
+
+        doc = jobdir.read_job(self.root, job.id)
+        unsettled = ("running", jobdir.UNCONFIRMED)
+        if doc is None or doc.get("state") not in unsettled or not jobdir.lock_free(self.root):
+            return
+        try:
+            body = {k: v for k, v in doc.items() if k != "format"}
+            used = job.used(self.jobs.now())
+            jobdir.write_job(self.root, {**body, "state": state, "report": rendered, "used": used})
+        except Exception:
+            log.exception("작업 %s의 job.json을 맞추지 못했다", job.id)
+
+    def job_changed(self, job: Job) -> None:
+        params = {"job": job.id, "state": job.state, "used": job.used(self.jobs.now())}
+        self.post(lambda: self.notify_ui("job.changed", params))
+
+    def _recover_jobs(self) -> None:
+        """daemon 시작: 지난 daemon이 남긴 `running`·`recovery_unconfirmed` 작업을 끝낸다 (3.9
+        "재시작", R8). 그 작업을 감독하던 `agent-job`이 살아 있으면(`jobs.lock`을 쥐고 있음) 그쪽이
+        끝낸다. 지난 daemon의 실행 입력이 풀렸는지 먼저 확인한다(`input_settled` — 못 하면
+        `recovery_unconfirmed`로 두고 보고를 쓰지 않는다. 다음 시작이 다시 본다)."""
+        from kookabug_core.agent_job import jobdir
+        from kookabug_core.agent_job import report as reports
+        from kookabug_core.agent_job.settle import input_settled
+
+        if not jobdir.lock_free(self.root):
+            return
+        supervisor = getattr(self.service, "supervisor", None)
+        environ = getattr(supervisor, "env", None) or os.environ
+        settled: bool | None = None
+        for doc in list(jobdir.list_jobs(self.root)):
+            if doc.get("state") not in ("running", jobdir.UNCONFIRMED):
+                continue
+            body = {k: v for k, v in doc.items() if k != "format"}
+            try:
+                if settled is None:
+                    settled = input_settled(self.root, environ)
+                if not settled:
+                    if doc.get("state") != jobdir.UNCONFIRMED:
+                        jobdir.write_job(self.root, {**body, "state": jobdir.UNCONFIRMED})
+                    log.warning("지난 작업 %s: 입력 복구를 확인하지 못했다", doc.get("id"))
+                    continue
+                used = {k: int(v) for k, v in dict(doc.get("used") or {}).items()}
+                state = str(doc.get("target") or "interrupted")
+                if state not in jobdir.TERMINAL:
+                    state = "interrupted"
+                built = reports.build(self.root, doc, state=state, used=used, notes=None)
+                written = reports.write(self.root, built)
+                jobdir.write_job(
+                    self.root, {**body, "state": state, "report": written.get("rendered")}
+                )
+                log.warning("지난 daemon의 작업 %s을(를) %s(으)로 끝냈다", doc.get("id"), state)
+            except Exception:
+                log.exception("남은 작업 %s을(를) 정리하지 못했다", doc.get("id"))
+
     def _explore_changed(self) -> None:
         """탐색 세션·후보가 바뀌었다: ui 연결에 목록을 알린다 (`explore.changed`)."""
         sessions = self.explore.listing(Workspace.open(self.root))
@@ -450,6 +675,9 @@ class Daemon:
                 name="explore-end",
                 daemon=True,
             ).start()
+        # 작업 소유 연결이 끊겼다 (agent-job 유실, R8): 같은 종료 경로로 끝낸다 — 토큰부터
+        for job in self.jobs.owned_by(number):
+            self._end_job_async(job.id, "interrupted")
         self._documents.release_connection(number)
         self._run_manager.connection_closed(number)
         self.recorder.connection_closed(number)
@@ -639,6 +867,8 @@ class Daemon:
             await asyncio.to_thread(self.guard.load)
             # 남은 화면 지도 승격 거래를 끝낸다 (M7 3.7 — 커밋이면 앞으로, 아니면 뒤로)
             await asyncio.to_thread(self._recover_screens)
+            # 지난 daemon의 끝나지 않은 작업 (M8 3.9 "재시작": interrupted + 보고 하나)
+            await asyncio.to_thread(self._recover_jobs)
             async with self.transport.serve() as server:
                 port = self.transport.bound(server)
                 await asyncio.to_thread(_faults.fault_point, "daemon.before_session_publish")
@@ -667,12 +897,15 @@ class Daemon:
                     asyncio.create_task(self._idle_watch()),
                     asyncio.create_task(watcher.run()),
                     asyncio.create_task(self._lease.run()),
+                    asyncio.create_task(self._job_watch()),
                 ]
                 if not self._shutting_down:
                     await self._stop.wait()
                 if self._force:
                     await asyncio.to_thread(self._runs.cancel_all_and_wait)
                 await self.transport.close_all(self.exit_reason or "shutdown")
+                # 남은 작업은 같은 종료 경로로 끝낸다 (3.9 "재시작": interrupted + 보고 하나)
+                await asyncio.to_thread(self._end_running_jobs)
                 for task in tasks:
                     task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)

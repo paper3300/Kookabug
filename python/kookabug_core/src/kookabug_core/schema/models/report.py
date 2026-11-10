@@ -95,6 +95,20 @@ class Rendered(RootModel[str]):
     root: Annotated[str, Field(max_length=200, min_length=1)]
 
 
+type ClaimsAdditionalProperty = Annotated[int, Field(ge=1)]
+
+
+class Revisions(BaseModel):
+    """
+    생성 시점에 고정한 revision (렌더가 이 값을 쓴다 — 결정 뒤 다시 렌더해도 그대로)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    claims: dict[str, ClaimsAdditionalProperty]
+
+
 class Report(BaseModel):
     """
     작업 보고 knowledge/reports/<작업 ID>.json (M8 계획 3.11). 항목은 Kookabug가 작업의 구조화 기록에서 만들고 Agent 글은 notes 하나
@@ -112,6 +126,12 @@ class Report(BaseModel):
     notes: Notes | None = None
     playbook: Annotated[str, Field(max_length=200, min_length=1)]
     rendered: Rendered | None = None
+    revisions: Annotated[
+        Revisions | None,
+        Field(
+            description="생성 시점에 고정한 revision (렌더가 이 값을 쓴다 — 결정 뒤 다시 렌더해도 그대로)"
+        ),
+    ] = None
     started_at: Annotated[str, Field(max_length=40, min_length=1)]
     state: Literal[
         "budget_exhausted", "cancelled", "done", "failed", "interrupted", "prep_failed", "running"

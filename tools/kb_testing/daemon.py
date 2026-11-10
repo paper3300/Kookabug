@@ -162,6 +162,7 @@ class ThreadDaemon:
         agent_toolsets: Iterable[str] | None = None,
         approval_timeout_s: float | None = None,
         plugin_environ: Mapping[str, str] | None = None,
+        job_heartbeat_s: float | None = None,
     ) -> None:
         """`agent_toolsets`: agent 연결이 hello 때 갖는 툴셋. None이면 **전부**(M5 이전 검사가
         툴셋 없이 판정만 보던 그대로). M5 툴셋 검사는 제품 기본값 `("core",)`을 넘긴다.
@@ -173,6 +174,9 @@ class ThreadDaemon:
             extra["approval_timeout_s"] = approval_timeout_s
         if plugin_environ is not None:
             extra["plugin_environ"] = dict(plugin_environ)
+        if job_heartbeat_s is not None:
+            extra["job_heartbeat_s"] = job_heartbeat_s
+        self._owners: list[tuple[DaemonClient, threading.Event, threading.Thread]] = []
         config = DaemonConfig(
             **extra,
             agent_toolsets=frozenset(TOOLSETS if agent_toolsets is None else agent_toolsets),
@@ -215,9 +219,36 @@ class ThreadDaemon:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
+        for client, stop, beat in self._owners:
+            stop.set()
+            beat.join(5)
+            client.close()
         self.daemon.stop("test")
         self._thread.join(30)
         self.lock.close()
+
+    def begin_job(self, params: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        """`job.begin`을 부르고 그 소유 연결(M8 R8)을 이 daemon이 끝날 때까지 열어 두며 heartbeat를
+        보낸다 (`agent-job` 대역). 결과에 `owner`(그 연결)를 더한다 — 검사가 끊어 유실을 흉내
+        낸다."""
+        client = self.client()
+        begun = dict(client.call("job.begin", {"playbook": "triage", **dict(params or {})}))
+        stop = threading.Event()
+        every = max(0.05, self.daemon.config.job_heartbeat_s / 3)
+
+        def beat() -> None:
+            while not stop.wait(every):
+                try:
+                    client.call("job.heartbeat", {"job": begun["job"]}, timeout=5)
+                except Exception:
+                    return
+
+        thread = threading.Thread(target=beat, name="job-owner-beat", daemon=True)
+        if begun.get("state") == "running":
+            thread.start()
+        self._owners.append((client, stop, thread))
+        begun["owner"] = client
+        return begun
 
     @property
     def session(self) -> SessionInfo:

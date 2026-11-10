@@ -781,6 +781,7 @@ def publish_auto(
     max_adoptions: int,
     check: Callable[[], Problem | None],
     check_secrets: Callable[[Sequence[tuple[str, str]]], None] | None = None,
+    job: str | None = None,
 ) -> dict[str, Any]:
     """조건 7·8 (R1): 채택 잠금 안에서 후보 digest·정책 digest·팀 revision(후보 밖 폐포·주장
     rev)·누적 상한을 다시 확인하고 한 거래로 게시한다. `check()`는 잠금 안에서 부르는 추가
@@ -791,7 +792,8 @@ def publish_auto(
     from kookabug_core.knowledge.formats import Actor, new_id, now, strings_of
     from kookabug_core.knowledge.ops import log_into
 
-    actor = Actor("kookabug", "adopt")
+    # 작업이 낸 채택 요청이면 감사 이력에 그 작업을 남긴다 (보고 항목 `auto_adopted`의 근거, B5)
+    actor = Actor("kookabug", "adopt", job=job)
     with filetx.file_lock(root, ADOPT_LOCK), filetx.locked(root):
         change = basis.load_change(root, manifest.change)
         if change is None or change.state != "active":
@@ -896,7 +898,7 @@ def publish_auto(
     return record
 
 
-def log_cancelled(root: Path, case_id: str, change_id: str) -> None:
+def log_cancelled(root: Path, case_id: str, change_id: str, *, job: str | None = None) -> None:
     """취소된 자동 채택 요청을 감사 이력에 남긴다 (게시하지 않았다 — 사건·작업 기준 변경은 그대로).
     ID 두 개는 요청이 준 값이지만 이미 있는 사건·변경 ID로 확인된 것이다."""
     from kookabug_core import filetx
@@ -912,7 +914,7 @@ def log_cancelled(root: Path, case_id: str, change_id: str) -> None:
     }
     with filetx.file_lock(root, ADOPT_LOCK), filetx.locked(root):
         tx = filetx.Tx(root)
-        log_into(root, tx, [entry], Actor("kookabug", "adopt"))
+        log_into(root, tx, [entry], Actor("kookabug", "adopt", job=job))
         tx.commit()
 
 
@@ -1050,12 +1052,16 @@ def decide(
     claims: Sequence[Mapping[str, Any]],
     accept: bool,
     by: str,
+    also: Callable[[Any], None] | None = None,
 ) -> dict[str, Any]:
     """`working.accept`·`working.reject` (사람 전용). 수락은 파일 변경·작업 주장을 한 거래로 팀에
     반영한다(전부 또는 없음): 변경마다 팀 파일 sha가 `base_sha256`와 같아야 하고
     (`revision_conflict`),
     사본이 `after_sha256`와 같아야 한다. 거절은 덧씌움에서 뺀다(`rejected`, 팀 파일 그대로).
-    화면 지도 후보는 다루지 않는다(D6 승격)."""
+    화면 지도 후보는 다루지 않는다(D6 승격).
+
+    `also(tx)`: 같은 잠금·같은 거래에 더 쓸 것 (M8 `report.decide`의 보고 결정 — 재확인도 그 안에서
+    한다). 예외를 내면 아무것도 반영하지 않는다."""
     from kookabug_core import basis, evidence, filetx
     from kookabug_core.knowledge.formats import Actor, KnowledgeError, new_id, now
     from kookabug_core.knowledge.ops import decide_working_claims, log_into
@@ -1179,6 +1185,8 @@ def decide(
                 }
                 for c in loaded
             ]
+            if also is not None:
+                also(tx)
             log_into(root, tx, entries, actor)
             tx.commit()
     except filetx.TxError as exc:

@@ -456,7 +456,12 @@ def recover_run(
         # 옆 파일에는 이 감독자(run_dir = 그 실행)가 dirty로 남는다 → 다음 획득자가 그 실행을 복구
         lease.abandon()
         raise
-    lease.release(None)
+    try:
+        lease.release(None)
+    finally:
+        # 놓기 기록이 실패해도 쥔 채 두지 않는다 (키는 이미 뗐고 표시도 남겼다 → 다음 획득자는
+        # 뗄 것이 없다). 예외는 그대로 → 부르는 쪽은 확인 못 함으로 보고 다시 부른다
+        lease.abandon()
     return outcome
 
 

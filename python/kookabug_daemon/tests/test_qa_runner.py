@@ -111,8 +111,12 @@ def daemon(ws: Path) -> Iterator[ThreadDaemon]:
 
 
 def job_agent(d: ThreadDaemon) -> dict[str, Any]:
-    with d.client() as ui:
-        job = ui.call("job.begin", {"playbook": "triage"})
+    # 워크스페이스당 끝나지 않은 작업은 하나다 (M8 R8) — 앞 작업을 끝내고 새로 만든다
+    for live in d.daemon.jobs.all():
+        if not live.ended.is_set():
+            with d.client() as ui:
+                ui.call("job.end", {"job": live.id, "reason": "done"}, timeout=300)
+    job = d.begin_job({"playbook": "triage"})
     return {
         "kind": "agent",
         "name": "mcp",
@@ -124,6 +128,13 @@ def job_agent(d: ThreadDaemon) -> dict[str, Any]:
 
 
 PLAIN = {"kind": "agent", "name": "mcp", "version": "0", "id": "qa-1", "attended": False}
+
+
+def agents(d: ThreadDaemon) -> Iterator[dict[str, Any]]:
+    """작업 밖 Agent를 먼저(작업이 없을 때 — 작업 중이면 실행·입력이 `job_active`), 그다음 작업
+    Agent."""
+    yield PLAIN
+    yield job_agent(d)
 
 
 def ended(conn: DaemonClient, run_id: str) -> dict[str, Any]:
@@ -152,7 +163,7 @@ def test_qa_runner_refuses_working_basis(ws: Path, daemon: ThreadDaemon) -> None
     pass_bytes = (ws / PASS_GRAPH).read_bytes()
     changed = pass_bytes.replace(b"core.test.pass", b"core.test.fail")
     basis.write(ws, {PASS_GRAPH: changed}, actor=Actor("agent", "other"), kind="graph")
-    for info in (PLAIN, job_agent(daemon)):
+    for info in agents(daemon):
         with daemon.client(info) as conn:
             kind = refused(
                 conn, "run.start", {"path": PASS_GRAPH, "basis": "working", "idempotency_key": "w"}
@@ -168,7 +179,7 @@ def test_qa_runner_refuses_working_basis(ws: Path, daemon: ThreadDaemon) -> None
 
 def test_qa_runner_no_direct_input(ws: Path, daemon: ThreadDaemon) -> None:
     before = (ws / PASS_GRAPH).read_bytes()
-    for info in (PLAIN, job_agent(daemon)):
+    for info in agents(daemon):
         with daemon.client(info) as conn:
             for method, params in (
                 ("control.click", {"window": "SampleRPG 상점", "point": [1, 1]}),

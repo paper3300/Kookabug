@@ -77,6 +77,10 @@ class LeaseWatcher:
             log.debug("입력 임대권 옆 파일을 읽지 못했다: %s", exc)
             return self.owner
 
+    def current(self) -> dict[str, Any] | None:
+        """지금 옆 파일의 소유자 (막히는 호출 — `job.begin` 준비 확인)."""
+        return self._read()
+
     async def run(self) -> None:
         # 첫 읽기도 바뀜으로 본다: 그 전에 붙은 연결은 hello 때 "없음"(null)을 받았다
         while True:

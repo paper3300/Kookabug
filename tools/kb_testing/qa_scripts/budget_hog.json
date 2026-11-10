@@ -1,0 +1,19 @@
+{
+  "description": "예산 먹보: 실행(tests/pass.graph.json — 검사가 둔다)을 계속 시작한다. 상한에서 job_budget_exhausted를 받은 뒤에도 끝내지 않고 버틴다 (agent-job이 유예 뒤 CLI 트리를 끝내야 한다). 비밀값·토큰을 일부러 출력한다 (agent.log 가림의 양성 입력)",
+  "steps": [
+    {"print_env": "KOOKABUG_JOB_TOKEN"},
+    {"print_split_env": "KOOKABUG_JOB_TOKEN"},
+    {"print_env": "KB_TEST_SECRET_VALUE"},
+    {"print_split_env": "KB_TEST_SECRET_VALUE"},
+    {"spawn_child_sleep": 600},
+    {"toolsets": ["run"]},
+    {
+      "tool": "kb_run_start",
+      "args": {"path": "tests/pass.graph.json", "idempotency_key": "hog-{i}", "basis": "team"},
+      "repeat": 20,
+      "until_error": "job_budget_exhausted",
+      "then": {"tool": "kb_run_status", "args": {"run": "{run}", "wait_ms": 30000}}
+    },
+    {"sleep": 600}
+  ]
+}

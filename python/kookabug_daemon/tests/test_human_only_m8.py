@@ -50,6 +50,7 @@ PARAMS: dict[str, dict[str, Any]] = {
     "job.begin": {"playbook": "triage"},
     "job.end": {"job": JOB, "reason": "cancelled"},
     "job.finish": {"job": JOB},
+    "job.heartbeat": {"job": JOB},
     "jobs.list": {},
     "reports.list": {},
     "reports.get": {"job": JOB},
@@ -99,8 +100,8 @@ def test_table_covers_every_m8_ui_only_method() -> None:
 
 def test_all_human_methods_denied_for_agent(ws: Path, daemon: ThreadDaemon) -> None:
     before = tree_digest(ws)
-    with daemon.client() as ui:
-        begun = ui.call("job.begin", {"playbook": "triage"})
+    # 소유 연결을 열어 둔다 (R8: 끊기면 작업이 끝나 토큰이 무효)
+    begun = daemon.begin_job({"playbook": "triage"})
     clients = [
         {"kind": "agent", "name": "mcp", "version": "0", "id": "panel", "attended": True},
         {

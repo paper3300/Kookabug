@@ -57,8 +57,8 @@ def daemon(ws: Path) -> Iterator[ThreadDaemon]:
 
 
 def begin(d: ThreadDaemon, **params: Any) -> dict[str, Any]:
-    with d.client() as ui:
-        return ui.call("job.begin", {"playbook": "triage", **params})
+    # 소유 연결은 열어 둔다 (R8: 끊기면 작업이 끝나 토큰이 폐기된다)
+    return d.begin_job({"playbook": "triage", **params})
 
 
 def refused_hello(d: ThreadDaemon, info: dict[str, Any]) -> DaemonError:
@@ -68,11 +68,14 @@ def refused_hello(d: ThreadDaemon, info: dict[str, Any]) -> DaemonError:
 
 
 def test_invalid_token_refused(daemon: ThreadDaemon) -> None:
+    # 워크스페이스당 끝나지 않은 작업은 하나다 (R8) — 작업 A를 끝낸 뒤 B를 만든다
+    old = begin(daemon)
+    with daemon.client() as ui:
+        ui.call("job.end", {"job": old["job"], "reason": "cancelled"}, timeout=300)
     job = begin(daemon)
-    # 모르는 토큰, 다른 작업의 주체 ID(작업 A의 토큰을 작업 B 주체로), 형식이 틀린 토큰
+    # 모르는 토큰, 다른 작업의 주체 ID(살아 있는 작업 B의 토큰을 작업 A 주체로), 형식이 틀린 토큰
     assert refused_hello(daemon, agent(job["agent_id"], token="x" * 43)).kind == "job_token_invalid"
-    other = begin(daemon)
-    assert refused_hello(daemon, agent(other["agent_id"], token=job["token"])).kind == (
+    assert refused_hello(daemon, agent(old["agent_id"], token=job["token"])).kind == (
         "job_token_invalid"
     )
     assert refused_hello(daemon, agent("mcp:1", token=job["token"])).kind == "job_token_invalid"
@@ -99,13 +102,20 @@ def test_expired_token_refused(daemon: ThreadDaemon) -> None:
     assert refused_hello(daemon, agent(job["agent_id"], token=job["token"])).kind == (
         "job_token_invalid"
     )
+    # 토큰이 만료돼도 작업은 감독이 끝낼 때까지 슬롯을 쥔다 — 끝내고 다음 작업
+    with daemon.client() as ui:
+        ui.call("job.end", {"job": job["job"], "reason": "cancelled"}, timeout=300)
     # 폐기(job.end): 토큰 먼저 폐기 → 붙은 연결도 그 뒤 거부
     live = begin(daemon)
     with daemon.client(agent(live["agent_id"], token=live["token"])) as conn:
         assert conn.call("workspace.info")["root"]
         with daemon.client() as ui:
             ended = ui.call("job.end", {"job": live["job"], "reason": "cancelled"})
-            assert ended == {"job": live["job"], "cancelled": []}
+            assert (ended["job"], ended["cancelled"], ended["state"]) == (
+                live["job"],
+                [],
+                "cancelled",
+            )
             # 멱등
             assert ui.call("job.end", {"job": live["job"], "reason": "cancelled"})["job"]
         with pytest.raises(DaemonError) as caught:

@@ -53,7 +53,9 @@ if TYPE_CHECKING:
 
 __all__ = [
     "Adopter",
+    "JobAdopts",
     "Negative",
+    "PendingAdopt",
     "RunVerifier",
     "Verifier",
     "VerifyOutcome",
@@ -118,16 +120,38 @@ class RunVerifier:
     `verification_active`로 거부되고, 검증 실행이 아닌 실행·제어·녹화·게임 띄우기가 하나라도
     시작되면 입력 세대가 올라 그 뒤 검증은 무효(`verify_error`, `input_between_verifications`)다."""
 
-    def __init__(self, manager: RunManager, *, timeout_s: float = VERIFY_TIMEOUT_S) -> None:
+    def __init__(
+        self,
+        manager: RunManager,
+        *,
+        timeout_s: float = VERIFY_TIMEOUT_S,
+        budget: Callable[[], None] | None = None,
+    ) -> None:
         self.manager = manager
         self.timeout_s = timeout_s
+        self.budget = budget
+        """작업 연결의 채택 요청이면 검증 실행마다 작업 실행 예산을 쓴다 (`job_budget_exhausted`면
+        그 검증을 시작하지 않는다 — 조율자 결정: 검증 실행도 예산에 센다)."""
         self._epoch = manager.begin_verification()
         self._closed = False
+        self._lock = threading.Lock()
+        self._current: str | None = None
+        self._cancelled = False
 
     def close(self) -> None:
         if not self._closed:
             self._closed = True
             self.manager.end_verification()
+
+    def cancel(self) -> str | None:
+        """작업이 끝났다 (R8): 다음 검증을 시작하지 않고 도는 검증 실행을 취소한다. 그 실행 ID."""
+        with self._lock:
+            self._cancelled = True
+            current = self._current
+        if current is not None:
+            with contextlib.suppress(RequestFailed):
+                self.manager.cancel(current)
+        return current
 
     def intervened(self) -> bool:
         """세션을 연 뒤 검증 실행이 아닌 입력(실행·제어·녹화·게임 띄우기)이 시작됐다 (R7). 검증
@@ -145,11 +169,27 @@ class RunVerifier:
         from kookabug_daemon.runs import InputBetweenVerifications
 
         between = VerifyOutcome(None, error="verify_error", code="input_between_verifications")
+        with self._lock:
+            if self._cancelled:
+                return VerifyOutcome(None, error=CANCELLED)
+        if self.budget is not None:
+            try:
+                self.budget()
+            except RequestFailed as exc:
+                code = exc.code if exc.code == "job_budget_exhausted" else CANCELLED
+                return VerifyOutcome(None, error=code)
         try:
             # 세대 확인과 예약은 실행 관리자의 같은 잠금 안에서 한다 (확인 → 예약 사이 틈 없음)
             run_id = self.manager.start_verify(
                 graph, overlay=overlay, profile=profile, basis=basis, epoch=self._epoch
             )
+            with self._lock:
+                self._current = run_id
+                cancelled = self._cancelled
+            if cancelled:
+                # 시작과 작업 끝이 겹쳤다: 바로 취소한다 (cancel이 이 실행을 못 봤을 수 있다)
+                with contextlib.suppress(RequestFailed):
+                    self.manager.cancel(run_id)
         except InputBetweenVerifications:
             # 검증 사이(또는 세션을 연 뒤) 다른 입력이 있었다: 초기 상태가 아니므로 무효
             return between
@@ -158,6 +198,10 @@ class RunVerifier:
                 return VerifyOutcome(None, error="input_busy")
             return VerifyOutcome(None, error="verify_error", code=exc.code)
         outcome = self.manager.wait_outcome(run_id, self.timeout_s)
+        with self._lock:
+            self._current = None
+            if self._cancelled:
+                return VerifyOutcome(run_id, error=CANCELLED)
         if outcome is None:
             with contextlib.suppress(RequestFailed):
                 self.manager.cancel(run_id)
@@ -182,6 +226,61 @@ class RunVerifier:
             qa=run_json.get("qa"),
             snapshot=snapshot_shas(outcome.run_dir),
         )
+
+
+@dataclass(slots=True)
+class PendingAdopt:
+    """작업 연결이 낸 채택 요청 하나 (R8 종료 경로가 취소한다)."""
+
+    job: str
+    cancelled: threading.Event
+    done: threading.Event = field(default_factory=threading.Event)
+    verifier: RunVerifier | None = None
+
+
+class JobAdopts:
+    """작업별 진행 중 채택 요청. 작업이 끝나면(`cancel`) 취소 표시를 세우고 도는 검증 실행을
+    취소한다 — 그 채택은 `adopt_cancelled`로 끝나고 게시하지 않는다(이미 게시 거래에
+    들어갔으면 끝까지)."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._items: list[PendingAdopt] = []
+
+    def add(self, job: str, cancelled: threading.Event) -> PendingAdopt:
+        pending = PendingAdopt(job, cancelled)
+        with self._lock:
+            self._items.append(pending)
+        return pending
+
+    def attach(self, pending: PendingAdopt, verifier: RunVerifier) -> None:
+        with self._lock:
+            pending.verifier = verifier
+            cancelled = pending.cancelled.is_set()
+        if cancelled:
+            verifier.cancel()
+
+    def finish(self, pending: PendingAdopt) -> None:
+        with self._lock:
+            if pending in self._items:
+                self._items.remove(pending)
+        pending.done.set()
+
+    def cancel(self, job: str) -> list[str]:
+        """그 작업의 채택 요청 모두에 취소 표시, 도는 검증 실행을 취소한다. 취소한 실행 ID."""
+        with self._lock:
+            mine = [p for p in self._items if p.job == job]
+            for p in mine:
+                p.cancelled.set()
+            verifiers = [p.verifier for p in mine if p.verifier is not None]
+        return sorted(r for v in verifiers if (r := v.cancel()) is not None)
+
+    def wait(self, job: str, timeout: float) -> bool:
+        """그 작업의 채택 요청 스레드가 모두 끝나기를 기다린다."""
+        deadline = time.monotonic() + timeout
+        with self._lock:
+            mine = [p for p in self._items if p.job == job]
+        return all(p.done.wait(max(0.0, deadline - time.monotonic())) for p in mine)
 
 
 @dataclass(frozen=True, slots=True)
@@ -391,8 +490,11 @@ class Adopter:
         *,
         check_secrets: Callable[[Sequence[tuple[str, str]]], None] | None = None,
         cancelled: threading.Event | None = None,
+        job: str | None = None,
     ) -> None:
         self.root = root
+        self.job = job
+        """요청한 작업 (감사 이력 `job` — 보고가 이 작업의 채택을 찾는다)."""
         self.verifier = verifier
         self.cancelled = cancelled or threading.Event()
         """요청이 취소됐다(연결 끊김 포함): 다음 검증·게시를 하지 않는다. 이미 게시 거래에
@@ -424,7 +526,7 @@ class Adopter:
         if problem.code == CANCELLED:
             # 사건·작업 기준 변경은 그대로 두고 감사 이력에 취소만 남긴다 (못 남겨도 결과는 같다)
             try:
-                rules.log_cancelled(self.root, case_id, change_id)
+                rules.log_cancelled(self.root, case_id, change_id, job=self.job)
             except (KnowledgeError, filetx.TxError) as exc:
                 log.warning("취소된 채택 요청을 감사 이력에 남기지 못했다: %s", exc.code)
         return self._result(None, problem)
@@ -475,6 +577,7 @@ class Adopter:
                     max_adoptions=int(ctx.repair.get("max_adoptions", 20)),
                     check=lambda: self._recheck(ctx),
                     check_secrets=self.check_secrets,
+                    job=self.job,
                 )
             except rules.AdoptFailed as exc:
                 return self._failed(case_id, change_id, exc.problem)
@@ -655,6 +758,17 @@ class Adopter:
         out = self.verifier.run(test, overlay, profile=ctx.profile, basis=record)
         if out.run_id is not None:
             self.runs.append(out.run_id)
+        if out.error == CANCELLED:
+            # 작업이 끝났다 (R8 종료 경로가 검증 실행을 취소했다) — 게시하지 않는다
+            self.cancelled.set()
+        if (cancelled := self._cancel_problem()) is not None:
+            return cancelled
+        if out.error == "job_budget_exhausted":
+            return rules.Problem(
+                condition,
+                "job_budget_exhausted",
+                "작업 실행 예산을 다 써 검증 실행을 시작하지 않았다 (채택하지 않음)",
+            )
         if out.error == "input_busy":
             return rules.Problem(
                 4, "input_busy", "입력 임대권·녹화·다른 실행 중이라 검증하지 못했다"

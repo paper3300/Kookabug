@@ -103,8 +103,17 @@ def write_lock(root: Path, session: ExploreSession | None = None) -> Iterator[No
         raise RequestFailed("screens_busy", str(exc)) from exc
 
 
-def check_texts(texts: Iterable[tuple[str, str]], guard: Any, root: Path) -> None:
-    """3.5b 글자 검사. `texts`는 (필드 이름, 글자). 걸리면 `secret_in_text`·`secret_unchecked`."""
+def job_secrets(daemon: Any) -> list[str]:
+    """daemon 메모리의 작업 토큰 원문 (글자 검사 대상, M8 R9). 작업 표가 없는 대역이면 빈 목록."""
+    jobs = getattr(daemon, "jobs", None)
+    return [] if jobs is None else list(jobs.secret_values())
+
+
+def check_texts(
+    texts: Iterable[tuple[str, str]], guard: Any, root: Path, extra: Iterable[str] = ()
+) -> None:
+    """3.5b 글자 검사. `texts`는 (필드 이름, 글자). 걸리면 `secret_in_text`·`secret_unchecked`.
+    `extra`는 메모리 원문 (M8 R9 — daemon의 작업 토큰 원문)."""
     pairs = [(name, text) for name, text in texts if text]
     if getattr(guard, "save_blocked", False):
         raise RequestFailed(
@@ -112,7 +121,8 @@ def check_texts(texts: Iterable[tuple[str, str]], guard: Any, root: Path) -> Non
             "보호 기록 파일이 손상돼 비밀값 검사를 할 수 없어 저장하지 않았다 (사람 확인 필요)",
         )
     keys = sorted(getattr(guard, "secret_keys", ()) or ())
-    if not keys or not pairs:
+    values: list[str] = [v for v in (normalize(x) for x in extra) if v]
+    if (not keys and not values) or not pairs:
         return
     try:
         provider = default_secrets(Workspace.open(root))
@@ -120,7 +130,6 @@ def check_texts(texts: Iterable[tuple[str, str]], guard: Any, root: Path) -> Non
         raise RequestFailed(
             "secret_unchecked", "비밀값을 읽지 못해 글자 검사를 할 수 없어 저장하지 않았다"
         ) from exc
-    values: list[str] = []
     for key in keys:
         try:
             value = provider.get(key)

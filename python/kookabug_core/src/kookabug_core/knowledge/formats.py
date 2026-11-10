@@ -466,10 +466,16 @@ def normalize(text: str) -> str:
 
 
 def secret_checker(
-    keys: Iterable[str], provider: SecretProvider, *, blocked: bool = False
+    keys: Iterable[str],
+    provider: SecretProvider,
+    *,
+    blocked: bool = False,
+    extra: Callable[[], Iterable[str]] | None = None,
 ) -> SecretCheck:
     """M7 글자 검사와 같은 규칙의 검사기. 키 값을 하나라도 못 읽거나 `blocked`(보호 기록 손상)면
-    `secret_unchecked`(fail closed). 값은 검사 동안만 메모리에 둔다."""
+    `secret_unchecked`(fail closed). 값은 검사 동안만 메모리에 둔다.
+
+    `extra`: 검사할 때마다 부르는 메모리 원문 공급 (M8 R9 — daemon의 살아 있는 작업 토큰 원문)."""
     names = sorted(set(keys))
 
     def check(texts: Sequence[tuple[str, str]]) -> None:
@@ -478,9 +484,11 @@ def secret_checker(
             raise KnowledgeError(
                 "secret_unchecked", "보호 기록이 손상돼 비밀값 검사를 할 수 없어 저장하지 않았다"
             )
-        if not names or not pairs:
+        if not pairs:
             return
-        values: list[str] = []
+        values: list[str] = [v for v in (normalize(x) for x in (extra() if extra else ())) if v]
+        if not names and not values:
+            return
         try:
             for key in names:
                 try:

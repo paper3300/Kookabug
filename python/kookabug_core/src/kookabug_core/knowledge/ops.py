@@ -857,6 +857,17 @@ def refresh_wiki(
         tx.write("wiki/log.md", body, expect_sha=None if old is None else filetx.sha256_of(old))
 
 
+def index_bytes(root: Path, *, extra_reports: Iterable[str] = ()) -> tuple[bytes, str | None]:
+    """`wiki/index.md` 새 바이트와 지금 sha (보고 쓰기가 같은 거래에 더한다 — B5). `extra_reports`는
+    이 거래가 새로 쓰는 `wiki/reports/` 파일 이름."""
+    pages, reports = _wiki_pages(root)
+    index = render.render_index(
+        sorted(pages), _all_features(root), sorted({*reports, *extra_reports})
+    )
+    old = filetx.read(root, "wiki/index.md")
+    return index.encode("utf-8"), None if old is None else filetx.sha256_of(old)
+
+
 def _all_features(root: Path, engine: _Engine | None = None) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     for feature in store.feature_files(root):

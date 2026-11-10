@@ -271,7 +271,10 @@ export type RequestFailedCode =
   | "answer_reserved"
   | "too_large"
   | "path_alias"
-  | "case_closed";
+  | "case_closed"
+  | "job_budget_exhausted"
+  | "job_ended"
+  | "job_active";
 /**
  * 플러그인 작업 ID (= 설치 거래 ID, 작업 로그 이름)
  *
@@ -2575,18 +2578,22 @@ export interface Kb8EvidencePinResult {
   }[];
 }
 /**
- * job.begin (사람 전용, agent-job CLI): 작업을 만들고 작업 토큰을 준다. 토큰은 이 응답에만 있고 daemon은 해시만 둔다
+ * job.begin (사람 전용, agent-job CLI): 작업을 만들고 작업 토큰을 준다. 토큰은 이 응답에만 있고 daemon은 해시만 둔다. 부른 연결이 소유 연결이다(R8 — job.heartbeat, 끊기면 작업 끝). 사람 입력 임대권·녹화 중이면 토큰 없이 prep_failed
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "Kb8JobBeginParams".
  */
 export interface Kb8JobBeginParams {
+  /**
+   * Agent 프로필 이름 (보고 표시용)
+   */
+  agent?: string;
   basis?: "team" | "working";
   budget?: {
     minutes?: number;
     runs?: number;
   };
-  playbook: string;
+  playbook: "author" | "explore" | "init" | "lint" | "probe" | "repair" | "triage";
   toolsets?: Toolset[];
   trigger?: "ci" | "manual" | "schedule";
   ttl_s?: number;
@@ -2596,10 +2603,14 @@ export interface Kb8JobBeginParams {
  * via the `definition` "Kb8JobBeginResult".
  */
 export interface Kb8JobBeginResult {
-  agent_id: string;
-  expires_at: string;
+  agent_id?: string;
+  expires_at?: string;
   job: string;
-  token: string;
+  reason?: "input_lease" | "recording" | "shutting_down";
+  report?: string | null;
+  started_at?: string;
+  state: "prep_failed" | "running";
+  token?: string;
 }
 /**
  * M8: 작업 예산 상한에 닿음 (ui 연결에만)
@@ -2640,15 +2651,37 @@ export interface Kb8JobEndParams {
   reason: "budget_exhausted" | "cancelled" | "done" | "failed" | "interrupted" | "timeout";
 }
 /**
+ * 작업 종료 경로(R8) 결과: 토큰 폐기 → 실행·채택 검증 취소 → 감독자 입력 복구 완료 → 보고. 같은 작업을 다시 끝내면 첫 결과. 입력 복구를 확인하지 못했으면 state ending·settled false·report null (보고·끝 알림 없음, 작업 슬롯 유지 — 다시 부르면 같은 완료를 기다린다)
+ *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "Kb8JobEndResult".
  */
 export interface Kb8JobEndResult {
   cancelled: string[];
   job: string;
+  /**
+   * 작업 연결이 kb_project_info를 불렀다 (agent-job probe)
+   */
+  probe_ok?: boolean;
+  report?: string | null;
+  settled?: boolean;
+  state?:
+    "budget_exhausted" | "cancelled" | "done" | "ending" | "failed" | "interrupted" | "prep_failed";
+  used?: Kb8JobUsed;
 }
 /**
- * job.finish (사람 전용, B5): CLI가 끝났다 → 보고 생성
+ * 작업이 쓴 예산 (실행 수는 run.start·자동 채택 검증 실행, 도구 호출 수는 작업 연결 요청)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobUsed".
+ */
+export interface Kb8JobUsed {
+  minutes: number;
+  runs: number;
+  tool_calls: number;
+}
+/**
+ * job.finish (사람 전용): CLI가 끝났다 → 같은 종료 경로로 끝내고 보고를 만든다
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "Kb8JobFinishParams".
@@ -2656,7 +2689,19 @@ export interface Kb8JobEndResult {
 export interface Kb8JobFinishParams {
   exit_code?: number | null;
   job: string;
+  /**
+   * prep_failed 사유 (고정 코드, 값·경로 없음)
+   */
+  prep_reason?: string;
   state?: "budget_exhausted" | "cancelled" | "done" | "failed" | "interrupted" | "prep_failed";
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobHeartbeatResult".
+ */
+export interface Kb8JobHeartbeatResult {
+  job: string;
+  state: "running";
 }
 /**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -2681,6 +2726,15 @@ export interface Kb8JobNoteParams {
 export interface Kb8JobNoteResult {
   bytes: number;
   job: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobsListResult".
+ */
+export interface Kb8JobsListResult {
+  jobs: {
+    [k: string]: unknown | undefined;
+  }[];
 }
 /**
  * knowledge.apply (kb_knowledge_apply): 제한 변경 연산 묶음 (M8 3.3, kookabug.knowledge-ops/0). 전부 적용하거나 아무것도 쓰지 않는다. 같은 request_id 재요청은 지난 결과
@@ -2788,6 +2842,30 @@ export interface Kb8LooseResult {
   [k: string]: unknown | undefined;
 }
 /**
+ * project.qa_info (kb_project_info): 플레이북 판·원본 상태·자동화 정책·치트 설정·경고 (M8 3.4·3.10·3.12)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8ProjectQaInfoResult".
+ */
+export interface Kb8ProjectQaInfoResult {
+  automation: {
+    [k: string]: unknown | undefined;
+  };
+  cheats: {
+    [k: string]: unknown | undefined;
+  };
+  job: {
+    [k: string]: unknown | undefined;
+  } | null;
+  playbooks: {
+    [k: string]: number | undefined;
+  };
+  sources: {
+    [k: string]: unknown | undefined;
+  }[];
+  warnings: string[];
+}
+/**
  * report.decide (사람 전용, B5): 보고 묶음 결정 → working.accept/reject
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -2797,6 +2875,36 @@ export interface Kb8ReportDecideParams {
   decision: "accept" | "reject";
   group: string;
   job: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8ReportDecideResult".
+ */
+export interface Kb8ReportDecideResult {
+  decision: "accept" | "reject";
+  group: string;
+  job: string;
+  result: {
+    [k: string]: unknown | undefined;
+  };
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8ReportGetResult".
+ */
+export interface Kb8ReportGetResult {
+  report: {
+    [k: string]: unknown | undefined;
+  };
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8ReportsListResult".
+ */
+export interface Kb8ReportsListResult {
+  reports: {
+    [k: string]: unknown | undefined;
+  }[];
 }
 /**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -3207,7 +3315,13 @@ export interface Methods {
   "job.finish": {
     params: Kb8JobFinishParams;
     renderer: false;
-    result: Kb8LooseResult;
+    result: Kb8JobEndResult;
+    tool: "ui_only";
+  };
+  "job.heartbeat": {
+    params: Kb8JobIdParams;
+    renderer: false;
+    result: Kb8JobHeartbeatResult;
     tool: "ui_only";
   };
   "job.note": {
@@ -3219,7 +3333,7 @@ export interface Methods {
   "jobs.list": {
     params: EmptyParams;
     renderer: false;
-    result: Kb8LooseResult;
+    result: Kb8JobsListResult;
     tool: "ui_only";
   };
   "knowledge.apply": {
@@ -3318,6 +3432,12 @@ export interface Methods {
     result: Kb8ConfigBlockResult;
     tool: "ui_only";
   };
+  "project.qa_info": {
+    params: EmptyParams;
+    renderer: false;
+    result: Kb8ProjectQaInfoResult;
+    tool: "kb_project_info";
+  };
   "project.sources.set": {
     params: Kb8ConfigBlockParams;
     renderer: false;
@@ -3411,19 +3531,19 @@ export interface Methods {
   "report.decide": {
     params: Kb8ReportDecideParams;
     renderer: false;
-    result: Kb8LooseResult;
+    result: Kb8ReportDecideResult;
     tool: "ui_only";
   };
   "reports.get": {
     params: Kb8JobIdParams;
     renderer: false;
-    result: Kb8LooseResult;
+    result: Kb8ReportGetResult;
     tool: "ui_only";
   };
   "reports.list": {
     params: EmptyParams;
     renderer: false;
-    result: Kb8LooseResult;
+    result: Kb8ReportsListResult;
     tool: "ui_only";
   };
   "run.artifact": {

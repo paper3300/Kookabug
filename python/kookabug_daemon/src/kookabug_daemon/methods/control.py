@@ -172,6 +172,8 @@ async def _control(call: Call) -> dict[str, Any]:
     value = control_graph(call)  # 인자가 틀리면 판정 전에 거부 (아무것도 묻지 않음)
     # 개발 모듈 daemon의 에이전트 제어 실행은 사람 확인을 묻기 전에 거부 (M6 3.7)
     call.daemon.run_manager.refuse_dev_modules(call.principal)
+    # 작업 판정(M8 R8)도 사람 확인을 묻기 전에 한 번 본다 (시작 잠금 안에서 다시 본다)
+    call.daemon.run_manager.refuse_job_bypass(call.principal)
     # 탐색 세션 스텝 예산: 판정(사람 확인) **전에** 한 칸 예약 (M7 3.4, B3 Mid 2). 제어 실행에
     # 들어가면 스텝으로 확정, 판정 거부·사람 거부·취소·시작 실패면 되돌린다
     # (세션 잠금은 저장 게시 동안 쥐어질 수 있어 이벤트 루프 밖에서)
@@ -251,13 +253,14 @@ async def _reserved(
 
 
 async def _launch(call: Call) -> dict[str, Any]:
+    call.daemon.run_manager.refuse_job_bypass(call.principal)  # 사람 확인 전 (잠금 안에서 다시)
     await call.daemon.approvals.authorize(call, "")
     profile = call.params.get("profile")
     pid = await asyncio.to_thread(
         functools.partial(
             call.daemon.run_manager.launch_app,
             None if profile is None else str(profile),
-            agent=call.principal.kind == "agent",
+            principal=call.principal,
         )
     )
     return {"pid": pid}

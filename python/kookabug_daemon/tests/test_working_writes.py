@@ -148,8 +148,7 @@ def test_curator_never_writes_team_files(ws: Path, curator: None) -> None:
 def test_full_job_cannot_write_team(ws: Path) -> None:
     """R4: 작업 토큰이 붙은 연결은 `full` 프리셋이어도 작업 기준으로만 쓴다 (B4: 실제 토큰 경로)."""
     with ThreadDaemon(ws) as d:
-        with d.client() as ui:
-            job = ui.call("job.begin", {"playbook": "repair"})
+        job = d.begin_job({"playbook": "repair"})
         info = {**AGENT, "id": job["agent_id"], "job_token": job["token"]}
         with d.client(info) as agent:
             check_working_only(ws, agent)

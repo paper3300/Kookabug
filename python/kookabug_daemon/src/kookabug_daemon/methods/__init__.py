@@ -18,13 +18,14 @@ from kookabug_core.permissions import Principal
 
 if TYPE_CHECKING:
     from kookabug_core.service import WorkspaceService
+    from kookabug_daemon.adopt import JobAdopts
     from kookabug_daemon.approvals import ApprovalBroker
     from kookabug_daemon.documents import DocumentTable, GraphChecker
     from kookabug_daemon.explore import ExploreSessions
     from kookabug_daemon.frame_guard import FrameGuard
     from kookabug_daemon.frames import FrameCache
     from kookabug_daemon.image_cache import EditorCache
-    from kookabug_daemon.jobs import JobRegistry
+    from kookabug_daemon.jobs import Job, JobRegistry, JobSupervisor
     from kookabug_daemon.permission_files import PermissionFiles
     from kookabug_daemon.plugin_jobs import PluginJobs
     from kookabug_daemon.runs import RunManager
@@ -165,6 +166,32 @@ class DaemonContext(Protocol):
 
     def knowledge_changed(self, files: list[str]) -> None:
         """지식·위키·사건이 바뀌었다: 사람 연결에 `knowledge.changed` (어느 스레드에서나, M8)."""
+        ...
+
+    @property
+    def job_supervisor(self) -> JobSupervisor:
+        """작업 종료 경로 하나 (M8 R8)."""
+        ...
+
+    @property
+    def job_adopts(self) -> JobAdopts:
+        """작업 연결이 낸 진행 중 채택 요청 (R8 종료 경로가 취소한다)."""
+        ...
+
+    def input_busy(self) -> str | None:
+        """사람 입력 임대권·녹화 중이면 그 이유 (`job.begin` 준비 실패)."""
+        ...
+
+    def job_changed(self, job: Job) -> None:
+        """`job.changed` 알림 (사람 연결, 어느 스레드에서나)."""
+        ...
+
+    def post(self, fn: Callable[[], None]) -> None:
+        """이벤트 루프에서 부른다 (어느 스레드에서나)."""
+        ...
+
+    def notify_ui(self, method: str, params: Mapping[str, Any]) -> None:
+        """사람 연결에 알린다 (이벤트 루프 안)."""
         ...
 
 

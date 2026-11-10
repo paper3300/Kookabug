@@ -143,6 +143,8 @@ def _project_info(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     info = _daemon(link, "workspace.info")
     permissions = _daemon(link, "permissions.get")
     installed = _daemon(link, "plugins.list")
+    # M8: 플레이북 판·원본 상태(missing·unreadable·unchecked_url)·자동화 정책·치트 설정·경고
+    qa = _daemon(link, "project.qa_info")
     verdicts = {t["tool"]: t["final"] for t in permissions["tools"]}
     enabled = set(link.toolsets)
     data = {
@@ -178,6 +180,12 @@ def _project_info(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
         ],
         # 이 연결의 도구별 판정 요약 (인자 없는 대표 판정 — 경로 규칙은 실제 호출에서 다시 본다)
         "permissions": {d.name: verdicts.get(d.name, "deny") for d in TOOL_DEFS},
+        "playbooks": qa["playbooks"],
+        "sources": qa["sources"],
+        "automation": qa["automation"],
+        "cheats": qa["cheats"],
+        "warnings": qa["warnings"],
+        "job": qa["job"],
     }
     on = ", ".join(t for t in TOOLSETS if t in enabled)
     return ok_result(f"워크스페이스 {info['root']} · 켜진 툴셋 {on}", data)
@@ -739,7 +747,8 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "kb_project_info",
         "프로젝트 정보",
         "워크스페이스 루트·프로필·플러그인(설치된 것의 권한·환경 상태)·폴더 규칙, 툴셋(켜짐 여부·"
-        "도구), 이 연결의 주체. 처음에 부른다. 플러그인 설치·제거·준비는 사람만 한다",
+        "도구), 이 연결의 주체, 플레이북 판, 원본 상태, 자동화 정책(금지 동작·예산), 치트 설정, "
+        "작업 예산. 처음에 부른다. 플러그인 설치·제거·준비는 사람만 한다",
         _schema({}),
         _project_info,
     ),

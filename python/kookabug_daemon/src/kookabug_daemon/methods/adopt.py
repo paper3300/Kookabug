@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import threading
 from collections.abc import Callable, Mapping
 from typing import Any, Final
@@ -26,7 +27,7 @@ from kookabug_daemon.adopt import Adopter, RunVerifier, pin_run, request_negativ
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.protocol import RequestFailed
 
-__all__ = ["METHODS", "actor_of", "checker_of", "failed", "guarded", "pin_of"]
+__all__ = ["METHODS", "actor_of", "checker_of", "failed", "guarded", "pin_of", "text_checker"]
 
 _PASS: Final = frozenset(
     {
@@ -98,14 +99,23 @@ def _negatives(call: Call, items: list[Mapping[str, Any]]) -> list[Any]:
 
 
 def checker_of(call: Call) -> SecretCheck:
-    """보호 기록의 비밀값 키로 만든 글자 검사기 (지식 연산·위키·사건·채택 기록·감사 이력·증거 묶음·
-    보고 메모 — M7 3.5b와 같은 규칙. 키를 못 읽거나 보호 기록이 손상됐으면 `secret_unchecked`)."""
-    guard = call.daemon.guard
-    workspace = Workspace.open(call.daemon.root)
+    """daemon의 글자 검사기 (지식 연산·위키·사건·채택 기록·감사 이력·증거 묶음·보고 메모 — M7
+    3.5b와 같은 규칙 + 작업 토큰 원문, M8 R9). 키를 못 읽거나 보호 기록이 손상됐으면
+    `secret_unchecked`."""
+    return text_checker(call.daemon)
+
+
+def text_checker(daemon: Any, keys: set[str] | None = None) -> SecretCheck:
+    """보호 기록의 비밀값 키(+ `keys`) 값과 daemon 메모리의 작업 토큰 원문(살아 있는 것 + 폐기했지만
+    보고를 아직 쓰지 않은 것)을 거르는 검사기. 보고 생성 직전 재검사도 이것을 쓴다."""
+    guard = daemon.guard
+    workspace = Workspace.open(daemon.root)
+    jobs = getattr(daemon, "jobs", None)
     return secret_checker(
-        set(getattr(guard, "secret_keys", ()) or ()),
+        set(getattr(guard, "secret_keys", ()) or ()) | (keys or set()),
         default_secrets(workspace),
         blocked=bool(getattr(guard, "save_blocked", False)),
+        extra=None if jobs is None else jobs.secret_values,
     )
 
 
@@ -118,22 +128,45 @@ async def _request(call: Call) -> dict[str, Any]:
         raise RequestFailed("io_error", str(exc), message=str(exc)) from exc
     cancelled = threading.Event()
     case_id, change_id = str(p["case"]), str(p["change"])
+    job = call.principal.job
+    daemon = call.daemon
+    pending = None
+    if job is not None:
+        # 작업이 끝나면(R8) 이 요청에 취소 표시를 세우고 도는 검증 실행을 취소한다. 종료 경로가
+        # 이미 시작됐으면 바로 취소 표시
+        pending = daemon.job_adopts.add(job, cancelled)
+        live = daemon.jobs.get(job)
+        if live is None or live.ending.is_set():
+            cancelled.set()
+
+    started = threading.Event()
 
     def work() -> dict[str, Any]:
+        started.set()
         # 검증 세션은 작업 스레드 안에서 열고 **스레드가 실제로 끝날 때** 닫는다 (R7): 요청 Task가
-        # 취소돼도(연결 끊김) 스레드는 계속 돌므로 그동안 Agent 입력 차단을 유지한다
-        verifier = RunVerifier(call.daemon.run_manager)
+        # 취소돼도(연결 끊김) 스레드는 계속 돌므로 그동안 Agent 입력 차단을 유지한다. 작업 연결의
+        # 검증 실행은 작업 실행 예산을 쓴다 (조율자 결정)
+        budget = None if job is None else functools.partial(daemon.jobs.take_run, job)
+        verifier = RunVerifier(daemon.run_manager, budget=budget)
         try:
-            adopter = Adopter(call.daemon.root, verifier, check_secrets=check, cancelled=cancelled)
+            if pending is not None:
+                daemon.job_adopts.attach(pending, verifier)
+            adopter = Adopter(
+                daemon.root, verifier, check_secrets=check, cancelled=cancelled, job=job
+            )
             return guarded(adopter.request, case_id, change_id, extra)
         finally:
             verifier.close()
+            if pending is not None:
+                daemon.job_adopts.finish(pending)
 
     try:
         return await asyncio.to_thread(work)
     except asyncio.CancelledError:
         # 요청 취소·연결 끊김: 남은 검증·게시를 하지 않게 표시한다 (이미 게시 거래면 끝까지 간다)
         cancelled.set()
+        if pending is not None and not started.is_set():
+            daemon.job_adopts.finish(pending)  # 스레드가 시작도 못 했다: 기다릴 것이 없다
         raise
 
 
@@ -159,11 +192,7 @@ def pin_of(call: Call, run_id: str, step: str | None, note: str | None) -> dict[
     길)."""
     where = call.daemon.run_manager.locate(run_id)
     guard = call.daemon.guard
-    workspace = Workspace.open(call.daemon.root)
-    keys = set(getattr(guard, "secret_keys", ()) or ()) | secret_keys_of(where.folder)
-    check = secret_checker(
-        keys, default_secrets(workspace), blocked=bool(getattr(guard, "save_blocked", False))
-    )
+    check = text_checker(call.daemon, secret_keys_of(where.folder))
 
     def guard_of(pixels: Any) -> str:
         from kookabug_daemon.frames import EditorFrame
