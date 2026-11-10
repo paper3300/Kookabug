@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { refreshPermissions as refreshAgentPermissions } from "../agent/agentStore";
 import { client, toRpcError } from "../rpc/client";
-import { openFileTab } from "../store/tabs";
+import { openFileTab, openSetupTab } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
 import { LockIcon } from "../theme/icons";
 import css from "./settings.module.css";
@@ -222,6 +222,10 @@ export function PermissionsView() {
           </button>
         ))}
         <div className={css.spacer} />
+        {/* M8 B7: 마법사 건너뛴 단계·경고, 단계 하나만 다시 열기 */}
+        <button type="button" className={css.link} data-part="open-setup-helper" onClick={openSetupTab}>
+          설정 도우미
+        </button>
         <button type="button" className={css.link} onClick={() => openFileTab("kookabug.json")}>
           kookabug.json에서 편집
         </button>

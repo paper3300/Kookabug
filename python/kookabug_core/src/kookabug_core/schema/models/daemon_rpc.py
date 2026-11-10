@@ -1167,6 +1167,71 @@ class Kb8KnowledgeSearchResult(BaseModel):
     truncated: bool
 
 
+class BaseRevision(RootModel[str]):
+    root: Annotated[
+        str,
+        Field(
+            description="주면 local.json revision 대조 (화면을 채울 때 wizard.get local_revision으로 읽은 값, 파일이 없었으면 null). 다르면 revision_conflict",
+            pattern="^[0-9a-f]{64}$",
+        ),
+    ]
+
+
+class GameArgs(RootModel[list[str]]):
+    root: Annotated[list[str], Field(max_length=64)]
+
+
+class GameCwd(RootModel[str]):
+    root: Annotated[str, Field(min_length=1)]
+
+
+class GameExecutable(RootModel[str]):
+    root: Annotated[str, Field(min_length=1)]
+
+
+class Settings(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    game_args: Annotated[GameArgs | None, Field(alias="game.args")] = None
+    game_cwd: Annotated[GameCwd | None, Field(alias="game.cwd")] = None
+    game_executable: Annotated[GameExecutable | None, Field(alias="game.executable")] = None
+
+
+class Sources(RootModel[str]):
+    root: Annotated[str, Field(min_length=1)]
+
+
+class Kb8LocalSettingsSetParams(BaseModel):
+    """
+    local.settings.set (사람 전용, B7 마법사 2단계): .kookabug/local.json settings의 게임 실행 키만 바꾼다 (이 PC). null이면 키를 지운다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_revision: Annotated[
+        BaseRevision | None,
+        Field(
+            description="주면 local.json revision 대조 (화면을 채울 때 wizard.get local_revision으로 읽은 값, 파일이 없었으면 null). 다르면 revision_conflict"
+        ),
+    ] = None
+    settings: Settings | None = None
+    sources: Annotated[
+        dict[str, Sources | None] | None,
+        Field(
+            description="원본 ID → 이 PC 경로 (local.json sources.<id>.path, 6단계 local 원본). null이면 지운다"
+        ),
+    ] = None
+
+
+class Kb8LocalSettingsSetResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    revision: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
+
+
 class Kb8LooseResult(BaseModel):
     """
     M8 다음 묶음(B5·B7)이 모양을 정하는 결과
@@ -1284,15 +1349,45 @@ class Kb8WikiWriteResult(BaseModel):
     warnings: list[str]
 
 
-class Kb8WizardSetParams(BaseModel):
+class LocalRevision(RootModel[str]):
+    root: Annotated[
+        str,
+        Field(
+            description=".kookabug/local.json revision (없으면 null) — local.settings.set base_revision에 쓴다",
+            pattern="^[0-9a-f]{64}$",
+        ),
+    ]
+
+
+class DoneItem(RootModel[int]):
+    root: Annotated[int, Field(ge=0, le=9)]
+
+
+class SkippedItem(RootModel[int]):
+    root: Annotated[int, Field(ge=0, le=9)]
+
+
+class Warning(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    code: Annotated[str, Field(pattern="^[a-z][a-z0-9_]{0,47}(:[A-Za-z0-9_.-]{1,64})?$")]
+    step: Annotated[int, Field(ge=0, le=9)]
+
+
+class Kb8WizardState(BaseModel):
     """
-    wizard.set (사람 전용, B7)
+    마법사 진행 (.kookabug/wizard.json, kookabug.wizard/0, 이 PC). 단계 상태만 둔다 — 입력 값·비밀값·경로를 두지 않는다 (M8 3.17)
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
-    wizard: dict[str, Any]
+    done: list[DoneItem]
+    format: Literal["kookabug.wizard/0"]
+    skipped: list[SkippedItem]
+    step: Annotated[int, Field(ge=0, le=9)]
+    warnings: Annotated[list[Warning], Field(max_length=50)]
 
 
 class Change(RootModel[str]):
@@ -1414,7 +1509,7 @@ class AdoptRevert(BaseModel):
         extra="forbid",
     )
     params: Kb8AdoptRevertParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8AdoptRevertResult
     tool: Literal["ui_only"]
 
@@ -1424,7 +1519,7 @@ class AdoptionsList(BaseModel):
         extra="forbid",
     )
     params: EmptyParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8AdoptionsListResult
     tool: Literal["ui_only"]
 
@@ -1464,7 +1559,7 @@ class CasesClose(BaseModel):
         extra="forbid",
     )
     params: Kb8CasesCloseParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8CaseRevisionResult
     tool: Literal["ui_only"]
 
@@ -1474,7 +1569,7 @@ class CasesGet(BaseModel):
         extra="forbid",
     )
     params: Kb8CaseIdParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8CaseGetResult
     tool: Literal["kb_case_get"]
 
@@ -1484,7 +1579,7 @@ class CasesList(BaseModel):
         extra="forbid",
     )
     params: Kb8CasesListParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8CasesListResult
     tool: Literal["kb_case_list"]
 
@@ -1534,7 +1629,7 @@ class CheatsList(BaseModel):
         extra="forbid",
     )
     params: EmptyParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8CheatsListResult
     tool: Literal["ui_only"]
 
@@ -1634,7 +1729,7 @@ class JobsList(BaseModel):
         extra="forbid",
     )
     params: EmptyParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8JobsListResult
     tool: Literal["ui_only"]
 
@@ -1654,7 +1749,7 @@ class KnowledgeGet(BaseModel):
         extra="forbid",
     )
     params: Kb8KnowledgeGetParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8KnowledgeGetResult
     tool: Literal["kb_knowledge_get"]
 
@@ -1664,9 +1759,19 @@ class KnowledgeSearch(BaseModel):
         extra="forbid",
     )
     params: Kb8KnowledgeSearchParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8KnowledgeSearchResult
     tool: Literal["kb_knowledge_search"]
+
+
+class LocalSettingsSet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8LocalSettingsSetParams
+    renderer: Literal[True]
+    result: Kb8LocalSettingsSetResult
+    tool: Literal["ui_only"]
 
 
 class ProjectAutomationSet(BaseModel):
@@ -1674,7 +1779,7 @@ class ProjectAutomationSet(BaseModel):
         extra="forbid",
     )
     params: Kb8ConfigBlockParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8ConfigBlockResult
     tool: Literal["ui_only"]
 
@@ -1684,7 +1789,7 @@ class ProjectQaInfo(BaseModel):
         extra="forbid",
     )
     params: EmptyParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8ProjectQaInfoResult
     tool: Literal["kb_project_info"]
 
@@ -1694,7 +1799,7 @@ class ProjectSourcesSet(BaseModel):
         extra="forbid",
     )
     params: Kb8ConfigBlockParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8ConfigBlockResult
     tool: Literal["ui_only"]
 
@@ -1704,7 +1809,7 @@ class ReportDecide(BaseModel):
         extra="forbid",
     )
     params: Kb8ReportDecideParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8ReportDecideResult
     tool: Literal["ui_only"]
 
@@ -1714,7 +1819,7 @@ class ReportsGet(BaseModel):
         extra="forbid",
     )
     params: Kb8JobIdParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8ReportGetResult
     tool: Literal["ui_only"]
 
@@ -1724,7 +1829,7 @@ class ReportsList(BaseModel):
         extra="forbid",
     )
     params: EmptyParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8ReportsListResult
     tool: Literal["ui_only"]
 
@@ -1734,7 +1839,7 @@ class SourcesCheck(BaseModel):
         extra="forbid",
     )
     params: EmptyParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8SourcesCheckResult
     tool: Literal["ui_only"]
 
@@ -1744,7 +1849,7 @@ class UnknownsAnswer(BaseModel):
         extra="forbid",
     )
     params: Kb8UnknownsAnswerParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8UnknownsAnswerResult
     tool: Literal["ui_only"]
 
@@ -1757,26 +1862,6 @@ class WikiWrite(BaseModel):
     renderer: Literal[False]
     result: Kb8WikiWriteResult
     tool: Literal["kb_wiki_write"]
-
-
-class WizardGet(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    params: EmptyParams
-    renderer: Literal[False]
-    result: Kb8LooseResult
-    tool: Literal["ui_only"]
-
-
-class WizardSet(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    params: Kb8WizardSetParams
-    renderer: Literal[False]
-    result: Kb8LooseResult
-    tool: Literal["ui_only"]
 
 
 class WorkingAccept(BaseModel):
@@ -4325,6 +4410,93 @@ class Kb8JobEndResult(BaseModel):
     used: Kb8JobUsed | None = None
 
 
+class Settings1(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    game_client_size: Annotated[Size | None, Field(alias="game.client_size")] = None
+    game_title: Annotated[str | None, Field(alias="game.title", min_length=1)] = None
+
+
+class Kb8ProjectSetupSetParams(BaseModel):
+    """
+    project.setup.set (사람 전용, B7 마법사 2·8단계): kookabug.json의 record·retention 블록과 게임 설정 키(game.title·game.client_size)를 한 번에 바꾼다. 지금 sha가 다르면 revision_conflict
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_sha256: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
+    record: dict[str, Any] | None = None
+    retention: dict[str, Any] | None = None
+    settings: Settings1 | None = None
+
+
+class Game(BaseModel):
+    """
+    실효 게임 설정 (local.json이 kookabug.json보다 먼저)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    args: list[str] | None
+    client_size: Size | None
+    cwd: str | None
+    executable: str | None
+    title: str | None
+
+
+class Kb8WizardGetResult(BaseModel):
+    """
+    wizard.get (사람 전용, B7): 마법사 진행과 단계 판정에 쓰는 지금 설정. team_setup = 팀이 첫 설정을 마친 프로젝트(wiki/index.md 있음) — 짧은 마법사 자동 띄우기 조건
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    config_sha256: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
+    game: Annotated[Game, Field(description="실효 게임 설정 (local.json이 kookabug.json보다 먼저)")]
+    local_revision: Annotated[
+        LocalRevision | None,
+        Field(
+            description=".kookabug/local.json revision (없으면 null) — local.settings.set base_revision에 쓴다"
+        ),
+    ]
+    local_sources: Annotated[
+        dict[str, str],
+        Field(
+            description="이 PC 원본 경로 (local.json sources.<id>.path, 6단계). 경로만 — 비밀값 없음"
+        ),
+    ]
+    record: dict[str, Any]
+    retention: dict[str, Any]
+    sources: Annotated[
+        list[dict[str, Any]],
+        Field(description="팀 원본 정의 (kookabug.json sources, config_sha256과 같은 읽기)"),
+    ]
+    team_setup: bool
+    wizard: Kb8WizardState | None
+
+
+class Kb8WizardSetParams(BaseModel):
+    """
+    wizard.set (사람 전용, B7): 마법사 진행을 .kookabug/wizard.json에 원자 쓰기
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    wizard: Kb8WizardState
+
+
+class Kb8WizardSetResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    wizard: Kb8WizardState
+
+
 class LeaseChangedParams(BaseModel):
     """
     입력 임대권 소유자 (없으면 null). 녹화 세션이면 kind recorder (상태 바 '입력: 녹화')
@@ -4425,7 +4597,7 @@ class CheatsCategoriesSet(BaseModel):
         extra="forbid",
     )
     params: Kb8CheatCategoriesSetParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8CheatCategoriesSetResult
     tool: Literal["ui_only"]
 
@@ -4535,7 +4707,7 @@ class JobEnd(BaseModel):
         extra="forbid",
     )
     params: Kb8JobEndParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: Kb8JobEndResult
     tool: Literal["ui_only"]
 
@@ -4597,6 +4769,16 @@ class PluginsUpgrade(BaseModel):
     params: PluginsUpgradeParams
     renderer: Literal[True]
     result: PluginsPreviewResult
+    tool: Literal["ui_only"]
+
+
+class ProjectSetupSet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8ProjectSetupSetParams
+    renderer: Literal[True]
+    result: Kb8ConfigBlockResult
     tool: Literal["ui_only"]
 
 
@@ -4798,6 +4980,26 @@ class WindowsList(BaseModel):
     renderer: Literal[True]
     result: WindowsListResult
     tool: Literal["kb_screen_capture"]
+
+
+class WizardGet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: EmptyParams
+    renderer: Literal[True]
+    result: Kb8WizardGetResult
+    tool: Literal["ui_only"]
+
+
+class WizardSet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8WizardSetParams
+    renderer: Literal[True]
+    result: Kb8WizardSetResult
+    tool: Literal["ui_only"]
 
 
 class WorkspaceInfo(BaseModel):
@@ -6904,6 +7106,7 @@ class Methods(BaseModel):
     knowledge_apply: Annotated[KnowledgeApply, Field(alias="knowledge.apply")]
     knowledge_get: Annotated[KnowledgeGet, Field(alias="knowledge.get")]
     knowledge_search: Annotated[KnowledgeSearch, Field(alias="knowledge.search")]
+    local_settings_set: Annotated[LocalSettingsSet, Field(alias="local.settings.set")]
     nodes_list: Annotated[NodesList, Field(alias="nodes.list")]
     permissions_get: Annotated[PermissionsGet, Field(alias="permissions.get")]
     permissions_set: Annotated[PermissionsSet, Field(alias="permissions.set")]
@@ -6918,6 +7121,7 @@ class Methods(BaseModel):
     plugins_upgrade: Annotated[PluginsUpgrade, Field(alias="plugins.upgrade")]
     project_automation_set: Annotated[ProjectAutomationSet, Field(alias="project.automation.set")]
     project_qa_info: Annotated[ProjectQaInfo, Field(alias="project.qa_info")]
+    project_setup_set: Annotated[ProjectSetupSet, Field(alias="project.setup.set")]
     project_sources_set: Annotated[ProjectSourcesSet, Field(alias="project.sources.set")]
     recorder_commit_abort: Annotated[RecorderCommitAbort, Field(alias="recorder.commit_abort")]
     recorder_commit_finish: Annotated[RecorderCommitFinish, Field(alias="recorder.commit_finish")]

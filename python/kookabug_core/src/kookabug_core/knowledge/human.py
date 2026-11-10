@@ -24,7 +24,14 @@ from kookabug_core.knowledge.formats import Actor, KnowledgeError, SecretCheck, 
 from kookabug_core.knowledge.ops import log_into
 from kookabug_core.workspace import WORKSPACE_FILE
 
-__all__ = ["CONFIG_BLOCKS", "answer_unknown", "set_config_block"]
+__all__ = [
+    "CONFIG_BLOCKS",
+    "SETUP_BLOCKS",
+    "SETUP_SETTINGS",
+    "answer_unknown",
+    "set_config_block",
+    "set_setup",
+]
 
 UNKNOWNS: Final = "knowledge/unknowns.json"
 CONFIG_BLOCKS: Final = frozenset({"automation", "sources"})
@@ -98,16 +105,42 @@ def set_config_block(root: Path, key: str, value: Any, *, base_sha256: str) -> s
     """`kookabug.json`의 `key` 블록만 바꾼다. 새 sha."""
     if key not in CONFIG_BLOCKS:
         raise KnowledgeError("format", f"바꿀 수 없는 설정 블록이다: {key}")
+    return _write_config(root, {key: value}, {}, base_sha256=base_sha256)
+
+
+SETUP_BLOCKS: Final = frozenset({"record", "retention"})
+SETUP_SETTINGS: Final = frozenset({"game.title", "game.client_size"})
+
+
+def set_setup(
+    root: Path,
+    blocks: dict[str, Any],
+    settings: dict[str, Any],
+    *,
+    base_sha256: str,
+) -> str:
+    """마법사 2·8단계(M8 B7): `record`·`retention` 블록과 팀 게임 설정 키를 한 거래로. 새 sha."""
+    if set(blocks) - SETUP_BLOCKS or set(settings) - SETUP_SETTINGS:
+        raise KnowledgeError("format", "마법사가 바꿀 수 없는 설정이다")
+    return _write_config(root, blocks, settings, base_sha256=base_sha256)
+
+
+def _write_config(
+    root: Path, blocks: dict[str, Any], settings: dict[str, Any], *, base_sha256: str
+) -> str:
     try:
         with filetx.locked(root):
             data = (root / WORKSPACE_FILE).read_bytes()
             if _sha(data) != base_sha256:
                 raise KnowledgeError("revision_conflict", "kookabug.json이 그사이 바뀌었다")
-            config = json.loads(data.decode("utf-8"))
-            config[key] = value
+            config = json.loads(data.decode("utf-8-sig"))
+            config.update(blocks)
+            if settings:
+                config["settings"] = {**dict(config.get("settings") or {}), **settings}
             problem = shape_problem(config, "workspace")
             if problem is not None:
-                raise KnowledgeError("format", f"{key} 형식이 틀렸다 ({problem})")
+                names = ", ".join(sorted([*blocks, *settings]))
+                raise KnowledgeError("format", f"{names} 형식이 틀렸다 ({problem})")
             body = canonical_dumps(config).encode("utf-8")
             tx = filetx.Tx(root)
             tx.write(WORKSPACE_FILE, body, expect_sha=base_sha256)

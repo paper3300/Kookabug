@@ -252,6 +252,7 @@ def registry() -> dict[str, MethodSpec]:
         session,
         target,
         windows,
+        wizard,
         working,
         workspace,
     )
@@ -262,6 +263,7 @@ def registry() -> dict[str, MethodSpec]:
         **jobs.METHODS,
         **knowledge.METHODS,
         **working.METHODS,
+        **wizard.METHODS,
         **agent.METHODS,
         **agents.METHODS,
         **approval.METHODS,

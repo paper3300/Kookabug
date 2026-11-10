@@ -6,6 +6,7 @@ import type { ExportResult } from "../main/dialogs";
 import {
   APP_CHANNEL,
   checkAppAction,
+  checkJobArgs,
   checkRendererEvent,
   checkRendererMethod,
   EVENT_CHANNEL,
@@ -89,6 +90,27 @@ export interface AppApi {
   agentPermission(session: string, id: string, optionId: string | null): Promise<boolean>;
   /** 세션 끝 (프로세스 트리 종료, 열린 카드는 cancelled) */
   agentStop(session: string): Promise<void>;
+  /** 마법사 1단계 위치 고르기 (M8 B7). 취소면 null */
+  pickFolder(): Promise<string | null>;
+  /** 마법사 1단계: kookabug workspace new → 그 폴더를 연다 */
+  workspaceCreate(request: { parent: string; name: string; git: boolean }): Promise<OpenResult>;
+  /** 마법사 5단계 연결 시험 (agent-job probe). Agent는 사용자 설정의 ID */
+  agentProbe(agentId: string): Promise<JobCliResult & { ok: boolean }>;
+  /** 마법사 9단계 Init (agent-job run, 기다리지 않음). 끝나면 jobs.cli 알림 */
+  agentJobRun(playbook: "init", agentId: string): Promise<{ started: boolean; error_code?: string }>;
+  /** 마법사 3단계 환경 점검 (kookabug doctor --json, 항목 ID·통과만) */
+  doctor(): Promise<{ ok: boolean; checks: { id: string; ok: boolean }[] }>;
+}
+
+/** agent-job CLI `--json` 결과의 정해진 필드 (jobs.ts pickResult) */
+export interface JobCliResult {
+  job?: string;
+  state?: string;
+  exit_code?: number | null;
+  error_code?: string;
+  code?: string;
+  probe_ok?: boolean;
+  report?: string | null;
 }
 
 export interface KookabugBridge {
@@ -105,6 +127,7 @@ function appApi(ipc: IpcRendererLike): AppApi {
     (action: string) =>
     (...args: unknown[]): Promise<never> => {
       checkAppAction(action);
+      checkJobArgs(action, args);
       return ipc.invoke(APP_CHANNEL, action, ...args) as Promise<never>;
     };
   return {
@@ -132,6 +155,11 @@ function appApi(ipc: IpcRendererLike): AppApi {
     agentCancel: call("agentCancel"),
     agentPermission: call("agentPermission"),
     agentStop: call("agentStop"),
+    pickFolder: call("pickFolder"),
+    workspaceCreate: call("workspaceCreate"),
+    agentProbe: call("agentProbe"),
+    agentJobRun: call("agentJobRun"),
+    doctor: call("doctor"),
   };
 }
 

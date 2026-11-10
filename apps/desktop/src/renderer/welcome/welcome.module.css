@@ -140,6 +140,21 @@
   font-weight: 600;
 }
 
+/* 시안 "이미 있는 프로젝트 열기" 글자 단추 자리: M8 B7 "새 프로젝트 만들기" */
+.secondary {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--kb-link-fg);
+  font-size: 13px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.secondary:hover {
+  color: var(--kb-link-hover-fg);
+}
+
 .error {
   margin: 0;
   display: flex;

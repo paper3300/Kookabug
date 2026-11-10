@@ -1,10 +1,12 @@
 // 시작 화면 (M2 계획 2.10 "폴더 열기", 2.11 Setup0Welcome). 로고·워드마크·소개 글·"프로젝트 열기"·
-// 최근 프로젝트·테마 고르기. 새 프로젝트 마법사("시작하기")는 다음 단계라 숨긴다 (U5)
+// 최근 프로젝트·테마 고르기. M8 B7: "새 프로젝트 만들기" → 첫 프로젝트 마법사 (기존 "프로젝트 열기" 단추는 그대로)
 import { useEffect } from "react";
 import { WindowControls } from "../app/WindowControls";
 import { useTheme, type ThemeMode } from "../store/theme";
 import { openFolder, openRecent, useWorkspace } from "../store/workspace";
 import { EnterIcon, LogoMark } from "../theme/icons";
+import { WizardHost } from "../wizard/Wizard";
+import { openNewWizard, useWizard } from "../wizard/wizardStore";
 import css from "./welcome.module.css";
 
 const MODES: [ThemeMode, string][] = [
@@ -69,7 +71,7 @@ export function Welcome() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && e.target === document.body) void openFolder();
+      if (e.key === "Enter" && e.target === document.body && !useWizard.getState().open) void openFolder();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -98,6 +100,10 @@ export function Welcome() {
           <button type="button" className={css.primary} onClick={() => void openFolder()}>
             프로젝트 열기 <EnterIcon />
           </button>
+          {/* M8 B7 첫 프로젝트 마법사 (0단계 = 이 화면의 두 갈래) */}
+          <button type="button" className={css.secondary} data-part="new-project" onClick={openNewWizard}>
+            새 프로젝트 만들기
+          </button>
           {openError && (
             <p role="alert" className={css.error}>
               {openError.reason === "not_workspace" ? "Kookabug 프로젝트가 아닙니다" : "폴더를 찾을 수 없습니다"}
@@ -123,6 +129,7 @@ export function Welcome() {
       ) : (
         <ToolPreview />
       )}
+      <WizardHost />
     </div>
   );
 }

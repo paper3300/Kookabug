@@ -20,6 +20,8 @@ import { DotIcon, LockIcon, PlayIcon } from "../theme/icons";
 import { attentionCount } from "../plugins/model";
 import { usePlugins } from "../plugins/pluginStore";
 import { activeSession, elapsedText, inputToolText, mapSummary, useMap } from "../screens/mapStore";
+import { ReportsButton } from "../reports/ReportsButton";
+import { ShortWizardWatch } from "../wizard/ShortWizardWatch";
 import { showSide } from "./Sidebar";
 import css from "./shell.module.css";
 
@@ -288,6 +290,11 @@ export function StatusBar() {
         </>
       )}
       {daemon.status === "connected" && !rec.recording && <Agents />}
+      {/* M8 B7: 보고함 N·짧은 마법사 감시 (앱 틀을 고치지 않고 상태 바에 붙인다) */}
+      {daemon.status === "connected" && !rec.recording && (
+        <ReportsButton className={`${css.statusItem} ${css.statusLink}`} />
+      )}
+      <ShortWizardWatch />
     </footer>
   );
 }

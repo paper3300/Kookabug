@@ -610,6 +610,58 @@ def test_job_dir_junction_refused(ws: Path, daemon: ThreadDaemon, tmp_path: Path
     assert stored is not None and "job_dir_unsafe" in json.dumps(stored, ensure_ascii=False)
 
 
+TAG = "0123456789abcdef0123456789abcdef"
+
+
+def test_launch_tag_recorded_and_listed(
+    ws: Path, daemon: ThreadDaemon, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """B7-2 검수 H2: 앱이 넘긴 실행 표지를 `job.json` `launch_tag`에 남기고 `agent-job list
+    --json`에 보인다 (앱 종료 때 자기 작업만 고르는 근거). 표지가 없으면 키도 없다."""
+    tagged = run_sync(
+        ws, env_for(tmp_path), "probe", playbook="probe", runs=1, minutes=1, launch_tag=TAG
+    )
+    assert tagged.outcome.state == "done", tagged.out
+    assert json.loads(tagged.text("job.json"))["launch_tag"] == TAG
+    plain = run_sync(ws, env_for(tmp_path), "probe", playbook="probe", runs=1, minutes=1)
+    assert "launch_tag" not in json.loads(plain.text("job.json"))
+    capsys.readouterr()
+    listing = build_parser().parse_args(["agent-job", "list", "--workspace", str(ws), "--json"])
+    assert agent_job_cmd.run(listing, *_streams()) == 0
+    jobs = {j["id"]: j for j in json.loads(capsys.readouterr().out)["jobs"]}
+    assert jobs[str(tagged.outcome.job)]["launch_tag"] == TAG
+    assert "launch_tag" not in jobs[str(plain.outcome.job)]
+
+
+@pytest.mark.parametrize(
+    "bad", ["", "0123456789ABCDEF0123456789ABCDEF", TAG[:-1], TAG + "0", "g" * 32, f"{TAG[:31]} "]
+)
+def test_launch_tag_format_refused(ws: Path, bad: str, capsys: pytest.CaptureFixture[str]) -> None:
+    """형식(소문자 hex 32자)만 본다. 틀리면 작업을 만들지 않고 사용법 오류(6)."""
+    argv = [
+        "agent-job",
+        "run",
+        "--workspace",
+        str(ws),
+        "--playbook",
+        "triage",
+        "--agent-command",
+        "x",
+        f"--launch-tag={bad}",
+        "--json",
+    ]
+    assert agent_job_cmd.run(build_parser().parse_args(argv), *_streams()) == 6
+    assert json.loads(capsys.readouterr().out)["error_code"] == "usage"
+    # runner를 바로 불러도 같다 (job.begin 전에 끝난다)
+    outcome = run_job(
+        JobOptions(root=ws, playbook="triage", agent_command="x", launch_tag=bad),
+        out=io.StringIO(),
+        connect=connect_daemon,
+    )
+    assert outcome.exit_code == 6 and outcome.job is None
+    assert not (ws / ".kookabug" / "jobs").exists()
+
+
 def test_agent_env_exit5(
     ws: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

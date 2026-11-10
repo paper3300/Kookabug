@@ -26,6 +26,7 @@ __all__ = [
     "JOBS_DIR",
     "JOB_FORMAT",
     "JOB_ID",
+    "LAUNCH_TAG",
     "LOCK_FILE",
     "STATES",
     "TERMINAL",
@@ -45,6 +46,8 @@ JOBS_DIR: Final = ".kookabug/jobs"
 LOCK_FILE: Final = ".kookabug/jobs.lock"
 JOB_FORMAT: Final = "kookabug.job/0"
 JOB_ID: Final = re.compile(r"^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")
+LAUNCH_TAG: Final = re.compile(r"[0-9a-f]{32}")
+"""`job.json` `launch_tag`: 띄운 쪽(앱)이 자기 작업을 알아보는 무작위 표지 (비밀 아님·권한 없음)."""
 UNCONFIRMED: Final = "recovery_unconfirmed"
 """감독자(daemon)가 없어졌는데 입력 복구를 확인하지 못했다 — 보고를 쓰지 않았다. 다음 daemon 시작의
 `_recover_jobs`가 확인을 이어받아 끝낸다 (R8)."""
@@ -146,7 +149,12 @@ def write_bytes(root: Path, rel: str, data: bytes) -> Path:
     path = filetx.plain(root, rel)
     path.parent.mkdir(parents=True, exist_ok=True)
     path = filetx.plain(root, rel)
-    write_atomic(path, data)
+
+    def inside() -> None:
+        # 교체 재시도(공유 위반) 사이 작업 폴더가 정션으로 바뀌어도 밖에 쓰지 않게 매번 다시 본다
+        filetx.plain(root, rel)
+
+    write_atomic(path, data, before_replace=inside)
     return path
 
 

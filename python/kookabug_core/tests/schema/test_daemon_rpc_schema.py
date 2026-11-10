@@ -165,6 +165,9 @@ TOOLS = {
             "wizard.set",
             # M8 B5 작업 소유 연결 heartbeat (R8)
             "job.heartbeat",
+            # M8 B7 마법사 2·8단계 설정 쓰기
+            "project.setup.set",
+            "local.settings.set",
         ),
         "ui_only",
     ),
@@ -184,7 +187,35 @@ M8_B4 = {name for name, tool in TOOLS.items() if name.split(".")[0] in {
     "knowledge", "wiki", "cases", "job", "jobs", "reports", "report", "unknowns", "project",
     "sources", "wizard",
 }}  # fmt: skip
-"""M8 B4 메서드: 렌더러 다리는 B7(마법사·보고함)이 연다 — 지금은 모두 렌더러 밖."""
+"""M8 B4 메서드: 렌더러 다리는 B7(마법사·보고함)이 연다."""
+M8_B7_RENDERER = {
+    "knowledge.search",
+    "knowledge.get",
+    "cases.list",
+    "cases.get",
+    "cases.close",
+    "unknowns.answer",
+    "project.automation.set",
+    "project.sources.set",
+    "project.qa_info",
+    "project.setup.set",
+    "local.settings.set",
+    "sources.check",
+    "cheats.list",
+    "cheats.categories.set",
+    "jobs.list",
+    "job.end",
+    "reports.list",
+    "reports.get",
+    "report.decide",
+    "adopt.revert",
+    "adoptions.list",
+    "wizard.get",
+    "wizard.set",
+}
+"""M8 B7이 연 렌더러 다리 (마법사·보고함, 사람 경로만). 결정(수락·되돌리기·답)은 모두 사람 전용
+메서드다. Agent만 쓰는 쓰기(`knowledge.apply`·`wiki.write`·`cases.open/update`·`adopt.request`)와
+작업 토큰 쪽(`job.begin/finish/heartbeat`·`job.note`)은 렌더러 밖에 둔다."""
 AGENT_ONLY_B3 = {"control.click", "control.key", "control.type", "app.launch"}
 AGENT_ONLY_M7 = {"screens.identify", "screens.save", "explore.start", "explore.end"}
 AGENT_ONLY_B2 = {
@@ -225,14 +256,11 @@ def test_method_table_matches_permission_table() -> None:
         *AGENT_ONLY_B2,
         *AGENT_ONLY_B3,
         *AGENT_ONLY_M7,
-        # M8 B2: 치트 채택은 CLI·daemon 사람 연결만 (렌더러 다리는 B7 보고함·마법사와 같이 연다)
-        "cheats.list",
+        # M8 B2: 치트 채택·해제는 CLI·daemon 사람 연결만 (B7은 목록·분류 켜기만 연다)
         "cheats.adopt",
         "cheats.unadopt",
-        "cheats.categories.set",
-        # M8 B3: 렌더러 다리는 B7 보고함과 같이 연다
-        *M8_B3,
-        *M8_B4,
+        *(M8_B3 - M8_B7_RENDERER),
+        *(M8_B4 - M8_B7_RENDERER),
     }
     for row in table.values():
         for part in ("params", "result"):

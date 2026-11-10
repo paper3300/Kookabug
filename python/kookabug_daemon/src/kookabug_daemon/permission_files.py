@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from kookabug_core import filetx
 from kookabug_core.canonical import loads_strict
 from kookabug_core.documents import DocumentError, write_atomic
 from kookabug_core.permissions import LayerName, Policy
@@ -179,6 +180,47 @@ class PermissionFiles:
         with self._lock:
             return self._write_data("user", base_revision, mutate)
 
+    def set_local_settings(
+        self,
+        updates: Mapping[str, Any],
+        sources: Mapping[str, str | None] | None = None,
+        *,
+        base_revision: str | None = None,
+        check_revision: bool = False,
+    ) -> str:
+        """`local.settings.set` (M8 B7 마법사 2·6단계): `.kookabug/local.json` `settings`의 키와
+        `sources.<id>.path`만 바꾼다(None이면 지움). 같은 잠금·쓰기 규칙이라 `permissions.set`과
+        겹치지 않는다. `check_revision`이면 화면을 채울 때 읽은 `base_revision`과 대조한다."""
+
+        def mutate(data: dict[str, Any]) -> None:
+            if updates:
+                settings = dict(data.get("settings") or {})
+                for key, value in updates.items():
+                    if value is None:
+                        settings.pop(key, None)
+                    else:
+                        settings[key] = value
+                data["settings"] = settings
+            if sources:
+                local_sources = dict(data.get("sources") or {})
+                for source_id, path in sources.items():
+                    if path is None:
+                        local_sources.pop(source_id, None)
+                    else:
+                        local_sources[source_id] = {"path": path}
+                data["sources"] = local_sources
+
+        with self._lock:
+            return self._write_data("project", base_revision, mutate, check_revision=check_revision)
+
+    def _plain_local(self) -> Path:
+        """`.kookabug/local.json` 쓰기 경로 (filetx.plain: 조각마다 링크·정션 아님, 실경로가
+        워크스페이스 안)."""
+        try:
+            return filetx.plain(self.root, LOCAL_FILE)
+        except filetx.TxError as exc:
+            raise RequestFailed("path_outside_workspace", exc.message, path=LOCAL_FILE) from exc
+
     def _write(
         self,
         layer: EditableLayer,
@@ -205,6 +247,8 @@ class PermissionFiles:
             raise RequestFailed(
                 "io_error", "사용자 설정 폴더를 정할 수 없다", message="APPDATA가 없다"
             )
+        if layer == "project":
+            self._plain_local()  # 읽기 전에도 (정션 밖 파일을 기준으로 삼지 않는다)
         shown = str(file.path)
         raw = _read(file.path)
         current = revision_of(raw)
@@ -243,6 +287,10 @@ class PermissionFiles:
         path = file.path
 
         def unchanged() -> None:
+            # 교체 시도마다 경계 → revision 순서로 본다. 공유 위반 재시도 사이 `.kookabug`가
+            # 정션으로 바뀌면 path_outside_workspace (B7 검수 H1)
+            if layer == "project":
+                self._plain_local()
             # 임시 파일 fsync 뒤 os.replace 바로 앞에서 다시 읽는다: 읽은 뒤 daemon 밖에서
             # 바뀌었으면 늦은 쪽(이 쓰기)을 거부하고 임시 파일은 write_atomic이 지운다 (B3 H4)
             now = revision_of(_read(path))
@@ -252,7 +300,13 @@ class PermissionFiles:
                 )
 
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
+            if layer == "project":
+                # 쓰기 직전 경로 경계 (B1 filetx.plain): `.kookabug` 정션 밖에 쓰지 않는다 (B7 H2)
+                path = self._plain_local()
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path = self._plain_local()
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
             write_atomic(path, body, before_replace=unchanged)
         except (OSError, DocumentError) as exc:
             text = f"{shown}에 쓸 수 없다: {exc}"

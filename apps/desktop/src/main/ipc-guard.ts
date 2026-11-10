@@ -91,6 +91,30 @@ export const RENDERER_METHODS: ReadonlySet<string> = new Set([
   "screens.discard",
   "screens.layout_get",
   "screens.layout_set",
+  // M8 B7 마법사·보고함 (사람 경로만 — 결정·설정 쓰기는 daemon이 agent 연결을 거부하는 사람 전용 메서드)
+  "wizard.get",
+  "wizard.set",
+  "project.setup.set",
+  "local.settings.set",
+  "project.qa_info",
+  "project.automation.set",
+  "project.sources.set",
+  "sources.check",
+  "cheats.list",
+  "cheats.categories.set",
+  "knowledge.search",
+  "knowledge.get",
+  "cases.list",
+  "cases.get",
+  "cases.close",
+  "unknowns.answer",
+  "jobs.list",
+  "job.end",
+  "reports.list",
+  "reports.get",
+  "report.decide",
+  "adopt.revert",
+  "adoptions.list",
 ]);
 
 // 주 프로세스 안에서만 쓰는 메서드. 렌더러 표면에서 뺀다. run.export는 dest(쓸 경로)를 주 프로세스의
@@ -124,6 +148,11 @@ export const RENDERER_EVENTS: ReadonlySet<string> = new Set([
   "plugins.progress",
   "plugins.done",
   "plugins.changed",
+  // M8 B7 보고함·작업 (ui 연결에만)
+  "knowledge.changed",
+  "reports.changed",
+  "job.changed",
+  "job.budget",
 ]);
 
 // 주 프로세스가 보내는 앱 알림 (daemon 알림이 아님): 연결 상태, 출력 패널 줄, 창 최대화 상태, 테마,
@@ -136,6 +165,8 @@ export const APP_EVENTS: ReadonlySet<string> = new Set([
   "app.closeRequested",
   // 에이전트 패널 세션 (M5 B5, acp/host.ts): 대화·도구 호출·권한 카드·끝남
   "agent.session",
+  // M8 B7 agent-job CLI가 끝남 (jobs.ts — --json 결과의 정해진 필드만)
+  "jobs.cli",
 ]);
 
 // 앱 API (preload `window.kookabug.app`). 인자 모양은 주 프로세스가 다시 검사한다
@@ -167,6 +198,12 @@ export const APP_ACTIONS: ReadonlySet<string> = new Set([
   "agentCancel",
   "agentPermission",
   "agentStop",
+  // M8 B7 마법사·보고함 (jobs.ts): 실행 파일·인자·명령줄은 주 프로세스가 정한다 (렌더러는 값 몇 개만)
+  "pickFolder",
+  "workspaceCreate",
+  "agentProbe",
+  "agentJobRun",
+  "doctor",
 ]);
 
 export class IpcGuardError extends Error {
@@ -178,6 +215,44 @@ export function checkAppAction(action: unknown): string {
     throw new IpcGuardError(`허용되지 않은 앱 동작: ${String(action)}`);
   }
   return action;
+}
+
+/** 렌더러가 띄울 수 있는 agent-job 플레이북 (M8 B7: 9단계 Init만) */
+export const JOB_PLAYBOOKS: ReadonlySet<string> = new Set(["init"]);
+const AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
+
+/**
+ * M8 B7 마법사·보고함 앱 동작의 인자 모양 (preload와 주 프로세스가 같이 본다). 실행 파일·명령줄·워크스페이스 루트는
+ * 받지 않는다 — 값 몇 개만. 그 밖의 동작은 지나간다(각자 주 프로세스에서 검사)
+ */
+export function checkJobArgs(action: string, args: readonly unknown[]): void {
+  const fail = (why: string): never => {
+    throw new IpcGuardError(`${action} 인자: ${why}`);
+  };
+  switch (action) {
+    case "pickFolder":
+    case "doctor":
+      if (args.length !== 0) fail("인자가 없어야 한다");
+      return;
+    case "workspaceCreate": {
+      const [req] = args;
+      if (args.length !== 1 || req === null || typeof req !== "object" || Array.isArray(req)) fail("객체 하나");
+      const r = req as Record<string, unknown>;
+      const keys = Object.keys(r).sort().join(",");
+      if (keys !== "git,name,parent") fail("키는 parent·name·git");
+      if (typeof r.parent !== "string" || typeof r.name !== "string" || typeof r.git !== "boolean") fail("형식");
+      return;
+    }
+    case "agentProbe":
+      if (args.length !== 1 || typeof args[0] !== "string" || !AGENT_ID.test(args[0])) fail("Agent ID 하나");
+      return;
+    case "agentJobRun":
+      if (args.length !== 2 || typeof args[0] !== "string" || !JOB_PLAYBOOKS.has(args[0])) fail("허용된 플레이북");
+      if (typeof args[1] !== "string" || !AGENT_ID.test(args[1])) fail("Agent ID");
+      return;
+    default:
+      return;
+  }
 }
 
 export function checkRendererMethod(method: unknown): string {

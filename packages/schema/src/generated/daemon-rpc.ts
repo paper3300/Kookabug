@@ -2833,6 +2833,36 @@ export interface Kb8KnowledgeSearchResult {
   truncated: boolean;
 }
 /**
+ * local.settings.set (사람 전용, B7 마법사 2단계): .kookabug/local.json settings의 게임 실행 키만 바꾼다 (이 PC). null이면 키를 지운다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8LocalSettingsSetParams".
+ */
+export interface Kb8LocalSettingsSetParams {
+  /**
+   * 주면 local.json revision 대조 (화면을 채울 때 wizard.get local_revision으로 읽은 값, 파일이 없었으면 null). 다르면 revision_conflict
+   */
+  base_revision?: string | null;
+  settings?: {
+    "game.args"?: string[] | null;
+    "game.cwd"?: string | null;
+    "game.executable"?: string | null;
+  };
+  /**
+   * 원본 ID → 이 PC 경로 (local.json sources.<id>.path, 6단계 local 원본). null이면 지운다
+   */
+  sources?: {
+    [k: string]: string | null | undefined;
+  };
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8LocalSettingsSetResult".
+ */
+export interface Kb8LocalSettingsSetResult {
+  revision: string;
+}
+/**
  * M8 다음 묶음(B5·B7)이 모양을 정하는 결과
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -2864,6 +2894,25 @@ export interface Kb8ProjectQaInfoResult {
     [k: string]: unknown | undefined;
   }[];
   warnings: string[];
+}
+/**
+ * project.setup.set (사람 전용, B7 마법사 2·8단계): kookabug.json의 record·retention 블록과 게임 설정 키(game.title·game.client_size)를 한 번에 바꾼다. 지금 sha가 다르면 revision_conflict
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8ProjectSetupSetParams".
+ */
+export interface Kb8ProjectSetupSetParams {
+  base_sha256: string;
+  record?: {
+    [k: string]: unknown | undefined;
+  };
+  retention?: {
+    [k: string]: unknown | undefined;
+  };
+  settings?: {
+    "game.client_size"?: Size;
+    "game.title"?: string;
+  };
 }
 /**
  * report.decide (사람 전용, B5): 보고 묶음 결정 → working.accept/reject
@@ -2956,15 +3005,82 @@ export interface Kb8WikiWriteResult {
   warnings: string[];
 }
 /**
- * wizard.set (사람 전용, B7)
+ * wizard.get (사람 전용, B7): 마법사 진행과 단계 판정에 쓰는 지금 설정. team_setup = 팀이 첫 설정을 마친 프로젝트(wiki/index.md 있음) — 짧은 마법사 자동 띄우기 조건
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8WizardGetResult".
+ */
+export interface Kb8WizardGetResult {
+  config_sha256: string;
+  /**
+   * 실효 게임 설정 (local.json이 kookabug.json보다 먼저)
+   */
+  game: {
+    args: string[] | null;
+    client_size: Size | null;
+    cwd: null | string;
+    executable: null | string;
+    title: null | string;
+  };
+  /**
+   * .kookabug/local.json revision (없으면 null) — local.settings.set base_revision에 쓴다
+   */
+  local_revision: string | null;
+  /**
+   * 이 PC 원본 경로 (local.json sources.<id>.path, 6단계). 경로만 — 비밀값 없음
+   */
+  local_sources: {
+    [k: string]: string | undefined;
+  };
+  record: {
+    [k: string]: unknown | undefined;
+  };
+  retention: {
+    [k: string]: unknown | undefined;
+  };
+  /**
+   * 팀 원본 정의 (kookabug.json sources, config_sha256과 같은 읽기)
+   */
+  sources: {
+    [k: string]: unknown | undefined;
+  }[];
+  team_setup: boolean;
+  wizard: Kb8WizardState | null;
+}
+/**
+ * 마법사 진행 (.kookabug/wizard.json, kookabug.wizard/0, 이 PC). 단계 상태만 둔다 — 입력 값·비밀값·경로를 두지 않는다 (M8 3.17)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8WizardState".
+ */
+export interface Kb8WizardState {
+  done: number[];
+  format: "kookabug.wizard/0";
+  skipped: number[];
+  step: number;
+  /**
+   * @maxItems 50
+   */
+  warnings: {
+    code: string;
+    step: number;
+  }[];
+}
+/**
+ * wizard.set (사람 전용, B7): 마법사 진행을 .kookabug/wizard.json에 원자 쓰기
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "Kb8WizardSetParams".
  */
 export interface Kb8WizardSetParams {
-  wizard: {
-    [k: string]: unknown | undefined;
-  };
+  wizard: Kb8WizardState;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8WizardSetResult".
+ */
+export interface Kb8WizardSetResult {
+  wizard: Kb8WizardState;
 }
 /**
  * working.accept·working.reject: 작업 기준 변경(파일)과 작업 주장 rev를 한 거래로 수락하거나 덧씌움에서 뺀다 (사람 전용). claims의 rev는 보고가 가리킨 작업 rev — 지금과 다르면 revision_conflict
@@ -3062,13 +3178,13 @@ export interface Methods {
   };
   "adopt.revert": {
     params: Kb8AdoptRevertParams;
-    renderer: false;
+    renderer: true;
     result: Kb8AdoptRevertResult;
     tool: "ui_only";
   };
   "adoptions.list": {
     params: EmptyParams;
-    renderer: false;
+    renderer: true;
     result: Kb8AdoptionsListResult;
     tool: "ui_only";
   };
@@ -3134,19 +3250,19 @@ export interface Methods {
   };
   "cases.close": {
     params: Kb8CasesCloseParams;
-    renderer: false;
+    renderer: true;
     result: Kb8CaseRevisionResult;
     tool: "ui_only";
   };
   "cases.get": {
     params: Kb8CaseIdParams;
-    renderer: false;
+    renderer: true;
     result: Kb8CaseGetResult;
     tool: "kb_case_get";
   };
   "cases.list": {
     params: Kb8CasesListParams;
-    renderer: false;
+    renderer: true;
     result: Kb8CasesListResult;
     tool: "kb_case_list";
   };
@@ -3176,13 +3292,13 @@ export interface Methods {
   };
   "cheats.categories.set": {
     params: Kb8CheatCategoriesSetParams;
-    renderer: false;
+    renderer: true;
     result: Kb8CheatCategoriesSetResult;
     tool: "ui_only";
   };
   "cheats.list": {
     params: EmptyParams;
-    renderer: false;
+    renderer: true;
     result: Kb8CheatsListResult;
     tool: "ui_only";
   };
@@ -3308,7 +3424,7 @@ export interface Methods {
   };
   "job.end": {
     params: Kb8JobEndParams;
-    renderer: false;
+    renderer: true;
     result: Kb8JobEndResult;
     tool: "ui_only";
   };
@@ -3332,7 +3448,7 @@ export interface Methods {
   };
   "jobs.list": {
     params: EmptyParams;
-    renderer: false;
+    renderer: true;
     result: Kb8JobsListResult;
     tool: "ui_only";
   };
@@ -3344,15 +3460,21 @@ export interface Methods {
   };
   "knowledge.get": {
     params: Kb8KnowledgeGetParams;
-    renderer: false;
+    renderer: true;
     result: Kb8KnowledgeGetResult;
     tool: "kb_knowledge_get";
   };
   "knowledge.search": {
     params: Kb8KnowledgeSearchParams;
-    renderer: false;
+    renderer: true;
     result: Kb8KnowledgeSearchResult;
     tool: "kb_knowledge_search";
+  };
+  "local.settings.set": {
+    params: Kb8LocalSettingsSetParams;
+    renderer: true;
+    result: Kb8LocalSettingsSetResult;
+    tool: "ui_only";
   };
   "nodes.list": {
     params: EmptyParams;
@@ -3428,19 +3550,25 @@ export interface Methods {
   };
   "project.automation.set": {
     params: Kb8ConfigBlockParams;
-    renderer: false;
+    renderer: true;
     result: Kb8ConfigBlockResult;
     tool: "ui_only";
   };
   "project.qa_info": {
     params: EmptyParams;
-    renderer: false;
+    renderer: true;
     result: Kb8ProjectQaInfoResult;
     tool: "kb_project_info";
   };
+  "project.setup.set": {
+    params: Kb8ProjectSetupSetParams;
+    renderer: true;
+    result: Kb8ConfigBlockResult;
+    tool: "ui_only";
+  };
   "project.sources.set": {
     params: Kb8ConfigBlockParams;
-    renderer: false;
+    renderer: true;
     result: Kb8ConfigBlockResult;
     tool: "ui_only";
   };
@@ -3530,19 +3658,19 @@ export interface Methods {
   };
   "report.decide": {
     params: Kb8ReportDecideParams;
-    renderer: false;
+    renderer: true;
     result: Kb8ReportDecideResult;
     tool: "ui_only";
   };
   "reports.get": {
     params: Kb8JobIdParams;
-    renderer: false;
+    renderer: true;
     result: Kb8ReportGetResult;
     tool: "ui_only";
   };
   "reports.list": {
     params: EmptyParams;
-    renderer: false;
+    renderer: true;
     result: Kb8ReportsListResult;
     tool: "ui_only";
   };
@@ -3752,7 +3880,7 @@ export interface Methods {
   };
   "sources.check": {
     params: EmptyParams;
-    renderer: false;
+    renderer: true;
     result: Kb8SourcesCheckResult;
     tool: "ui_only";
   };
@@ -3794,7 +3922,7 @@ export interface Methods {
   };
   "unknowns.answer": {
     params: Kb8UnknownsAnswerParams;
-    renderer: false;
+    renderer: true;
     result: Kb8UnknownsAnswerResult;
     tool: "ui_only";
   };
@@ -3812,14 +3940,14 @@ export interface Methods {
   };
   "wizard.get": {
     params: EmptyParams;
-    renderer: false;
-    result: Kb8LooseResult;
+    renderer: true;
+    result: Kb8WizardGetResult;
     tool: "ui_only";
   };
   "wizard.set": {
     params: Kb8WizardSetParams;
-    renderer: false;
-    result: Kb8LooseResult;
+    renderer: true;
+    result: Kb8WizardSetResult;
     tool: "ui_only";
   };
   "working.accept": {

@@ -92,6 +92,8 @@ M8_DENIED |= {
 """M8 B4 사건 닫기·미지수 답·정책·원본·작업·보고함·마법사 — 사람만 (계획 3.13)."""
 M8_DENIED |= {"job.heartbeat"}
 """M8 B5 작업 소유 연결 heartbeat (R8) — 사람만."""
+M8_DENIED |= {"project.setup.set", "local.settings.set"}
+"""M8 B7 마법사 2·8단계 설정 쓰기 — 사람만."""
 M6_DENIED = {
     "plugins.preview",
     "plugins.install",

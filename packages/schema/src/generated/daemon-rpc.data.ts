@@ -3441,6 +3441,97 @@ export const daemonRpcSchema: unknown = {
       "title": "Kb8KnowledgeSearchResult",
       "type": "object"
     },
+    "Kb8LocalSettingsSetParams": {
+      "additionalProperties": false,
+      "description": "local.settings.set (사람 전용, B7 마법사 2단계): .kookabug/local.json settings의 게임 실행 키만 바꾼다 (이 PC). null이면 키를 지운다",
+      "properties": {
+        "base_revision": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "주면 local.json revision 대조 (화면을 채울 때 wizard.get local_revision으로 읽은 값, 파일이 없었으면 null). 다르면 revision_conflict"
+        },
+        "settings": {
+          "additionalProperties": false,
+          "properties": {
+            "game.args": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 64,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "game.cwd": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "game.executable": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "sources": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": "원본 ID → 이 PC 경로 (local.json sources.<id>.path, 6단계 local 원본). null이면 지운다",
+          "type": "object"
+        }
+      },
+      "title": "Kb8LocalSettingsSetParams",
+      "type": "object"
+    },
+    "Kb8LocalSettingsSetResult": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "revision"
+      ],
+      "title": "Kb8LocalSettingsSetResult",
+      "type": "object"
+    },
     "Kb8LooseResult": {
       "description": "M8 다음 묶음(B5·B7)이 모양을 정하는 결과",
       "title": "Kb8LooseResult",
@@ -3495,6 +3586,40 @@ export const daemonRpcSchema: unknown = {
         "warnings"
       ],
       "title": "Kb8ProjectQaInfoResult",
+      "type": "object"
+    },
+    "Kb8ProjectSetupSetParams": {
+      "additionalProperties": false,
+      "description": "project.setup.set (사람 전용, B7 마법사 2·8단계): kookabug.json의 record·retention 블록과 게임 설정 키(game.title·game.client_size)를 한 번에 바꾼다. 지금 sha가 다르면 revision_conflict",
+      "properties": {
+        "base_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "record": {
+          "type": "object"
+        },
+        "retention": {
+          "type": "object"
+        },
+        "settings": {
+          "additionalProperties": false,
+          "properties": {
+            "game.client_size": {
+              "$ref": "#/$defs/Size"
+            },
+            "game.title": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "base_sha256"
+      ],
+      "title": "Kb8ProjectSetupSetParams",
       "type": "object"
     },
     "Kb8ReportDecideParams": {
@@ -3698,18 +3823,216 @@ export const daemonRpcSchema: unknown = {
       "title": "Kb8WikiWriteResult",
       "type": "object"
     },
+    "Kb8WizardGetResult": {
+      "additionalProperties": false,
+      "description": "wizard.get (사람 전용, B7): 마법사 진행과 단계 판정에 쓰는 지금 설정. team_setup = 팀이 첫 설정을 마친 프로젝트(wiki/index.md 있음) — 짧은 마법사 자동 띄우기 조건",
+      "properties": {
+        "config_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "game": {
+          "additionalProperties": false,
+          "description": "실효 게임 설정 (local.json이 kookabug.json보다 먼저)",
+          "properties": {
+            "args": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "client_size": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Size"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cwd": {
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "executable": {
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "title": {
+              "type": [
+                "null",
+                "string"
+              ]
+            }
+          },
+          "required": [
+            "args",
+            "client_size",
+            "cwd",
+            "executable",
+            "title"
+          ],
+          "type": "object"
+        },
+        "local_revision": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": ".kookabug/local.json revision (없으면 null) — local.settings.set base_revision에 쓴다"
+        },
+        "local_sources": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "이 PC 원본 경로 (local.json sources.<id>.path, 6단계). 경로만 — 비밀값 없음",
+          "type": "object"
+        },
+        "record": {
+          "type": "object"
+        },
+        "retention": {
+          "type": "object"
+        },
+        "sources": {
+          "description": "팀 원본 정의 (kookabug.json sources, config_sha256과 같은 읽기)",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "team_setup": {
+          "type": "boolean"
+        },
+        "wizard": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Kb8WizardState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "config_sha256",
+        "game",
+        "local_revision",
+        "local_sources",
+        "record",
+        "retention",
+        "sources",
+        "team_setup",
+        "wizard"
+      ],
+      "title": "Kb8WizardGetResult",
+      "type": "object"
+    },
     "Kb8WizardSetParams": {
       "additionalProperties": false,
-      "description": "wizard.set (사람 전용, B7)",
+      "description": "wizard.set (사람 전용, B7): 마법사 진행을 .kookabug/wizard.json에 원자 쓰기",
       "properties": {
         "wizard": {
-          "type": "object"
+          "$ref": "#/$defs/Kb8WizardState"
         }
       },
       "required": [
         "wizard"
       ],
       "title": "Kb8WizardSetParams",
+      "type": "object"
+    },
+    "Kb8WizardSetResult": {
+      "additionalProperties": false,
+      "properties": {
+        "wizard": {
+          "$ref": "#/$defs/Kb8WizardState"
+        }
+      },
+      "required": [
+        "wizard"
+      ],
+      "title": "Kb8WizardSetResult",
+      "type": "object"
+    },
+    "Kb8WizardState": {
+      "additionalProperties": false,
+      "description": "마법사 진행 (.kookabug/wizard.json, kookabug.wizard/0, 이 PC). 단계 상태만 둔다 — 입력 값·비밀값·경로를 두지 않는다 (M8 3.17)",
+      "properties": {
+        "done": {
+          "items": {
+            "maximum": 9,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "format": {
+          "const": "kookabug.wizard/0"
+        },
+        "skipped": {
+          "items": {
+            "maximum": 9,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "step": {
+          "maximum": 9,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "warnings": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "pattern": "^[a-z][a-z0-9_]{0,47}(:[A-Za-z0-9_.-]{1,64})?$",
+                "type": "string"
+              },
+              "step": {
+                "maximum": 9,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "code",
+              "step"
+            ],
+            "type": "object"
+          },
+          "maxItems": 50,
+          "type": "array"
+        }
+      },
+      "required": [
+        "done",
+        "format",
+        "skipped",
+        "step",
+        "warnings"
+      ],
+      "title": "Kb8WizardState",
       "type": "object"
     },
     "Kb8WorkingDecideParams": {
@@ -4064,7 +4387,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/Kb8AdoptRevertParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8AdoptRevertResult"
@@ -4088,7 +4411,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/EmptyParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8AdoptionsListResult"
@@ -4352,7 +4675,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/Kb8CasesCloseParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8CaseRevisionResult"
@@ -4376,7 +4699,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/Kb8CaseIdParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8CaseGetResult"
@@ -4400,7 +4723,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/Kb8CasesListParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8CasesListResult"
@@ -4520,7 +4843,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/Kb8CheatCategoriesSetParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8CheatCategoriesSetResult"
@@ -4544,7 +4867,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/EmptyParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8CheatsListResult"
@@ -5048,7 +5371,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/Kb8JobEndParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8JobEndResult"
@@ -5144,7 +5467,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/EmptyParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8JobsListResult"
@@ -5192,7 +5515,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/Kb8KnowledgeGetParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8KnowledgeGetResult"
@@ -5216,13 +5539,37 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/Kb8KnowledgeSearchParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8KnowledgeSearchResult"
             },
             "tool": {
               "const": "kb_knowledge_search"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "local.settings.set": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/Kb8LocalSettingsSetParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/Kb8LocalSettingsSetResult"
+            },
+            "tool": {
+              "const": "ui_only"
             }
           },
           "required": [
@@ -5528,7 +5875,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/Kb8ConfigBlockParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8ConfigBlockResult"
@@ -5552,13 +5899,37 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/EmptyParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8ProjectQaInfoResult"
             },
             "tool": {
               "const": "kb_project_info"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "project.setup.set": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/Kb8ProjectSetupSetParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/Kb8ConfigBlockResult"
+            },
+            "tool": {
+              "const": "ui_only"
             }
           },
           "required": [
@@ -5576,7 +5947,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/Kb8ConfigBlockParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8ConfigBlockResult"
@@ -5936,7 +6307,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/Kb8ReportDecideParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8ReportDecideResult"
@@ -5960,7 +6331,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/Kb8JobIdParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8ReportGetResult"
@@ -5984,7 +6355,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/EmptyParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8ReportsListResult"
@@ -6824,7 +7195,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/EmptyParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8SourcesCheckResult"
@@ -6992,7 +7363,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/Kb8UnknownsAnswerParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/Kb8UnknownsAnswerResult"
@@ -7064,10 +7435,10 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/EmptyParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
-              "$ref": "#/$defs/Kb8LooseResult"
+              "$ref": "#/$defs/Kb8WizardGetResult"
             },
             "tool": {
               "const": "ui_only"
@@ -7088,10 +7459,10 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/Kb8WizardSetParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
-              "$ref": "#/$defs/Kb8LooseResult"
+              "$ref": "#/$defs/Kb8WizardSetResult"
             },
             "tool": {
               "const": "ui_only"
@@ -7384,7 +7755,9 @@ export const daemonRpcSchema: unknown = {
         "wizard.get",
         "wizard.set",
         "job.heartbeat",
-        "project.qa_info"
+        "project.qa_info",
+        "project.setup.set",
+        "local.settings.set"
       ],
       "title": "Methods",
       "type": "object"

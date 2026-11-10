@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import tempfile
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -224,7 +225,21 @@ def save(
         return SaveResult(current_revision, False, False, diagnostics)
 
     canonicalized = text != doc.original_text and not doc.canonical
-    write_atomic(path, data)
+
+    def unchanged() -> None:
+        # 교체 직전(재시도마다) 디스크를 다시 본다: 그사이 밖에서 바뀌었으면 덮어쓰지 않는다
+        if force:
+            return
+        now = _read(path)
+        if now != current:
+            raise DocumentError(
+                "revision_conflict",
+                "파일이 저장 중에 밖에서 바뀌었다",
+                path=path,
+                revision=None if now is None else revision_of(now),
+            )
+
+    write_atomic(path, data, before_replace=unchanged)
     _adopt(doc, data, text)
     return SaveResult(doc.revision, True, canonicalized, diagnostics)
 
@@ -242,8 +257,9 @@ def write_atomic(
     """같은 폴더 임시 파일에 쓰고 fsync한 뒤 `os.replace`. 실패하면 임시 파일을 남기지 않는다.
 
     임시 파일을 만들지 못한 경우(폴더 쓰기 권한·디스크)도 `io_error`다. 대상 파일은 그대로다.
-    `before_replace`는 임시 파일 fsync 뒤 `os.replace` 바로 앞에 부른다. 예외를 내면 임시 파일을
-    지우고 그 예외를 그대로 낸다(대상은 그대로) — 권한 파일의 교체 직전 revision 재확인(M5 B3).
+    `before_replace`는 임시 파일 fsync 뒤 `os.replace` 바로 앞에 부른다(교체를 다시 시도할 때마다
+    다시). 예외를 내면 임시 파일을 지우고 그 예외를 그대로 낸다(대상은 그대로) — 권한 파일의 교체
+    직전 revision 재확인(M5 B3).
     """
     try:
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
@@ -256,9 +272,7 @@ def write_atomic(
             f.write(data)
             f.flush()
             os.fsync(f.fileno())
-        if before_replace is not None:
-            before_replace()
-        os.replace(tmp, path)
+        _replace_retrying(tmp, path, before_replace)
     except OSError as exc:
         with contextlib.suppress(OSError):
             os.unlink(tmp)
@@ -267,6 +281,31 @@ def write_atomic(
         with contextlib.suppress(OSError):
             os.unlink(tmp)
         raise
+
+
+REPLACE_RETRY_S: Final = 2.0
+"""Windows에서 다른 프로세스가 대상 파일을 읽는 중이면(공유 삭제 없이 열림) `os.replace`가
+`PermissionError`다. 읽기는 금방 끝나므로 잠깐 다시 해 본다 (M8 B7: 보고함이 `jobs.list`로
+`job.json`을 읽는 동안 `agent-job`이 같은 파일을 바꿔 작업이 죽던 경합)."""
+
+
+def _replace_retrying(tmp: str, path: Path, before_replace: Callable[[], None] | None) -> None:
+    """재시도마다 교체 바로 앞에서 `before_replace`(호출자 충돌 검사)를 다시 부른다 — 기다리는
+    사이 다른 작성자가 바꿨으면 그 검사의 오류로 끝난다(임시 파일은 `write_atomic`이 지운다,
+    B7 검수 H3)."""
+    deadline = time.monotonic() + REPLACE_RETRY_S
+    delay = 0.01
+    while True:
+        if before_replace is not None:
+            before_replace()
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 0.2)
 
 
 def _core_version() -> str:

@@ -1,0 +1,6 @@
+{
+  "description": "마법사 E2E(M8 B7): 연결 시험과 9단계 Init이 같이 쓰는 짧은 각본 — kb_project_info를 한 번 부르고 끝낸다",
+  "steps": [
+    {"tool": "kb_project_info", "expect": "ok"}
+  ]
+}

@@ -200,6 +200,9 @@ class JobOptions:
     """연결 유실 뒤 daemon 프로세스가 없어지기를 기다리는 한도."""
     input_settled: Callable[[Path, Mapping[str, str]], bool] | None = None
     """감독자 유실 뒤 입력 해제 확인 (기본 `settle.input_settled`, 검사가 바꿔 끼운다)."""
+    launch_tag: str | None = None
+    """실행 표지 (`--launch-tag`, hex 32자). `job.json` `launch_tag`에 남긴다 — 앱 종료 때 자기가
+    띄운 작업만 고르는 데 쓴다. 비밀이 아니고 권한도 주지 않는다."""
 
 
 @dataclass(slots=True)
@@ -319,6 +322,8 @@ def run_job(
     env = dict(os.environ if environ is None else environ)
     root = options.root
     print(SECURITY_NOTE, file=out)
+    if options.launch_tag is not None and not jobdir.LAUNCH_TAG.fullmatch(options.launch_tag):
+        return JobOutcome(EXIT_USAGE, None, None, message="launch_tag는 소문자 hex 32자다")
     try:
         playbook = playbooks.load(options.playbook)
     except playbooks.PlaybookError as exc:
@@ -422,6 +427,8 @@ def _run_locked(
             "ended_at": None,
             "owner": {"pid": me.pid, "created": str(me.created)},
         }
+        if options.launch_tag is not None:
+            doc["launch_tag"] = options.launch_tag  # run_job 첫머리에서 형식을 봤다
         if begun["state"] == "prep_failed":
             doc.update(state="prep_failed", report=begun.get("report"), ended_at=_iso())
             _save(root, doc)

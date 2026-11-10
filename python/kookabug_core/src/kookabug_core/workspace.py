@@ -421,7 +421,17 @@ def ensure_workspace_id(root: Path) -> str:
         return current
     new_id = str(uuid.uuid4())
     data["id"] = new_id
-    write_atomic(path, save_text(text, data).encode("utf-8"))
+
+    def unchanged() -> None:
+        # 교체 직전(재시도마다) 다시 본다: 그사이 밖에서 바뀐 kookabug.json을 덮어쓰지 않는다
+        try:
+            same = path.read_bytes() == text.encode("utf-8")
+        except OSError:
+            same = False
+        if not same:
+            raise WorkspaceError(f"{path}이(가) 그사이 바뀌어 워크스페이스 ID를 넣지 않는다")
+
+    write_atomic(path, save_text(text, data).encode("utf-8"), before_replace=unchanged)
     return new_id
 
 

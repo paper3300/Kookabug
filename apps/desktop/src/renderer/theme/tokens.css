@@ -248,6 +248,37 @@
   --kb-map-chip-list-bg: #333333;
   --kb-map-chip-list-fg: #cccccc;
   --kb-statusbar-agent-bg: #68217a;
+  /* 첫 프로젝트 마법사·보고함 (M8 B7, 시안 Wizard5Agent·6Sources·7Automation·9Init) */
+  --kb-wiz-title: #f3f3f3;
+  --kb-wiz-text: #a9a9a9;
+  --kb-wiz-strong: #e7e7e7;
+  --kb-wiz-label: #bbbbbb;
+  --kb-wiz-faint: #8a8a8a;
+  --kb-wiz-box-bg: #232323;
+  --kb-wiz-box-border: #3c3c3c;
+  --kb-wiz-row-border: #2e2e2e;
+  --kb-wiz-card-border: #333333;
+  --kb-wiz-selected-bg: #04395e;
+  --kb-wiz-button-bg: #2a2a2a;
+  --kb-wiz-seg-active-bg: #3c3c3c;
+  --kb-wiz-dot: #e7e7e7;
+  --kb-wiz-dot-off: #4a4a4a;
+  --kb-wiz-right-bg: #181818;
+  --kb-wiz-right-dot: #2a2a2a;
+  --kb-wiz-avatar-bg: #2e2e2e;
+  --kb-wiz-ok-bg: #1e3d2f;
+  --kb-wiz-ok-fg: #a8e0a5;
+  --kb-wiz-ok-line: #2b4a33;
+  --kb-wiz-ok-band: #1a2b1f;
+  --kb-wiz-warn-bg: #3a2f17;
+  --kb-wiz-warn-fg: #e2c08d;
+  --kb-wiz-info-bg: #1a2633;
+  --kb-wiz-info-border: #23415e;
+  --kb-wiz-info-fg: #9cc8f0;
+  --kb-wiz-user-bg: #2d2540;
+  --kb-wiz-user-border: #463a66;
+  --kb-wiz-user-fg: #d2c2f0;
+  --kb-wiz-switch-knob: #ffffff;
 }
 
 :root[data-theme="light"] {
@@ -486,6 +517,37 @@
   --kb-map-chip-list-bg: #e8e8e8;
   --kb-map-chip-list-fg: #3b3b3b;
   --kb-statusbar-agent-bg: #68217a;
+  /* 첫 프로젝트 마법사·보고함 (M8 B7). 라이트 시안은 없어 다크 색을 대응표대로 옮겼다 */
+  --kb-wiz-title: #1f1f1f;
+  --kb-wiz-text: #555555;
+  --kb-wiz-strong: #1f1f1f;
+  --kb-wiz-label: #444444;
+  --kb-wiz-faint: #767676;
+  --kb-wiz-box-bg: #ffffff;
+  --kb-wiz-box-border: #d6d6d6;
+  --kb-wiz-row-border: #e5e5e5;
+  --kb-wiz-card-border: #d6d6d6;
+  --kb-wiz-selected-bg: #dcebf9;
+  --kb-wiz-button-bg: #e8e8e8;
+  --kb-wiz-seg-active-bg: #ffffff;
+  --kb-wiz-dot: #3b3b3b;
+  --kb-wiz-dot-off: #c8c8c8;
+  --kb-wiz-right-bg: #f3f3f3;
+  --kb-wiz-right-dot: #dddddd;
+  --kb-wiz-avatar-bg: #e8e8e8;
+  --kb-wiz-ok-bg: #dcf2df;
+  --kb-wiz-ok-fg: #1e6b2d;
+  --kb-wiz-ok-line: #b6dfbd;
+  --kb-wiz-ok-band: #eaf6ec;
+  --kb-wiz-warn-bg: #f5e7c8;
+  --kb-wiz-warn-fg: #6b4e00;
+  --kb-wiz-info-bg: #e8f1fb;
+  --kb-wiz-info-border: #b9d3ef;
+  --kb-wiz-info-fg: #0b4f8a;
+  --kb-wiz-user-bg: #eee8f8;
+  --kb-wiz-user-border: #cbbde6;
+  --kb-wiz-user-fg: #4b2f86;
+  --kb-wiz-switch-knob: #ffffff;
 }
 
 /* 글꼴·치수 (시안 Main: 본문 13px, 작은 글자 11px, 고정폭 12px) */

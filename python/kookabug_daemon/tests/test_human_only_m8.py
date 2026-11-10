@@ -25,7 +25,7 @@ pytestmark = [pytest.mark.process, pytest.mark.timeout(300)]
 
 M8_SPACES = {
     "adopt", "adoptions", "working", "cases", "evidence", "knowledge", "wiki", "job", "jobs",
-    "report", "reports", "unknowns", "cheats", "project", "sources", "wizard",
+    "report", "reports", "unknowns", "cheats", "project", "sources", "wizard", "local",
 }  # fmt: skip
 SHA = "0" * 64
 CASE = "c-20261110-000000-abcd"
@@ -56,7 +56,17 @@ PARAMS: dict[str, dict[str, Any]] = {
     "reports.get": {"job": JOB},
     "report.decide": {"job": JOB, "group": "g", "decision": "accept"},
     "wizard.get": {},
-    "wizard.set": {"wizard": {}},
+    "wizard.set": {
+        "wizard": {
+            "format": "kookabug.wizard/0",
+            "step": 1,
+            "done": [],
+            "skipped": [],
+            "warnings": [],
+        }
+    },
+    "project.setup.set": {"base_sha256": SHA, "record": {"video": "off"}},
+    "local.settings.set": {"settings": {"game.cwd": "C:/x"}},
 }
 
 
@@ -122,7 +132,7 @@ def test_all_human_methods_denied_for_agent(ws: Path, daemon: ThreadDaemon) -> N
     assert tree_digest(ws) == before
     # 사람 연결은 판정 전 거부가 없다 (처리기가 없는 B5·B7 메서드는 method_not_found)
     with daemon.client() as ui:
-        for method in ("cases.close", "unknowns.answer", "job.finish", "wizard.get"):
+        for method in ("cases.close", "unknowns.answer", "job.finish", "job.end"):
             with pytest.raises(DaemonError) as caught:
                 ui.call(method, PARAMS[method], timeout=60)
             assert caught.value.kind != "permission_denied", method

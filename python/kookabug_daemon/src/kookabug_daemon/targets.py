@@ -993,7 +993,15 @@ class TargetStore:
             if now is None:
                 _publish_new(where.path, data)
             else:
-                write_atomic(where.path, data)
+
+                def unchanged() -> None:
+                    # 교체 직전(재시도마다) 다시 본다: 그사이 밖에서 바뀌었으면 덮어쓰지 않는다
+                    if read_bytes(where.path) != now:
+                        raise RequestFailed(
+                            "revision_conflict", "target이 저장 중에 밖에서 바뀌었다", revision=None
+                        )
+
+                write_atomic(where.path, data, before_replace=unchanged)
         except FileExistsError as exc:
             raise RequestFailed(
                 "exists", f"'{where.given}'이(가) 저장 중에 밖에서 생겼다", revision=None

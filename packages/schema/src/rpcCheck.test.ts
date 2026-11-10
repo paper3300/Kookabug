@@ -26,24 +26,34 @@ test("test_method_table_tools_and_internal_methods", () => {
   // M3: run.export의 dest는 주 프로세스 저장 대화 상자가 정한다
   // M5: 에이전트(MCP)만 쓰는 메서드도 렌더러 표면에 내놓지 않는다
   expect(internal.sort()).toEqual([
+    // M8 B3·B4: Agent의 채택 요청·사건 열기/고치기·증거 고정 (렌더러는 사람 결정 메서드만 — B7)
+    "adopt.request",
     "agent.toolsets.enable",
     "agent.toolsets.get",
     "app.launch",
-    // M8 B2: 치트 채택은 CLI·daemon 사람 연결만 (렌더러 다리는 B7)
+    "cases.open",
+    "cases.signals",
+    "cases.update",
+    // M8 B2: 치트 채택·해제는 CLI·daemon 사람 연결만 (B7은 목록·분류 켜기만 연다)
     "cheats.adopt",
-    "cheats.categories.set",
-    "cheats.list",
     "cheats.unadopt",
     "control.click",
     "control.key",
     "control.type",
     "daemon.shutdown",
+    "evidence.pin",
     // M7 탐색 세션·화면 지도 저장·식별 (에이전트만)
     "explore.end",
     "explore.start",
     "graph.check",
     "graph.list",
     "graph.patch",
+    // M8 B5: 작업 토큰 쪽 (agent-job CLI·작업 연결만)
+    "job.begin",
+    "job.finish",
+    "job.heartbeat",
+    "job.note",
+    "knowledge.apply",
     "run.artifact",
     "run.diff",
     "run.events",
@@ -56,6 +66,11 @@ test("test_method_table_tools_and_internal_methods", () => {
     "screens.list",
     "screens.save",
     "session.hello",
+    "wiki.write",
+    // M8 B3: 묶음 수락·거절은 보고함 report.decide로 (사람 전용)
+    "working.accept",
+    "working.list",
+    "working.reject",
   ]);
   expect(Object.keys(NOTIFICATIONS).sort()).toEqual([
     "agent.connections.changed",
@@ -67,12 +82,18 @@ test("test_method_table_tools_and_internal_methods", () => {
     // M7 탐색 세션·후보 (ui 연결에만)
     "explore.changed",
     "graph.changed",
+    // M8 작업 예산·상태, 지식 변경 (ui 연결에만)
+    "job.budget",
+    "job.changed",
+    "knowledge.changed",
     "lease.changed",
     // M6 B4 플러그인 작업 진행·끝, 잠금 변경
     "plugins.changed",
     "plugins.done",
     "plugins.progress",
     "recorder.changed",
+    // M8 보고함 (ui 연결에만)
+    "reports.changed",
     "run.ended",
     "run.event",
     "run.lagged",

@@ -29,7 +29,7 @@ export function fileBadgeText(path: string): string {
 export interface EditorTab {
   /** 파일 탭은 워크스페이스 기준 경로, RUN 탭은 `run:<run_id>` */
   path: string;
-  kind: "graph" | "target" | "run" | "file" | "rec" | "settings" | "plugin" | "map";
+  kind: "graph" | "target" | "run" | "file" | "rec" | "settings" | "plugin" | "map" | "reports" | "setup";
   graphKind: TreeEntry["graph_kind"] | null;
   title: string;
   /** RUN 탭의 실행, 스냅샷 그래프 탭이면 그 그래프를 돈 실행 */
@@ -135,6 +135,17 @@ export function openSettingsTab(): void {
   });
 }
 
+/** 설정 도우미 탭 자리 (M8 B7 마법사 — 건너뛴 단계·경고, 단계 하나만 다시 열기). 보고함 탭은 `reports:inbox` */
+export const SETUP_TAB_PATH = "settings:wizard";
+
+export function openSetupTab(): void {
+  useTabs.setState((s) => {
+    if (s.tabs.some((t) => t.path === SETUP_TAB_PATH)) return { active: SETUP_TAB_PATH };
+    const tab: EditorTab = { path: SETUP_TAB_PATH, kind: "setup", graphKind: null, title: "설정 도우미" };
+    return { tabs: [...s.tabs, tab], active: SETUP_TAB_PATH };
+  });
+}
+
 /** 플러그인 상세 탭 자리 (M6 B5, `plugin:<id>`) */
 export const PLUGIN_TAB_PREFIX = "plugin:";
 
@@ -200,7 +211,8 @@ export function closeAllTabs(): void {
 export function tabBadge(
   tab: Pick<EditorTab, "kind" | "graphKind"> & { snapshot?: boolean; preview?: boolean; path?: string },
 ): { text: string; tone: "test" | "target" | "run" | "file" | "rec" } {
-  if (tab.kind === "settings") return { text: "SETTINGS", tone: "file" };
+  if (tab.kind === "settings" || tab.kind === "setup") return { text: "SETTINGS", tone: "file" };
+  if (tab.kind === "reports") return { text: "REPORTS", tone: "run" };
   if (tab.kind === "map") return { text: "MAP", tone: "target" };
   if (tab.kind === "plugin") return { text: "PLUGIN", tone: "file" };
   if (tab.preview === true) return { text: "PREVIEW", tone: "run" };

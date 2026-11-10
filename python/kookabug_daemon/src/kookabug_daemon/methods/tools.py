@@ -122,6 +122,9 @@ HUMAN_KNOWLEDGE_METHODS: Final = frozenset(
         "report.decide",
         "wizard.get",
         "wizard.set",
+        # B7 마법사 2·8단계 설정 쓰기
+        "project.setup.set",
+        "local.settings.set",
     }
 )
 """M8 사건 닫기·미지수 답·정책·원본·작업·보고함·마법사 (계획 3.13, B4, 엄격: Agent 권한). Agent는

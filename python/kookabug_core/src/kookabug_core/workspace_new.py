@@ -32,7 +32,7 @@ GIT_TIMEOUT_S: Final = 30
 
 
 class CreateError(Exception):
-    """만들지 않았다. `code`: `not_empty`·`invalid_name`·`io_error`."""
+    """만들지 않았다. `code`: `not_empty`·`invalid_name`·`path_link`·`io_error`."""
 
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
@@ -65,10 +65,22 @@ def _check_name(name: str) -> str:
     return name
 
 
+def _check_no_links(path: Path) -> None:
+    """대상과 그 조각(있는 조상 폴더) 중 링크·정션이 있으면 거부한다 — 글자와 다른 곳(정션이
+    가리키는 외부 폴더)에 워크스페이스를 만들지 않는다 (B7 검수 H1). 앱은 고른 위치의 실경로를
+    넘긴다."""
+    current = Path(path.anchor)
+    for part in path.parts[1:]:
+        current = current / part
+        if current.is_symlink() or current.is_junction():
+            raise CreateError("path_link", f"{current}이(가) 링크·정션이라 만들지 않는다")
+
+
 def create_workspace(root: str | os.PathLike[str], name: str, *, git: bool = False) -> Created:
     """`root`에 새 워크스페이스를 만든다. 없으면 폴더도 만든다."""
     name = _check_name(name)
-    path = Path(root)
+    path = Path(os.path.abspath(root))
+    _check_no_links(path)
     if path.exists():
         if not path.is_dir():
             raise CreateError("not_empty", f"{path}은(는) 폴더가 아니다")
@@ -76,6 +88,8 @@ def create_workspace(root: str | os.PathLike[str], name: str, *, git: bool = Fal
             raise CreateError("not_empty", f"{path}이(가) 비어 있지 않아 만들지 않는다")
     try:
         path.mkdir(parents=True, exist_ok=True)
+        # 쓰기 직전에 다시 본다 (검사와 만들기 사이에 바뀐 경우)
+        _check_no_links(path)
         path = path.resolve()
         workspace_id = str(uuid.uuid4())
         created = Created(path, workspace_id)

@@ -12,7 +12,8 @@ import { DaemonManager, nodeDeps, parseExtraArgs, sameWorkspacePath } from "./da
 import { exportRun } from "./dialogs";
 import { e2eHooksEnabled, installE2EHooks, ResponseDelays } from "./e2e-hooks";
 import { createNotificationForwarder, createRpcHandler, type DaemonCall } from "./ipc";
-import { APP_CHANNEL, checkAppAction, checkSender, EVENT_CHANNEL, IpcGuardError, RPC_CHANNEL } from "./ipc-guard";
+import { JobRunner, JobsError, nodeExec, nodeSpawn } from "./jobs";
+import { APP_CHANNEL, checkAppAction, checkJobArgs, checkSender, EVENT_CHANNEL, IpcGuardError, RPC_CHANNEL } from "./ipc-guard";
 import { handleProtocols, registerSchemes } from "./protocols";
 import { APP_ORIGIN, frameNavigationAllowed, isExternalOpenAllowed, lockedWebPreferences } from "./security";
 import { WidgetHosts } from "./widgets";
@@ -259,10 +260,36 @@ function start(): void {
       try {
         return await fn(...args);
       } catch (err) {
-        if (err instanceof AgentHostError) throw new Error(`${err.code}: ${err.message}`);
+        if (err instanceof AgentHostError || err instanceof JobsError) throw new Error(`${err.code}: ${err.message}`);
         throw err;
       }
     };
+  // 마법사·보고함의 사람 쪽 CLI (M8 B7, jobs.ts): 루트·Agent 명령은 주 프로세스가 정한다
+  const jobs = new JobRunner({
+    cli: () => cliLocation().path,
+    root: () => manager.root,
+    async agentIds() {
+      const result = (await daemonCall("agents.get", {}, "{}")) as { agents: AgentSpecLite[] };
+      return result.agents.map((a) => a.id);
+    },
+    exec: nodeExec(process.env),
+    spawn: nodeSpawn(process.env),
+    emit: (result) => send("jobs.cli", result),
+    override:
+      __KOOKABUG_E2E_HOOKS__ && e2eHooksEnabled(app.isPackaged, process.env)
+        ? (process.env.KOOKABUG_E2E_AGENT_JOB ?? null)
+        : null,
+  });
+  // 앱이 띄운 agent-job이 돌고 있으면 끝내기 전에 취소를 요청하고 상한(5초)까지 기다린다. 작업 종료 경로(R8)는 daemon·CLI 몫
+  let jobsShutDown = false;
+  app.on("before-quit", (event) => {
+    if (jobsShutDown || !jobs.running) return;
+    event.preventDefault();
+    jobsShutDown = true;
+    void jobs.shutdown().finally(() => app.quit());
+  });
+  // 띄운 작업이 없던 종료도 종료 플래그는 세운다 (끝내는 사이 시작 중이던 probe·run·만들기가 띄우지 않게)
+  app.on("will-quit", () => void jobs.shutdown());
 
   handleProtocols(RENDERER_ROOT, () => manager.root, widgetHosts);
 
@@ -365,6 +392,19 @@ function start(): void {
       agentHost.permission(session, id, optionId),
     ),
     agentStop: agentAction((session: unknown) => agentHost.stop(session)),
+    // M8 B7 마법사·보고함 (jobs.ts)
+    async pickFolder() {
+      const options: Electron.OpenDialogOptions = { title: "프로젝트 위치", properties: ["openDirectory", "createDirectory"] };
+      const picked = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+      return picked.canceled || picked.filePaths.length === 0 ? null : picked.filePaths[0];
+    },
+    workspaceCreate: agentAction(async (request: unknown) => {
+      const created = await jobs.createWorkspace(request);
+      return openWorkspace(created.folder);
+    }),
+    agentProbe: agentAction((agentId: unknown) => jobs.probe(agentId)),
+    agentJobRun: agentAction((playbook: unknown, agentId: unknown) => jobs.runJob(playbook, agentId)),
+    doctor: agentAction(() => jobs.doctor()),
   };
   // 창 닫기 확인 (close-guard.ts): 저장 안 된 그래프가 있으면 렌더러가 저장·버림·취소를 묻는다
   const closeGuard = new CloseGuard({
@@ -373,7 +413,9 @@ function start(): void {
   });
   ipcMain.handle(APP_CHANNEL, (event, action: unknown, ...args: unknown[]) => {
     guardSender(event);
-    return actions[checkAppAction(action)](...args);
+    const name = checkAppAction(action);
+    checkJobArgs(name, args);
+    return actions[name](...args);
   });
 
   const theme = () => (nativeTheme.shouldUseDarkColors ? "dark" : "light");

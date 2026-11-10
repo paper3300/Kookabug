@@ -68,6 +68,12 @@ def add_parser(commands: Any) -> None:
     run.add_argument("--minutes", type=int, help="시간 예산 (기본 kookabug.json automation.budget)")
     run.add_argument("--runs", type=int, help="실행 수 예산")
     run.add_argument("--trigger", choices=["manual", "schedule", "ci"], default="manual")
+    run.add_argument(
+        "--launch-tag",
+        metavar="HEX32",
+        help="실행 표지 (앱이 자기가 띄운 작업을 목록에서 알아본다, job.json launch_tag). "
+        "비밀 아님·권한 없음, 소문자 hex 32자",
+    )
 
     status = actions.add_parser("status", help="작업 상태 (job.json)")
     common(status)
@@ -208,9 +214,13 @@ def run(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
 
 
 def _run(args: argparse.Namespace, root: Path, out: TextIO, err: TextIO, finish: Any) -> int:
+    from kookabug_core.agent_job.jobdir import LAUNCH_TAG
     from kookabug_core.agent_job.runner import JobOptions, run_job
 
     probe = args.action == "probe"
+    tag = None if probe else args.launch_tag
+    if tag is not None and not LAUNCH_TAG.fullmatch(tag):
+        raise ValueError("--launch-tag는 소문자 hex 32자다")
     options = JobOptions(
         root=root,
         playbook="probe" if probe else args.playbook,
@@ -221,6 +231,7 @@ def _run(args: argparse.Namespace, root: Path, out: TextIO, err: TextIO, finish:
         runs=1 if probe else args.runs,
         trigger="manual" if probe else args.trigger,
         pass_env=list(args.pass_env),
+        launch_tag=tag,
     )
     if args.grace_s is not None:
         options.grace_s = float(args.grace_s)

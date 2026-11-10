@@ -102,7 +102,12 @@ def in_tree_scope(rel: str) -> bool:
     parts = rel.casefold().split("/")
     if len(parts) == 1:
         return parts[0] in _ROOT_FILES_FOLDED
-    return parts[0] in TREE_DIRS
+    return parts[0] in TREE_DIRS or parts[0] in READ_ONLY_DIRS
+
+
+READ_ONLY_DIRS: Final = ("knowledge", "wiki")
+"""탐색기 목록에는 없지만 보기 탭으로 읽을 수 있는 폴더 (M8 B7 보고함: 증거 묶음·렌더된
+보고서·위키). `.kookabug/`·`runs/`는 여전히 막는다."""
 
 
 def _through_folder_link(root: Path, given: str) -> bool:

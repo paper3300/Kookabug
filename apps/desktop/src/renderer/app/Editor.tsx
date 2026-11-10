@@ -27,6 +27,8 @@ import {
 } from "../store/documents";
 import { ask } from "../store/dialog";
 import { PluginDetail } from "../plugins/PluginDetail";
+import { ReportsTab } from "../reports/ReportsTab";
+import { SetupHelper } from "../wizard/SetupHelper";
 import { activateTab, PLUGIN_TAB_PREFIX, tabBadge, useTabs } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
 import { LogoMark } from "../theme/icons";
@@ -107,6 +109,8 @@ function Breadcrumb() {
               ? [name, "플러그인", tab.title]
             : tab?.kind === "map"
               ? [name, "화면 지도"]
+            : tab?.kind === "reports" || tab?.kind === "setup"
+              ? [name, tab.title]
             : tab?.preview === true
               ? [name, "승인 미리보기", tab.title]
               : [name, ...active.split("/")];
@@ -228,6 +232,10 @@ export function Editor({ children }: { children?: ReactNode }) {
           <PluginDetail key={active} id={active.slice(PLUGIN_TAB_PREFIX.length)} />
         ) : activeTab?.kind === "map" ? (
           <ScreenMapTab />
+        ) : activeTab?.kind === "reports" ? (
+          <ReportsTab />
+        ) : activeTab?.kind === "setup" ? (
+          <SetupHelper />
         ) : (
           <div className={css.canvas} data-part="canvas" data-path={active} />
         )}
