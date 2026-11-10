@@ -5,7 +5,7 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { REPO_CLI } from "./app";
+import { DEFAULT_TEST_AGENT, REPO_CLI } from "./app";
 import { fakeAgentCommand, OCR_MODELS, TOOLS_DIR, VENV_PYTHON } from "./wizard";
 
 export interface ShopWorld {
@@ -27,6 +27,8 @@ export function prepareShopWorld(variant: "moved" | "missing"): ShopWorld {
   const user = path.join(dir, "user");
   fs.mkdirSync(state);
   fs.mkdirSync(user);
+  // 에이전트가 설정된 사용자 (미설정이면 마법사 5단계가 자동으로 떠 보고함 화면을 덮는다)
+  fs.writeFileSync(path.join(user, "settings.json"), JSON.stringify({ format: "kookabug.user-settings/0", agents: [DEFAULT_TEST_AGENT] }));
   return {
     dir,
     root,

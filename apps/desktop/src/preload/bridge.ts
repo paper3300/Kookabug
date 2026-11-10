@@ -64,9 +64,6 @@ export interface AppApi {
   /** 디버그 툴바 가로 자리 (캔버스 가운데 기준 px) */
   debugToolbarGet(): Promise<number>;
   debugToolbarSet(x: number): Promise<void>;
-  /** 에이전트 첫 설정 대화 상자를 "나중에"로 닫았는가 */
-  agentSetupDismissedGet(): Promise<boolean>;
-  agentSetupDismissedSet(): Promise<void>;
   /** 패널 배치 (store/ui.ts Layout) */
   layoutGet(): Promise<unknown>;
   layoutSet(layout: unknown): Promise<void>;
@@ -147,8 +144,6 @@ function appApi(ipc: IpcRendererLike): AppApi {
     themeSet: call("themeSet"),
     debugToolbarGet: call("debugToolbarGet"),
     debugToolbarSet: call("debugToolbarSet"),
-    agentSetupDismissedGet: call("agentSetupDismissedGet"),
-    agentSetupDismissedSet: call("agentSetupDismissedSet"),
     layoutGet: call("layoutGet"),
     layoutSet: call("layoutSet"),
     daemonState: call("daemonState"),

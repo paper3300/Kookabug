@@ -35,7 +35,7 @@ async function shot(page: Page, name: string): Promise<void> {
 }
 
 async function toStep3(page: Page, w: WizardWorld, name: string, take: boolean): Promise<void> {
-  await page.getByRole("button", { name: "새 프로젝트 만들기" }).click();
+  await page.getByRole("button", { name: "시작하기", exact: true }).click();
   await expectStep(page, 1);
   await stubOpenDialog(s!.app, w.parent);
   await page.getByRole("button", { name: "찾아보기" }).click();

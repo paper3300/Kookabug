@@ -9,7 +9,7 @@ import { openPreviewTab, openSettingsTab, PREVIEW_PREFIX, useTabs } from "../sto
 import { useWorkspace } from "../store/workspace";
 import { ChevronDownIcon, ChevronRightIcon, LockIcon, StopIcon } from "../theme/icons";
 import css from "./agent.module.css";
-import { openAgentSetup } from "./AgentSetupDialog";
+import { openAgentSetup } from "../wizard/ShortWizardWatch";
 import { Picker } from "./Picker";
 import { Markdown } from "./markdown";
 import { ask } from "../store/dialog";
@@ -37,6 +37,7 @@ import {
   refreshAgents,
   refreshCandidates,
   refreshPermissions,
+  reloadUserSettings,
   removeChip,
   respondApproval,
   restartSession,
@@ -45,11 +46,14 @@ import {
   setLeaseSource,
   setUserPreset,
   startSession,
+  USER_CONFLICT_TEXT,
+  USER_RELOAD_FAILED_TEXT,
   toggleTools,
   toolsRunning,
   toolsSummary,
   useAgent,
   dismissLease,
+  dismissJobBlocked,
   type ApprovalCard as ApprovalState,
   type ChatItem,
   type Chip,
@@ -355,6 +359,26 @@ function LeaseBanner() {
   );
 }
 
+/** 무인 작업(agent-job) 중이라 실행·조작을 막았다 (`job_active`, M8 R8: 작업 예산·종료 감독 우회 금지) */
+function JobBanner() {
+  const blocked = useAgent((s) => s.jobBlocked);
+  if (!blocked) return null;
+  return (
+    <div className={css.lease} role="status" data-part="job-blocked">
+      <div className={css.leaseTitle}>
+        <LockIcon width={14} height={14} />
+        무인 작업이 도는 중이에요
+      </div>
+      <div>이 프로젝트에서 무인 작업이 도는 동안에는 에이전트가 테스트를 실행하거나 게임을 조작할 수 없어요. 작업이 끝나면 다시 해 보세요.</div>
+      <div>
+        <button type="button" className={css.footerLink} onClick={dismissJobBlocked}>
+          닫기
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** 지금 에디터 맥락에서 @칩 하나 (RUN 탭 → @run, 그래프의 고른 노드 → @node) */
 function useContextChip(): (() => Chip) | null {
   const tab = useTabs((s) => s.tabs.find((t) => t.path === s.active));
@@ -538,14 +562,19 @@ function Connect() {
   const startError = useAgent((s) => s.startError);
   const problem = useAgent((s) => s.agentsProblem);
   const permissions = useAgent((s) => s.permissions);
+  const userConflict = useAgent((s) => s.userConflict);
   const connected = useWorkspace((s) => s.daemon.status === "connected");
   const [name, setName] = useState("");
   const [line, setLine] = useState("");
+  /** 충돌 안내의 "다시 읽기"가 실패함 (충돌은 그대로 남는다) */
+  const [reloadFailed, setReloadFailed] = useState(false);
+  const reload = () => void reloadUserSettings().then((ok) => setReloadFailed(!ok));
   useEffect(() => {
     if (!connected) return;
+    // 캐시만 새로 읽는다 (저장 기준은 처음 읽기·"다시 읽기"로만 바뀐다 — 재연결이 외부 변경을 몰래 받아들이지 않게)
     void refreshAgents();
-    void refreshCandidates();
     void refreshPermissions();
+    void refreshCandidates();
   }, [connected]);
   const configured = new Set(agents.map((a) => a.id));
   const detected = (candidates ?? []).filter((c) => !configured.has(c.id));
@@ -631,6 +660,7 @@ function Connect() {
           className={css.select}
           aria-label="권한 프리셋"
           value={userPreset ?? effectivePreset(permissions)}
+          disabled={userConflict}
           onChange={(e) => void setUserPreset(e.target.value)}
         >
           {PRESETS.map(([value, label]) => (
@@ -640,6 +670,15 @@ function Connect() {
           ))}
         </select>
       </label>
+      {userConflict && (
+        <div className={css.startError} role="alert" data-part="agent-conflict">
+          {USER_CONFLICT_TEXT} —{" "}
+          <button type="button" className={css.setupLink} onClick={reload}>
+            다시 읽기
+          </button>
+          {reloadFailed && <div data-part="agent-reload-failed">{USER_RELOAD_FAILED_TEXT}</div>}
+        </div>
+      )}
       {startError !== null && (
         <div className={css.startError} role="alert" data-part="agent-start-error">
           {startError}
@@ -691,6 +730,7 @@ export function AgentPanel() {
       </div>
       <External />
       <LeaseBanner />
+      <JobBanner />
       {session === null ? (
         <Connect />
       ) : (

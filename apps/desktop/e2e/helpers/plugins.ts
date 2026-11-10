@@ -97,7 +97,7 @@ export async function openPluginApp(world: PluginWorld, ws: string, options: { s
   await page.waitForLoadState("domcontentloaded");
   await setContentSize(app, page, 1440, 900);
   await stubOpenDialog(app, ws);
-  await page.getByRole("button", { name: "프로젝트 열기" }).click();
+  await page.getByRole("button", { name: "이미 있는 프로젝트 열기", exact: true }).click();
   await waitConnected(page);
   return { app, page, userData, workspace: ws };
 }

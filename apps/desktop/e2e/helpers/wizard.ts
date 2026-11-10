@@ -74,10 +74,10 @@ export async function launchWizardApp(world: WizardWorld, options: { userData?: 
   return { app, page, userData };
 }
 
-/** 시작 화면 "프로젝트 열기"로 연다 (대화 상자는 이 폴더를 고른 것처럼) */
+/** 시작 화면 "이미 있는 프로젝트 열기"로 연다 (대화 상자는 이 폴더를 고른 것처럼) */
 export async function openProject(s: WizardSession, root: string): Promise<void> {
   await stubOpenDialog(s.app, root);
-  await s.page.getByRole("button", { name: "프로젝트 열기" }).click();
+  await s.page.getByRole("button", { name: "이미 있는 프로젝트 열기", exact: true }).click();
   await waitConnected(s.page);
 }
 

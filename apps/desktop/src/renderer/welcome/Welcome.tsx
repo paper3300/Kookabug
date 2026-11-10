@@ -1,5 +1,5 @@
-// 시작 화면 (M2 계획 2.10 "폴더 열기", 2.11 Setup0Welcome). 로고·워드마크·소개 글·"프로젝트 열기"·
-// 최근 프로젝트·테마 고르기. M8 B7: "새 프로젝트 만들기" → 첫 프로젝트 마법사 (기존 "프로젝트 열기" 단추는 그대로)
+// 시작 화면 (M2 계획 2.10 "폴더 열기", 2.11 Setup0Welcome). 로고·워드마크·소개 글·"시작하기"(첫 프로젝트 마법사)·
+// "이미 있는 프로젝트 열기"·최근 프로젝트·테마 고르기 (M8 U15: 시안 단추 배치)
 import { useEffect } from "react";
 import { WindowControls } from "../app/WindowControls";
 import { useTheme, type ThemeMode } from "../store/theme";
@@ -71,7 +71,8 @@ export function Welcome() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && e.target === document.body && !useWizard.getState().open) void openFolder();
+      // Enter = 주 단추 (시작하기)
+      if (e.key === "Enter" && e.target === document.body && !useWizard.getState().open) openNewWizard();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -97,12 +98,12 @@ export function Welcome() {
           <span className={`${css.chip} ${css.chipAgent}`}>에이전트</span>로 만들어요.
         </p>
         <div className={css.actions}>
-          <button type="button" className={css.primary} onClick={() => void openFolder()}>
-            프로젝트 열기 <EnterIcon />
+          {/* 시안 Setup0Welcome 그대로 (U15): 주 단추 "시작하기" = 첫 프로젝트 마법사, 글자 단추 = 기존 프로젝트 열기 */}
+          <button type="button" className={css.primary} data-part="new-project" onClick={openNewWizard}>
+            시작하기 <EnterIcon />
           </button>
-          {/* M8 B7 첫 프로젝트 마법사 (0단계 = 이 화면의 두 갈래) */}
-          <button type="button" className={css.secondary} data-part="new-project" onClick={openNewWizard}>
-            새 프로젝트 만들기
+          <button type="button" className={css.secondary} data-part="open-project" onClick={() => void openFolder()}>
+            이미 있는 프로젝트 열기
           </button>
           {openError && (
             <p role="alert" className={css.error}>

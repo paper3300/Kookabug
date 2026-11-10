@@ -1,7 +1,6 @@
 // 앱 틀 (M2 계획 2.11): 타이틀 바 · 연결 띠 · 액티비티 바 · 사이드바 · 에디터 · 하단 패널 · 상태 바.
 // 오른쪽 패널은 속성 | 에이전트 탭 (M5 B5, RightPanel.tsx)
 import { useEffect } from "react";
-import { AgentSetupDialog, useAgentSetup } from "../agent/AgentSetupDialog";
 import { runDebugKey } from "../debug/commands";
 import { debugKey } from "../debug/keys";
 import { getTarget, saveBlocker, saveTarget, targetDirty } from "../target/targetStore";
@@ -23,6 +22,7 @@ import css from "./shell.module.css";
 import { ActivityBar, Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
 import { TitleBar } from "./TitleBar";
+import { useWizard } from "../wizard/wizardStore";
 
 /** 글자 입력 칸 안이면 실행 취소·다시 실행은 그 칸의 것이다 */
 function inTextField(target: EventTarget | null): boolean {
@@ -46,7 +46,7 @@ function useShortcuts(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // 대화 상자가 떠 있으면 뒤쪽 화면의 단축키(저장·실행 취소·탭 닫기 등)는 듣지 않는다
-      if (useDialog.getState().current !== null || usePlugins.getState().flow !== null || useAgentSetup.getState().open) return;
+      if (useDialog.getState().current !== null || usePlugins.getState().flow !== null || useWizard.getState().open) return;
       // 실행·디버거 (M3 2.9, VS Code 관례): F5 실행·계속, Shift+F5 정지, Ctrl+Shift+F5 다시 시작, F6 일시정지,
       // F9 브레이크포인트, F10·F11·Shift+F11 Step. 글자 칸 안에서도 기능 키는 디버거 것이다
       const debug = debugKey(e);
@@ -112,7 +112,6 @@ export function Shell() {
       <StatusBar />
       <QuickOpen />
       <PluginDialog />
-      <AgentSetupDialog />
       <Dialog />
     </div>
   );

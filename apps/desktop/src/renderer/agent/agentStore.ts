@@ -84,9 +84,23 @@ interface AgentState {
   chips: Chip[];
   /** 에이전트의 게임 조작이 입력 임대권에 막힘 (시안 Main 띠) */
   leaseBlocked: { owner: string | null } | null;
+  /** 에이전트의 실행·조작이 무인 작업(agent-job)에 막힘 (`job_active`) */
+  jobBlocked: boolean;
+  /** 화면이 읽은 뒤 다른 곳에서 사용자 설정이 바뀌어 저장이 revision_conflict로 거부됨 ("다시 읽기" 전까지) */
+  userConflict: boolean;
+  /**
+   * 화면이 받아들인 사용자 설정 revision (null = 아직 읽지 않음). 처음 읽기·"다시 읽기" 성공·자기 쓰기로만 바뀐다. 다른 경로의
+   * 읽기(재연결 등)가 캐시를 바꿔도 그대로라, 캐시 revision과 다르면 다음 저장을 충돌로 본다 (review_merge_3)
+   */
+  userBase: { revision: string | null } | null;
+  /** 자기 agents.set이 마지막에 저장한 기본 에이전트와 그 revision (뒤이은 자기 permissions.set만 revision을 이어 받는다) */
+  ownDefault: { agentId: string | null; revision: string } | null;
 }
 
-const EMPTY: Omit<AgentState, "agents" | "agentsRevision" | "defaultAgent" | "agentsProblem" | "agentsLoaded" | "candidates" | "permissions" | "connections"> = {
+const EMPTY: Omit<
+  AgentState,
+  "agents" | "agentsRevision" | "defaultAgent" | "agentsProblem" | "agentsLoaded" | "candidates" | "permissions" | "connections" | "userBase" | "ownDefault"
+> = {
   session: null,
   starting: null,
   startError: null,
@@ -96,6 +110,8 @@ const EMPTY: Omit<AgentState, "agents" | "agentsRevision" | "defaultAgent" | "ag
   draft: "",
   chips: [],
   leaseBlocked: null,
+  jobBlocked: false,
+  userConflict: false,
 };
 
 export const useAgent = create<AgentState>(() => ({
@@ -108,6 +124,8 @@ export const useAgent = create<AgentState>(() => ({
   agentsLoaded: false,
   candidates: null,
   permissions: null,
+  userBase: null,
+  ownDefault: null,
 }));
 
 let nextKey = 1;
@@ -227,6 +245,11 @@ export function leaseRefused(event: AgentEvent): boolean {
   return event.type === "tool" && event.text.includes("input_lease_busy");
 }
 
+/** 도구 결과 글자에 무인 작업 거부가 있는가 (작업 중 실행·제어·게임 띄우기 → job_active, M8 R8) */
+export function jobRefused(event: AgentEvent): boolean {
+  return event.type === "tool" && event.text.includes("job_active");
+}
+
 /** 칩과 글을 보낼 글자로 */
 export function promptText(draft: string, chips: readonly Chip[]): string {
   const head = chips.map((c) => c.text).join("\n");
@@ -239,6 +262,7 @@ const PRESET_LABEL: Record<string, string> = {
   runner: "실행",
   full: "전체",
   explorer: "탐색",
+  curator: "지식 관리",
 };
 
 export function presetLabel(preset: string | null | undefined): string {
@@ -305,6 +329,7 @@ function onSessionEvent(data: AgentSessionEvent): void {
     const lease = currentLease();
     useAgent.setState({ leaseBlocked: { owner: lease } });
   }
+  if (jobRefused(event)) useAgent.setState({ jobBlocked: true });
   setItems((items) => applyEvent(items, event, Date.now()));
 }
 
@@ -350,18 +375,25 @@ export async function refreshConnections(): Promise<void> {
   }
 }
 
-export async function refreshAgents(): Promise<void> {
+/**
+ * 사용자 설정의 에이전트 목록을 읽는다. 읽었으면 true (파일 문제(`problem`)가 있어도 읽기는 된 것). 캐시만 바꾼다 — 저장 기준
+ * (`userBase`)은 아직 없을 때만 정한다 (외부 변경은 "다시 읽기"로만 받아들인다)
+ */
+export async function refreshAgents(): Promise<boolean> {
   try {
     const got = await client().call("agents.get", {});
-    useAgent.setState({
+    useAgent.setState((s) => ({
       agents: got.agents,
       agentsRevision: got.revision ?? null,
       defaultAgent: got.default_agent ?? null,
       agentsProblem: got.problem ?? null,
       agentsLoaded: true,
-    });
+      ...(s.userBase === null ? { userBase: { revision: got.revision ?? null } } : {}),
+    }));
+    return true;
   } catch (err) {
     useAgent.setState({ agentsProblem: toRpcError(err).message, agentsLoaded: true });
+    return false;
   }
 }
 
@@ -374,12 +406,110 @@ export async function refreshCandidates(): Promise<void> {
   }
 }
 
-export async function refreshPermissions(): Promise<void> {
+/** 권한 계층을 읽는다. 읽었으면 true */
+export async function refreshPermissions(): Promise<boolean> {
   try {
-    useAgent.setState({ permissions: await client().call("permissions.get", {}) });
+    const permissions = await client().call("permissions.get", {});
+    useAgent.setState((s) => ({
+      permissions,
+      ...(s.userBase === null ? { userBase: { revision: userLayerRevision(permissions) } } : {}),
+    }));
+    return true;
   } catch {
     // 연결 전
+    return false;
   }
+}
+
+export const USER_RELOAD_FAILED_TEXT = "사용자 설정을 다시 읽지 못했어요. 잠시 뒤 다시 읽어 주세요.";
+
+/**
+ * 사용자 설정 다시 읽기 (충돌 안내의 "다시 읽기"·설정 화면을 열 때): 에이전트·권한을 새로 읽는다. 둘 다 읽었을 때만 충돌
+ * 표시를 지우고 true. 하나라도 못 읽으면 충돌을 그대로 둔다 (옛 화면 값으로 저장이 풀리지 않게, review_merge_2)
+ */
+export async function reloadUserSettings(): Promise<boolean> {
+  const [agents, permissions] = await Promise.all([refreshAgents(), refreshPermissions()]);
+  if (!agents || !permissions) return false;
+  const s = useAgent.getState();
+  // 둘을 읽는 사이 바뀌었으면 (같은 파일이라 revision이 같아야 한다) 받아들이지 않는다
+  if (s.agentsRevision !== userLayerRevision(s.permissions)) return false;
+  useAgent.setState({ userConflict: false, userBase: { revision: s.agentsRevision } });
+  return true;
+}
+
+function userLayerRevision(info: PermissionsInfo | null): string | null {
+  return info?.layers?.find((l) => l.layer === "user")?.revision ?? null;
+}
+
+/**
+ * 저장 기준 revision. 캐시(`cached`)가 화면이 받아들인 revision과 다르면(다른 경로의 읽기가 외부 변경을 가져옴) 충돌로 보고
+ * `userConflict`를 켠다 — 새 revision을 몰래 쓰지 않는다. 충돌이면 undefined
+ */
+function userWriteBase(cached: string | null): string | null | undefined {
+  const { userConflict, userBase } = useAgent.getState();
+  if (userConflict) return undefined;
+  if (userBase !== null && userBase.revision !== cached) {
+    useAgent.setState({ userConflict: true });
+    return undefined;
+  }
+  return userBase?.revision ?? cached;
+}
+
+/**
+ * 자기 자신이 사용자 설정 파일에 쓴 뒤 그 응답 revision을 이어 받는다. 에이전트 목록과 사용자 권한 계층은 같은 파일이라
+ * revision도 같다. 쓰기 전 기준(`before`)과 같은 값을 들고 있던 칸만 바꾼다 — 다른 값을 들고 있던 칸(그 사이 다른 곳에서
+ * 바뀐 것을 본 적 없는 화면)은 그대로 두어 다음 저장이 revision_conflict로 거부되게 한다.
+ * agents.set(`defaultAgent`)이면 `ownDefault`를 새로 두고, permissions.set(`preset`)이면 바로 앞이 자기 쓰기일 때만 이어 받는다
+ */
+function adoptUserRevision(before: string | null, after: string, patch: { preset: string } | { defaultAgent: string | null }): void {
+  useAgent.setState((s) => {
+    const preset = "preset" in patch ? patch.preset : undefined;
+    const layers = s.permissions?.layers?.map((l) => {
+      if (l.layer !== "user" || (l.revision ?? null) !== before) return l;
+      const permissions = preset === undefined ? l.permissions : { ...((l.permissions ?? {}) as Record<string, unknown>), preset };
+      return { ...l, revision: after, permissions } as typeof l;
+    });
+    const ownDefault =
+      "defaultAgent" in patch
+        ? { agentId: patch.defaultAgent, revision: after }
+        : s.ownDefault !== null && s.ownDefault.revision === before
+          ? { ...s.ownDefault, revision: after }
+          : null;
+    return {
+      agentsRevision: s.agentsRevision === before ? after : s.agentsRevision,
+      userBase: s.userBase === null || s.userBase.revision === before ? { revision: after } : s.userBase,
+      ownDefault,
+      ...(s.permissions !== null && layers !== undefined ? { permissions: { ...s.permissions, layers } } : {}),
+    };
+  });
+}
+
+/**
+ * 이 앱이 자기 agents.set으로 `agentId`를 기본으로 저장했고, 그 뒤 자기 permissions.set만 이어졌는가 (캐시·저장 기준 모두 그
+ * revision). 진행 콜백의 완료 조건 — 캐시의 기본 값이 같다는 것만으로는 완료하지 않는다
+ */
+export function ownDefaultSaved(agentId: string): boolean {
+  const { userConflict, ownDefault, userBase, agentsRevision } = useAgent.getState();
+  return !userConflict && ownDefault !== null && ownDefault.agentId === agentId && userBase?.revision === ownDefault.revision && agentsRevision === ownDefault.revision;
+}
+
+/**
+ * 파일의 지금 revision이 저장 기준과 같은지 읽어 본다 (캐시·기준은 바꾸지 않는다). 다르면 `userConflict`를 켜고 false.
+ * 읽기 실패면 null (충돌로 보지 않지만 끝내지도 않는다)
+ */
+export async function checkUserRevision(): Promise<boolean | null> {
+  let revision: string | null;
+  try {
+    revision = (await client().call("agents.get", {})).revision ?? null;
+  } catch {
+    return null;
+  }
+  const { userBase } = useAgent.getState();
+  if (userBase === null || userBase.revision !== revision) {
+    useAgent.setState({ userConflict: true });
+    return false;
+  }
+  return true;
 }
 
 async function loadApprovals(): Promise<void> {
@@ -510,14 +640,14 @@ export async function switchAgent(agentId: string, confirm: () => Promise<boolea
   const { session, items } = useAgent.getState();
   if (session?.agentId === agentId) return;
   if (session !== null && items.length > 0 && !(await confirm())) return;
-  useAgent.setState({ items: [], leaseBlocked: null });
+  useAgent.setState({ items: [], leaseBlocked: null, jobBlocked: false });
   await startSession(agentId);
 }
 
 /** 새 대화: 같은 에이전트로 새 세션, 대화 비우기 */
 export async function newConversation(): Promise<void> {
   const { session } = useAgent.getState();
-  useAgent.setState({ items: [], leaseBlocked: null });
+  useAgent.setState({ items: [], leaseBlocked: null, jobBlocked: false });
   if (session !== null) await startSession(session.agentId);
 }
 
@@ -526,7 +656,7 @@ export async function endSession(): Promise<void> {
   const { session } = useAgent.getState();
   if (session === null) return;
   stopping = session.id;
-  useAgent.setState({ session: null, items: [], leaseBlocked: null });
+  useAgent.setState({ session: null, items: [], leaseBlocked: null, jobBlocked: false });
   await app().agentStop(session.id).catch(() => {});
 }
 
@@ -615,16 +745,25 @@ export function dismissLease(): void {
   useAgent.setState({ leaseBlocked: null });
 }
 
+export function dismissJobBlocked(): void {
+  useAgent.setState({ jobBlocked: false });
+}
+
 /** 사용자 설정 에이전트 목록에 더하거나 바꾼다 (agents.set, revision) */
 export async function saveAgent(spec: AgentSpec): Promise<void> {
   const { agents, agentsRevision, defaultAgent } = useAgent.getState();
+  const base = userWriteBase(agentsRevision);
+  if (base === undefined) throw new Error(USER_CONFLICT_TEXT);
   const next = agents.some((a) => a.id === spec.id) ? agents.map((a) => (a.id === spec.id ? spec : a)) : [...agents, spec];
-  const { revision } = await client().call("agents.set", {
-    agents: next,
-    default_agent: defaultAgent,
-    base_revision: agentsRevision,
-  });
-  useAgent.setState({ agents: next, agentsRevision: revision });
+  let revision: string;
+  try {
+    ({ revision } = await client().call("agents.set", { agents: next, default_agent: defaultAgent, base_revision: base }));
+  } catch (err) {
+    if (toRpcError(err).kind === "revision_conflict") useAgent.setState({ userConflict: true });
+    throw err;
+  }
+  useAgent.setState({ agents: next });
+  adoptUserRevision(base, revision, { defaultAgent });
 }
 
 /** 권한 프리셋 고르기 목록 (값, 보이는 글자) */
@@ -633,6 +772,8 @@ export const PRESETS: [string, string][] = [
   ["read_only", "읽기 전용"],
   ["runner", "실행 — 작성 + 실행, 입력은 확인 후"],
   ["explorer", "탐색 — 화면 지도 쓰기, 게임 조작은 확인 후"],
+  // 마법사 5단계가 추천하는 값이라 패널 고르기에도 있어야 지금 값이 보인다
+  ["curator", "지식 관리 — 지식·사건·작업 기준 편집, 게임 조작은 확인 후"],
   ["full", "전체 (주의)"],
 ];
 
@@ -651,25 +792,37 @@ export function candidateStatus(c: AgentCandidate): { tone: CandidateTone; text:
 }
 
 /**
- * 첫 설정 대화 상자 저장: 고른 에이전트를 설정에 더하고(이미 있는 id는 그대로) 기본 에이전트·권한 프리셋을 정한다.
- * 실패하면 이유 글자, 성공하면 null
+ * 에이전트 설정 저장 (마법사 5단계 — 에이전트 패널 "설정 도우미"도 같은 화면): 고른 에이전트를 설정에 더하고(이미 있는 id는
+ * 그대로) 기본 에이전트·권한 프리셋을 정한다. 패널과 같은 저장소 revision을 쓴다(서로 다른 revision으로 덮지 않게).
+ * revision 충돌(외부 변경)이면 다시 읽지 않고 `userConflict`를 켠다 — 사람이 "다시 읽기"로 바뀐 값을 본 뒤에만 받아들인다
+ * (review_merge_3). 실패하면 이유 글자, 성공하면 null
  */
-export async function saveAgentSetup(picked: readonly AgentCandidate[], defaultId: string | null, preset: string | null): Promise<string | null> {
+export async function saveAgentSetup(
+  picked: readonly Pick<AgentSpec, "id" | "name" | "command" | "args">[],
+  defaultId: string | null,
+  preset: string | null,
+): Promise<string | null> {
+  if (useAgent.getState().userConflict) return USER_CONFLICT_TEXT;
+  if (!useAgent.getState().agentsLoaded) await refreshAgents();
   const { agents, agentsRevision, defaultAgent } = useAgent.getState();
+  const base = userWriteBase(agentsRevision);
+  if (base === undefined) return USER_CONFLICT_TEXT;
   const have = new Set(agents.map((a) => a.id));
   const next = [...agents, ...picked.filter((c) => !have.has(c.id)).map((c) => ({ id: c.id, name: c.name, command: c.command, args: c.args }))];
+  const written = defaultId ?? defaultAgent;
   try {
-    const { revision } = await client().call("agents.set", {
-      agents: next,
-      default_agent: defaultId ?? defaultAgent,
-      base_revision: agentsRevision,
-    });
-    useAgent.setState({ agents: next, agentsRevision: revision, defaultAgent: defaultId ?? defaultAgent });
+    const { revision } = await client().call("agents.set", { agents: next, default_agent: written, base_revision: base });
+    useAgent.setState({ agents: next, defaultAgent: written });
+    adoptUserRevision(base, revision, { defaultAgent: written });
   } catch (err) {
-    await refreshAgents();
-    return toRpcError(err).message;
+    const e = toRpcError(err);
+    if (e.kind === "revision_conflict") {
+      useAgent.setState({ userConflict: true });
+      return USER_CONFLICT_TEXT;
+    }
+    return e.message;
   }
-  if (preset !== null && preset !== effectivePreset(useAgent.getState().permissions)) await setUserPreset(preset);
+  if (preset !== null && preset !== effectivePreset(useAgent.getState().permissions)) return setUserPreset(preset);
   return null;
 }
 
@@ -708,19 +861,43 @@ export async function connectManual(name: string, line: string): Promise<void> {
   await startSession(id);
 }
 
-/** 빈 화면의 프리셋 고르기 (사용자 계층 permissions.preset만 바꾼다) */
-export async function setUserPreset(preset: string): Promise<void> {
-  const info = useAgent.getState().permissions ?? (await client().call("permissions.get", {}));
-  const user = info.layers?.find((l) => l.layer === "user");
-  const current = (user?.permissions ?? {}) as Record<string, unknown>;
+/** 프리셋 저장 충돌 글자 (마법사 Conflict.tsx와 같은 문구) */
+export const USER_CONFLICT_TEXT = "다른 곳에서 설정이 바뀌었어요";
+
+/**
+ * 프리셋 고르기 (사용자 계층 permissions.preset만 바꾼다). 에이전트 패널·마법사 5단계가 같이 쓴다.
+ * 기준은 **화면이 읽은 권한**(`useAgent.permissions`)의 사용자 계층 값·revision이다. 저장 직전에 다시 읽어 revision을 갈아
+ * 끼우지 않는다 — 그 사이 다른 곳에서 바뀌었으면 daemon이 revision_conflict로 거부하고 `userConflict`가 켜진다(사람이
+ * "다시 읽기"로 바뀐 값을 보고 다시 고른다, B7 마법사와 같은 방식). 같은 흐름에서 자기가 먼저 쓴 agents 저장의 revision은
+ * `adoptUserRevision`이 이어 받아 둔다. 실패하면 이유 글자, 성공하면 null
+ */
+export async function setUserPreset(preset: string): Promise<string | null> {
+  if (useAgent.getState().userConflict) return USER_CONFLICT_TEXT;
+  let problem: string | null = null;
   try {
-    await client().call("permissions.set", {
+    // 화면이 아직 한 번도 읽지 않았을 때만 지금 읽는다 (그 값이 곧 이 저장의 기준)
+    if (useAgent.getState().permissions === null) await refreshPermissions();
+    const info = useAgent.getState().permissions;
+    const user = info?.layers?.find((l) => l.layer === "user");
+    const current = (user?.permissions ?? {}) as Record<string, unknown>;
+    const base = userWriteBase(user?.revision ?? null);
+    if (base === undefined) return USER_CONFLICT_TEXT;
+    const { revision } = await client().call("permissions.set", {
       layer: "user",
       permissions: { ...current, preset },
-      base_revision: user?.revision ?? null,
+      base_revision: base,
     });
+    adoptUserRevision(base, revision, { preset });
   } catch (err) {
-    useAgent.setState({ startError: toRpcError(err).message });
+    const e = toRpcError(err);
+    if (e.kind === "revision_conflict") {
+      // 다시 읽지 않는다: 화면은 읽은 값 그대로, 사람이 "다시 읽기"를 누른다
+      useAgent.setState({ userConflict: true });
+      return USER_CONFLICT_TEXT;
+    }
+    problem = e.message;
+    useAgent.setState({ startError: problem });
   }
   await refreshPermissions();
+  return problem;
 }

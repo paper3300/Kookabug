@@ -43,6 +43,7 @@ export function StepShell({
   lead,
   right,
   primary,
+  extra,
   note,
   children,
 }: {
@@ -50,6 +51,8 @@ export function StepShell({
   lead: ReactNode;
   right?: ReactNode;
   primary: Primary;
+  /** 주 단추 왼쪽의 두 번째 끝내기 단추 (5단계 only 모드의 "저장") */
+  extra?: Primary;
   note?: ReactNode;
   children?: ReactNode;
 }) {
@@ -62,12 +65,12 @@ export function StepShell({
   const optional = canSkip(progress);
   const enabled = primary.enabled && !busy;
 
-  const onPrimary = async () => {
-    if (!enabled || inFlight.current) return;
+  const onPrimary = async (button: Primary = primary) => {
+    if (!button.enabled || busy || inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
     try {
-      const go = primary.run === undefined ? true : await primary.run();
+      const go = button.run === undefined ? true : await button.run();
       if (!go) return;
       setReady(progress.step, true);
       await goNext();
@@ -130,6 +133,17 @@ export function StepShell({
             {optional && (
               <button type="button" className={css.skip} disabled={busy} onClick={() => void goSkip()}>
                 건너뛰기
+              </button>
+            )}
+            {extra !== undefined && (
+              <button
+                type="button"
+                className={css.skip}
+                data-part="wizard-extra"
+                disabled={!extra.enabled || busy}
+                onClick={() => void onPrimary(extra)}
+              >
+                {extra.label}
               </button>
             )}
             <button

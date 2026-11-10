@@ -77,6 +77,7 @@ export interface SetupSnapshot {
   gameExecutable: string | null;
   gameTitle: string | null;
   secretKeys: number;
+  /** 사용자 설정의 에이전트 수 (-1 = 못 읽음: 비었다고 보지 않는다) */
   agents: number;
 }
 
@@ -96,11 +97,24 @@ export function emptyShortSteps(s: SetupSnapshot): StepNo[] {
  * - 진행이 없고 팀 첫 설정을 마친 프로젝트(team_setup)면 빈 이 PC 단계만 짧은 마법사 (U8: 이 PC에서 처음 한 번)
  */
 export function autoOpenPlan(s: SetupSnapshot): Progress | null {
+  const plan = shortOrResumePlan(s);
+  if (plan !== null) return plan;
+  // 짧은 마법사가 뜨지 않을 때만: 사용자 설정에 에이전트가 없으면 5단계만 한 번 (2026-11-09 사용자 요청, M8 합치기 2).
+  // "한 번" = 이 PC wizard.json에 5단계 완료·건너뜀이 없음 (닫으면 건너뜀으로 남는다 — closeWizard)
+  const w = s.wizard;
+  if (s.agents === 0 && w?.done.includes(5) !== true && w?.skipped.includes(5) !== true) return only(5, w);
+  return null;
+}
+
+function shortOrResumePlan(s: SetupSnapshot): Progress | null {
   const w = s.wizard;
   if (w !== null) {
     if (w.done.includes(9)) return null;
     if (w.done.includes(1)) return resume(w, "new", NEW_STEPS);
-    const short = [...SHORT_STEPS.filter((n) => !w.done.includes(n) && !w.skipped.includes(n)), 9 as StepNo];
+    // 짧은 마법사는 팀 첫 설정을 마친 프로젝트만 (U8). 설정 도우미·에이전트 패널로 단계 하나만 열었다 닫은 기록은
+    // 팀 설정 전 프로젝트에서 짧은 마법사를 자동으로 띄우지 않는다 (R11 자동 띄우기 중복 제거)
+    if (!s.teamSetup) return null;
+    const short =[...SHORT_STEPS.filter((n) => !w.done.includes(n) && !w.skipped.includes(n)), 9 as StepNo];
     return resume(w, "short", short);
   }
   if (!s.teamSetup) return null;
@@ -190,6 +204,46 @@ export function canGoBack(p: Progress): boolean {
 /** 단계의 경고를 바꾼다 (그 단계의 지난 경고는 지우고 새로) */
 export function setWarnings(p: Progress, step: number, codes: readonly string[]): Progress {
   return { ...p, warnings: [...p.warnings.filter((w) => w.step !== step), ...codes.map((code) => ({ step, code }))] };
+}
+
+/** 닫을 때의 진행: only 모드에서 끝내지 않은 선택 단계는 건너뜀 (에이전트 5단계 자동 띄우기를 다시 하지 않게) */
+export function closedProgress(p: Progress): Progress {
+  if (p.mode !== "only" || !isOptional(p.step) || p.done.includes(p.step) || p.skipped.includes(p.step)) return p;
+  return { ...p, skipped: [...p.skipped, p.step].sort((a, b) => a - b) };
+}
+
+/**
+ * 5단계 Agent의 완료 판정. 새 프로젝트·짧은 마법사는 연결 시험(무인 작업 probe) 통과 또는 API 키만.
+ * 단계 하나만 연 화면(only — 에이전트 패널·설정 도우미·자동 5단계)은 "저장됨"이면 끝낼 수 있고 시험은 선택이다
+ * (ACP로만 붙는 에이전트도 저장하고 연결할 수 있게). connect = "저장하고 연결"이 켜지는가
+ */
+export function agentStepReady(
+  mode: Mode,
+  s: { choice: string | null; saved: boolean; probed: boolean },
+): { done: boolean; connect: boolean } {
+  if (s.choice === "apikey") return { done: true, connect: false };
+  if (mode === "only") return { done: s.saved, connect: s.saved };
+  return { done: s.probed, connect: false };
+}
+
+/** 5단계 마법사가 추천하는 권한 프리셋 */
+export const RECOMMENDED_PRESET = "curator";
+
+/**
+ * 5단계 권한 프리셋: 보일 값(`shown`)과 끝낼 때 저장할 값(`save`, null = 저장 안 함).
+ * 새 프로젝트 순서이면서 사용자 프리셋이 아직 없을 때만 추천(curator)을 보이고 고르지 않아도 저장한다. 그 밖(only·short·이미
+ * 사용자 프리셋 있음)은 지금 실제 프리셋(`effective`)을 보이고, 사람이 다른 값을 골랐을 때(`picked`)만 저장한다
+ */
+export function agentPresetPlan(
+  mode: Mode,
+  s: { userPreset: string | null; effective: string; picked: string | null },
+): { shown: string; save: string | null } {
+  if (mode === "new" && s.userPreset === null) {
+    const shown = s.picked ?? RECOMMENDED_PRESET;
+    return { shown, save: shown };
+  }
+  const shown = s.picked ?? s.effective;
+  return { shown, save: s.picked !== null && s.picked !== s.effective ? s.picked : null };
 }
 
 export function toFile(p: Progress): WizardFile {
@@ -310,8 +364,9 @@ export function chooseNew(): void {
   useWizard.setState((s) => ({ progress: { ...s.progress, step: 1 } }));
 }
 
-/** 닫기: 진행은 wizard.json에 남는다 (다시 열면 이어서) */
+/** 닫기: 진행은 wizard.json에 남는다 (다시 열면 이어서). 단계 하나만 연 화면(only)의 선택 단계는 건너뜀으로 남긴다 */
 export async function closeWizard(): Promise<void> {
+  useWizard.setState((s) => ({ progress: closedProgress(s.progress) }));
   await persist();
   useWizard.setState({ open: false });
 }

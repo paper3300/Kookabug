@@ -1,7 +1,8 @@
-// 프로젝트를 연 뒤 마법사를 띄우는 작은 감시 (M8 계획 3.17 "진입점"). 앱 틀(App·Shell)은 main이 고치는 중이라 상태 바에
-// 붙인다. daemon에 붙을 때마다 한 번 본다:
+// 프로젝트를 연 뒤 마법사를 띄우는 작은 감시 (M8 계획 3.17 "진입점"). 상태 바에 붙인다. 자동으로 뜨는 설정 화면은 이것
+// 하나다(옛 에이전트 첫 설정 대화 상자의 자동 띄우기를 대신한다, R11). daemon에 붙을 때마다 한 번 본다:
 // - 이 PC 진행(wizard.json)이 있고 끝나지 않았으면 이어서 연다
 // - 진행이 없고 팀 첫 설정을 마친 프로젝트(wiki/index.md)면 비어 있는 이 PC·사용자 단계(2·3·4·5)만 짧은 마법사 (U8)
+// - 둘 다 아니고 사용자 설정에 에이전트가 없으면 5단계만 한 번 (닫으면 wizard.json 건너뜀)
 // 마법사 겹 화면(WizardHost)도 여기서 그린다 (시작 화면에서는 Welcome이 그린다)
 import { useEffect } from "react";
 import { client } from "../rpc/client";
@@ -17,7 +18,7 @@ export async function loadSnapshot(): Promise<SetupSnapshot> {
       .catch(() => ({ keys: [] as unknown[] })),
     client()
       .call("agents.get", {})
-      .catch(() => ({ agents: [] as unknown[] })),
+      .catch(() => null),
   ]);
   return {
     wizard: w.wizard as WizardFile | null,
@@ -25,7 +26,8 @@ export async function loadSnapshot(): Promise<SetupSnapshot> {
     gameExecutable: w.game.executable ?? null,
     gameTitle: w.game.title ?? null,
     secretKeys: secrets.keys.length,
-    agents: agents.agents.length,
+    // 못 읽었거나 설정 파일에 문제가 있으면 "비었다"고 보지 않는다 (에이전트 5단계를 잘못 띄우지 않게)
+    agents: agents === null || (agents.problem ?? null) !== null ? -1 : agents.agents.length,
   };
 }
 
@@ -38,6 +40,11 @@ export async function openSetupStep(n: StepNo): Promise<void> {
     // 못 읽으면 빈 기록에서
   }
   openWizardWith(only(n, base));
+}
+
+/** 에이전트 패널 "설정 도우미 열기"·하단 "에이전트 설정…": 마법사 5단계만 (옛 첫 설정 대화 상자를 대신한다, M8 R11) */
+export function openAgentSetup(): void {
+  void openSetupStep(5);
 }
 
 /** 이 연결(루트·daemon 시작)에서 이미 봤는가 — 다시 붙을 때마다 묻지 않게 */

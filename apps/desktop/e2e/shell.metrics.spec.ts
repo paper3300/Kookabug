@@ -30,8 +30,9 @@ const WELCOME_ROLES: Record<string, Rule> = {
   "welcome.toggle.fg": { selector: '[aria-label="테마"] button[aria-pressed="false"]', prop: "color" },
   "welcome.toggle.active.bg": { selector: '[aria-label="테마"] button[aria-pressed="true"]', prop: "background-color" },
   "welcome.toggle.active.fg": { selector: '[aria-label="테마"] button[aria-pressed="true"]', prop: "color" },
-  "button.primary.bg": { selector: "button", text: "프로젝트 열기", prop: "background-color" },
-  "button.primary.fg": { selector: "button", text: "프로젝트 열기", prop: "color" },
+  "button.primary.bg": { selector: "button", text: "시작하기", prop: "background-color" },
+  "button.primary.fg": { selector: "button", text: "시작하기", prop: "color" },
+  "link.fg": { selector: "button", text: "이미 있는 프로젝트 열기", prop: "color" },
   "chip.graph.bg": { selector: "span", text: "노드 그래프", prop: "background-color" },
   "chip.graph.fg": { selector: "span", text: "노드 그래프", prop: "color" },
   "chip.record.bg": { selector: "span", text: "녹화", prop: "background-color" },
@@ -117,7 +118,7 @@ async function start(): Promise<void> {
 async function openShell(): Promise<void> {
   workspace = copySampleWorkspace();
   await stubOpenDialog(app, workspace);
-  await page.getByRole("button", { name: "프로젝트 열기" }).click();
+  await page.getByRole("button", { name: "이미 있는 프로젝트 열기", exact: true }).click();
   await waitConnected(page);
   const tree = page.getByRole("tree", { name: "워크스페이스 파일" });
   await tree.locator('[data-path="targets"]').click();

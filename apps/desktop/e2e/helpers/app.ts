@@ -18,8 +18,6 @@ export interface LaunchOptions {
   /** 1이면 화면 배율과 무관하게 1배로 그린다 (시안 비교 스크린샷) */
   scaleFactor?: number;
   env?: Record<string, string>;
-  /** 에이전트 첫 설정 대화 상자를 띄울지 (기본 false: 새 userData에 "나중에"를 미리 적는다) */
-  agentSetup?: boolean;
 }
 
 /**
@@ -39,9 +37,7 @@ const PLACE_WINDOW = path.join(import.meta.dirname, "place-window.cjs");
 export async function launchApp(options: LaunchOptions = {}): Promise<{ app: ElectronApplication; userData: string }> {
   if (!fs.existsSync(MAIN)) throw new Error(`앱 빌드가 없다: ${MAIN} (pnpm build 먼저)`);
   const userData = options.userData ?? fs.mkdtempSync(path.join(os.tmpdir(), "kb-e2e-"));
-  if (options.userData === undefined && options.agentSetup !== true) {
-    fs.writeFileSync(path.join(userData, "settings.json"), JSON.stringify({ agentSetupDismissed: true }));
-  }
+  const userConfig = defaultUserConfig(userData, options.env);
   const executablePath = createRequire(import.meta.url)("electron") as string;
   const args = [MAIN, `--user-data-dir=${userData}`];
   if (options.scaleFactor !== undefined) args.push(`--force-device-scale-factor=${options.scaleFactor}`);
@@ -50,9 +46,30 @@ export async function launchApp(options: LaunchOptions = {}): Promise<{ app: Ele
     executablePath,
     args,
     cwd: APP_DIR,
-    env: { ...process.env, KOOKABUG_CLI: REPO_CLI, ...testDisplayEnv(), ...options.env } as Record<string, string>,
+    env: { ...process.env, KOOKABUG_CLI: REPO_CLI, ...userConfig, ...testDisplayEnv(), ...options.env } as Record<string, string>,
   });
   return { app, userData };
+}
+
+/** 사용자 설정 폴더를 따로 주지 않은 검사의 기본 에이전트 (연결하지 않는다 — 명령은 없어도 된다) */
+export const DEFAULT_TEST_AGENT = { id: "claude-code", name: "Claude Code", command: "claude-code-acp" };
+
+/**
+ * 사용자 설정 폴더(`KOOKABUG_USER_CONFIG_DIR`)를 주지 않은 검사: 에이전트 하나가 설정된 폴더를 쓴다(userData마다 하나).
+ * 사람의 실제 사용자 설정과 섞이지 않고, "에이전트 미설정이면 마법사 5단계 자동 띄우기"(M8)가 다른 검사 화면을 덮지 않는다.
+ * 에이전트 미설정을 보는 검사(마법사·에이전트 패널)는 자기 폴더를 넘긴다.
+ * 폴더는 userData 밖(임시 폴더)에 둔다: daemon은 앱을 닫아도 남아(재열기·같은 워크스페이스를 쓰는 다음 검사) 처음 띄울 때 받은
+ * 경로를 계속 읽는데, 검사는 앱을 닫으며 userData를 지운다. 안에 두면 남은 daemon에게는 에이전트가 0개가 되어 5단계가 뜬다
+ */
+function defaultUserConfig(userData: string, env: Record<string, string> | undefined): Record<string, string> {
+  if (env?.KOOKABUG_USER_CONFIG_DIR !== undefined) return {};
+  const dir = path.join(os.tmpdir(), `kb-e2e-user-config-${path.basename(userData)}`);
+  const file = path.join(dir, "settings.json");
+  if (!fs.existsSync(file)) {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ format: "kookabug.user-settings/0", agents: [DEFAULT_TEST_AGENT] }, null, 2));
+  }
+  return { KOOKABUG_USER_CONFIG_DIR: dir };
 }
 
 /**
@@ -93,7 +110,7 @@ export async function setContentSize(app: ElectronApplication, page: Page, width
   });
 }
 
-/** "프로젝트 열기" 대화 상자가 이 폴더를 고른 것처럼 바꾼다 */
+/** "이미 있는 프로젝트 열기" 대화 상자가 이 폴더를 고른 것처럼 바꾼다 */
 export async function stubOpenDialog(app: ElectronApplication, dir: string | null): Promise<void> {
   await app.evaluate(({ dialog }, picked) => {
     dialog.showOpenDialog = (async () =>

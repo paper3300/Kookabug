@@ -9,6 +9,7 @@ import {
   fromEndedSession,
   pendingCount,
   effectivePreset,
+  jobRefused,
   leaseRefused,
   promptText,
   splitCommandLine,
@@ -84,6 +85,12 @@ describe("대화 모델", () => {
     expect(leaseRefused({ ...tool("t", "failed", "kb_input_click"), text: "input_lease_busy: 입력 임대권" })).toBe(true);
     expect(leaseRefused(tool("t", "failed"))).toBe(false);
     expect(leaseRefused({ type: "message", text: "input_lease_busy" })).toBe(false);
+  });
+
+  test("무인 작업 거부(job_active)도 도구 결과 글자로 알아본다", () => {
+    expect(jobRefused({ ...tool("t", "failed", "kb_run_start"), text: "job_active: 작업 중이라 실행을 시작하지 않았다" })).toBe(true);
+    expect(jobRefused(tool("t", "failed"))).toBe(false);
+    expect(jobRefused({ type: "message", text: "job_active" })).toBe(false);
   });
 });
 

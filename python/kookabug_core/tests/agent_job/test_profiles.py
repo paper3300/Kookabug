@@ -76,6 +76,29 @@ def test_claude_codex_command_lines(tmp_path: Path) -> None:
     assert caught.value.code == "profile_unknown"
 
 
+def test_cli_path_from_detect_is_body_cli_not_acp_adapter(tmp_path: Path) -> None:
+    """무인 작업은 감지 표의 본체 CLI(`cli_path`)를 띄운다 (ACP 어댑터·npx 경로가 아니다)."""
+    found = {
+        "claude": r"C:\Tools\claude.cmd",
+        "claude-agent-acp": r"C:\Tools\claude-agent-acp.cmd",
+        "codex": r"C:\Tools\codex.exe",
+        "npx": r"C:\Node\npx.cmd",
+    }
+    asked: list[str] = []
+
+    def which(name: str) -> str | None:
+        asked.append(name)
+        return found.get(name)
+
+    mcp = tmp_path / "mcp.json"
+    claude = profiles.command_line("claude", root=tmp_path, job_id=JOB, mcp_path=mcp, which=which)
+    assert claude.argv[0] == r"C:\Tools\claude.cmd"
+    codex = profiles.command_line("codex", root=tmp_path, job_id=JOB, mcp_path=mcp, which=which)
+    assert codex.argv[0] == r"C:\Tools\codex.exe"  # codex-acp는 없고 npx 어댑터 경로도 쓰지 않는다
+    assert "claude" in asked and "claude-agent-acp" in asked  # 감지 표를 거쳤다
+    assert profiles.cli_executable("claude", lambda _: None) is None
+
+
 def test_child_env_allowlist(tmp_path: Path) -> None:
     parent = {
         "PATH": r"C:\Windows",

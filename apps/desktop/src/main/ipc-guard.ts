@@ -179,8 +179,6 @@ export const APP_ACTIONS: ReadonlySet<string> = new Set([
   "themeSet",
   "debugToolbarGet",
   "debugToolbarSet",
-  "agentSetupDismissedGet",
-  "agentSetupDismissedSet",
   "layoutGet",
   "layoutSet",
   "daemonState",

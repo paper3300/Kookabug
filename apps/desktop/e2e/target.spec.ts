@@ -351,7 +351,7 @@ test("test_save_all_on_close_project_fills_graph_ref", async () => {
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("저장하지 않은 파일이");
   await dialog.getByRole("button", { name: "모두 저장" }).click();
-  await expect(page.getByRole("button", { name: "프로젝트 열기" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "이미 있는 프로젝트 열기", exact: true })).toBeVisible({ timeout: 30_000 });
   expect(fs.existsSync(filePath(ws.root, rel))).toBe(true);
   const graph = readJson<Graph>(ws.root, INVENTORY);
   expect(graph.nodes.n_check_inventory.in).toEqual({ target: { $target: rel }, timeout_ms: 5000 });

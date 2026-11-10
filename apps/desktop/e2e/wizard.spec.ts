@@ -3,8 +3,9 @@
 // 실제 앱 → 실제 daemon(가짜 플랫폼) → 실제 `kookabug workspace new`·`doctor`·`agent-job`(가짜 QA CLI)
 import fs from "node:fs";
 import path from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { stubOpenDialog } from "./helpers/app";
+import { showAgentTab } from "./helpers/agent";
 import { cleanupWorkspace, copySampleWorkspace } from "./helpers/daemon";
 import {
   cleanupWorld,
@@ -41,7 +42,7 @@ test("새 프로젝트 0→9: 필수 단계 잠금·중간 닫고 이어서·건
   world = prepareWizardWorld();
   s = await launchWizardApp(world);
   const { page } = s;
-  await page.getByRole("button", { name: "새 프로젝트 만들기" }).click();
+  await page.getByRole("button", { name: "시작하기", exact: true }).click();
   await expectStep(page, 1);
   // 1 프로젝트: 위치를 고르기 전에는 "만들기"가 꺼져 있다 (필수 단계)
   await expect(nextButton(page)).toBeDisabled();
@@ -295,11 +296,14 @@ test("팀원 짧은 마법사: 팀 설정을 마친 프로젝트를 이 PC에서
   fs.mkdirSync(path.join(team, "wiki"), { recursive: true });
   fs.writeFileSync(path.join(team, "wiki", "index.md"), "# 위키\n");
   s = await launchWizardApp(world, { width: 1440, height: 900 });
-  // 음성: 팀 첫 설정 전 프로젝트는 띄우지 않는다 (상태 바가 붙고 보고함 단추가 보일 때까지 기다린 뒤 확인)
+  // 음성: 팀 첫 설정 전 프로젝트는 짧은 마법사를 띄우지 않는다 (상태 바가 붙고 보고함 단추가 보일 때까지 기다린 뒤 확인).
+  // 에이전트 미설정이라 5단계만 뜬다 (자동 화면은 하나)
   await openProject(s, plain);
   await expect(s.page.locator('[data-part="status-reports"]')).toBeVisible({ timeout: 30_000 });
   await s.page.waitForTimeout(2000);
-  await expect(overlay(s.page)).toHaveCount(0);
+  await expect(overlay(s.page)).toHaveCount(1);
+  await expect(overlay(s.page)).toHaveAttribute("data-mode", "only");
+  await expectStep(s.page, 5);
   const userData = s.userData;
   await closeWizardApp(s);
   s = null;
@@ -329,4 +333,86 @@ test("팀원 짧은 마법사: 팀 설정을 마친 프로젝트를 이 PC에서
   await expect(s.page.locator('[data-part="status-reports"]')).toBeVisible({ timeout: 30_000 });
   await s.page.waitForTimeout(2000);
   await expect(overlay(s.page)).toHaveCount(0);
+});
+
+/**
+ * 자동으로 뜨는 설정 화면은 하나 (M8 R11): 옛 에이전트 첫 설정 대화 상자(`agent-setup`)는 없어졌고, 짧은 마법사 조건이
+ * 양성이면 마법사 겹 화면 1개·옛 대화 상자 0개. 음성이고 에이전트 미설정이면 5단계 only 1개(닫으면 건너뜀, 다시 열면 0).
+ * 세 경우 모두 사용자 설정에 에이전트가 없다(에이전트 미설정)
+ */
+test("test_auto_open_single_screen_new_team_and_no_agent", async () => {
+  test.setTimeout(360_000);
+  world = prepareWizardWorld();
+  const oldDialog = (page: Page) => page.locator('[data-part="agent-setup"]');
+  /** 상태 바가 붙은 뒤 늦게 뜨는 화면까지 기다렸다가 센다 */
+  const settle = async (page: Page) => {
+    await expect(page.locator('[data-part="status-reports"]')).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(2500);
+  };
+  const plain = copySampleWorkspace("noagent");
+  const team = copySampleWorkspace("member");
+  roots.push(plain, team);
+  fs.mkdirSync(path.join(team, "wiki"), { recursive: true });
+  fs.writeFileSync(path.join(team, "wiki", "index.md"), "# 위키\n");
+  expect(fs.readdirSync(world.env.KOOKABUG_USER_CONFIG_DIR)).toEqual([]); // 에이전트 미설정
+
+  // ① 에이전트 미설정 + 팀 첫 설정 전 프로젝트: 짧은 마법사 음성 → 5단계 only 화면 1·옛 대화 상자 0 (늦게 뜨는 것도 없다)
+  s = await launchWizardApp(world, { width: 1440, height: 900 });
+  const userData = s.userData;
+  await openProject(s, plain);
+  await settle(s.page);
+  await expect(overlay(s.page)).toHaveCount(1);
+  await expectStep(s.page, 5);
+  await expect(overlay(s.page)).toHaveAttribute("data-mode", "only");
+  await expect(oldDialog(s.page)).toHaveCount(0);
+  // 닫으면 건너뜀으로 남는다
+  await s.page.locator('[data-part="wizard-close"]').click();
+  await expect(overlay(s.page)).toHaveCount(0);
+  await expect.poll(() => (fs.existsSync(path.join(plain, ".kookabug", "wizard.json")) ? readWizardFile(plain).skipped : null)).toEqual([5]);
+  // 에이전트 패널 "설정 도우미 열기"는 같은 화면(5단계 only)을 연다 (옛 대화 상자 아님)
+  const panel = await showAgentTab(s.page);
+  await panel.locator('[data-part="open-agent-setup"]').click();
+  await expect(overlay(s.page)).toHaveCount(1);
+  await expectStep(s.page, 5);
+  await expect(overlay(s.page)).toHaveAttribute("data-mode", "only");
+  await expect(oldDialog(s.page)).toHaveCount(0);
+  await s.page.locator('[data-part="wizard-close"]').click();
+  await expect(overlay(s.page)).toHaveCount(0);
+  await closeWizardApp(s);
+  s = null;
+  // ①' 닫고 다시 열면 0 (5단계 건너뜀 기록, 팀 첫 설정 전이라 짧은 마법사도 없음)
+  s = await launchWizardApp(world, { userData, width: 1440, height: 900 });
+  await openProject(s, plain);
+  await settle(s.page);
+  await expect(overlay(s.page)).toHaveCount(0);
+  await expect(oldDialog(s.page)).toHaveCount(0);
+  await closeWizardApp(s);
+  s = null;
+
+  // ② 팀원 첫 열기: 양성 → 마법사 1·옛 대화 상자 0 (늦게 뜨는 것도 없다)
+  s = await launchWizardApp(world, { userData, width: 1440, height: 900 });
+  await openProject(s, team);
+  await expectStep(s.page, 2, 30_000);
+  await settle(s.page);
+  await expect(overlay(s.page)).toHaveCount(1);
+  await expect(overlay(s.page)).toHaveAttribute("data-mode", "short");
+  await expect(oldDialog(s.page)).toHaveCount(0);
+  await closeWizardApp(s);
+  s = null;
+
+  // ③ 새 워크스페이스(시작하기 → 1단계 만들기): 양성 → 새 프로젝트 마법사 1·옛 대화 상자 0 (짧은 마법사가 겹치지 않는다)
+  s = await launchWizardApp(world, { userData, width: 1440, height: 900 });
+  const { page } = s;
+  await page.getByRole("button", { name: "시작하기", exact: true }).click();
+  await expectStep(page, 1);
+  await stubOpenDialog(s.app, world.parent);
+  await page.getByRole("button", { name: "찾아보기" }).click();
+  await page.getByLabel("프로젝트 이름").fill("fresh");
+  await pressNext(page, 2, 90_000);
+  roots.push(path.join(world.parent, "fresh"));
+  await settle(page);
+  await expect(overlay(page)).toHaveCount(1);
+  await expect(overlay(page)).toHaveAttribute("data-mode", "new");
+  await expectStep(page, 2);
+  await expect(oldDialog(page)).toHaveCount(0);
 });

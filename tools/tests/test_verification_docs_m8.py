@@ -98,7 +98,7 @@ def test_user_checks_and_risks_documented() -> None:
         "계정 값을 받지 않는다",  # U12
         "예약 등록 UI는 M9",  # U13
         "도구 호출 상한이 없다",  # U14
-        "시안과 반대",  # U15
+        "시안대로 맞췄다",  # U15 (main 합친 뒤 시안 배치)
         "평문 칸 비밀값",
         "job_active",
         "basis_derived",

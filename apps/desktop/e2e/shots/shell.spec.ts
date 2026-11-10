@@ -52,7 +52,7 @@ for (const theme of ["dark", "light"] as const) {
     await setContentSize(app, page, 1440, 900);
     workspace = copySampleWorkspace("sample-rpg");
     await stubOpenDialog(app, workspace);
-    await page.getByRole("button", { name: "프로젝트 열기" }).click();
+    await page.getByRole("button", { name: "이미 있는 프로젝트 열기", exact: true }).click();
     await waitConnected(page);
     const tree = page.getByRole("tree", { name: "워크스페이스 파일" });
     // 시안 Main처럼 tests를 펼치고 테스트 하나를 탭으로 연다

@@ -96,14 +96,14 @@ export interface RunSession {
 export async function openRunApp(
   ws: RunWorkspace,
   /** env: 앱 환경을 통째로 바꾼다 (녹화 E2E — helpers/recorder.ts) */
-  options: { scaleFactor?: number; userData?: string; env?: Record<string, string>; agentSetup?: boolean } = {},
+  options: { scaleFactor?: number; userData?: string; env?: Record<string, string> } = {},
 ): Promise<RunSession> {
   const launched = await launchApp({ env: runEnv(ws), ...options });
   const page = await launched.app.firstWindow();
   await page.waitForLoadState("domcontentloaded");
   await setContentSize(launched.app, page, 1440, 900);
   await stubOpenDialog(launched.app, ws.root);
-  await page.getByRole("button", { name: "프로젝트 열기" }).click();
+  await page.getByRole("button", { name: "이미 있는 프로젝트 열기", exact: true }).click();
   await waitConnected(page);
   return { app: launched.app, page, userData: launched.userData, ws };
 }

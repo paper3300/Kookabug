@@ -3,7 +3,10 @@ import { describe, expect, test } from "vitest";
 import { duplicateIds, initialValues, planSources } from "./sources";
 import {
   advance,
+  agentPresetPlan,
+  agentStepReady,
   autoOpenPlan,
+  closedProgress,
   back,
   canAdvance,
   canGoBack,
@@ -46,6 +49,37 @@ describe("완료 조건", () => {
     expect(r.finished).toBe(false);
     p = start("new", NEW_STEPS, 9);
     expect(advance(p).finished).toBe(true);
+  });
+});
+
+describe("5단계 Agent 완료 판정", () => {
+  test("only 모드(패널·설정 도우미·자동 5단계)는 저장됨이면 끝낼 수 있고 연결 시험은 선택", () => {
+    expect(agentStepReady("only", { choice: "gemini", saved: true, probed: false })).toEqual({ done: true, connect: true });
+    expect(agentStepReady("only", { choice: "gemini", saved: false, probed: false })).toEqual({ done: false, connect: false });
+    expect(agentStepReady("only", { choice: null, saved: false, probed: false })).toEqual({ done: false, connect: false });
+    expect(agentStepReady("only", { choice: "apikey", saved: false, probed: false })).toEqual({ done: true, connect: false });
+  });
+
+  test("새 프로젝트·짧은 마법사는 지금 규칙 그대로 (시험 통과 또는 API 키만, 저장만으로는 안 됨)", () => {
+    for (const mode of ["new", "short"] as const) {
+      expect(agentStepReady(mode, { choice: "codex", saved: true, probed: false }).done).toBe(false);
+      expect(agentStepReady(mode, { choice: "codex", saved: true, probed: true })).toEqual({ done: true, connect: false });
+      expect(agentStepReady(mode, { choice: "apikey", saved: false, probed: false }).done).toBe(true);
+    }
+  });
+
+  test("권한 프리셋: curator 추천은 새 프로젝트 + 사용자 프리셋 없음일 때만, 그 밖은 지금 값을 보이고 바꿨을 때만 저장", () => {
+    expect(agentPresetPlan("new", { userPreset: null, effective: "graph_author", picked: null })).toEqual({ shown: "curator", save: "curator" });
+    expect(agentPresetPlan("new", { userPreset: null, effective: "graph_author", picked: "full" })).toEqual({ shown: "full", save: "full" });
+    // 이미 사용자 프리셋이 있으면 새 프로젝트도 지금 값
+    expect(agentPresetPlan("new", { userPreset: "read_only", effective: "read_only", picked: null })).toEqual({ shown: "read_only", save: null });
+    for (const mode of ["only", "short"] as const) {
+      expect(agentPresetPlan(mode, { userPreset: "read_only", effective: "read_only", picked: null })).toEqual({ shown: "read_only", save: null });
+      expect(agentPresetPlan(mode, { userPreset: null, effective: "graph_author", picked: null })).toEqual({ shown: "graph_author", save: null });
+      // 같은 값을 다시 눌렀으면 쓰지 않는다 (양성 대조: 다른 값이면 쓴다)
+      expect(agentPresetPlan(mode, { userPreset: "read_only", effective: "read_only", picked: "read_only" }).save).toBeNull();
+      expect(agentPresetPlan(mode, { userPreset: "read_only", effective: "read_only", picked: "full" })).toEqual({ shown: "full", save: "full" });
+    }
   });
 });
 
@@ -111,8 +145,40 @@ describe("이어서 · 짧은 마법사", () => {
     expect(plan?.step).toBe(2);
   });
 
-  test("팀 설정을 마치지 않은 프로젝트(team_setup 없음)는 자동으로 띄우지 않는다", () => {
-    expect(autoOpenPlan({ ...SNAP, teamSetup: false, agents: 0, secretKeys: 0, gameExecutable: null })).toBeNull();
+  test("팀 설정을 마치지 않은 프로젝트(team_setup 없음)는 짧은 마법사를 띄우지 않는다 (에이전트가 없으면 5단계만)", () => {
+    expect(autoOpenPlan({ ...SNAP, teamSetup: false, agents: 1, secretKeys: 0, gameExecutable: null })).toBeNull();
+    expect(autoOpenPlan({ ...SNAP, teamSetup: false, agents: 0, secretKeys: 0, gameExecutable: null })?.steps).toEqual([5]);
+  });
+
+  test("팀 설정 전 프로젝트에서 단계 하나만 열었다 닫은 기록은 짧은 마법사를 띄우지 않는다 (양성 대조: 팀 프로젝트면 띄운다)", () => {
+    // only 모드로 5단계를 닫으면 건너뜀이 남는다 (closedProgress)
+    const closed = toFile(closedProgress(only(5, null)));
+    expect(closed.skipped).toEqual([5]);
+    expect(autoOpenPlan({ ...SNAP, teamSetup: false, agents: 0, wizard: closed })).toBeNull();
+    expect(autoOpenPlan({ ...SNAP, teamSetup: false, agents: 1, wizard: file({ step: 5, done: [5] }) })).toBeNull();
+    expect(autoOpenPlan({ ...SNAP, teamSetup: true, agents: 0, wizard: file({ step: 5 }) })?.mode).toBe("short");
+  });
+
+  test("에이전트 미설정 + 짧은 마법사 음성이면 5단계만 한 번 (완료·건너뜀 기록이 있거나 못 읽었으면 안 띄움)", () => {
+    const plain = { ...SNAP, teamSetup: false, agents: 0 };
+    const plan = autoOpenPlan(plain);
+    expect(plan?.mode).toBe("only");
+    expect(plan?.steps).toEqual([5]);
+    expect(autoOpenPlan({ ...plain, wizard: file({ skipped: [5] }) })).toBeNull();
+    expect(autoOpenPlan({ ...plain, wizard: file({ done: [5] }) })).toBeNull();
+    expect(autoOpenPlan({ ...plain, agents: -1 })).toBeNull(); // agents.get 실패·설정 문제
+    expect(autoOpenPlan({ ...plain, agents: 1 })).toBeNull();
+    // 짧은 마법사가 양성이면 짧은 마법사가 5단계를 품는다 (자동 화면은 하나)
+    const team = autoOpenPlan({ ...SNAP, agents: 0 });
+    expect(team?.mode).toBe("short");
+    expect(team?.steps).toContain(5);
+  });
+
+  test("닫을 때 only 모드의 끝내지 않은 선택 단계만 건너뜀으로 (완료는 그대로, 필수·다른 모드는 그대로)", () => {
+    expect(closedProgress({ ...only(5, file({ done: [5] })) }).skipped).toEqual([]);
+    expect(closedProgress(only(2, null)).skipped).toEqual([]);
+    expect(closedProgress(start("short", [2, 3, 4, 5, 9], 5)).skipped).toEqual([]);
+    expect(closedProgress(only(6, null)).skipped).toEqual([6]);
   });
 
   test("짧은 마법사 중간에 닫았으면 남은 짧은 단계부터", () => {

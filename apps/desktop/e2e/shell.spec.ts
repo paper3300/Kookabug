@@ -29,7 +29,7 @@ async function start(reuseUserData?: string): Promise<void> {
 
 async function openWorkspace(dir: string): Promise<void> {
   await stubOpenDialog(app, dir);
-  await page.getByRole("button", { name: "프로젝트 열기" }).click();
+  await page.getByRole("button", { name: "이미 있는 프로젝트 열기", exact: true }).click();
 }
 
 test.afterEach(async () => {
@@ -45,8 +45,9 @@ test("test_welcome_open_folder_shows_explorer", async () => {
   await start();
   await expect(page.locator('[data-screen="welcome"]')).toBeVisible();
   await expect(page.getByRole("heading", { name: "Kookabug에 오신 걸 환영해요" })).toBeVisible();
-  // 새 프로젝트 마법사("시작하기")는 숨긴다 (U5)
-  await expect(page.getByText("시작하기")).toHaveCount(0);
+  // 시안 단추 배치 (U15): 주 단추 "시작하기"(첫 프로젝트 마법사), 글자 단추 "이미 있는 프로젝트 열기"
+  await expect(page.getByRole("button", { name: "시작하기", exact: true })).toBeVisible();
+  await expect(page.locator('[data-part="open-project"]')).toHaveText("이미 있는 프로젝트 열기");
 
   workspace = copySampleWorkspace();
   await openWorkspace(workspace);
@@ -91,7 +92,7 @@ test("test_non_workspace_folder_message", async () => {
   await expect(page.locator('[data-screen="welcome"]')).toBeVisible();
   // 대화 상자를 닫으면 아무 일도 없다
   await stubOpenDialog(app, null);
-  await page.getByRole("button", { name: "프로젝트 열기" }).click();
+  await page.getByRole("button", { name: "이미 있는 프로젝트 열기", exact: true }).click();
   await expect(page.locator('[data-screen="welcome"]')).toBeVisible();
   // 최근 목록에 넣지 않는다
   expect(await page.evaluate(() => window.kookabug.app.recent())).toEqual([]);

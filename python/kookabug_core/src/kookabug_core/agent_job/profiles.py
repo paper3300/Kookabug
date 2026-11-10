@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from kookabug_core.agents.detect import detect
+
 __all__ = [
     "AUTH_ENV",
     "BASE_ENV",
@@ -38,6 +40,7 @@ __all__ = [
     "auth_values",
     "build_prompt",
     "child_env",
+    "cli_executable",
     "command_line",
     "mcp_config",
     "mcp_server",
@@ -174,6 +177,19 @@ def _toml(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+def cli_executable(profile: str, which: Callable[[str], str | None] = shutil.which) -> str | None:
+    """무인 작업이 띄울 본체 CLI(`claude`·`codex`) 경로.
+
+    에이전트 감지 표(`agents.detect`)의 `cli_path`를 먼저 쓴다 — 패널이 ACP로 붙는 어댑터
+    (`claude-agent-acp`·`npx …`)가 아니라 본체 CLI다. 표에 그 CLI 줄이 없거나 못 찾았으면
+    지금처럼 `which(profile)`.
+    """
+    for row in detect(which):
+        if row["cli"] == profile and row["cli_path"] is not None:
+            return str(row["cli_path"])
+    return which(profile)
+
+
 def command_line(
     profile: str,
     *,
@@ -193,7 +209,7 @@ def command_line(
         return Command(argv, Path(argv[0]).name)
     if profile not in PROFILES:
         raise ProfileError("profile_unknown", f"모르는 Agent 프로필이다: {profile!r}")
-    exe = which(profile)
+    exe = cli_executable(profile, which)
     if exe is None:
         raise ProfileError("cli_not_found", f"{profile} CLI를 PATH에서 찾지 못했다")
     if profile == "claude":

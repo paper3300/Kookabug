@@ -19,6 +19,7 @@ import {
 import { REPO_ROOT } from "./helpers/app";
 import { openGraph, readBytes } from "./helpers/editor";
 import { INVENTORY } from "./helpers/run";
+import { writeWizardProgress } from "./helpers/wizard";
 
 let s: AgentSession | null = null;
 const children: number[] = [];
@@ -100,7 +101,11 @@ test("에이전트 자연 종료 뒤 자식 프로세스 정리", async () => {
 });
 
 test("잘못된 규칙 형식에서 권한 화면 진단 표시", async () => {
-  s = await openAgentApp({ settings: { format: "kookabug.user-settings/0", permissions: { rules: "손상된 규칙" } } });
+  // 에이전트가 없는 설정이라 5단계 자동 띄우기를 미리 건너뛴 PC로 둔다 (권한 화면만 본다)
+  s = await openAgentApp({
+    settings: { format: "kookabug.user-settings/0", permissions: { rules: "손상된 규칙" } },
+    prepare: (ws) => writeWizardProgress(ws.root, { step: 5, done: [], skipped: [5] }),
+  });
   const settingsFile = path.join(s.userDir, "settings.json");
   const original = fs.readFileSync(settingsFile);
   const errors: string[] = [];

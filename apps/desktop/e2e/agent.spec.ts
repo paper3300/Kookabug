@@ -10,6 +10,7 @@ import {
   closeAgentApp,
   connectAgent,
   openAgentApp,
+  PANEL_AGENT,
   sendMessage,
   showAgentTab,
   type AgentSession,
@@ -17,6 +18,7 @@ import {
 import { canvasOf, filePath, nodeIds, openGraph, readBytes, selectOnly, tabOf } from "./helpers/editor";
 import { INVENTORY } from "./helpers/run";
 import { runTab, showRunList, runItem, waitRunEnded, startRun } from "./helpers/runs";
+import { writeWizardProgress } from "./helpers/wizard";
 
 let s: AgentSession | null = null;
 
@@ -265,29 +267,106 @@ test("footer pickers: model and effort come from agent config options; choice is
   await expect(effort).toContainText("High");
 });
 
-test("first project open shows agent setup dialog; later remembers and the panel reopens it", async () => {
-  s = await openAgentApp({ settings: null, agentSetup: true });
+test("no agent: step 5 opens once by itself; panel setup helper → step 5 → save and connect starts the panel session", async () => {
+  // 에이전트 미설정 + 팀 첫 설정 전 프로젝트: 마법사 5단계만 한 번 자동으로 (옛 대화 상자 없음, M8 합치기 2)
+  s = await openAgentApp({ settings: null });
   const { page } = s;
-  const setup = page.locator('[data-part="agent-setup"]');
-  await expect(setup).toBeVisible({ timeout: 30_000 });
-  await expect(setup.locator('[data-part="setup-row"]')).toHaveCount(3);
+  const wizard = page.locator('[data-screen="wizard"]');
+  await expect(wizard).toHaveAttribute("data-step", "5", { timeout: 30_000 });
+  await expect(wizard).toHaveAttribute("data-mode", "only");
+  await expect(wizard).toHaveCount(1);
+  await expect(page.locator('[data-part="agent-setup"]')).toHaveCount(0);
+  // 감지 표 3줄 (상태 글자는 패널과 같은 candidateStatus)
+  await expect(wizard.locator('[data-part="agent-list"] label[data-tone]')).toHaveCount(3);
   // 뒤쪽 단축키는 막힌다 (빠른 열기 Ctrl+P가 열리지 않음)
   await page.keyboard.press("Control+p");
   await expect(page.getByRole("dialog", { name: "파일 빠른 열기" })).toHaveCount(0);
-  await setup.getByRole("button", { name: "나중에" }).click();
-  await expect(setup).toHaveCount(0);
-  await expect
-    .poll(() => (JSON.parse(fs.readFileSync(path.join(s!.userData, "settings.json"), "utf8")) as { agentSetupDismissed?: boolean }).agentSetupDismissed)
-    .toBe(true);
+  await wizard.locator('[data-part="wizard-close"]').click();
+  await expect(wizard).toHaveCount(0);
+  // 닫기만 했으니 사용자 설정은 그대로 (에이전트 없음), 5단계는 건너뜀으로 남는다
+  expect(fs.existsSync(path.join(s.userDir, "settings.json"))).toBe(false);
+  const wizardFile = path.join(s.ws.root, ".kookabug", "wizard.json");
+  await expect.poll(() => (fs.existsSync(wizardFile) ? (JSON.parse(fs.readFileSync(wizardFile, "utf8")) as { skipped: number[] }).skipped : null)).toEqual([5]);
+
+  // 패널 "설정 도우미 열기" → 같은 5단계. only 모드는 연결 시험 없이 "저장됨"이면 끝난다 (ACP로만 붙는 에이전트도)
   const panel = await showAgentTab(page);
   await panel.locator('[data-part="open-agent-setup"]').click();
-  await expect(setup).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(setup).toHaveCount(0);
+  await expect(wizard).toHaveAttribute("data-step", "5", { timeout: 30_000 });
+  await expect(wizard).toHaveAttribute("data-mode", "only");
+  const connect = wizard.locator('[data-part="wizard-next"]');
+  const save = wizard.locator('[data-part="wizard-extra"]');
+  await expect(connect).toContainText("저장하고 연결");
+  await expect(save).toHaveText("저장");
+  await expect(connect).toBeDisabled(); // 고르기 전 (양성 대조: 저장 뒤 켜진다)
+  await expect(save).toBeDisabled();
+  await wizard.locator("label", { hasText: "직접 입력" }).locator('input[type="radio"]').check();
+  await wizard.getByLabel("Agent 이름").fill("acp only");
+  await wizard.getByLabel("Agent 명령줄").fill('acp-only-agent --acp "a b"');
+  await wizard.getByRole("button", { name: "추가", exact: true }).click();
+  await expect(connect).toBeEnabled({ timeout: 15_000 });
+  await expect(save).toBeEnabled();
+  await expect(wizard.locator('[data-part="probe-card"]')).toHaveAttribute("data-state", "idle"); // 연결 시험은 하지 않았다
+  await expect(wizard.locator('[data-part="probe-run"]')).toBeVisible(); // 시험은 선택 (단추로)
+  await connect.click();
+  await expect(wizard).toHaveCount(0);
+  // 저장한 에이전트로 패널 세션이 시작된다 (명령은 E2E가 가짜 ACP 에이전트로 바꾼다)
+  await expect(panel).toHaveAttribute("data-status", "ready", { timeout: 30_000 });
+  await expect(panel.locator('[data-part="pick-agent"]')).toContainText("acp only · ACP");
+  const settings = JSON.parse(fs.readFileSync(path.join(s.userDir, "settings.json"), "utf8")) as {
+    agents: { id: string; name: string; command: string; args: string[] }[];
+    default_agent?: string;
+  };
+  expect(settings.agents).toEqual([{ id: "custom-acp-only", name: "acp only", command: "acp-only-agent", args: ["--acp", "a b"] }]);
+  expect(settings.default_agent).toBe("custom-acp-only");
+  const progress = JSON.parse(fs.readFileSync(wizardFile, "utf8")) as { done: number[]; skipped: number[] };
+  expect(progress.done).toContain(5);
+  expect(progress.skipped).not.toContain(5);
+});
+
+test("setup helper keeps the user's preset when untouched; the picked agent becomes the default", async () => {
+  // 합치기 검수 H2·H3: only 5단계는 지금 프리셋을 보이고 바꿨을 때만 저장, 고른 에이전트 = 기본 에이전트
+  const second = { id: "second-agent", name: "Second Agent", command: "second-acp" };
+  s = await openAgentApp({
+    settings: {
+      format: "kookabug.user-settings/0",
+      agents: [PANEL_AGENT, second],
+      default_agent: PANEL_AGENT.id,
+      permissions: { preset: "read_only" },
+    },
+  });
+  const { page } = s;
+  const settingsFile = path.join(s.userDir, "settings.json");
+  const read = () => JSON.parse(fs.readFileSync(settingsFile, "utf8")) as { default_agent?: string; permissions?: { preset?: string } };
+  const wizard = page.locator('[data-screen="wizard"]');
+  const panel = await showAgentTab(page);
+  await panel.locator('[data-part="open-agent-setup"]').click();
+  await expect(wizard).toHaveAttribute("data-mode", "only", { timeout: 30_000 });
+  // 지금 프리셋(read_only)과 지금 기본 에이전트가 고른 상태로 보인다 (curator 추천이 아님)
+  await expect(wizard.locator('[data-part="preset-hint"]')).toHaveAttribute("data-preset", "read_only", { timeout: 15_000 });
+  await expect(wizard.getByRole("group", { name: "Agent 권한" }).getByRole("button", { name: "읽기 전용" })).toHaveAttribute("aria-pressed", "true");
+  await expect(wizard.locator(`label[data-agent="${PANEL_AGENT.id}"]`).first()).toHaveAttribute("data-selected", "true");
+  await expect(wizard.locator('[data-part="pick-default-agent"]')).toHaveCount(0); // 기본 에이전트를 따로 고르는 칸 없음
+  const save = wizard.locator('[data-part="wizard-extra"]');
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(wizard).toHaveCount(0);
+  expect(read().permissions?.preset).toBe("read_only");
+  expect(read().default_agent).toBe(PANEL_AGENT.id);
+
+  // 다시 열어 두 번째 에이전트를 고르고 저장 → 다시 읽어도 기본은 두 번째, 프리셋은 그대로
+  await panel.locator('[data-part="open-agent-setup"]').click();
+  await expect(wizard).toHaveAttribute("data-mode", "only", { timeout: 30_000 });
+  await wizard.locator(`label[data-agent="${second.id}"]`).locator('input[type="radio"]').check();
+  await expect.poll(() => read().default_agent, { timeout: 15_000 }).toBe(second.id);
+  await save.click();
+  await expect(wizard).toHaveCount(0);
+  expect(read().default_agent).toBe(second.id);
+  expect(read().permissions?.preset).toBe("read_only");
 });
 
 test("agent panel tab shows connect screen with detected list and manual entry", async () => {
-  s = await openAgentApp({ settings: null });
+  // 5단계 자동 띄우기는 이미 건너뛴 PC (빈 화면만 본다)
+  s = await openAgentApp({ settings: null, prepare: (ws) => writeWizardProgress(ws.root, { step: 5, done: [], skipped: [5] }) });
   const { page } = s;
   const panel = await showAgentTab(page);
   const connect = panel.locator('[data-part="agent-connect"]');

@@ -81,7 +81,7 @@ async function openShopApp(w: ShopWorld): Promise<Page> {
   await page.waitForLoadState("domcontentloaded");
   await setContentSize(app, page, 1440, 900);
   await stubOpenDialog(app, w.root);
-  await page.getByRole("button", { name: "프로젝트 열기" }).click();
+  await page.getByRole("button", { name: "이미 있는 프로젝트 열기", exact: true }).click();
   await waitConnected(page);
   return page;
 }
@@ -216,7 +216,7 @@ test("test_wizard_to_init", async () => {
   s = await launchWizardApp(wiz);
   const { page } = s;
   // 0 시작 → 1 프로젝트 (실제 `kookabug workspace new`)
-  await page.getByRole("button", { name: "새 프로젝트 만들기" }).click();
+  await page.getByRole("button", { name: "시작하기", exact: true }).click();
   await expectStep(page, 1);
   await stubOpenDialog(s.app, wiz.parent);
   await page.getByRole("button", { name: "찾아보기" }).click();
@@ -307,7 +307,7 @@ test("test_wizard_required_skip_resume_short", async () => {
 
   // ── 필수 단계 잠금 (새 프로젝트 1단계: 건너뛰기 없음·만들기 꺼짐)
   s = await launchWizardApp(wiz, { width: 1440, height: 900 });
-  await s.page.getByRole("button", { name: "새 프로젝트 만들기" }).click();
+  await s.page.getByRole("button", { name: "시작하기", exact: true }).click();
   await expectStep(s.page, 1);
   await expect(s.page.locator('[data-part="wizard-crumb"]')).toContainText("필수");
   await expect(nextButton(s.page)).toBeDisabled();
@@ -348,12 +348,14 @@ test("test_wizard_required_skip_resume_short", async () => {
   await closeWizardApp(s);
   s = null;
 
-  // ── 팀원 짧은 마법사: 음성(팀 첫 설정 전)은 띄우지 않는다
+  // ── 팀원 짧은 마법사: 음성(팀 첫 설정 전)은 띄우지 않는다. 에이전트 미설정이라 5단계만 뜬다 (자동 화면은 하나)
   s = await launchWizardApp(wiz, { userData, width: 1440, height: 900 });
   await openProject(s, plain);
   await expect(s.page.locator('[data-part="status-reports"]')).toBeVisible({ timeout: 30_000 });
   await s.page.waitForTimeout(2000);
-  await expect(overlay(s.page)).toHaveCount(0);
+  await expect(overlay(s.page)).toHaveCount(1);
+  await expect(overlay(s.page)).toHaveAttribute("data-mode", "only");
+  await expect(overlay(s.page)).toHaveAttribute("data-step", "5");
   expect(fs.existsSync(path.join(plain, ".kookabug", "wizard.json"))).toBe(false);
   await closeWizardApp(s);
   s = null;

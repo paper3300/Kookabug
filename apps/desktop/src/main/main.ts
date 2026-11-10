@@ -341,7 +341,6 @@ function start(): void {
       }
       settings.debugToolbarX = x;
     },
-    agentSetupDismissedGet: () => settings.agentSetupDismissed,
     layoutGet: () => settings.layout,
     layoutSet(layout) {
       // 작은 평평한 객체만 (값은 수·참거짓·null)
@@ -353,9 +352,6 @@ function start(): void {
         Object.values(layout).every((v) => v === null || typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v)));
       if (!ok) throw new IpcGuardError("layoutSet 인자가 배치 객체가 아니다");
       settings.layout = layout;
-    },
-    agentSetupDismissedSet() {
-      settings.agentSetupDismissed = true;
     },
     daemonState: () => manager.state,
     daemonLog: () => output.slice(),

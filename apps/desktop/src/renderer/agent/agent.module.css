@@ -556,41 +556,7 @@
   overflow-wrap: anywhere;
 }
 
-/* 에이전트 첫 설정 대화 상자 (AgentSetupDialog) */
-.setupDialog {
-  width: 520px;
-}
-
-.setupPick {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.agentName small.setupStatus {
-  font-family: inherit;
-  white-space: normal;
-}
-
-.agentName small.setupStatus[data-tone="ready"] {
-  color: var(--kb-status-ok);
-}
-
-.agentName small.setupStatus[data-tone="blocked"] {
-  color: var(--kb-status-warn);
-}
-
-.setupDefault {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--kb-fg-muted);
-}
-
+/* "설정 도우미 열기" (마법사 5단계를 연다) */
 .setupLink {
   align-self: flex-start;
   padding: 0;

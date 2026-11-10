@@ -70,18 +70,6 @@ export class Settings {
     writeJson(this.settingsFile, { ...base, debugToolbarX: Math.round(x) });
   }
 
-  /** 에이전트 첫 설정 대화 상자를 "나중에"로 닫음 (다시 띄우지 않는다) */
-  get agentSetupDismissed(): boolean {
-    const data = readJson(this.settingsFile) as { agentSetupDismissed?: unknown } | null;
-    return data?.agentSetupDismissed === true;
-  }
-
-  set agentSetupDismissed(value: boolean) {
-    const data = readJson(this.settingsFile);
-    const base = typeof data === "object" && data !== null && !Array.isArray(data) ? data : {};
-    writeJson(this.settingsFile, { ...base, agentSetupDismissed: value });
-  }
-
   /** 패널 배치 (사이드바·오른쪽 패널 폭·펼침). 모양 검사는 렌더러(parseLayout)가 한다 */
   get layout(): unknown {
     const data = readJson(this.settingsFile) as { layout?: unknown } | null;

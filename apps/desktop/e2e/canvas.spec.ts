@@ -32,7 +32,7 @@ async function openWorkspace(files: Record<string, string> = {}): Promise<string
   await page.waitForLoadState("domcontentloaded");
   await setContentSize(app, page, 1440, 900);
   await stubOpenDialog(app, workspace);
-  await page.getByRole("button", { name: "프로젝트 열기" }).click();
+  await page.getByRole("button", { name: "이미 있는 프로젝트 열기", exact: true }).click();
   await waitConnected(page);
   return workspace;
 }
@@ -224,7 +224,7 @@ test("test_click_cross_file_problem_selects_node_in_collapsed_group", async () =
   await page.waitForLoadState("domcontentloaded");
   await setContentSize(app, page, 1440, 900);
   await stubOpenDialog(app, root);
-  await page.getByRole("button", { name: "프로젝트 열기" }).click();
+  await page.getByRole("button", { name: "이미 있는 프로젝트 열기", exact: true }).click();
   await waitConnected(page);
 
   const parent = "tests/inventory_open.graph.json";

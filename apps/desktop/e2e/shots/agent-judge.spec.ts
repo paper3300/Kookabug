@@ -71,7 +71,7 @@ test("agent-judge-dark", async () => {
   workspace = copySampleWorkspace("sample-rpg");
   fs.writeFileSync(path.join(workspace, ...GRAPH.split("/")), JSON.stringify(VALUE, null, 2));
   await stubOpenDialog(app, workspace);
-  await page.getByRole("button", { name: "프로젝트 열기" }).click();
+  await page.getByRole("button", { name: "이미 있는 프로젝트 열기", exact: true }).click();
   await waitConnected(page);
   await page.getByRole("tree", { name: "워크스페이스 파일" }).locator(`[data-path="${GRAPH}"]`).click();
   const judge = page.locator('[data-node-id="n_judge"]');
