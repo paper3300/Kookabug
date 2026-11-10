@@ -224,6 +224,68 @@ test("agent edit while UI dirty → UI save conflict", async () => {
   await expect(tabOf(page, INVENTORY)).toHaveAttribute("data-dirty", "true");
 });
 
+test("footer pickers: model and effort come from agent config options; choice is sent and remembered", async () => {
+  const config = [
+    { id: "model", name: "Model", category: "model", type: "select", currentValue: "sonnet", options: [{ value: "sonnet", name: "Sonnet" }, { value: "opus", name: "Opus" }] },
+    { id: "effort", name: "Effort", category: "thought_level", type: "select", currentValue: "medium", options: [{ value: "low", name: "Low" }, { value: "medium", name: "Medium" }, { value: "high", name: "High" }] },
+    { id: "mode", name: "Mode", category: "mode", type: "select", currentValue: "default", options: [{ value: "default", name: "Default" }, { value: "acceptEdits", name: "Accept Edits" }] },
+  ];
+  s = await openAgentApp({ script: { config_options: config } });
+  const { page } = s;
+  await connectAgent(page);
+  const panel = agentPanel(page);
+  const model = panel.locator('[data-part="pick-model"] button[aria-haspopup="menu"]');
+  const effort = panel.locator('[data-part="pick-effort"] button[aria-haspopup="menu"]');
+  await expect(panel.locator('[data-part="pick-agent"]')).toContainText("Claude Code · ACP");
+  await expect(model).toContainText("Sonnet");
+  await expect(effort).toContainText("Medium");
+  await model.click();
+  const menu = panel.getByRole("menu", { name: "Model" });
+  await expect(menu.getByRole("menuitemradio", { name: "Sonnet" })).toHaveAttribute("aria-checked", "true");
+  await menu.getByRole("menuitemradio", { name: "Opus" }).click();
+  await expect(model).toContainText("Opus");
+  await effort.click();
+  await panel.getByRole("menu", { name: "Effort" }).getByRole("menuitemradio", { name: "High" }).click();
+  await expect(effort).toContainText("High");
+  const mode = panel.locator('[data-part="pick-mode"] button[aria-haspopup="menu"]');
+  await expect(mode).toContainText("Default");
+  await mode.click();
+  await panel.getByRole("menu", { name: "Mode" }).getByRole("menuitemradio", { name: "Accept Edits" }).click();
+  await expect(mode).toContainText("Accept Edits");
+  const sets = agentLog(s).filter((e) => e.method === "session/set_config_option");
+  expect(sets.map((e) => e.params)).toEqual([
+    { sessionId: "s1", configId: "model", value: "opus" },
+    { sessionId: "s1", configId: "effort", value: "high" },
+    { sessionId: "s1", configId: "mode", value: "acceptEdits" },
+  ]);
+  // 새 대화(새 세션)는 기억한 값을 다시 건다 — 가짜 에이전트는 세션마다 각본 기본값으로 시작
+  await panel.getByRole("button", { name: "새 대화" }).click();
+  await expect(panel).toHaveAttribute("data-status", "ready", { timeout: 30_000 });
+  await expect(model).toContainText("Opus");
+  await expect(effort).toContainText("High");
+});
+
+test("first project open shows agent setup dialog; later remembers and the panel reopens it", async () => {
+  s = await openAgentApp({ settings: null, agentSetup: true });
+  const { page } = s;
+  const setup = page.locator('[data-part="agent-setup"]');
+  await expect(setup).toBeVisible({ timeout: 30_000 });
+  await expect(setup.locator('[data-part="setup-row"]')).toHaveCount(3);
+  // 뒤쪽 단축키는 막힌다 (빠른 열기 Ctrl+P가 열리지 않음)
+  await page.keyboard.press("Control+p");
+  await expect(page.getByRole("dialog", { name: "파일 빠른 열기" })).toHaveCount(0);
+  await setup.getByRole("button", { name: "나중에" }).click();
+  await expect(setup).toHaveCount(0);
+  await expect
+    .poll(() => (JSON.parse(fs.readFileSync(path.join(s!.userData, "settings.json"), "utf8")) as { agentSetupDismissed?: boolean }).agentSetupDismissed)
+    .toBe(true);
+  const panel = await showAgentTab(page);
+  await panel.locator('[data-part="open-agent-setup"]').click();
+  await expect(setup).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(setup).toHaveCount(0);
+});
+
 test("agent panel tab shows connect screen with detected list and manual entry", async () => {
   s = await openAgentApp({ settings: null });
   const { page } = s;

@@ -19,10 +19,11 @@ import { reloadPlugins, usePlugins } from "../plugins/pluginStore";
 import { ChevronDownIcon, ChevronRightIcon, ExplorerIcon, HistoryIcon, MapIcon, PluginIcon, RecordIcon } from "../theme/icons";
 import { activeSession, loadMap, useMap } from "../screens/mapStore";
 import { ScreenSidebar } from "../screens/ScreenSidebar";
+import { Resizer } from "./Resizer";
 import css from "./shell.module.css";
 
 export function showSide(view: SideView): void {
-  useUi.setState({ sideView: view });
+  useUi.setState({ sideView: view, sidebarOpen: true });
   if (view === "runs") {
     runListModel.markSeen();
     void runListModel.reload();
@@ -31,8 +32,21 @@ export function showSide(view: SideView): void {
   if (view === "screens") void loadMap();
 }
 
+/** 액티비티 아이콘 누르기: 펼친 채 같은 보기면 접고, 아니면 그 보기로 펼친다 (VS Code 관례) */
+function onActivity(view: SideView): void {
+  const { sideView, sidebarOpen } = useUi.getState();
+  if (sidebarOpen && sideView === view) {
+    useUi.setState({ sidebarOpen: false });
+    return;
+  }
+  useUi.setState({ sidebarOpen: true });
+  showSide(view);
+}
+
 export function ActivityBar() {
-  const view = useUi((s) => s.sideView);
+  const shown = useUi((s) => s.sideView);
+  const open = useUi((s) => s.sidebarOpen);
+  const view = open ? shown : null;
   const failures = useRunList((s) => failuresSince(s.runs, s.seenAt));
   const badge = view === "runs" ? 0 : failures;
   const pluginAttention = usePlugins((s) => attentionCount(s.list));
@@ -44,7 +58,7 @@ export function ActivityBar() {
         aria-label="탐색기"
         aria-pressed={view === "explorer"}
         className={css.activityButton}
-        onClick={() => showSide("explorer")}
+        onClick={() => onActivity("explorer")}
       >
         <ExplorerIcon />
       </button>
@@ -54,7 +68,7 @@ export function ActivityBar() {
         aria-pressed={view === "screens"}
         className={css.activityButton}
         data-part="activity-screens"
-        onClick={() => showSide("screens")}
+        onClick={() => onActivity("screens")}
       >
         <MapIcon />
         {exploring && <span className={css.activityExploreDot} data-part="activity-explore-dot" />}
@@ -65,7 +79,7 @@ export function ActivityBar() {
         aria-pressed={view === "runs"}
         className={css.activityButton}
         data-part="activity-runs"
-        onClick={() => showSide("runs")}
+        onClick={() => onActivity("runs")}
       >
         <HistoryIcon />
         {badge > 0 && (
@@ -80,7 +94,7 @@ export function ActivityBar() {
         aria-pressed={view === "recorder"}
         className={css.activityButton}
         data-part="activity-recorder"
-        onClick={() => showSide("recorder")}
+        onClick={() => onActivity("recorder")}
       >
         <RecordIcon />
       </button>
@@ -90,7 +104,7 @@ export function ActivityBar() {
         aria-pressed={view === "plugins"}
         className={css.activityButton}
         data-part="activity-plugins"
-        onClick={() => showSide("plugins")}
+        onClick={() => onActivity("plugins")}
       >
         <PluginIcon />
         {pluginAttention > 0 && (
@@ -155,55 +169,55 @@ function NewGraphButtons() {
   );
 }
 
-export function Sidebar() {
+function SidebarContent() {
   const name = useWorkspace((s) => s.name);
   const view = useUi((s) => s.sideView);
   const [filesOpen, setFilesOpen] = useState(true);
   const [paletteOpen, setPaletteOpen] = useState(true);
   if (view === "recorder") {
     return (
-      <aside aria-label="사이드바" className={`${css.sidebar} ${css.sidebarRecorder}`}>
+      <>
         <div className={css.sidebarInner} data-part="sidebar" data-view="recorder">
           <RecorderSidebar />
         </div>
-      </aside>
+      </>
     );
   }
   if (view === "plugins") {
     return (
-      <aside aria-label="사이드바" className={css.sidebar}>
+      <>
         <div className={css.sidebarInner} data-part="sidebar" data-view="plugins">
           <PluginsSidebar />
         </div>
-      </aside>
+      </>
     );
   }
   if (view === "screens") {
     return (
-      <aside aria-label="사이드바" className={css.sidebar}>
+      <>
         <div className={css.sidebarInner} data-part="sidebar" data-view="screens">
           <div className={css.sidebarHeader} data-part="sidebar-header">
             <span>화면 지도</span>
           </div>
           <ScreenSidebar />
         </div>
-      </aside>
+      </>
     );
   }
   if (view === "runs") {
     return (
-      <aside aria-label="사이드바" className={css.sidebar}>
+      <>
         <div className={css.sidebarInner} data-part="sidebar" data-view="runs">
           <div className={css.sidebarHeader} data-part="sidebar-header">
             <span>실행 기록</span>
           </div>
           <RunList />
         </div>
-      </aside>
+      </>
     );
   }
   return (
-    <aside aria-label="사이드바" className={css.sidebar}>
+    <>
       <div className={css.sidebarInner} data-part="sidebar">
         <div className={css.sidebarHeader} data-part="sidebar-header">
           <span>탐색기</span>
@@ -224,6 +238,33 @@ export function Sidebar() {
           {paletteOpen && <Palette />}
         </section>
       </div>
+    </>
+  );
+}
+
+/** 왼쪽 사이드바: 펼쳤을 때만, 오른쪽 끝을 끌어 폭을 바꾼다 (녹화 사이드바 폭은 따로 기억) */
+export function Sidebar() {
+  const view = useUi((s) => s.sideView);
+  const open = useUi((s) => s.sidebarOpen);
+  const recorder = view === "recorder";
+  const width = useUi((s) => (recorder ? s.recorderSidebarWidth : s.sidebarWidth));
+  if (!open) return null;
+  return (
+    <aside
+      aria-label="사이드바"
+      className={recorder ? `${css.sidebar} ${css.sidebarRecorder}` : css.sidebar}
+      style={width === null ? undefined : { flexBasis: width + 1 }}
+      data-part="sidebar-box"
+    >
+      <SidebarContent />
+      <Resizer
+        edge="right"
+        label="사이드바 폭"
+        min={recorder ? 260 : 170}
+        max={recorder ? 720 : 640}
+        onWidth={(w) => useUi.setState(recorder ? { recorderSidebarWidth: w } : { sidebarWidth: w })}
+        onCollapse={() => useUi.setState({ sidebarOpen: false })}
+      />
     </aside>
   );
 }

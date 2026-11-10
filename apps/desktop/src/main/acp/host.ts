@@ -8,7 +8,7 @@
 // - 세션 추적은 도우미 프로세스가 끝났다는 알림(= Job 정리 끝)을 받은 뒤에만 버린다
 // - 앱을 닫으면 세션 프로세스 트리를 끝낸다 (대화는 저장하지 않음 — C13)
 // electron을 import하지 않는다 (vitest)
-import type { AgentEvent, AgentSessionEvent, AgentStartResult } from "./events";
+import type { AgentConfigOption, AgentEvent, AgentSessionEvent, AgentStartResult } from "./events";
 import { AgentSession, type AgentProcess } from "./session";
 
 export interface AgentSpecLite {
@@ -115,7 +115,7 @@ export class AgentHost {
       // 실패한 세션도 프로세스가 끝났다는 알림이 올 때까지 표에 둔다 (start가 이미 stop을 불렀다)
       throw new AgentHostError("agent_start_failed", `에이전트가 ACP 연결에 답하지 않았어요: ${(err as Error).message}`);
     }
-    return { session, agentId: spec.id, name: spec.name };
+    return { session, agentId: spec.id, name: spec.name, config: agent.config };
   }
 
   private get(session: unknown): AgentSession {
@@ -138,6 +138,12 @@ export class AgentHost {
       throw new AgentHostError("bad_args", "권한 답 인자가 틀렸어요");
     }
     return this.get(session).answerPermission(id, optionId);
+  }
+
+  /** 세션 설정 바꾸기 (Agent 패널 하단 Model·Effort) */
+  async setConfig(session: unknown, id: unknown, value: unknown): Promise<AgentConfigOption[]> {
+    if (typeof id !== "string" || typeof value !== "string") throw new AgentHostError("bad_args", "설정 인자가 틀렸어요");
+    return this.get(session).setConfig(id, value);
   }
 
   /** 세션 끝: 도우미를 끝낸다. 표에서는 프로세스가 끝났다는 알림(exit)이 온 뒤에 뺀다 */

@@ -1,6 +1,7 @@
 // 기록 뷰어 1 (M3 계획 T10 완료 기준, 2.10): 실행 목록·RUN 탭·스텝 타임라인·증거·실패로 이동·스냅샷 읽기 전용 탭.
 // 실제 daemon + 가짜 플랫폼(예제 장면)으로 뷰어 검사용 그래프를 돌린다 (helpers/runs.ts). 실행을 만드는 데 시간이
 // 들어 앱 하나·워크스페이스 하나를 검사들이 차례로 같이 쓴다 (serial)
+import { showActivity } from "./helpers/app";
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -159,7 +160,7 @@ test("test_open_again_from_list_rejumps_to_failure", async () => {
 test("test_view_in_graph_unsaved_edit_opens_snapshot", async () => {
   // T10 검수 2: 디스크는 스냅샷과 같지만 열린 탭에 실패 노드를 지운 저장 안 된 편집이 있으면 스냅샷 탭으로 간다
   const { page } = session();
-  await page.getByRole("button", { name: /^탐색기/ }).click();
+  await showActivity(page.getByRole("button", { name: /^탐색기/ }));
   await openGraph(page, VIEWER_CHECK);
   await nodeEl(page, "n_wait_missing").click();
   await page.keyboard.press("Delete");
@@ -283,7 +284,7 @@ test("test_iteration_bar_opens_that_iteration", async () => {
 test("test_policy_omitted_cell_shown", async () => {
   const { page } = session();
   // UI에서 실행해 끝난 뒤 상태 바 "실패 보기"로 연다 (실행 로그·상태 바 연결)
-  await page.getByRole("button", { name: /^탐색기/ }).click();
+  await showActivity(page.getByRole("button", { name: /^탐색기/ }));
   await openGraph(page, VIEWER_OMIT);
   await clickRun(page);
   await waitEnded(page, "fail", 120_000);
@@ -324,7 +325,7 @@ test("test_badges_debug_flaky_no_assertion", async () => {
 
 test("test_live_run_timeline_updates", async () => {
   const { page, ws } = session();
-  await page.getByRole("button", { name: /^탐색기/ }).click();
+  await showActivity(page.getByRole("button", { name: /^탐색기/ }));
   await openGraph(page, INVENTORY);
   await clickRun(page);
   await waitGate(ws, "press_i");

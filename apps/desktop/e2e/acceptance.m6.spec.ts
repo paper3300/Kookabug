@@ -9,6 +9,7 @@
 //
 // Python 쪽 인수는 python/kookabug_core/tests/acceptance/test_m6.py. 실제 공개 레포·PyPI·다른 PC·설치본 화면은
 // Docs/verification/m6-manual.md
+import { showActivity } from "./helpers/app";
 import fs from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
@@ -133,7 +134,7 @@ test("install sample from git via dialog, run graph with widget-edited node", as
   expect(lock.plugins[0].source.commit).toMatch(/^[0-9a-f]{40}$/);
 
   // 인스펙터 위젯(샌드박스 iframe, ES 모듈)으로 색을 고치고 저장
-  await page.getByRole("button", { name: "탐색기" }).click();
+  await showActivity(page.getByRole("button", { name: "탐색기" }));
   await openGraph(page, GRAPH);
   await selectOnly(page, "n_color");
   const box = widgetBox(page, "sample.color");
@@ -169,7 +170,7 @@ test("failed install leaves plugins and graph working", async () => {
   await expect(pluginRow(page, "sample")).toHaveAttribute("data-status", "ready");
   expect(lockBytes(ws)).toEqual(before);
   // 기존 그래프는 그대로 실행된다
-  await page.getByRole("button", { name: "탐색기" }).click();
+  await showActivity(page.getByRole("button", { name: "탐색기" }));
   await openGraph(page, GRAPH);
   await runPasses(page);
 });

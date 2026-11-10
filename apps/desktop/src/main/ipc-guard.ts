@@ -179,6 +179,10 @@ export const APP_ACTIONS: ReadonlySet<string> = new Set([
   "themeSet",
   "debugToolbarGet",
   "debugToolbarSet",
+  "agentSetupDismissedGet",
+  "agentSetupDismissedSet",
+  "layoutGet",
+  "layoutSet",
   "daemonState",
   "daemonLog",
   "daemonRetry",
@@ -197,6 +201,7 @@ export const APP_ACTIONS: ReadonlySet<string> = new Set([
   "agentPrompt",
   "agentCancel",
   "agentPermission",
+  "agentSetConfig",
   "agentStop",
   // M8 B7 마법사·보고함 (jobs.ts): 실행 파일·인자·명령줄은 주 프로세스가 정한다 (렌더러는 값 몇 개만)
   "pickFolder",

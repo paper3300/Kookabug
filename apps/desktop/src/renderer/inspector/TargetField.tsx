@@ -1,7 +1,8 @@
-// `$target` 칸 (M2 계획 2.9 "그래프와 연결", T12): 대상 고르기 + "새 대상 만들기". 새로 만든 대상은 TARGET 탭에서
+// `$target` 칸 (M2 계획 2.9 "그래프와 연결", T12): 대상 고르기 + "새 대상 만들기" + 고른 대상의 그림 미리보기. 새로 만든 대상은 TARGET 탭에서
 // 저장되면 이 핀에 {"$target": "<경로>"}가 들어간다 (target/targetStore.ts fillOrigin)
 import { newTargetInteractive } from "../target/newTarget";
 import { TargetSelect, type EditorContext } from "./editors";
+import { TargetPreview } from "./TargetPreview";
 
 /** 새 이름 제안: 노드 제목 → 파일 이름에 쓸 수 있는 글자만 */
 function suggestName(title: string | undefined): string {
@@ -28,14 +29,17 @@ export function TargetField({
 }) {
   const graph = ctx.graph;
   return (
-    <TargetSelect
-      label={label}
-      value={value}
-      onCommit={onCommit}
-      ctx={ctx}
-      {...(graph === undefined
-        ? {}
-        : { onCreate: () => void newTargetInteractive({ graph, node, pin }, suggestName(title)) })}
-    />
+    <>
+      <TargetSelect
+        label={label}
+        value={value}
+        onCommit={onCommit}
+        ctx={ctx}
+        {...(graph === undefined
+          ? {}
+          : { onCreate: () => void newTargetInteractive({ graph, node, pin }, suggestName(title)) })}
+      />
+      {value !== "" && <TargetPreview key={value} path={value} />}
+    </>
   );
 }

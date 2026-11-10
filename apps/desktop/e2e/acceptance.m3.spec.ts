@@ -10,6 +10,7 @@
 //
 // Python 쪽 인수는 python/kookabug_core/tests/acceptance/test_m3.py. 실행을 만드는 데 시간이 들어 앱 하나·워크스페이스
 // 하나를 검사들이 차례로 같이 쓴다 (serial). 장면이 다른 2번만 따로 앱을 띄운다
+import { showActivity } from "./helpers/app";
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
@@ -273,7 +274,7 @@ test("test_breakpoint_step_into_over_out", async () => {
   test.setTimeout(240_000);
   const { page, ws } = session();
   await page.evaluate(() => window.kookabug.rpc("debug.breakpoints.set", { breakpoints: [] }));
-  await page.getByRole("button", { name: /^탐색기/ }).click();
+  await showActivity(page.getByRole("button", { name: /^탐색기/ }));
   await openGraph(page, INVENTORY);
   // 호출 노드 머리 왼쪽 점 자리로 브레이크포인트
   await runNode(page, "n_enter_world").locator('[data-part="bp-spot"]').click();

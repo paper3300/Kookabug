@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
+import { _electron as electron, type ElectronApplication, type Locator, type Page } from "@playwright/test";
 
 export const APP_DIR = path.resolve(import.meta.dirname, "..", "..");
 export const REPO_ROOT = path.resolve(APP_DIR, "..", "..");
@@ -18,6 +18,8 @@ export interface LaunchOptions {
   /** 1이면 화면 배율과 무관하게 1배로 그린다 (시안 비교 스크린샷) */
   scaleFactor?: number;
   env?: Record<string, string>;
+  /** 에이전트 첫 설정 대화 상자를 띄울지 (기본 false: 새 userData에 "나중에"를 미리 적는다) */
+  agentSetup?: boolean;
 }
 
 /**
@@ -37,6 +39,9 @@ const PLACE_WINDOW = path.join(import.meta.dirname, "place-window.cjs");
 export async function launchApp(options: LaunchOptions = {}): Promise<{ app: ElectronApplication; userData: string }> {
   if (!fs.existsSync(MAIN)) throw new Error(`앱 빌드가 없다: ${MAIN} (pnpm build 먼저)`);
   const userData = options.userData ?? fs.mkdtempSync(path.join(os.tmpdir(), "kb-e2e-"));
+  if (options.userData === undefined && options.agentSetup !== true) {
+    fs.writeFileSync(path.join(userData, "settings.json"), JSON.stringify({ agentSetupDismissed: true }));
+  }
   const executablePath = createRequire(import.meta.url)("electron") as string;
   const args = [MAIN, `--user-data-dir=${userData}`];
   if (options.scaleFactor !== undefined) args.push(`--force-device-scale-factor=${options.scaleFactor}`);
@@ -108,4 +113,11 @@ export async function settle(page: Page): Promise<void> {
     await document.fonts.ready;
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   });
+}
+
+/**
+ * 액티비티 바 보기를 연다. 이미 그 보기가 펼쳐져 있으면 누르지 않는다 (지금 보기 아이콘을 다시 누르면 사이드바가 접힌다)
+ */
+export async function showActivity(button: Locator): Promise<void> {
+  if ((await button.getAttribute("aria-pressed")) !== "true") await button.click();
 }

@@ -8,6 +8,20 @@ export interface AgentPermissionOption {
   kind: string;
 }
 
+/**
+ * 에이전트가 알려 준 세션 설정 하나 (ACP session config option, 옛 models·modes도 이 모양으로).
+ * category: model·mode·thought_level 등 (모르는 값은 그대로, 없으면 "")
+ */
+export interface AgentConfigOption {
+  id: string;
+  name: string;
+  category: string;
+  current: string;
+  options: { value: string; name: string; description?: string }[];
+  /** 바꿀 때 쓸 메서드: config = session/set_config_option, model = session/set_model, mode = session/set_mode */
+  source: "config" | "model" | "mode";
+}
+
 export type AgentSessionStatus = "starting" | "ready" | "busy" | "ended" | "error";
 
 export type AgentEvent =
@@ -23,6 +37,8 @@ export type AgentEvent =
   /** 카드가 닫힘: 사람이 골랐거나 세션 중지·끝으로 cancelled */
   | { type: "permission_closed"; id: string; outcome: "selected" | "cancelled"; optionId?: string }
   | { type: "turn_end"; stopReason: string }
+  /** 세션 설정(모델·생각 수준 등)이 바뀜 — 통째로 */
+  | { type: "config"; options: AgentConfigOption[] }
   | { type: "exit"; code: number | null; message: string };
 
 export interface AgentSessionEvent {
@@ -34,4 +50,6 @@ export interface AgentStartResult {
   session: string;
   agentId: string;
   name: string;
+  /** session/new가 알려 준 세션 설정 (없으면 빈 배열) */
+  config: AgentConfigOption[];
 }

@@ -51,7 +51,7 @@ import {
   type TargetDoc,
 } from "./targetStore";
 
-const ANCHOR_LABELS: Record<Anchor, string> = {
+export const ANCHOR_LABELS: Record<Anchor, string> = {
   top_left: "좌상",
   top: "상",
   top_right: "우상",

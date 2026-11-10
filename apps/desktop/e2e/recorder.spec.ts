@@ -2,6 +2,7 @@
 // 핵심 경로: 녹화 → 비밀값 키 → 화면 확인 넣기 → 새 테스트로 저장 → F5 → pass. 커서 위치 삽입(테스트 사슬 중간·서브그래프·
 // 되돌리기), 같은 이름 → 다른 이름(재녹화 없음), REC 탭 영역 고치기·비밀번호 칸 겹침 거부, 전역 단축키(등록 실패면
 // 시작 안 함·주 프로세스 정지), 두 번째 창(다른 곳 녹화 중)·녹화 중 앱 종료 정리
+import { showActivity } from "./helpers/app";
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test, type ElectronApplication } from "@playwright/test";
@@ -88,7 +89,7 @@ test("test_record_login_script_save_new_test_then_f5_pass", async () => {
   // 녹화 전 (시안 없음, U1): 창 고르기·게임 띄워서 녹화
   await expect(page.locator('[data-part="rec-start"]')).toBeVisible();
   // 녹화 중에 열어 둔 그래프 탭: 실행 단추가 꺼지고 툴팁 (2.11)
-  await page.getByRole("button", { name: "탐색기" }).click();
+  await showActivity(page.getByRole("button", { name: "탐색기" }));
   await openGraph(page, "tests/inventory_open.graph.json");
   await showRecorder(page);
   await startLaunch(page);
@@ -148,7 +149,7 @@ test("test_insert_without_assertion_mid_chain_in_test_runs_to_original_successor
   await chooseSecret(page);
   // 그래프 탭이 없으면 삽입 단추가 꺼져 있다
   await expect(insertButton(page)).toBeDisabled();
-  await page.getByRole("button", { name: "탐색기" }).click();
+  await showActivity(page.getByRole("button", { name: "탐색기" }));
   await openGraph(page, CHAIN_TEST);
   await selectOnly(page, "n_launch");
   await showRecorder(page);
@@ -187,7 +188,7 @@ test("test_insert_mid_chain_in_subgraph_validates", async () => {
   const { page } = s;
   await recordLoginAndStop(page);
   await chooseSecret(page);
-  await page.getByRole("button", { name: "탐색기" }).click();
+  await showActivity(page.getByRole("button", { name: "탐색기" }));
   await openGraph(page, CHAIN_SUB);
   await selectOnly(page, "n_entry");
   await showRecorder(page);

@@ -2,6 +2,7 @@
    대문자 11px)·입력 상자(26px, 입력 배경·테두리, 포커스 강조)를 쓴다. 색은 토큰만 쓴다 */
 
 .inspector {
+  position: relative;
   flex: 0 0 calc(var(--kb-inspector-width) + 1px);
   min-width: 0;
   min-height: 0;
@@ -555,4 +556,52 @@
   align-items: center;
   justify-content: center;
   letter-spacing: 0;
+}
+
+/* `$target` 칸 아래 대상 미리보기: 찾을 그림(템플릿)과 찾기 조건 요약 */
+.targetPreview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.targetPreview[data-state="loading"] {
+  min-height: 48px;
+}
+
+.targetImageButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  max-height: 180px;
+  padding: 8px;
+  overflow: hidden;
+  background-color: var(--kb-input-bg);
+  background-image: radial-gradient(var(--kb-canvas-dot) 1px, transparent 1px);
+  background-size: 10px 10px;
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  cursor: zoom-in;
+}
+
+.targetImageButton:hover {
+  border-color: var(--kb-accent);
+}
+
+.targetImage {
+  display: block;
+  max-width: 100%;
+  max-height: 162px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.targetFacts {
+  color: var(--kb-fg-muted);
+  font-size: var(--kb-font-size-small);
+  line-height: 1.5;
 }

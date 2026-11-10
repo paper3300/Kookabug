@@ -86,7 +86,6 @@
 }
 
 .answer {
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
@@ -555,4 +554,310 @@
   font-size: 12px;
   color: var(--kb-fg);
   overflow-wrap: anywhere;
+}
+
+/* 에이전트 첫 설정 대화 상자 (AgentSetupDialog) */
+.setupDialog {
+  width: 520px;
+}
+
+.setupPick {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agentName small.setupStatus {
+  font-family: inherit;
+  white-space: normal;
+}
+
+.agentName small.setupStatus[data-tone="ready"] {
+  color: var(--kb-status-ok);
+}
+
+.agentName small.setupStatus[data-tone="blocked"] {
+  color: var(--kb-status-warn);
+}
+
+.setupDefault {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--kb-fg-muted);
+}
+
+.setupLink {
+  align-self: flex-start;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: var(--kb-link-fg);
+  font-size: 12px;
+}
+
+.setupLink:hover {
+  color: var(--kb-link-hover-fg);
+  text-decoration: underline;
+}
+
+/* 하단 고르기 줄 (Agent·Model·Effort) */
+.pickers {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.picker {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pickerButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 6px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+}
+
+.pickerButton:hover:not(:disabled),
+.pickerButton[aria-expanded="true"] {
+  background: var(--kb-hover-bg);
+  border-color: var(--kb-agent-card-border);
+  color: var(--kb-fg);
+}
+
+.pickerButton:disabled {
+  opacity: 0.55;
+}
+
+.pickerLabel {
+  color: var(--kb-fg-subtle);
+  font-size: 11px;
+}
+
+.pickerValue {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--kb-fg);
+}
+
+.pickerMenu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  min-width: 200px;
+  max-width: 300px;
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--kb-menu-bg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px var(--kb-shadow);
+}
+
+.pickerHead {
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--kb-fg-muted);
+}
+
+.pickerItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--kb-fg);
+  font-size: 12px;
+  text-align: left;
+}
+
+.pickerItem:hover,
+.pickerItem:focus-visible {
+  background: var(--kb-list-active-bg);
+  color: var(--kb-list-active-fg);
+  outline: none;
+}
+
+.pickerCheck {
+  flex: 0 0 12px;
+}
+
+.pickerItemText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pickerItemText small {
+  font-size: 11px;
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pickerSeparator {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--kb-border);
+}
+
+/* 에이전트 답 마크다운 (markdown.tsx) */
+.md {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  line-height: 1.6;
+}
+
+.md > * {
+  margin: 0;
+}
+
+.mdHeading {
+  margin: 6px 0 0;
+  color: var(--kb-fg-strong);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.mdHeading[data-level="1"] {
+  font-size: 17px;
+}
+
+.mdHeading[data-level="2"] {
+  font-size: 15px;
+}
+
+.mdHeading[data-level="3"],
+.mdHeading[data-level="4"],
+.mdHeading[data-level="5"],
+.mdHeading[data-level="6"] {
+  font-size: 13px;
+}
+
+.mdPara {
+  margin: 0;
+}
+
+.mdCode {
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--kb-input-bg);
+  border: 1px solid var(--kb-border);
+  font-family: var(--kb-font-mono);
+  font-size: 12px;
+}
+
+.mdPre {
+  margin: 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border-radius: 4px;
+  background: var(--kb-input-bg);
+  border: 1px solid var(--kb-border);
+  font-family: var(--kb-font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.mdQuote {
+  margin: 0;
+  padding: 2px 0 2px 10px;
+  border-left: 3px solid var(--kb-border);
+  color: var(--kb-fg-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mdList {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mdList li > .md,
+.mdList li > p,
+.mdList li > ul,
+.mdList li > ol {
+  margin: 0;
+}
+
+.mdList li[data-task] {
+  list-style: none;
+  margin-left: -16px;
+}
+
+.mdTask {
+  display: inline-block;
+  width: 16px;
+}
+
+.mdList li > .mdTask + p {
+  display: inline;
+}
+
+.mdTableWrap {
+  overflow-x: auto;
+}
+
+.mdTable {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.mdTable th,
+.mdTable td {
+  padding: 3px 8px;
+  border: 1px solid var(--kb-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.mdTable th {
+  background: var(--kb-input-bg);
+  color: var(--kb-fg-strong);
+  font-weight: 600;
+}
+
+.mdLink {
+  color: var(--kb-link-fg);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.mdRule {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--kb-border);
 }

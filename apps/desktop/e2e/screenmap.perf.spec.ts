@@ -1,5 +1,6 @@
 // 화면 지도 성능 (M7 계획 3.14): 카드 300·간선 600 합성 지도. 여유 큰 단언(그리기 15초·확대 3초) — 성능 회귀를
 // 잡는 용도이고, 정밀 측정이 아니다. 합성 지도는 화면 판정 파일 형식 그대로 쓴다(지도 계산은 daemon이 한다)
+import { showActivity } from "./helpers/app";
 import { expect, test } from "@playwright/test";
 import { closeEditor, openEditor, type EditorSession } from "./helpers/editor";
 
@@ -34,7 +35,7 @@ test("screen map draws 300 cards and 600 edges quickly", async () => {
   test.setTimeout(180_000);
   s = await openEditor(syntheticScreens());
   const { page } = s;
-  await page.locator('[data-part="activity-screens"]').click();
+  await showActivity(page.locator('[data-part="activity-screens"]'));
   const started = Date.now();
   await page.locator('[data-part="map-row"]').first().click();
   const map = page.locator('[data-part="screen-map"]');

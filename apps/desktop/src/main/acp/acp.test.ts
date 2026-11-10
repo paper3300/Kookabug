@@ -2,11 +2,15 @@
 import { describe, expect, test } from "vitest";
 import type { AgentEvent } from "./events";
 import { AgentHost, hostArgs, parseAgentOverride, type SpawnRequest } from "./host";
-import { CLIENT_CAPABILITIES, type AgentProcess } from "./session";
+import { CLIENT_CAPABILITIES, parseSessionConfig, type AgentProcess } from "./session";
 
 /** 주 프로세스가 쓴 줄을 받아 각본대로 답하는 가짜 에이전트 */
 class FakeProc implements AgentProcess {
   readonly received: { id?: number | string; method?: string; params?: unknown; result?: unknown; error?: unknown }[] = [];
+  /** session/new 결과에 더할 값 (configOptions·models 검사) */
+  sessionExtra: Record<string, unknown> = {};
+  /** session/set_* 요청 답 (없으면 빈 객체) */
+  setResult: unknown = {};
   killed = false;
   /** false면 kill() 뒤 끝남 알림을 바로 보내지 않는다 (도우미가 Job을 정리하는 동안) */
   exitOnKill = true;
@@ -18,7 +22,8 @@ class FakeProc implements AgentProcess {
     const msg = JSON.parse(line) as (typeof this.received)[number];
     this.received.push(msg);
     if (msg.method === "initialize") this.reply(msg.id!, { protocolVersion: 1, agentCapabilities: {} });
-    else if (msg.method === "session/new") this.reply(msg.id!, { sessionId: "s1" });
+    else if (msg.method === "session/new") this.reply(msg.id!, { sessionId: "s1", ...this.sessionExtra });
+    else if (msg.method?.startsWith("session/set_") === true) this.reply(msg.id!, this.setResult);
     else if (msg.method === "session/prompt") this.onPrompt(msg.id!);
   }
   onStdout(cb: (chunk: string) => void): void {
@@ -254,5 +259,71 @@ describe("띄우기 도우미", () => {
     expect(parseAgentOverride("{nope")).toBeNull();
     expect(parseAgentOverride('{"args":[]}')).toBeNull();
     expect(parseAgentOverride(undefined)).toBeNull();
+  });
+});
+
+describe("세션 설정 (Model·Effort)", () => {
+  const CONFIG = [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      type: "select",
+      currentValue: "sonnet",
+      options: [
+        { value: "sonnet", name: "Sonnet" },
+        { group: "more", name: "더 보기", options: [{ value: "opus", name: "Opus", description: "가장 강함" }] },
+      ],
+    },
+    { id: "effort", name: "Effort", category: "thought_level", type: "select", currentValue: "medium", options: [{ value: "low", name: "Low" }, { value: "medium", name: "Medium" }] },
+    { id: "flag", name: "Flag", type: "boolean", currentValue: true },
+  ];
+
+  test("configOptions: 선택형만, 묶음은 펼친다. 시작 결과에 담긴다", async () => {
+    const proc = new FakeProc();
+    proc.sessionExtra = { configOptions: CONFIG };
+    const { h } = host(proc);
+    const started = await h.start("fake");
+    expect(started.config.map((o) => [o.id, o.category, o.current, o.options.map((c) => c.value)])).toEqual([
+      ["model", "model", "sonnet", ["sonnet", "opus"]],
+      ["effort", "thought_level", "medium", ["low", "medium"]],
+    ]);
+  });
+
+  test("set_config_option: 알려 준 값만 보내고 답의 configOptions로 갈아 끼운다, 모르는 값은 거부", async () => {
+    const proc = new FakeProc();
+    proc.sessionExtra = { configOptions: CONFIG };
+    proc.setResult = { configOptions: [{ ...CONFIG[1], currentValue: "low" }] };
+    const { h, events } = host(proc);
+    const { session } = await h.start("fake");
+    await expect(h.setConfig(session, "effort", "ultra")).rejects.toThrow();
+    const next = await h.setConfig(session, "effort", "low");
+    expect(proc.received.at(-1)).toMatchObject({ method: "session/set_config_option", params: { sessionId: "s1", configId: "effort", value: "low" } });
+    expect(next.map((o) => [o.id, o.current])).toEqual([["effort", "low"]]);
+    expect(events.at(-1)).toMatchObject({ type: "config" });
+  });
+
+  test("옛 models·modes: set_model·set_mode로 바꾸고, config_option_update 알림을 따른다", async () => {
+    const proc = new FakeProc();
+    proc.sessionExtra = {
+      models: { currentModelId: "a", availableModels: [{ modelId: "a", name: "A" }, { modelId: "b", name: "B" }] },
+      modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default" }, { id: "plan", name: "Plan" }] },
+    };
+    const { h, events } = host(proc);
+    const { session, config } = await h.start("fake");
+    expect(config.map((o) => [o.id, o.source, o.current])).toEqual([
+      ["model", "model", "a"],
+      ["mode", "mode", "default"],
+    ]);
+    const next = await h.setConfig(session, "model", "b");
+    expect(proc.received.at(-1)).toMatchObject({ method: "session/set_model", params: { sessionId: "s1", modelId: "b" } });
+    expect(next.find((o) => o.id === "model")?.current).toBe("b");
+    proc.update({ sessionUpdate: "config_option_update", configOptions: [CONFIG[0]] });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(events.at(-1)).toMatchObject({ type: "config", options: [{ id: "model", current: "sonnet" }] });
+  });
+
+  test("설정이 없는 에이전트는 빈 배열", () => {
+    expect(parseSessionConfig({ sessionId: "s1" })).toEqual([]);
   });
 });

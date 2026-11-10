@@ -23,6 +23,12 @@ interface UiState {
    */
   panelOpenEditor: boolean;
   panelOpenOther: boolean;
+  /** 왼쪽 사이드바 펼침 (액티비티 아이콘 다시 누르기·Ctrl+B로 접기) */
+  sidebarOpen: boolean;
+  /** 끌어서 바꾼 폭 px (null = 기본 폭). 녹화 사이드바는 따로 */
+  sidebarWidth: number | null;
+  recorderSidebarWidth: number | null;
+  inspectorWidth: number | null;
 }
 
 export const useUi = create<UiState>(() => ({
@@ -32,11 +38,46 @@ export const useUi = create<UiState>(() => ({
   expanded: null,
   selected: null,
   maximized: false,
-  inspectorOpen: true,
   rightTab: "props",
   panelOpenEditor: false,
   panelOpenOther: true,
+  ...defaultLayout(),
 }));
+
+// ── 패널 배치 (앱 설정 userData/settings.json의 layout — App.tsx가 읽고 쓴다) ─────────
+export type Layout = Pick<UiState, "sidebarOpen" | "sidebarWidth" | "recorderSidebarWidth" | "inspectorWidth" | "inspectorOpen">;
+
+function defaultLayout(): Layout {
+  return { sidebarOpen: true, sidebarWidth: null, recorderSidebarWidth: null, inspectorWidth: null, inspectorOpen: true };
+}
+
+/** 저장된 값(모양 모름)을 배치로. 틀린 칸은 기본값 */
+export function parseLayout(v: unknown): Layout {
+  const o = typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  const width = (x: unknown) => (typeof x === "number" && Number.isFinite(x) && x > 0 && x < 10_000 ? Math.round(x) : null);
+  return {
+    sidebarOpen: o.sidebarOpen !== false,
+    sidebarWidth: width(o.sidebarWidth),
+    recorderSidebarWidth: width(o.recorderSidebarWidth),
+    inspectorWidth: width(o.inspectorWidth),
+    inspectorOpen: o.inspectorOpen !== false,
+  };
+}
+
+export function layoutOf(s: UiState): Layout {
+  return {
+    sidebarOpen: s.sidebarOpen,
+    sidebarWidth: s.sidebarWidth,
+    recorderSidebarWidth: s.recorderSidebarWidth,
+    inspectorWidth: s.inspectorWidth,
+    inspectorOpen: s.inspectorOpen,
+  };
+}
+
+/** 사이드바 접기·펼치기 (Ctrl+B, 보기 메뉴) */
+export function toggleSidebar(): void {
+  useUi.setState((s) => ({ sidebarOpen: !s.sidebarOpen }));
+}
 
 /** 하단 패널 펼침을 정하는 쪽: 정지 화면 탭(REC·TARGET)·설정 탭(시안 Permissions — 하단 패널 없음)인가 */
 export function panelSide(kind: string | undefined): "panelOpenEditor" | "panelOpenOther" {

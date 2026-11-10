@@ -96,7 +96,7 @@ export interface RunSession {
 export async function openRunApp(
   ws: RunWorkspace,
   /** env: 앱 환경을 통째로 바꾼다 (녹화 E2E — helpers/recorder.ts) */
-  options: { scaleFactor?: number; userData?: string; env?: Record<string, string> } = {},
+  options: { scaleFactor?: number; userData?: string; env?: Record<string, string>; agentSetup?: boolean } = {},
 ): Promise<RunSession> {
   const launched = await launchApp({ env: runEnv(ws), ...options });
   const page = await launched.app.firstWindow();

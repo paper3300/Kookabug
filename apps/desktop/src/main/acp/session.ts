@@ -5,7 +5,7 @@
 // - session/request_permission은 카드로만 묻는다. 자동 허용 없음 — 답이 오기 전에 세션이 끝나면 cancelled
 // - 그 밖의 에이전트 → 클라이언트 요청(fs/*·terminal/*)은 "메서드 없음"
 import { AcpError, LineRpc, METHOD_NOT_FOUND } from "./client";
-import type { AgentEvent, AgentPermissionOption } from "./events";
+import type { AgentConfigOption, AgentEvent, AgentPermissionOption } from "./events";
 
 export const ACP_PROTOCOL_VERSION = 1;
 export const CLIENT_CAPABILITIES = { fs: { readTextFile: false, writeTextFile: false }, terminal: false } as const;
@@ -62,6 +62,61 @@ export function toolText(update: Obj): string {
   return parts.join("\n").slice(0, TOOL_TEXT_LIMIT);
 }
 
+function selectChoices(raw: unknown): AgentConfigOption["options"] {
+  const out: AgentConfigOption["options"] = [];
+  for (const item of Array.isArray(raw) ? raw : []) {
+    const o = obj(item);
+    // 묶음 선택지 {group, name, options: [...]}는 펼친다
+    if (Array.isArray(o.options)) {
+      out.push(...selectChoices(o.options));
+      continue;
+    }
+    const value = str(o.value);
+    if (value === "") continue;
+    out.push({ value, name: str(o.name, value), ...(typeof o.description === "string" ? { description: o.description } : {}) });
+  }
+  return out;
+}
+
+/** ACP session config options (선택형만) */
+export function parseConfigOptions(raw: unknown): AgentConfigOption[] {
+  const out: AgentConfigOption[] = [];
+  for (const item of Array.isArray(raw) ? raw : []) {
+    const o = obj(item);
+    const id = str(o.id);
+    if (id === "" || (o.type !== undefined && o.type !== "select")) continue;
+    const options = selectChoices(o.options);
+    if (options.length === 0) continue;
+    out.push({ id, name: str(o.name, id), category: str(o.category), current: str(o.currentValue), options, source: "config" });
+  }
+  return out;
+}
+
+/** session/new 결과의 설정: configOptions가 있으면 그것, 없으면 옛 models·modes */
+export function parseSessionConfig(result: Obj): AgentConfigOption[] {
+  if (Array.isArray(result.configOptions)) return parseConfigOptions(result.configOptions);
+  const out: AgentConfigOption[] = [];
+  const models = obj(result.models);
+  const modelList = Array.isArray(models.availableModels) ? models.availableModels : [];
+  const modelChoices = modelList
+    .map((m) => obj(m))
+    .filter((m) => str(m.modelId) !== "")
+    .map((m) => ({ value: str(m.modelId), name: str(m.name, str(m.modelId)), ...(typeof m.description === "string" ? { description: m.description } : {}) }));
+  if (modelChoices.length > 0) {
+    out.push({ id: "model", name: "Model", category: "model", current: str(models.currentModelId), options: modelChoices, source: "model" });
+  }
+  const modes = obj(result.modes);
+  const modeList = Array.isArray(modes.availableModes) ? modes.availableModes : [];
+  const modeChoices = modeList
+    .map((m) => obj(m))
+    .filter((m) => str(m.id) !== "")
+    .map((m) => ({ value: str(m.id), name: str(m.name, str(m.id)), ...(typeof m.description === "string" ? { description: m.description } : {}) }));
+  if (modeChoices.length > 0) {
+    out.push({ id: "mode", name: "Mode", category: "mode", current: str(modes.currentModeId), options: modeChoices, source: "mode" });
+  }
+  return out;
+}
+
 export class AgentSession {
   private readonly rpc: LineRpc;
   private acpSession: string | null = null;
@@ -69,6 +124,7 @@ export class AgentSession {
   private readonly tools = new Map<string, { title: string; kind: string; status: string }>();
   private ended = false;
   private nextPermission = 1;
+  private configOptions: AgentConfigOption[] = [];
 
   constructor(
     private readonly proc: AgentProcess,
@@ -104,6 +160,7 @@ export class AgentSession {
       const id = result.sessionId;
       if (typeof id !== "string" || id === "") throw new AcpError(-32603, "session/new 결과에 sessionId가 없다");
       this.acpSession = id;
+      this.configOptions = parseSessionConfig(result);
     } catch (err) {
       this.stop();
       const message = (err as Error).message;
@@ -111,6 +168,32 @@ export class AgentSession {
       throw err;
     }
     this.options.emit({ type: "status", status: "ready" });
+  }
+
+  /** 지금 세션 설정 (모델·생각 수준 등) */
+  get config(): AgentConfigOption[] {
+    return this.configOptions;
+  }
+
+  /** 세션 설정 하나를 바꾼다. 에이전트가 알려 준 선택지 값만 받는다 */
+  async setConfig(id: string, value: string): Promise<AgentConfigOption[]> {
+    if (this.acpSession === null || this.ended) throw new AcpError(-32000, "세션이 없다");
+    const option = this.configOptions.find((o) => o.id === id);
+    if (option === undefined || !option.options.some((c) => c.value === value)) {
+      throw new AcpError(-32602, `에이전트가 알려 주지 않은 설정 값: ${id}=${value}`);
+    }
+    const sessionId = this.acpSession;
+    if (option.source === "config") {
+      const result = obj(await this.rpc.request("session/set_config_option", { sessionId, configId: id, value }));
+      const next = Array.isArray(result.configOptions) ? parseConfigOptions(result.configOptions) : null;
+      this.configOptions = next ?? this.configOptions.map((o) => (o.id === id ? { ...o, current: value } : o));
+    } else {
+      if (option.source === "model") await this.rpc.request("session/set_model", { sessionId, modelId: value });
+      else await this.rpc.request("session/set_mode", { sessionId, modeId: value });
+      this.configOptions = this.configOptions.map((o) => (o.id === id ? { ...o, current: value } : o));
+    }
+    this.options.emit({ type: "config", options: this.configOptions });
+    return this.configOptions;
   }
 
   /** 글자 하나를 보낸다. 끝나면 stopReason */
@@ -230,6 +313,17 @@ export class AgentSession {
         failed: merged.status === "failed",
         text: toolText(update),
       });
+      return;
+    }
+    if (kind === "config_option_update" && Array.isArray(update.configOptions)) {
+      this.configOptions = parseConfigOptions(update.configOptions);
+      this.options.emit({ type: "config", options: this.configOptions });
+      return;
+    }
+    if (kind === "current_mode_update" && typeof update.currentModeId === "string") {
+      const mode = update.currentModeId;
+      this.configOptions = this.configOptions.map((o) => (o.source === "mode" ? { ...o, current: mode } : o));
+      this.options.emit({ type: "config", options: this.configOptions });
       return;
     }
     this.options.emit({ type: "hidden", kind: kind || "unknown" });

@@ -4,13 +4,24 @@ export const daemonRpcSchema: unknown = {
   "$defs": {
     "AgentCandidate": {
       "additionalProperties": false,
-      "description": "감지 표의 에이전트 하나 (kookabug_core.agents.detect). 경로에서 찾기만 하고 설치하지 않는다",
+      "description": "감지 표의 에이전트 하나 (kookabug_core.agents.detect). 경로에서 찾기만 하고 설치하지 않는다(npx 어댑터는 연결할 때 받는다)",
       "properties": {
         "args": {
           "items": {
             "type": "string"
           },
           "type": "array"
+        },
+        "cli": {
+          "description": "본체 CLI 실행 파일 이름 (claude·codex 등)",
+          "type": "string"
+        },
+        "cli_path": {
+          "description": "찾은 본체 CLI (없으면 null). 본체가 있어도 ACP 어댑터·npx가 없으면 installed는 false",
+          "type": [
+            "null",
+            "string"
+          ]
         },
         "command": {
           "type": "string"
@@ -19,10 +30,18 @@ export const daemonRpcSchema: unknown = {
           "type": "string"
         },
         "installed": {
+          "description": "지금 바로 연결할 수 있음 (via가 null이 아님)",
           "type": "boolean"
         },
         "name": {
           "type": "string"
+        },
+        "package": {
+          "description": "본체만 있을 때 npx로 받을 ACP 어댑터 (이름@고정 판, 없으면 null)",
+          "type": [
+            "null",
+            "string"
+          ]
         },
         "path": {
           "description": "찾은 실행 파일 (없으면 null)",
@@ -30,15 +49,27 @@ export const daemonRpcSchema: unknown = {
             "null",
             "string"
           ]
+        },
+        "via": {
+          "description": "연결 명령을 찾은 방법: path(어댑터가 PATH에 있음)·npx(고정 판 어댑터를 npx로 받음)·null(연결 불가)",
+          "enum": [
+            "path",
+            "npx",
+            null
+          ]
         }
       },
       "required": [
         "args",
+        "cli",
+        "cli_path",
         "command",
         "id",
         "installed",
         "name",
-        "path"
+        "package",
+        "path",
+        "via"
       ],
       "title": "AgentCandidate",
       "type": "object"

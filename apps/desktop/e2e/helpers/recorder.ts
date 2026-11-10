@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
-import { REPO_ROOT } from "./app";
+import { REPO_ROOT, showActivity } from "./app";
 import { writeFile } from "./editor";
 import { openRunApp, prepareRunWorkspace, runEnv, type RunSession, type RunWorkspace } from "./run";
 import { selectRect } from "./target";
@@ -57,7 +57,7 @@ export async function openRecorderApp(ws: RunWorkspace, options: { script?: Scri
 }
 
 export async function showRecorder(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "녹화", exact: true }).click();
+  await showActivity(page.getByRole("button", { name: "녹화", exact: true }));
   await expect(page.locator('[data-part="recorder-sidebar"]')).toBeVisible();
 }
 

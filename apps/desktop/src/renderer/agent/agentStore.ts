@@ -5,7 +5,7 @@
 // - Kookabug 확인 요청(approval.requested): agent.id가 panel:<세션>이면 대화 안, 아니면 맨 위 "외부 에이전트" 카드
 import type { NotificationParamsOf, ResultOf } from "@kookabug/schema";
 import { create } from "zustand";
-import type { AgentEvent, AgentSessionEvent } from "../../preload/bridge";
+import type { AgentConfigOption, AgentEvent, AgentSessionEvent } from "../../preload/bridge";
 import type { AgentPermissionOption } from "../../main/acp/events";
 import { client, toRpcError } from "../rpc/client";
 import { noteAllowSession } from "../screens/mapStore";
@@ -60,6 +60,8 @@ export interface SessionInfo {
   agentId: string;
   name: string;
   status: "starting" | "ready" | "busy" | "ended" | "error";
+  /** 에이전트가 알려 준 세션 설정 (모델·생각 수준 등, 없으면 빈 배열) */
+  config: AgentConfigOption[];
 }
 
 interface AgentState {
@@ -295,6 +297,10 @@ function onSessionEvent(data: AgentSessionEvent): void {
     return;
   }
   if (event.type === "turn_end") return;
+  if (event.type === "config") {
+    useAgent.setState((s) => (s.session === null ? s : { session: { ...s.session, config: event.options } }));
+    return;
+  }
   if (leaseRefused(event)) {
     const lease = currentLease();
     useAgent.setState({ leaseBlocked: { owner: lease } });
@@ -419,14 +425,93 @@ export async function startSession(agentId: string): Promise<boolean> {
     const started = await app().agentStart(agentId);
     useAgent.setState({
       starting: null,
-      session: { id: started.session, agentId: started.agentId, name: started.name, status: "ready" },
+      session: { id: started.session, agentId: started.agentId, name: started.name, status: "ready", config: started.config ?? [] },
     });
     void refreshConnections();
+    void applyRememberedConfig(started.session, started.agentId, started.config ?? []);
     return true;
   } catch (err) {
     useAgent.setState({ starting: null, startError: errorText(err) });
     return false;
   }
+}
+
+// ── 세션 설정 (패널 하단 Model·Effort) ────────────────────────────────
+// 고른 값은 에이전트마다 이 PC에 기억해 두고, 다음 세션이 열리면 에이전트가 그 값을 아직 알려 줄 때만 다시 건다
+
+const CONFIG_KEY = "kookabug.agentConfig.";
+
+function rememberedConfig(agentId: string): Record<string, string> {
+  try {
+    const v = JSON.parse(window.localStorage.getItem(CONFIG_KEY + agentId) ?? "{}") as unknown;
+    return typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function rememberConfig(agentId: string, id: string, value: string): void {
+  try {
+    window.localStorage.setItem(CONFIG_KEY + agentId, JSON.stringify({ ...rememberedConfig(agentId), [id]: value }));
+  } catch {
+    // 기억하지 못해도 이번 세션 값은 그대로다
+  }
+}
+
+async function applyRememberedConfig(session: string, agentId: string, config: readonly AgentConfigOption[]): Promise<void> {
+  const saved = rememberedConfig(agentId);
+  for (const option of config) {
+    const value = saved[option.id];
+    if (value === undefined || value === option.current || !option.options.some((c) => c.value === value)) continue;
+    if (useAgent.getState().session?.id !== session) return;
+    try {
+      const next = await app().agentSetConfig(session, option.id, value);
+      useAgent.setState((s) => (s.session?.id !== session ? s : { session: { ...s.session, config: next } }));
+    } catch {
+      // 에이전트가 거절하면 에이전트 기본값으로 둔다
+    }
+  }
+}
+
+/** 패널 하단 Model·Effort 고르기 */
+export async function setAgentConfig(id: string, value: string): Promise<void> {
+  const { session } = useAgent.getState();
+  if (session === null) return;
+  try {
+    const next = await app().agentSetConfig(session.id, id, value);
+    rememberConfig(session.agentId, id, value);
+    useAgent.setState((s) => (s.session?.id !== session.id ? s : { session: { ...s.session, config: next } }));
+  } catch (err) {
+    pushError(`설정을 바꾸지 못했어요: ${errorText(err)}`, false);
+  }
+}
+
+/** 하단 Model 칸에 쓸 설정 (category model, 없으면 null) */
+export function modelOption(config: readonly AgentConfigOption[]): AgentConfigOption | null {
+  return config.find((o) => o.category === "model") ?? null;
+}
+
+/** 하단 Mode 칸에 쓸 설정 (category mode — 옛 modes도 mode로 읽는다) */
+export function modeOption(config: readonly AgentConfigOption[]): AgentConfigOption | null {
+  return config.find((o) => o.category === "mode") ?? null;
+}
+
+/** 하단 Effort 칸에 쓸 설정: category thought_level, 없으면 이름에 effort·reasoning·thinking이 든 것 */
+export function effortOption(config: readonly AgentConfigOption[]): AgentConfigOption | null {
+  return (
+    config.find((o) => o.category === "thought_level") ??
+    config.find((o) => o.category !== "model" && o.category !== "mode" && /effort|reasoning|think/i.test(`${o.id} ${o.name}`)) ??
+    null
+  );
+}
+
+/** 하단 Agent 칸: 다른 에이전트로 바꾼다 (대화가 있으면 끝난다고 묻는다) */
+export async function switchAgent(agentId: string, confirm: () => Promise<boolean>): Promise<void> {
+  const { session, items } = useAgent.getState();
+  if (session?.agentId === agentId) return;
+  if (session !== null && items.length > 0 && !(await confirm())) return;
+  useAgent.setState({ items: [], leaseBlocked: null });
+  await startSession(agentId);
 }
 
 /** 새 대화: 같은 에이전트로 새 세션, 대화 비우기 */
@@ -540,6 +625,52 @@ export async function saveAgent(spec: AgentSpec): Promise<void> {
     base_revision: agentsRevision,
   });
   useAgent.setState({ agents: next, agentsRevision: revision });
+}
+
+/** 권한 프리셋 고르기 목록 (값, 보이는 글자) */
+export const PRESETS: [string, string][] = [
+  ["graph_author", "그래프 작성 — 읽기 + 편집은 확인 후"],
+  ["read_only", "읽기 전용"],
+  ["runner", "실행 — 작성 + 실행, 입력은 확인 후"],
+  ["explorer", "탐색 — 화면 지도 쓰기, 게임 조작은 확인 후"],
+  ["full", "전체 (주의)"],
+];
+
+export type CandidateTone = "ready" | "npx" | "blocked" | "missing";
+
+/** 감지한 에이전트 한 줄의 상태 글자: 연결 가능·npx로 어댑터 받음·본체만 있음·설치 안 됨 */
+export function candidateStatus(c: AgentCandidate): { tone: CandidateTone; text: string } {
+  if (c.via === "path") return { tone: "ready", text: "연결 준비됨" };
+  if (c.via === "npx") return { tone: "npx", text: `처음 연결할 때 ACP 어댑터(${c.package ?? "?"})를 npx로 받아요` };
+  if (c.cli_path !== null) {
+    return c.package !== null
+      ? { tone: "blocked", text: `${c.cli}는 있지만 Node.js(npx)가 없어 ACP 어댑터를 띄울 수 없어요` }
+      : { tone: "blocked", text: `${c.cli}는 있지만 ACP 연결 명령을 찾지 못했어요` };
+  }
+  return { tone: "missing", text: `설치 안 됨 (${c.cli} 명령을 찾지 못함)` };
+}
+
+/**
+ * 첫 설정 대화 상자 저장: 고른 에이전트를 설정에 더하고(이미 있는 id는 그대로) 기본 에이전트·권한 프리셋을 정한다.
+ * 실패하면 이유 글자, 성공하면 null
+ */
+export async function saveAgentSetup(picked: readonly AgentCandidate[], defaultId: string | null, preset: string | null): Promise<string | null> {
+  const { agents, agentsRevision, defaultAgent } = useAgent.getState();
+  const have = new Set(agents.map((a) => a.id));
+  const next = [...agents, ...picked.filter((c) => !have.has(c.id)).map((c) => ({ id: c.id, name: c.name, command: c.command, args: c.args }))];
+  try {
+    const { revision } = await client().call("agents.set", {
+      agents: next,
+      default_agent: defaultId ?? defaultAgent,
+      base_revision: agentsRevision,
+    });
+    useAgent.setState({ agents: next, agentsRevision: revision, defaultAgent: defaultId ?? defaultAgent });
+  } catch (err) {
+    await refreshAgents();
+    return toRpcError(err).message;
+  }
+  if (preset !== null && preset !== effectivePreset(useAgent.getState().permissions)) await setUserPreset(preset);
+  return null;
 }
 
 /** 감지한 에이전트로 연결: 설정에 없으면 더한 뒤 세션 시작 */

@@ -1,6 +1,6 @@
 // window.kookabug 로 내놓는 좁은 API (M2 계획 2.10). ipcRenderer를 인자로 받아 vitest가
 // 가짜 ipc로 검사한다
-import type { AgentEvent, AgentSessionEvent, AgentStartResult } from "../main/acp/events";
+import type { AgentConfigOption, AgentEvent, AgentSessionEvent, AgentStartResult } from "../main/acp/events";
 import type { DaemonState } from "../main/daemon-state";
 import type { ExportResult } from "../main/dialogs";
 import {
@@ -51,7 +51,7 @@ export interface WindowState {
   maximized: boolean;
 }
 
-export type { AgentEvent, AgentSessionEvent, AgentStartResult, ArmResult, DaemonState, ExportResult, RpcErrorShape };
+export type { AgentConfigOption, AgentEvent, AgentSessionEvent, AgentStartResult, ArmResult, DaemonState, ExportResult, RpcErrorShape };
 
 /** 앱 API. 주 프로세스가 동작 이름과 인자를 다시 검사한다 */
 export interface AppApi {
@@ -64,6 +64,12 @@ export interface AppApi {
   /** 디버그 툴바 가로 자리 (캔버스 가운데 기준 px) */
   debugToolbarGet(): Promise<number>;
   debugToolbarSet(x: number): Promise<void>;
+  /** 에이전트 첫 설정 대화 상자를 "나중에"로 닫았는가 */
+  agentSetupDismissedGet(): Promise<boolean>;
+  agentSetupDismissedSet(): Promise<void>;
+  /** 패널 배치 (store/ui.ts Layout) */
+  layoutGet(): Promise<unknown>;
+  layoutSet(layout: unknown): Promise<void>;
   daemonState(): Promise<DaemonState>;
   daemonLog(): Promise<OutputLine[]>;
   daemonRetry(): Promise<DaemonState>;
@@ -88,6 +94,8 @@ export interface AppApi {
   agentCancel(session: string): Promise<void>;
   /** 에이전트 권한 카드의 답 (optionId null = 닫기·cancelled). 에이전트가 준 선택지만 받는다 */
   agentPermission(session: string, id: string, optionId: string | null): Promise<boolean>;
+  /** 세션 설정(모델·생각 수준 등) 바꾸기 → 바뀐 설정 전체 */
+  agentSetConfig(session: string, id: string, value: string): Promise<AgentConfigOption[]>;
   /** 세션 끝 (프로세스 트리 종료, 열린 카드는 cancelled) */
   agentStop(session: string): Promise<void>;
   /** 마법사 1단계 위치 고르기 (M8 B7). 취소면 null */
@@ -139,6 +147,10 @@ function appApi(ipc: IpcRendererLike): AppApi {
     themeSet: call("themeSet"),
     debugToolbarGet: call("debugToolbarGet"),
     debugToolbarSet: call("debugToolbarSet"),
+    agentSetupDismissedGet: call("agentSetupDismissedGet"),
+    agentSetupDismissedSet: call("agentSetupDismissedSet"),
+    layoutGet: call("layoutGet"),
+    layoutSet: call("layoutSet"),
     daemonState: call("daemonState"),
     daemonLog: call("daemonLog"),
     daemonRetry: call("daemonRetry"),
@@ -154,6 +166,7 @@ function appApi(ipc: IpcRendererLike): AppApi {
     agentPrompt: call("agentPrompt"),
     agentCancel: call("agentCancel"),
     agentPermission: call("agentPermission"),
+    agentSetConfig: call("agentSetConfig"),
     agentStop: call("agentStop"),
     pickFolder: call("pickFolder"),
     workspaceCreate: call("workspaceCreate"),
