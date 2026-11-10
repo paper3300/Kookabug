@@ -26,6 +26,8 @@ export interface AgentOptions {
   /** 사용자 설정 settings.json (없으면 PANEL_AGENT 하나) */
   settings?: Record<string, unknown> | null;
   scaleFactor?: number;
+  /** 에이전트 첫 설정 대화 상자를 띄운다 (기본은 꺼 둔다) */
+  agentSetup?: boolean;
   /** 앱을 띄우기 전에 워크스페이스·가짜 게임 사양을 고친다 (M7 탐색: 게임이 떠 있음·explorer 권한) */
   prepare?: (ws: RunWorkspace) => void;
 }
@@ -53,7 +55,11 @@ export async function openAgentApp(options: AgentOptions = {}): Promise<AgentSes
       env: { KB_FAKE_ACP_SCRIPT: script, KB_FAKE_ACP_LOG: log },
     }),
   };
-  const s = await openRunApp(ws, { env, ...(options.scaleFactor === undefined ? {} : { scaleFactor: options.scaleFactor }) });
+  const s = await openRunApp(ws, {
+    env,
+    ...(options.scaleFactor === undefined ? {} : { scaleFactor: options.scaleFactor }),
+    ...(options.agentSetup === undefined ? {} : { agentSetup: options.agentSetup }),
+  });
   return { ...s, userDir, script, log };
 }
 

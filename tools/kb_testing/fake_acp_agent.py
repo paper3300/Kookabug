@@ -26,6 +26,8 @@
     (completed·failed, 결과 글자를 content로) 알림을 보낸다. 인자 값 `"$prev:<키>"`는 앞 호출
     `structuredContent`의 그 키 값 (예: `kb_graph_get`의 `revision`)
 - `prompts`: `session/prompt`마다 다른 `steps` 목록 (n번째 프롬프트 = `prompts[n]`, 넘으면 마지막)
+- `config_options`: `session/new` 결과의 `configOptions`(모델·생각 수준 고르기).
+  `session/set_config_option`을 받으면 그 값으로 `currentValue`를 바꿔 전체를 답한다
 - `log_env`: 이름 목록 — 기록 파일 `start` 줄의 `logged_env`에 그 환경 변수 값을 그대로 남긴다
   (에이전트가 비밀값 env를 받았는지 가짜 쪽에서 확인하는 검사용, 앱으로는 보내지 않는다)
 
@@ -338,7 +340,15 @@ def main() -> None:
             )
         elif method == "session/new":
             servers = list(params.get("mcpServers", []))
-            _send({"id": rid, "result": {"sessionId": "s1"}})
+            result: dict[str, Any] = {"sessionId": "s1"}
+            if "config_options" in script:
+                result["configOptions"] = script["config_options"]
+            _send({"id": rid, "result": result})
+        elif method == "session/set_config_option":
+            for option in script.get("config_options", []):
+                if option.get("id") == params.get("configId"):
+                    option["currentValue"] = params.get("value")
+            _send({"id": rid, "result": {"configOptions": script.get("config_options", [])}})
         elif method == "session/prompt":
 
             def run(

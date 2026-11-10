@@ -144,7 +144,7 @@ describe("도우미", () => {
 describe("끝난 세션의 확인 요청 (검수 H1)", () => {
   const req = (agentId: string) => ({ agent: { id: agentId, name: "panel" } }) as ApprovalRequest;
   test("패널 세션이 끝났거나 다른 세션이면 단추를 막는다, 외부 에이전트는 무관", () => {
-    const live = { id: "p1ab", agentId: "a", name: "A", status: "ready" as const };
+    const live = { id: "p1ab", agentId: "a", name: "A", status: "ready" as const, config: [] };
     expect(fromEndedSession(req("panel:p1ab"), live)).toBe(false);
     expect(fromEndedSession(req("panel:p1ab"), { ...live, status: "ended" })).toBe(true);
     expect(fromEndedSession(req("panel:p0zz"), live)).toBe(true);

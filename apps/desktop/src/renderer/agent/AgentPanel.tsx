@@ -9,8 +9,20 @@ import { openPreviewTab, openSettingsTab, PREVIEW_PREFIX, useTabs } from "../sto
 import { useWorkspace } from "../store/workspace";
 import { ChevronDownIcon, ChevronRightIcon, LockIcon, StopIcon } from "../theme/icons";
 import css from "./agent.module.css";
+import { openAgentSetup } from "./AgentSetupDialog";
+import { Picker } from "./Picker";
+import { Markdown } from "./markdown";
+import { ask } from "../store/dialog";
+import type { AgentConfigOption } from "../../preload/bridge";
 import {
   addChip,
+  candidateStatus,
+  effortOption,
+  modelOption,
+  modeOption,
+  setAgentConfig,
+  switchAgent,
+  PRESETS,
   answerAcpPermission,
   approvalButtons,
   cancelPrompt,
@@ -44,14 +56,6 @@ import {
 } from "./agentStore";
 import { runChip, nodeChip } from "./chips";
 import { activeSession, useMap } from "../screens/mapStore";
-
-const PRESETS: [string, string][] = [
-  ["graph_author", "그래프 작성 — 읽기 + 편집은 확인 후"],
-  ["read_only", "읽기 전용"],
-  ["runner", "실행 — 작성 + 실행, 입력은 확인 후"],
-  ["explorer", "탐색 — 화면 지도 쓰기, 게임 조작은 확인 후"],
-  ["full", "전체 (주의)"],
-];
 
 const RESULT_TEXT: Record<string, string> = {
   allow_once: "한 번 허용했어요",
@@ -285,7 +289,7 @@ function Chat() {
           case "agent":
             return (
               <div key={item.key} className={css.answer} data-part="chat-agent">
-                {item.text}
+                <Markdown text={item.text} />
               </div>
             );
           case "tools":
@@ -439,10 +443,7 @@ function Footer() {
   const explore = useMap((s) => activeSession(s.sessions));
   return (
     <div className={css.footer} data-part="agent-footer">
-      <span className={css.online}>
-        <span className={css.dot} data-status={session?.status ?? "ended"} />
-        {session?.name ?? "연결 안 됨"} · ACP
-      </span>
+      <FooterPickers />
       <button type="button" className={css.footerLink} data-part="footer-preset" onClick={openSettingsTab}>
         권한: {presetLabel(effectivePreset(permissions))}
       </button>
@@ -455,6 +456,76 @@ function Footer() {
           MCP 툴셋 {mine?.toolsets.length ?? 0}
         </span>
       )}
+    </div>
+  );
+}
+
+/** 하단 고르기 줄: Agent(설정한 에이전트로 바꾸기)·Model·Effort (에이전트가 알려 준 세션 설정) */
+function FooterPickers() {
+  const session = useAgent((s) => s.session);
+  const agents = useAgent((s) => s.agents);
+  const busy = session?.status === "busy" || session?.status === "starting";
+  const config = session?.config ?? [];
+  const model = modelOption(config);
+  const effort = effortOption(config);
+  const mode = modeOption(config);
+  const nameOf = (o: AgentConfigOption | null) => o?.options.find((c) => c.value === o.current)?.name ?? o?.current ?? "";
+  const confirmSwitch = async () =>
+    (
+      await ask({
+        title: "에이전트 바꾸기",
+        message: "다른 에이전트로 바꾸면 지금 대화가 끝나요.",
+        buttons: [
+          { label: "취소", value: "cancel" },
+          { label: "바꾸기", value: "switch", primary: true },
+        ],
+        cancelValue: "cancel",
+      })
+    ).value === "switch";
+  const unsupported = (what: string) => `${session?.name ?? "이 에이전트"}가 ${what} 고르기를 알려 주지 않았어요`;
+  return (
+    <div className={css.pickers} data-part="footer-pickers">
+      <Picker
+        label="Agent"
+        part="pick-agent"
+        value={`${session?.name ?? "연결 안 됨"} · ACP`}
+        current={session?.agentId ?? null}
+        items={agents.map((a) => ({ value: a.id, name: a.name, description: [a.command, ...(a.args ?? [])].join(" ") }))}
+        actions={[{ label: "에이전트 설정…", run: openAgentSetup }]}
+        disabled={busy}
+        icon={<span className={css.dot} data-status={session?.status ?? "ended"} />}
+        onPick={(id) => void switchAgent(id, confirmSwitch)}
+      />
+      <Picker
+        label="Model"
+        part="pick-model"
+        value={model === null ? "기본" : nameOf(model)}
+        current={model?.current ?? null}
+        items={model?.options ?? []}
+        disabled={busy || model === null}
+        {...(model === null ? { title: unsupported("모델") } : {})}
+        onPick={(v) => model !== null && void setAgentConfig(model.id, v)}
+      />
+      <Picker
+        label="Effort"
+        part="pick-effort"
+        value={effort === null ? "기본" : nameOf(effort)}
+        current={effort?.current ?? null}
+        items={effort?.options ?? []}
+        disabled={busy || effort === null}
+        {...(effort === null ? { title: unsupported("생각 수준") } : {})}
+        onPick={(v) => effort !== null && void setAgentConfig(effort.id, v)}
+      />
+      <Picker
+        label="Mode"
+        part="pick-mode"
+        value={mode === null ? "기본" : nameOf(mode)}
+        current={mode?.current ?? null}
+        items={mode?.options ?? []}
+        disabled={busy || mode === null}
+        {...(mode === null ? { title: unsupported("모드") } : { title: `Mode: ${nameOf(mode)} — 에이전트 자기 도구(파일 읽기·명령 실행·수정)를 물을지 정한다. Kookabug 권한과는 따로다` })}
+        onPick={(v) => mode !== null && void setAgentConfig(mode.id, v)}
+      />
     </div>
   );
 }
@@ -488,6 +559,9 @@ function Connect() {
         쓰고, 확인이 필요한 일은 이 패널에서 물어봐요.
       </p>
       {problem !== null && <div className={css.startError}>사용자 설정을 읽지 못했어요: {problem}</div>}
+      <button type="button" className={css.setupLink} data-part="open-agent-setup" onClick={openAgentSetup}>
+        설정 도우미 열기
+      </button>
       {agents.length > 0 && (
         <>
           <span className={css.sectionLabel}>설정한 에이전트</span>
@@ -514,14 +588,19 @@ function Connect() {
           <div key={c.id} className={css.agentRow} data-part="candidate-row" data-id={c.id} data-installed={c.installed}>
             <span className={css.agentName}>
               <b>{c.name}</b>
-              <small>{[c.command, ...c.args].join(" ")}</small>
+              <small title={[c.command, ...c.args].join(" ")}>{[c.command, ...c.args].join(" ")}</small>
+              {c.via !== "path" && (
+                <small className={css.setupStatus} data-tone={candidateStatus(c).tone}>
+                  {candidateStatus(c).text}
+                </small>
+              )}
             </span>
             {c.installed ? (
               <button type="button" className={css.secondary} disabled={busy} onClick={() => void connectCandidate(c)}>
                 ACP로 연결
               </button>
             ) : (
-              <span className={css.notInstalled}>설치 안 됨</span>
+              <span className={css.notInstalled}>{c.cli_path !== null ? "연결 불가" : "설치 안 됨"}</span>
             )}
           </div>
         ))}

@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, type ElectronApplication, type Page } from "@playwright/test";
-import { closeApp, launchApp, REPO_ROOT, setContentSize, stubOpenDialog } from "./app";
+import { closeApp, launchApp, REPO_ROOT, setContentSize, stubOpenDialog, showActivity } from "./app";
 import { cleanupWorkspace, copySampleWorkspace, waitConnected } from "./daemon";
 
 const PYTHON = path.join(REPO_ROOT, ".venv", "Scripts", "python.exe");
@@ -110,7 +110,7 @@ export async function closePluginApp(s: PluginSession | null): Promise<void> {
 }
 
 export async function showPlugins(page: Page): Promise<void> {
-  await page.locator('[data-part="activity-plugins"]').click();
+  await showActivity(page.locator('[data-part="activity-plugins"]'));
   await expect(page.locator('[data-part="sidebar"][data-view="plugins"]')).toBeVisible();
 }
 

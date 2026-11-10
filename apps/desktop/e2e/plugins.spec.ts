@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
-import { closeApp } from "./helpers/app";
+import { closeApp, showActivity } from "./helpers/app";
 import {
   closePluginApp,
   lockBytes,
@@ -101,7 +101,7 @@ test("install from local git via dialog → palette shows node", async () => {
   noLocalPaths(await detail.innerText());
 
   // 팔레트: 플러그인 title 분류 (오른쪽 "플러그인"), 노드 줄
-  await page.getByRole("button", { name: "탐색기" }).click();
+  await showActivity(page.getByRole("button", { name: "탐색기" }));
   const group = page.locator('[data-part="palette"] [data-group="플러그인:sample"]');
   await expect(group).toBeVisible();
   await expect(group.locator('[aria-level="1"]')).toContainText("Sample");

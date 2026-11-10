@@ -20,7 +20,7 @@ M5(Agent) 완료도 두 단계다 ([[구현 계획 v0]] 1장 M5 행).
 
 [[m4-manual]] 0절의 준비를 `M4` → `M5`로 바꿔 쓴다(`$ev = "$repo\.orchestration\M5\manual_evidence"`, 결과 양식 `m5-result-template.md` 복사, 예제 워크스페이스 사본 `%TEMP%\kb-m5\sample-rpg`, 개발 빌드 앱 띄우기).
 
-- 실제 에이전트 CLI를 미리 설치·로그인해 둔다. Kookabug는 설치하지 않고 PATH에서 찾기만 한다. 감지 표(`kookabug_core/agents/detect.py`)의 명령 후보: `claude-code-acp`(Claude Code ACP 어댑터), `codex-acp`(Codex CLI ACP 어댑터), `gemini --experimental-acp`(Gemini CLI). 이름이 바뀌었으면 결과 양식 "별도 결정"에 적는다
+- 실제 에이전트 CLI(`claude`·`codex`)를 미리 설치·로그인해 둔다. 본체 CLI는 ACP로 말하지 않아 어댑터가 있어야 한다. 감지 표(`kookabug_core/agents/detect.py`)는 ACP 어댑터 명령(`claude-agent-acp`·옛 이름 `claude-code-acp`, `codex-acp`, `gemini --experimental-acp`)이 PATH에 있으면 그것을, 없고 본체 CLI와 Node.js(`npx`)가 있으면 고정 판 어댑터(`@agentclientprotocol/claude-agent-acp@0.96.0`·`@agentclientprotocol/codex-acp@2.3.0`)를 연결할 때 npx로 받아 띄운다(처음 연결은 받느라 오래 걸릴 수 있다). 에이전트 설정이 비어 있으면 프로젝트를 열 때 "에이전트 설정" 대화 상자가 한 번 뜬다(패널의 "설정 도우미 열기"로 다시 연다). 이름·판이 바뀌었으면 결과 양식 "별도 결정"에 적는다
 - 실제 모델 API 키 하나(Anthropic 또는 OpenAI 호환). 자격 증명 관리자나 환경 변수 `KOOKABUG_SECRET_<키>`로만 넣는다 — 파일에 쓰지 않는다
 
 ## 1. 조율자 자동 검사 (D)

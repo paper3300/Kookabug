@@ -1,6 +1,7 @@
 // 기록 뷰어 E2E가 쓰는 실행 만들기 도우미 (M3 계획 작업 크기 메모: 실패·반복·성공 기준 실행 도우미는 이 파일
 // 하나). 예제 워크스페이스(가짜 플랫폼)에 뷰어 검사용 그래프를 더하고, 렌더러 다리(window.kookabug.rpc)로
 // run.start를 불러 끝까지 기다린다 — UI 연결에서 시작한 실행이라 브레이크포인트도 적용된다
+import { showActivity } from "./app";
 import fs from "node:fs";
 import path from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
@@ -202,7 +203,7 @@ export function cloneRun(ws: RunWorkspace, runId: string, newId: string, patch: 
 
 /** 사이드바 실행 기록을 연다 */
 export async function showRunList(page: Page): Promise<Locator> {
-  await page.getByRole("button", { name: /^실행 기록/ }).click();
+  await showActivity(page.getByRole("button", { name: /^실행 기록/ }));
   const list = page.locator('[data-part="run-list"]');
   await expect(list).toBeVisible();
   return list;

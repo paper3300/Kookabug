@@ -148,6 +148,10 @@ export const APP_ACTIONS: ReadonlySet<string> = new Set([
   "themeSet",
   "debugToolbarGet",
   "debugToolbarSet",
+  "agentSetupDismissedGet",
+  "agentSetupDismissedSet",
+  "layoutGet",
+  "layoutSet",
   "daemonState",
   "daemonLog",
   "daemonRetry",
@@ -166,6 +170,7 @@ export const APP_ACTIONS: ReadonlySet<string> = new Set([
   "agentPrompt",
   "agentCancel",
   "agentPermission",
+  "agentSetConfig",
   "agentStop",
 ]);
 

@@ -1,5 +1,5 @@
-// 오른쪽 패널 (M5 계획 3.10, 시안 Main): 속성 | 에이전트 탭. 폭 320px(M2 U1), 접기 가능.
-// 그래프·RUN 탭이면 늘 보이고, 그 밖 탭은 에이전트 탭을 골랐을 때만 보인다 (TARGET·REC 편집 화면 폭을 그대로 둔다)
+// 오른쪽 패널 (M5 계획 3.10, 시안 Main): 속성 | 에이전트 탭. 기본 폭 320px(M2 U1), 왼쪽 끝을 끌어 폭 조절, 접기 가능.
+// 프로젝트를 열면 처음부터 보인다(2026-11-09 사용자 요청). TARGET·REC 탭은 에이전트 탭을 골랐을 때만 (편집 화면 폭을 그대로 둔다)
 import { AgentPanel } from "../agent/AgentPanel";
 import { pendingCount, useAgent } from "../agent/agentStore";
 import { InspectorContent } from "../inspector/Inspector";
@@ -7,6 +7,7 @@ import css from "../inspector/inspector.module.css";
 import { useTabs } from "../store/tabs";
 import { useUi } from "../store/ui";
 import { useWorkspace } from "../store/workspace";
+import { Resizer } from "./Resizer";
 
 export function RightPanel() {
   const root = useWorkspace((s) => s.root);
@@ -14,7 +15,9 @@ export function RightPanel() {
   const open = useUi((s) => s.inspectorOpen);
   const tab = useUi((s) => s.rightTab);
   const waiting = useAgent(pendingCount);
-  const visible = root !== null && (kind === "graph" || kind === "run" || tab === "agent");
+  const width = useUi((s) => s.inspectorWidth);
+  // 프로젝트를 열면 늘 보인다. 정지 화면을 다루는 TARGET·REC 탭만 에이전트 탭을 골랐을 때 보인다 (편집 화면 폭)
+  const visible = root !== null && (tab === "agent" || (kind !== "target" && kind !== "rec"));
   if (!visible) return null;
   const label = tab === "agent" ? "에이전트" : "속성";
   if (!open) {
@@ -38,7 +41,22 @@ export function RightPanel() {
     );
   }
   return (
-    <aside aria-label={label} className={css.inspector} data-part="inspector" data-open="true" data-tab={tab}>
+    <aside
+      aria-label={label}
+      className={css.inspector}
+      style={width === null ? undefined : { flexBasis: width + 1 }}
+      data-part="inspector"
+      data-open="true"
+      data-tab={tab}
+    >
+      <Resizer
+        edge="left"
+        label="오른쪽 패널 폭"
+        min={260}
+        max={760}
+        onWidth={(w) => useUi.setState({ inspectorWidth: w })}
+        onCollapse={() => useUi.setState({ inspectorOpen: false })}
+      />
       <div className={css.header} data-part="right-tabs">
         <div role="tablist" aria-label="오른쪽 패널" className={css.rightTabs}>
           <button

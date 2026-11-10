@@ -7,18 +7,35 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 class AgentCandidate(BaseModel):
     """
-    감지 표의 에이전트 하나 (kookabug_core.agents.detect). 경로에서 찾기만 하고 설치하지 않는다
+    감지 표의 에이전트 하나 (kookabug_core.agents.detect). 경로에서 찾기만 하고 설치하지 않는다(npx 어댑터는 연결할 때 받는다)
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
     args: list[str]
+    cli: Annotated[str, Field(description="본체 CLI 실행 파일 이름 (claude·codex 등)")]
+    cli_path: Annotated[
+        str | None,
+        Field(
+            description="찾은 본체 CLI (없으면 null). 본체가 있어도 ACP 어댑터·npx가 없으면 installed는 false"
+        ),
+    ]
     command: str
     id: str
-    installed: bool
+    installed: Annotated[bool, Field(description="지금 바로 연결할 수 있음 (via가 null이 아님)")]
     name: str
+    package: Annotated[
+        str | None,
+        Field(description="본체만 있을 때 npx로 받을 ACP 어댑터 (이름@고정 판, 없으면 null)"),
+    ]
     path: Annotated[str | None, Field(description="찾은 실행 파일 (없으면 null)")]
+    via: Annotated[
+        Literal["path", "npx"] | None,
+        Field(
+            description="연결 명령을 찾은 방법: path(어댑터가 PATH에 있음)·npx(고정 판 어댑터를 npx로 받음)·null(연결 불가)"
+        ),
+    ]
 
 
 class AgentClientInfo(BaseModel):

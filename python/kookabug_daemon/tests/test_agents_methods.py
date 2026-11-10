@@ -155,11 +155,43 @@ def test_detect_lists_table_without_installing(
     assert [r["id"] for r in rows] == [c.id for c in detect.DETECT_TABLE]
     codex = next(r for r in rows if r["id"] == "codex")
     assert codex["installed"] is True and codex["path"] == found["codex-acp"]
+    assert codex["via"] == "path"
     assert all(r["installed"] is False and r["path"] is None for r in rows if r["id"] != "codex")
+    assert all(r["via"] is None for r in rows if r["id"] != "codex")
     environ = {"KOOKABUG_USER_CONFIG_DIR": str(user_dir)}
     with ThreadDaemon(ws, environ=environ) as d, d.client() as ui:
         candidates = ui.call("agents.detect")["candidates"]
         assert [c["id"] for c in candidates] == [c.id for c in detect.DETECT_TABLE]
+
+
+def test_detect_bare_cli_uses_pinned_npx_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
+    """본체 CLI(claude·codex)만 있으면 고정 판 ACP 어댑터를 npx로. npx가 없으면 본체 위치만."""
+    found = {
+        "claude": "C:/u/.local/bin/claude.exe",
+        "codex": "C:/p/codex.exe",
+        "npx": "C:/node/npx.cmd",
+    }
+    monkeypatch.setattr(detect.shutil, "which", lambda name: found.get(name))
+    rows = {r["id"]: r for r in detect.detect()}
+    for key in ("claude-code", "codex"):
+        row = rows[key]
+        package = next(c.package for c in detect.DETECT_TABLE if c.id == key)
+        assert package is not None and "@" in package.lstrip("@")  # 판 고정
+        assert row["installed"] is True and row["via"] == "npx"
+        assert (row["command"], row["args"], row["path"]) == ("npx", ["-y", package], found["npx"])
+        assert row["cli_path"] == found[row["cli"]]
+    assert rows["gemini"]["installed"] is False and rows["gemini"]["cli_path"] is None
+
+    del found["npx"]
+    rows = {r["id"]: r for r in detect.detect()}
+    claude = rows["claude-code"]
+    assert claude["installed"] is False and claude["via"] is None and claude["path"] is None
+    assert claude["cli_path"] == found["claude"] and claude["command"] == "claude-agent-acp"
+
+    # 어댑터가 PATH에 있으면 npx보다 먼저
+    found |= {"npx": "C:/node/npx.cmd", "claude-code-acp": "C:/g/claude-code-acp.cmd"}
+    claude = next(r for r in detect.detect() if r["id"] == "claude-code")
+    assert (claude["via"], claude["command"], claude["args"]) == ("path", "claude-code-acp", [])
 
 
 def test_agent_connections_listed_and_notified(ws: Path, user_dir: Path) -> None:

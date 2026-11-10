@@ -13,7 +13,7 @@ import { canRedo, canUndo, redoEdit, saveDoc, undoEdit, useDocuments } from "../
 import { requestCloseTab } from "../store/editing";
 import { openSettingsTab, useTabs } from "../store/tabs";
 import { useTheme, type ThemeMode } from "../store/theme";
-import { openAgentPanel, useUi } from "../store/ui";
+import { openAgentPanel, toggleSidebar, useUi } from "../store/ui";
 import { closeWorkspace, openFolder, useWorkspace } from "../store/workspace";
 import { LogoMark, SearchIcon } from "../theme/icons";
 import css from "./shell.module.css";
@@ -39,6 +39,7 @@ function useMenus(): [string, MenuEntry[]][] {
   const graph = useTabs((s) => (s.tabs.find((t) => t.path === s.active)?.kind === "graph" ? s.active : null));
   const doc = useDocuments((s) => (graph === null ? undefined : s.docs.get(graph)));
   const inspectorOpen = useUi((s) => s.inspectorOpen);
+  const sidebarOpen = useUi((s) => s.sidebarOpen);
   const runs = useRunAvailability();
   const debug = useDebugAvailability();
   const connected = useWorkspace((s) => s.daemon.status === "connected");
@@ -91,6 +92,7 @@ function useMenus(): [string, MenuEntry[]][] {
         theme("light", "라이트"),
         theme("dark", "다크"),
         "separator",
+        { label: "사이드바", checked: sidebarOpen, shortcut: "Ctrl+B", run: toggleSidebar },
         { label: "속성 패널", checked: inspectorOpen, run: () => useUi.setState({ inspectorOpen: !inspectorOpen }) },
         { label: "에이전트 패널", disabled: !hasWorkspace, run: openAgentPanel },
       ],

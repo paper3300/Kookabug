@@ -314,6 +314,22 @@ function start(): void {
       }
       settings.debugToolbarX = x;
     },
+    agentSetupDismissedGet: () => settings.agentSetupDismissed,
+    layoutGet: () => settings.layout,
+    layoutSet(layout) {
+      // 작은 평평한 객체만 (값은 수·참거짓·null)
+      const ok =
+        typeof layout === "object" &&
+        layout !== null &&
+        !Array.isArray(layout) &&
+        Object.keys(layout).length <= 16 &&
+        Object.values(layout).every((v) => v === null || typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v)));
+      if (!ok) throw new IpcGuardError("layoutSet 인자가 배치 객체가 아니다");
+      settings.layout = layout;
+    },
+    agentSetupDismissedSet() {
+      settings.agentSetupDismissed = true;
+    },
     daemonState: () => manager.state,
     daemonLog: () => output.slice(),
     daemonRetry: () => manager.retry(),
@@ -365,6 +381,7 @@ function start(): void {
       agentHost.permission(session, id, optionId),
     ),
     agentStop: agentAction((session: unknown) => agentHost.stop(session)),
+    agentSetConfig: agentAction((session: unknown, id: unknown, value: unknown) => agentHost.setConfig(session, id, value)),
   };
   // 창 닫기 확인 (close-guard.ts): 저장 안 된 그래프가 있으면 렌더러가 저장·버림·취소를 묻는다
   const closeGuard = new CloseGuard({

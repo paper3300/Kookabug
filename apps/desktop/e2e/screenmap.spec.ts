@@ -2,6 +2,7 @@
 // runner로 가짜 탐색 에이전트 각본 → 사람 CLI 승격(title) → 다시 탐색(title 합치기 후보))다. 선작성·모킹 없음.
 // 지도·간선·색·점선·선택 상세·보호로 스크린샷 없는 카드·승격 → 파일·실패 문구·합치기·버리기·탐색기 → 카드·
 // 자리 기억·저장 안 한 그래프 탭 유지
+import { showActivity } from "./helpers/app";
 import fs from "node:fs";
 import { expect, test } from "@playwright/test";
 import { dragNode, filePath, nodeIds, openGraph, readBytes, tabOf } from "./helpers/editor";
@@ -153,12 +154,12 @@ test("explorer selects card, layout is remembered, unsaved graph tab stays", asy
   await dragNode(page, someNode!, 40, 20);
   await expect(tabOf(page, GRAPH)).toHaveAttribute("data-dirty", "true");
   // 탐색기 → 지도 탭에서 그 카드 선택
-  await page.getByRole("button", { name: "탐색기" }).click();
+  await showActivity(page.getByRole("button", { name: "탐색기" }));
   const tree = page.locator('[role="tree"]');
   const dir = tree.locator('[data-path="screens"]');
   if ((await dir.getAttribute("aria-expanded")) === "false") await dir.click();
   await tree.locator('[data-path="screens/title.screen.json"]').click();
-  await expect(page.locator('[role="tab"][aria-selected="true"]')).toHaveAttribute("data-kind", "MAP");
+  await expect(page.locator('[data-part="tabs"] [role="tab"][aria-selected="true"]')).toHaveAttribute("data-kind", "MAP");
   await expect(card(page, "title")).toHaveAttribute("data-selected", "true");
   // 자리 기억: 카드를 끌면 .kookabug/screen-map.json에 남고, 탭을 닫았다 열어도 그 자리
   const lobby = card(page, candidate(first, "lobby"));
@@ -176,7 +177,7 @@ test("explorer selects card, layout is remembered, unsaved graph tab stays", asy
     })
     .toBe(true);
   await page.locator('[role="tab"][data-kind="MAP"] button[aria-label="탭 닫기"]').click();
-  await page.locator('[data-part="activity-screens"]').click();
+  await showActivity(page.locator('[data-part="activity-screens"]'));
   await page.locator('[data-part="map-row"]').first().click();
   await expect(card(page, candidate(first, "lobby"))).toHaveAttribute("style", new RegExp(`left: ${left}`));
   // 승격해도 열린 그래프 탭(저장 안 함)과 그 파일은 그대로

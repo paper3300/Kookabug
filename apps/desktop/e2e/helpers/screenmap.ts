@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, type ElectronApplication, type Locator, type Page } from "@playwright/test";
-import { closeApp, launchApp, REPO_ROOT, setContentSize, setTheme, stubOpenDialog } from "./app";
+import { closeApp, launchApp, REPO_ROOT, setContentSize, setTheme, stubOpenDialog, showActivity } from "./app";
 import { cleanupWorkspace, copyWorkspaceFolder, waitConnected } from "./daemon";
 
 const PYTHON = path.join(REPO_ROOT, ".venv", "Scripts", "python.exe");
@@ -65,7 +65,7 @@ export async function closeMapApp(s: MapSession | null): Promise<void> {
 
 /** 액티비티 바 "화면 지도" → 사이드바, 첫 화면 줄을 눌러 지도 탭 */
 export async function showMap(page: Page): Promise<Locator> {
-  await page.locator('[data-part="activity-screens"]').click();
+  await showActivity(page.locator('[data-part="activity-screens"]'));
   await expect(page.locator('[data-part="sidebar"][data-view="screens"]')).toBeVisible();
   await page.locator('[data-part="map-row"]').first().click();
   const map = page.locator('[data-part="screen-map"]');

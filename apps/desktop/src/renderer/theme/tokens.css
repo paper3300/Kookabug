@@ -73,6 +73,8 @@
   --kb-fg-subtle: #858585; /* 로그 시각 */
   --kb-titlebar-search-border: #2b2b2b;
   --kb-hover-bg: #2a2a2a;
+  --kb-hover-filter: brightness(1.18); /* 따로 :hover가 없는 단추의 마우스 올림 (base.css) */
+  --kb-active-filter: brightness(0.92);
   --kb-badge-bg: #616161;
   --kb-badge-fg: #ffffff;
   --kb-kind-run: #f0883e;
@@ -316,6 +318,8 @@
   --kb-fg-subtle: #767676;
   --kb-titlebar-search-border: #e5e5e5;
   --kb-hover-bg: #ededed;
+  --kb-hover-filter: brightness(0.93);
+  --kb-active-filter: brightness(0.86);
   --kb-badge-bg: #6e6e6e;
   --kb-badge-fg: #ffffff;
   --kb-kind-run: #b85c00;

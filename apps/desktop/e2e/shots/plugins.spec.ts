@@ -10,7 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { REPO_BUILD, setTheme, settle } from "../helpers/app";
+import { REPO_BUILD, setTheme, settle, showActivity } from "../helpers/app";
 import {
   closePluginApp,
   openPluginApp,
@@ -78,7 +78,7 @@ test("sidebar, detail, palette", async () => {
   await page.locator('[data-part="plugin-detail"] [data-part="plugin-deps"] summary').click();
   await shot(page, "plugin-detail-dark");
 
-  await page.getByRole("button", { name: "탐색기" }).click();
+  await showActivity(page.getByRole("button", { name: "탐색기" }));
   const group = page.locator('[data-part="palette"] [data-group="플러그인:sample"]');
   await group.locator('[aria-level="1"]').click();
   await expect(group.locator('[data-node-type="sample.text.reverse"]')).toBeVisible();

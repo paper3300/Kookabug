@@ -29,6 +29,19 @@ button {
   cursor: default;
 }
 
+/* 마우스 올림·누름 기본값: 모듈에 :hover가 없는 단추도 반응한다. :where라 특이도가 0이어서 모듈 규칙이 이긴다 */
+:where(button:not(:disabled)) {
+  transition: filter 80ms ease-out;
+}
+
+:where(button:not(:disabled)):hover {
+  filter: var(--kb-hover-filter);
+}
+
+:where(button:not(:disabled)):active {
+  filter: var(--kb-active-filter);
+}
+
 :focus-visible {
   outline: 1px solid var(--kb-accent);
   outline-offset: -1px;
