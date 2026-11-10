@@ -2,7 +2,8 @@
 //   wizard0~9-dark        새 프로젝트 0→9 (5단계는 가짜 QA CLI로 연결 시험 통과)
 //   wizard9-noagent-dark  Agent 건너뜀 → Init 꺼짐·녹화 기본
 //   reports-dark          9단계 Init 시작 뒤 보고함 (1440×900)
-// 결과 build/ui-shots/<이름>-dark.png → node tools/design-ref/compare.mjs wizard0 … wizard9 wizard9-noagent
+// 결과 build/ui-shots/<이름>-dark.png (reports는 시안 없음). 시안 비교:
+// node tools/design-ref/compare.mjs wizard0 wizard1 wizard2 wizard3 wizard4 wizard5 wizard6 wizard7 wizard8 wizard9 wizard9-noagent
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";

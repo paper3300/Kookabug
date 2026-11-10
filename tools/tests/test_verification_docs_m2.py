@@ -64,6 +64,8 @@ M5_SCREENS: Final = frozenset(
 """M5에서 늘린 비교 화면 (M5 계획 B4·B5). M5 절차서 D3가 맡는다."""
 M7_SCREENS: Final = frozenset({"screenmap", "screenmap-promote", "screenmap-protected"})
 """M7에서 늘린 비교 화면 (M7 계획 B5). M7 절차서 H3가 맡는다."""
+M8_SCREENS: Final = frozenset({*(f"wizard{i}" for i in range(10)), "wizard9-noagent"})
+"""M8에서 늘린 비교 화면 (마법사, M8 계획 B7). M8 절차서 H6이 맡는다."""
 
 
 NO_DESIGN_SHOTS: Final = frozenset({"plugins.spec.ts", "plugin-widget.spec.ts"})
@@ -76,16 +78,16 @@ def compare_screens(shots: Path | None = None) -> list[str]:
     시나리오(`shots/*.spec.ts`)는 머리 주석에 `compare.mjs <id…>`를 적는다."""
     text = COMPARE.read_text(encoding="utf-8")
     body = text[text.index("export const SCREENS = {") : text.index("};", text.index("SCREENS"))]
-    ids = re.findall(r'^\s{2}"?([a-z-]+)"?:', body, re.MULTILINE)
+    ids = re.findall(r'^\s{2}"?([a-z0-9-]+)"?:', body, re.MULTILINE)
     shot: set[str] = set()
     for spec in (SHOTS if shots is None else shots).glob("*.spec.ts"):
         if spec.name in NO_DESIGN_SHOTS:  # 확정 시안이 없는 화면 (M6 플러그인 — 사람이 본다)
             continue
-        found = re.search(r"compare\.mjs ([a-z -]+)$", spec.read_text(encoding="utf-8"), re.M)
+        found = re.search(r"compare\.mjs ([a-z0-9 -]+)$", spec.read_text(encoding="utf-8"), re.M)
         assert found is not None, spec
         shot.update(found.group(1).split())
     assert shot <= set(ids), shot - set(ids)
-    later = M3_SCREENS | M4_SCREENS | M5_SCREENS | M7_SCREENS
+    later = M3_SCREENS | M4_SCREENS | M5_SCREENS | M7_SCREENS | M8_SCREENS
     return [i for i in ids if i in shot and i not in later]
 
 

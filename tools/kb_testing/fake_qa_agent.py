@@ -14,6 +14,8 @@
 - `{"print": 글}`·`{"print_env": 이름}`·`{"print_split_env": 이름}` — 표준 출력에 쓴다(가림 검사의
   양성 입력: 값을 둘로 나눠 사이에 flush·쉼을 둔다)
 - `{"sleep": 초}`·`{"spawn_child_sleep": 초}`(손자 프로세스 — 트리 정리 검사)·`{"exit": 코드}`
+- `{"exit": 코드, "if_playbook": 이름}` — 프롬프트 머리말의 플레이북이 그 이름일 때만 끝낸다
+  (앱 E2E 훅은 연결 시험과 Init에 같은 명령을 쓴다)
 
 앞 결과를 잇는 키 (M8 B6 시나리오 각본):
 - `"label"` — 결과에 그대로 남긴다(검사가 단계를 찾는 이름)
@@ -191,6 +193,7 @@ def run(
     out_dir: Path,
     results: list[dict[str, Any]] | None = None,
     save: Any = None,
+    prompt: str = "",
 ) -> list[dict[str, Any]]:
     """`results`에 차례로 더하고 단계마다 `save()` — 감독이 트리를 끝내도 그때까지의 결과가
     남는다."""
@@ -237,6 +240,9 @@ def run(
                 (out_dir / "grandchild.pid").write_text(str(child.pid), "utf-8")
                 continue
             if "exit" in step:
+                only = step.get("if_playbook")
+                if only is not None and f"플레이북: {only} (" not in prompt:
+                    continue
                 results.append({"step": n, "exit": step["exit"]})
                 return results
             if mcp is None:
@@ -317,7 +323,14 @@ def main(argv: list[str] | None = None) -> int:
 
     code = 0
     try:
-        run(script, root=root, out_dir=out.parent, results=report["results"], save=save)
+        run(
+            script,
+            root=root,
+            out_dir=out.parent,
+            results=report["results"],
+            save=save,
+            prompt=prompt,
+        )
         exits = [r["exit"] for r in report["results"] if "exit" in r]
         code = int(exits[0]) if exits else 0
     except ScriptFailed as exc:

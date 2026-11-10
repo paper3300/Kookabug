@@ -24,6 +24,7 @@
     "fixtures/sample-game/workspace/tests/inventory_open.graph.json",
     "fixtures/sample-game/workspace/tests/shop/buy_potion.graph.json",
     "fixtures/sample-game/workspace/tests/shop/buy_then_close.graph.json",
+    "fixtures/sample-game/workspace/tests/shop/close_shop.graph.json",
     "fixtures/sample-game/workspace/tests/smoke_headless.graph.json"
   ]
 }

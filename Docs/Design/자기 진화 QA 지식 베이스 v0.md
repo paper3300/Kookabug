@@ -85,7 +85,10 @@ workspace/
 │  ├─ evidence/<묶음>/         고정한 증거 묶음 (가림 처리된 최소 증거 + manifest)
 │  ├─ lessons.json            경험칙 (근거·적용 조건·활성 상태)
 │  ├─ cheats.json             치트 정의 (ID·인자 스키마·구현 revision·효과·환경·채택 상태)
-│  ├─ working/                작업 기준 변경분 (팀 기준 revision + 변경분)
+│  ├─ unknowns.json           미지수 (Init·조사가 남김, 답은 사람만)
+│  ├─ working/                작업 기준 변경분 (팀 기준 revision + 변경분, `claims/`는 주장 덧씌움)
+│  ├─ adoptions/<채택>.json    자동 채택·묶음 수락·되돌리기 기록
+│  ├─ reports/<작업>.json      작업 보고 (보고함·`wiki/reports/` 렌더의 원본)
 │  └─ log.jsonl               지식 변경 감사 이력 (연산·근거·작업 ID)
 ├─ wiki/                      산문 위키 (커밋, Agent가 자유롭게 씀)
 │  ├─ index.md                목차 (Kookabug가 생성)
@@ -217,7 +220,7 @@ Agent는 페이지나 파일 전체를 다시 쓰지 않는다. 아래 연산만
 
 모든 조건을 만족할 때만 팀 기준으로 자동 채택한다.
 
-1. 정책이 켜져 있고 범위(테스트 폴더·프로필) 안이다. **기본값은 켬**(범위 `tests/` 전체, 사용자 결정). 첫 프로젝트 설정 마법사(13장)에서 끄거나 범위를 바꾼다. Agent는 이 정책을 바꿀 수 없다.
+1. 정책이 켜져 있고 범위(테스트 폴더·프로필) 안이다. **기본값은 켬**(범위 `tests/` 전체, 사용자 결정). 첫 프로젝트 설정 마법사(13장)에서 끄거나 범위를 바꾼다. Agent는 이 정책을 바꿀 수 없다. 테스트에 `qa.claims`가 없으면 필수 검증 노드를 정할 수 없어 자동 채택하지 않는다(작업 기준 + 보고).
 2. 변경이 **조작할 대상을 찾는 locator**뿐이다. 이것은 Agent가 선언하는 것이 아니라 허용 필드·의존성 diff로 **결정적으로 검사**한다. 판정에 직간접으로 쓰이는 target이나 조작·판정이 함께 쓰는 target은 제외한다. 임계값을 낮추거나 검색 범위를 넓히는 변경도 제외한다.
 3. 판정 노드, 주장 revision, **검증 의존성**(판정이 읽는 target·OCR 영역·화면 조건·서브그래프)이 바뀌지 않았다.
 4. 고정한 주장 revision의 **필수 검증 노드가 실제로 실행되어** 통과했다. 전체 판정 `pass` 하나로는 부족하다.
@@ -321,7 +324,7 @@ D1의 뜻은 "모델이 다음 관찰·도구·수리를 고르는 반복을 Koo
 |---|---|
 | `knowledge` (새로 추가) | `kb_knowledge_search`·`kb_knowledge_get`(조회), `kb_knowledge_apply`(제한 연산 묶음, 기준 revision 필수), `kb_wiki_write`(산문 페이지, revision 대조) |
 | `cases` (새로 추가) | `kb_case_get`·`kb_case_list`(조회), `kb_case_open`·`kb_case_update`(변경), `kb_triage_signals`(조회: 가림 처리된 증거와 비교 불가 사유를 모은다. 원인을 판정하지 않는다), `kb_evidence_pin`(실행을 증거 묶음으로 고정) |
-| `run` (확장) | `kb_run_start`에 `baseline: team|working` 추가. 재실행은 기존 `kb_run_start`로 한다("현재 그래프 재실행"과 "옛 스냅샷 재생"을 섞지 않는다) |
+| `run` (확장) | `kb_run_start`에 `basis: team|working` 추가(`kb_run_compare`의 기준 실행 `baseline`과 헷갈리지 않게 `basis`). 재실행은 기존 `kb_run_start`로 한다("현재 그래프 재실행"과 "옛 스냅샷 재생"을 섞지 않는다) |
 | 사람 전용 | 치트 채택, 자동 채택 정책 변경, 팀 기준 채택·되돌리기(D6와 같이 에이전트 연결이면 판정 전에 거부) |
 
 권한 프리셋은 두 개를 추가한다.
@@ -435,3 +438,60 @@ D1의 뜻은 "모델이 다음 관찰·도구·수리를 고르는 반복을 Koo
 | 내장 스케줄러 → `agent-job`(외부 CLI 감독)과 플레이북, D1 유지 | 모델 응답 해석이 daemon에 들어오면 D1이 사실상 폐기된다 |
 | Init에서 로그인·탐색 완료 요구 → 시도하고 막히면 미확정 사건 | 정보 수집 단계가 QA 자동화 전체 구축이 되면 안 된다 |
 | 증거 묶음 추가 | `runs/`는 Git에서 제외되고 지워진다. 근거가 사라지면 팀원이 검증할 수 없다 |
+
+## M8 구현 반영 (2026-11-10)
+
+M8에서 정한 것만 한 줄씩. 실행·프로세스·RPC 쪽은 [[구현 계획 v0]] "M8 구현 반영", 파일 자리는 [[워크스페이스 구조]].
+
+**6장 지식 형식·연산**
+- `source` 근거는 서비스가 확인한다: 실경로로 정규화해 hash를 직접 계산(Agent hash와 다르면 `basis_hash_mismatch`), 원본 폴더 안이라도 워크스페이스 파생 경로는 정규화 전 조각·링크 사슬의 각 단계까지 보고 거부(`basis_derived`). URL 원본은 `verified: false`이고 그것만으로 `expected`를 `supported`로 못 올린다
+- 근거의 `seen_at`은 Agent가 준 값이 아니라 서비스가 확인한 시각으로 채운다(사건 신호 "원본 해시 변화"가 Agent 값에 휘둘리지 않게)
+- Agent의 기존 `expected` 주장 `revise`·`supersede`·`set_status`·`mark_conflicted`와 Agent 요청이 일으킨 의미 충돌은 `knowledge/working/claims/<기능>.json`(`kookabug.working-claims/0`)에 쌓이고, 보고가 가리킨 작업 rev가 지금과 같을 때만 수락으로 팀에 간다
+- 지난 작업 rev는 덧씌움 `history`에 남고, 수락·거절하면 덧씌움 항목이 빠진다(수락 내용은 팀 현재 주장으로 반영하고, 기존 팀 주장은 팀 history로). 응답의 rev·basis는 무변경 연산도 실제 저장 기준(작업 덧씌움에 있으면 `working`과 작업 rev)이다
+- 거부된 연산은 지식·위키 파일에 아무것도 쓰지 않지만 감사 이력·요청 기록에는 남는다. 글자 검사 거부와 저장할 수 없는 값(범위 밖 숫자 등)의 형식 거부는 요청 기록·digest 없이 남고, 걸린 요청 ID·주체는 값과 무관한 임의 식별자로 쓴다
+- 글자 검사 대상은 연산의 글자·키·숫자(`json.dumps`·`canonical_dumps` 두 표현)·`request_id`·주체 필드이고 digest보다 먼저 본다. 오류 위치는 스키마가 정한 필드 이름·배열 번호만(나머지는 `<key#n>`). 분기(`oneOf`·`anyOf`)는 판별자로 고르고, 못 고르면 모든 후보가 정한 키만 쓴다
+- 증거 manifest도 마지막에 글자 검사: 걸린 필드는 값 없이 빼고 `omitted`에 위치만, 필수 필드면 고정 거부
+- 사건 시그니처의 그래프 해시 = 루트 sha + 스냅샷 폐포 digest. 열린 사건(open·needs_info·watching)에만 붙는다. 증상 종류는 실패 노드 타입으로 정한다. Agent `kb_case_update`는 title·state(open·needs_info·watching)·hypotheses·actions·needs·recheck·links만
+- 정체 감지: 같은 작업·같은 테스트의 마지막 3번이 같은 시그니처로 실패했고 실효 재료(루트 sha·덧씌움 폐포 digest·프로필·원본 해시·실효 설정 digest·요청 기한)도 같을 때만 `stalled_repeat`. 재료를 못 구하면 거부하지 않는다
+
+**7장 두 기준·자동 채택**
+- 작업 기준 실행의 덧씌움 = active이고 stale 아닌 변경 전부, 같은 경로면 이 작업 → 이 Agent → 나중 변경 순. 작업이 요청한 채택 검증 실행도 `run.json.job`에 그 작업 ID(재트리거 입력 아님)
+- 조건 2: 바뀐 필드는 `image`·`search.region`(줄이기·옮기기)·`click`·`recorded`뿐. 넓힘은 알려진 모든 프레임 크기(팀·후보 녹화 크기, 원래 실패가 관측한 창 크기)에서 픽셀 넓이로 비교해 1px이라도 넓으면 거부, 크기를 하나도 모르면 정규 값으로 비교. 후보 target을 읽는 노드의 출력은 입력 조작 핀으로만 흘러야 하고, 팀 전체 그래프의 `$link` 판정 사용까지 본다(`target_used_for_judgment`). 사람이 쓴 경로(그래프·target·manifest·채택 기록·작업 변경·요청 인자)의 같은 파일 비교와 파일 종류 판별은 `path_key`(구분자·casefold, 후보 경로의 철자가 디스크 실제 철자와 다르거나 후보에 같은 파일 키가 둘이면 `path_alias`), 같은 함수 산출끼리의 재확인 비교는 글자 그대로(철자가 바뀌면 다르다고 봄)
+- dry 스냅샷 캐시(`.kookabug/cache/adopt`)가 쓰기 경계 밖이면 조건 1 `path_outside_workspace`(채택을 시작할 수 없는 환경). 캐시 정리는 UUID 이름 + 소유 표시 파일이 있는 항목만
+- Agent의 그래프 diff는 조건 2(`not_locator_only`)에서 막힌다. `oracle_changed`(조건 3)는 원래 실패 뒤 사람이 팀 판정 의존성을 바꾼 경우다
+- 조건 3: 판정 의존성 = 판정 노드 입력 + 추적 가능 생산자(`$link` 허용 목록)를 거친 target·PNG·`$setting`. 밖이면(`$secret`·OCR 글자·플러그인 판정 노드 등) `oracle_untraceable`로 자동 채택하지 않는다. 원래 의존성 sha는 사건 원래 실행의 스냅샷에서 읽는다
+- 조건 4: 판정 노드가 실행됐다가 실패하면 `oracle_failed`, 하나도 실행되지 않으면 `oracle_not_run`. Agent는 검증 근거 실행을 지정할 수 없다(입력 칸 없음)
+- 조건 5: 원래 화면(옛 locator가 찾는 화면 지도 이미지)은 음성 프레임에서 뺀다. `neg-*` 묶음은 `negative{targets, frames}`·출처가 있고 경로가 정규형일 때만 쓰고, 이 target에 묶인 묶음이 쓸 수 없으면 `no_negative_control`
+- 게시 잠금 안에서 정책·판정 의존성·주장 rev·참조 스캔·영향 테스트·음성 프레임을 다시 계산해 다르면 조건 8 `revision_conflict`. 검증 실행에도 금지 동작 판정, 검증 사이 다른 입력이 들면 무효(`input_between_verifications`), 취소된 채택은 감사 이력 `adopt_cancelled`
+- 되돌리기는 `kind: revert` 새 기록 + 원 기록 `reverted`, 사건은 `open`으로. 묶음 수락(`kind: accept`)도 파일은 한 번 되돌릴 수 있다. 채택 거부·사건 닫기 거부는 감사 이력에 남지 않는다
+
+**금지 동작 (13장 7단계 정책의 강제)**
+- 적용 대상은 Agent 주체 실행과 무인 실행(자동 채택 검증 실행 포함) 전부이고 기준(team·working)과 무관하다. 일반 사람 대화형 실행만 제외(공용 진입점 `guard_options` 한 곳에서 정함)
+- Agent 입력(클릭·키·문자)은 금지 문구·target·화면이 화면 **어디든** 보이면 거부(`forbidden_visible{kind, value}`), 화면 식별·OCR·target 조회·프레임 실패는 `forbidden_unverifiable`, 목록이 비면 생략. 판정 함수는 core `forbidden.judge` 하나이고 금지 목록은 실행 시작 때 고정. 감독자의 키 떼기·입력 복구는 이 검사를 거치지 않는다
+- 보호 화면은 확인 못 함이다. 단 비밀값 칸 상자를 모두 아는 `secret_field` 보호는 그 칸만 가린 사본으로 읽는다
+- 정책을 못 읽거나 금지 target·화면 파일을 못 읽으면 Agent 입력·실행 시작·target 쓰기·자동 채택 게시를 거부한다. Agent는 금지 판정이 읽는 파일을 실경로 기준으로 쓰지 못한다
+
+**10장 `qa`·치트**
+- 실행 노드는 `core.qa.cheat`(config `cheat`·`args`). `cheats.allow[].max_calls` 필수이고 루트 실행 전체에서 센다. 서브그래프 `qa`는 `cheats`만, 상위 허용을 줄이는 쪽(교집합)으로만. 치트 구현 안 치트 노드는 거부
+- 채택 digest = 정의 필드 + 실행 의존성(그래프·target·이미지·화면) 폐포 바이트 + 노드 구현 revision(코어 소스 sha·플러그인 잠금). 폐포는 위치와 무관하고, 빼는 것은 로더가 지식 형식으로 읽은 메타데이터 파일(치트 정의·주장)뿐이며 그것도 실행 의존성으로 쓰이면 다시 넣는다. 구현 노드는 허용 목록만, `knowledge/` 아래 의존성·`$setting`·`$secret`·미해결 참조·중첩이면 채택·실행 거부. 채택은 rev를 올리지 않는다. Kookabug를 올리면 다시 채택한다
+- 거부 코드: 채택·digest·동적 의존성 = `cheat_not_adopted`, 그 밖 = `cheat_denied`. 실행 스냅샷이 원본에서 본 구현 문제를 함께 고정한다
+
+**8·11장 작업·플레이북**
+- 플레이북 `triage`·`repair`·`explore`·`init`·`author`의 허용 툴셋에 control이 있다. 작업 안 직접 입력은 탐침용이고, 사건을 닫거나 채택 근거가 되지 못한다(검증은 Kookabug가 새로 띄운 게임에서)
+- 예약 등록 UI는 M9. M8은 CLI `kookabug agent-job schedule install|remove|show`
+
+**12장 보고함**
+- 보고 항목은 작업의 구조화 기록에서 만든다. `revisions.claims`에 생성 시점 주장 rev를 담고 렌더는 그 값만 쓴다. 끝난 보고는 덮지 않고 `report.decide`가 결정만 더해(한 filetx 거래) 다시 렌더한다. 통과한 연결 시험 보고는 목록에서 숨긴다
+
+**13장 마법사**
+- 진입점: 시작 화면 "새 프로젝트 만들기"·"프로젝트 열기"(→ 짧은 마법사), 환경설정 "설정 도우미", 상태 바 감시(짧은 마법사 자동 띄우기)
+- 짧은 마법사는 이 PC에 진행(`.kookabug/wizard.json`)이 없고 팀 첫 설정을 마친(`wiki/index.md`) 프로젝트에서만 자동으로 뜬다
+- 4단계는 값을 받지 않는다: 계정 값은 녹화 중 비밀번호 칸 → "비밀값으로 저장"(M4)으로 만들고, 마법사는 키 목록·안내만
+- 단계 저장은 화면을 채울 때 읽은 sha·revision으로 한다(충돌이면 "다시 읽기" 안내). 6단계는 사람이 바꾼 칸만 쓰고, 같은 ID 원본이 여럿이면 그 칸을 저장하지 않는다
+- 연결 시험 결과는 그 화면 동안만 기억한다. 5단계 뒤 닫았다 다시 열면 9단계 Init은 "지금 연결"로 다시 시험해야 켜진다
+
+**14장 완료 시나리오 (예제 상점)**
+- 예제 상점은 예제 게임과 다른 패키지·창(`sample_shop`, 렌더 PNG를 창·헤드리스가 같이 씀). 시나리오는 상점에서 바로 시작한다. 구매 target과 무관한 계속 진행 테스트는 `close_shop`
+- `frames/shop/frames.snapshot.json`에 렌더 관련 소스 sha를 둔다. `gen_shop_scenario --check`는 OS와 무관하게 소스 sha·PNG·target·표를 보고, 픽셀 대조는 같은 Windows·글꼴일 때만 한다
+- 예제 `give_gold`는 미채택으로 커밋한다(digest가 구현 revision을 담음). 검사·사람이 시작 때 사람 경로로 채택한다
+- 은폐 시도 ⑦(콘솔 직접 입력)은 탐침 입력은 실행되지만 사건 닫기(`case_resolution_reserved`)·채택 근거는 막힌다. ① 판매 단추 자르기는 조건 4 `oracle_failed`, ④ 기대값 patch는 조건 2 `not_locator_only`

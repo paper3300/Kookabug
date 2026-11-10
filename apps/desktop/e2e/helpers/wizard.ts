@@ -109,6 +109,13 @@ export function readWizardFile(root: string): { step: number; done: number[]; sk
   return JSON.parse(fs.readFileSync(path.join(root, ".kookabug", "wizard.json"), "utf8")) as never;
 }
 
+/** 저장된 마법사 진행을 이 PC에 둔다 (다시 열면 그 단계부터 이어서 — M8 인수 B8) */
+export function writeWizardProgress(root: string, progress: { step: number; done: number[]; skipped: number[] }): void {
+  const file = path.join(root, ".kookabug", "wizard.json");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify({ format: "kookabug.wizard/0", ...progress, warnings: [] }, null, 2)}\n`);
+}
+
 export async function closeWizardApp(s: WizardSession | null): Promise<void> {
   if (s === null) return;
   await closeApp(s.app);

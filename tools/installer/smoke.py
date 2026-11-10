@@ -1154,6 +1154,57 @@ def screen_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
         shutil.rmtree(base, ignore_errors=True)
 
 
+PLAYBOOKS: Final = ("init", "triage", "repair", "explore", "author", "lint", "probe")
+
+
+def qa_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
+    """설치본 자기 진화 QA (M8): 플레이북이 설치 트리에 들어 있고(`agent-job playbooks`), 새
+    워크스페이스를 만들 수 있다(`workspace new` — 폴더·`.gitignore`·`knowledge/`·`wiki/index.md`,
+    비어 있지 않은 폴더는 거부 1). Agent CLI·daemon은 띄우지 않는다."""
+    base = Path(tempfile.mkdtemp(prefix="kb-qa-"))
+    try:
+        proc = run_cli(root, env, ["agent-job", "playbooks", "--json"], cwd=base)
+        try:
+            books = json.loads(proc.stdout).get("playbooks") or {}
+        except ValueError:
+            return False, f"playbooks: JSON이 아니다 ({proc.returncode}): {proc.stderr[-1500:]}"
+        missing = [p for p in PLAYBOOKS if not isinstance(books.get(p), int)]
+        target = base / "new-ws"
+        made = run_cli(
+            root, env, ["workspace", "new", str(target), "--name", "smoke", "--json"], cwd=base
+        )
+        ignore = (
+            (target / ".gitignore").read_text(encoding="utf-8")
+            if (target / ".gitignore").is_file()
+            else ""
+        )
+        layout = all(
+            (target / rel).exists()
+            for rel in ("kookabug.json", "AGENTS.md", "knowledge", "wiki/index.md")
+        )
+        again = run_cli(
+            root, env, ["workspace", "new", str(target), "--name", "smoke", "--json"], cwd=base
+        )
+        ok = (
+            proc.returncode == 0
+            and not missing
+            and made.returncode == 0
+            and layout
+            and "runs/" in ignore
+            and ".kookabug/" in ignore
+            and again.returncode == 1
+        )
+        return ok, (
+            f"플레이북 {len(books)}개(빠짐 {missing or '없음'}), "
+            f"workspace new 종료 코드 {made.returncode}·구조 {layout}, "
+            f"다시 만들기 종료 코드 {again.returncode}"
+        )
+    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        return False, f"QA 스모크 실패: {exc!r}"
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
 PLUGIN_GRAPH: Final = "sample_reverse.graph.json"
 
 
@@ -1279,6 +1330,7 @@ def smoke_installed(report: SmokeReport) -> None:
     report.step("recorder.hook", lambda: recorder_step(root, env))
     report.step("cli.mcp", lambda: mcp_step(root, env))
     report.step("cli.screen", lambda: screen_step(root, env))
+    report.step("cli.qa", lambda: qa_step(root, env))
     report.step("cli.plugin", lambda: plugin_step(root, env))
     report.step("app.smoke", lambda: app_step(root, env))
     report.step("dll.check", lambda: dll_step(root))

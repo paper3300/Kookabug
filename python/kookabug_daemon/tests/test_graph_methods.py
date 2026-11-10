@@ -799,13 +799,14 @@ def test_disconnect_mid_save_keeps_path_serialized(
     entered, release, done = threading.Event(), threading.Event(), threading.Event()
     real_write = documents.write_atomic
 
-    def delayed_write(path: Path, data: bytes) -> None:
+    def delayed_write(path: Path, data: bytes, **kwargs: Any) -> None:
+        # B7부터 저장은 `before_replace`(교체 직전 재확인)를 넘긴다 — 그대로 전달
         if b'"title": "first-save"' not in data:
-            return real_write(path, data)
+            return real_write(path, data, **kwargs)
         entered.set()
         try:
             assert release.wait(10)
-            return real_write(path, data)
+            return real_write(path, data, **kwargs)
         finally:
             done.set()
 
@@ -866,11 +867,11 @@ def test_save_waits_for_in_flight_write_of_closed_connection(
     entered, release = threading.Event(), threading.Event()
     real_write = documents.write_atomic
 
-    def delayed_write(path: Path, data: bytes) -> None:
+    def delayed_write(path: Path, data: bytes, **kwargs: Any) -> None:
         if b'"title": "first-save"' in data:
             entered.set()
             assert release.wait(10)
-        return real_write(path, data)
+        return real_write(path, data, **kwargs)
 
     monkeypatch.setattr(documents, "write_atomic", delayed_write)
     with daemon.client() as second:

@@ -1176,3 +1176,15 @@ Codex 제안을 기본으로 하고, 세 군데는 Claude가 다르게 정했다
 | 설치 플러그인 진단 넷: `plugin_not_installed`(그래프 `plugins`의 ID가 잠금에 없음, 오류)·`plugin_env_missing`(잠금은 있는데 이 PC에 준비된 환경이 없음, 오류 — 앱 "준비…")·`plugin_env_stale`(Python·SDK 조건이 앱과 다름, 오류 — "다시 잠그기…")·`plugin_version_differs`(그래프의 판 ≠ 잠금의 판, 경고). 실행 전 검증 오류(종료 4)이고 자동 준비·자동 relock은 없다 | 클론한 프로젝트·바뀐 앱에서 실행이 다른 환경으로 조용히 돌지 않게 |
 | `run.json`에 `plugins[{id, version, env, wheel_sha256, schema_sha256}]`·`conditions.plugin_lock_sha256`(정규 잠금 해시), 실행 스냅샷에 `kookabug.lock` 사본 | 어떤 플러그인 바이트로 돌았는지 기록에서 재현할 수 있게 |
 | 노드 스키마 config 항목에 `ui: {widget: "<플러그인>.<이름>"}`(선택, `node-schema.schema.json`) — 인스펙터가 그 플러그인 위젯으로 고친다. 비밀값 타입 항목에는 쓰지 않는다 | UI 확장(JS)의 자리 |
+
+### M8 구현 반영
+
+| 바뀐 것 | 이유 |
+|---|---|
+| 그래프 최상위 `qa`(`kookabug.qa/0`: `feature`·`claims[{id, rev, assertions}]`·`cheats.allow[{id, args, max_calls}]`·`profiles`·`repair`, [[자기 진화 QA 지식 베이스 v0]] 10장). `max_calls` 필수. 옛 실행기는 최상위 추가 속성을 거부한다. 주장·rev 없음, `assertions`가 판정 노드 아님, 없는 치트는 설정 오류(판정 `error`, code `qa_config`)이고 skip이 아니다. `profiles`가 이번 프로필을 안 담으면 `qa_not_applicable`(skip, 이유 표시). 서브그래프 `qa`는 `cheats`만, 상위 허용을 줄이는 쪽으로만 | 실행을 막거나 허용하는 필드라 `meta`가 아니다 |
+| 노드 `core.qa.cheat`(config `cheat`·`args`, 출구 `done`·`failed`, `effects` 없음 — 금지 동작 판정은 구현 서브그래프의 입력 노드에서 걸린다). 허용 = 워크스페이스 `cheats.enabled` ∩ 채택·digest 일치·분류 있음 ∩ (무인이면 분류 `unattended`) ∩ 루트 `qa.cheats.allow`·`max_calls`(루트 실행 전체에서 셈) ∩ 정의 `env` 프로필. 채택·digest·동적 의존성 위반 `cheat_not_adopted`, 그 밖 `cheat_denied`. 치트 구현 안 치트 노드는 거부 | 치트는 고정 템플릿 콘솔 서브그래프만(인자 형식 `integer`·`enum`·`id`) |
+| 이벤트 `cheat.call{cheat, rev, digest, args_digest, before_assertions}` | 판정 노드보다 앞에 썼는지 남긴다(phase 제한 대신) |
+| `run.json`에 `qa{claims[{id, rev, assertions, executed, passed}], cheats_used, config_errors}`·`basis{kind, working[{id, files}], stale, knowledge}`·`job`(작업 ID 또는 `null`). 작업이 요청한 채택 검증 실행도 `job`에 그 작업 ID | 검증 노드가 실제로 실행됐는지, 어떤 기준·덧씌움으로 돌았는지가 자동 채택의 근거다. 이름은 `kb_run_compare`의 기준 실행 `baseline`과 헷갈리지 않게 `basis` |
+| 실행 스냅샷이 작업 기준 덧씌움을 해석해 복사한다(덧씌움 바이트는 실행 폴더 `overlay/`, runner가 sha 재대조). 실행 도중 작업 변경이 바뀌어도 그 실행은 시작 때 덧씌움 | 기준 고정 |
+| 금지 동작: Agent 주체 실행이나 무인 실행(사람 없는 Agent·`unattended`로 시작한 실행·자동 채택 검증 실행 포함)이면 기준이 `team`이든 `working`이든 조작 노드를 입력 직전 프레임으로 금지 판정, 걸리면 노드 오류 `forbidden_visible`·`forbidden_unverifiable`(판정 `error`). 금지 목록은 실행 시작 때 공용 진입점에서 고정 | 제외는 일반 사람 대화형 실행뿐이다. 기준(team/working)은 면제 조건이 아니다 |
+| 예제 상점 팀 테스트: `tests/shop/buy_potion`(`qa.claims` 있음, 자동 수리 대상)·`buy_then_close`(같은 구매 target, 영향 테스트)·`close_shop`(구매 target 무관) | 완료 시나리오 2개의 재료 |

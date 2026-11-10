@@ -1,5 +1,6 @@
-"""MVP 사람 확인 안내(`Docs/verification/mvp-human-check.md`)가 M1~M7 절차서의 절 ID를 빠짐없이
-담는지 본다 (M7 계획 8장). 절차서에 절을 더하거나 빼면 안내의 전수 표·U표도 같이 고쳐야 한다."""
+"""MVP 사람 확인 안내(`Docs/verification/mvp-human-check.md`)가 M1~M8 절차서의 절 ID를 빠짐없이
+담는지 본다 (M7 계획 8장, M8 B8에서 M8 절차서를 더함). 절차서에 절을 더하거나 빼면 안내의
+전수 표·U표도 같이 고쳐야 한다."""
 
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ from typing import Final
 REPO_ROOT: Final = Path(__file__).resolve().parents[2]
 VERIFY_DIR: Final = REPO_ROOT / "Docs" / "verification"
 GUIDE: Final = VERIFY_DIR / "mvp-human-check.md"
-MILESTONES: Final = range(1, 8)
+MILESTONES: Final = range(1, 9)
 
 M7_SECTIONS_FALLBACK: Final = [
     ("D1", "전체 자동 검사"),
@@ -31,7 +32,7 @@ M7_U_FALLBACK: Final = [f"U{i}" for i in range(1, 15)]
 STATUSES: Final = {"완료", "실행 필요", "조건부", "이번에는 실행 불가"}
 STEPS: Final = {str(i) for i in range(1, 6)}
 SECTION_RE: Final = re.compile(r"^### ([A-Z]\d+) (.+?)\s*$", re.MULTILINE)
-ROW_RE: Final = re.compile(r"^\|\s*(m[1-7]:[A-Z]\d+)\s*\|(.*)\|\s*$", re.MULTILINE)
+ROW_RE: Final = re.compile(r"^\|\s*(m[1-8]:[A-Z]\d+)\s*\|(.*)\|\s*$", re.MULTILINE)
 
 
 def manual(n: int) -> str | None:

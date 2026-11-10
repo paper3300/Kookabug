@@ -74,6 +74,20 @@ kookabug run tests/smoke_headless.graph.json --platform-fake fake-platform.json
 가짜 입력 기록은 `runs/fake-input.jsonl`에 쌓인다. `kookabug doctor`의 스모크(`smoke.fake`)는
 `tests/smoke_headless.graph.json`을 이 장면 표로 돌린다.
 
+## 예제 상점 (자기 진화 QA)
+
+예제 상점(`../sample_shop`, `python -m sample_shop [--buy-moved | --buy-missing]`)은 자기 진화 QA의 완료
+시나리오용 따로 뜨는 창이다. 팀 기준 테스트 셋은 역할이 다르다.
+
+- `tests/shop/buy_potion.graph.json` — 구매 단추(`targets/shop/buy.target.json`)를 눌러 골드·물약을 판정한다.
+  `qa.claims`(`shop.potion.price`)가 있어 locator 자동 수리 대상이다
+- `tests/shop/buy_then_close.graph.json` — 같은 구매 target을 쓰는 영향 테스트(자동 채택 조건 6에서 다시 돈다)
+- `tests/shop/close_shop.graph.json` — 구매 target과 무관한 테스트(구매 단추가 사라져도 계속 진행하는지 본다)
+
+지식(`knowledge/`)·원본(`sources/items.csv`)·자동화 정책(금지 문구 "결제")·치트 분류(`dev_safe`)는
+`kookabug.json`과 같이 사람이 준비한 팀 기준이다. 치트 `give_gold`는 미채택으로 두고 검사가 사람 경로
+(`kookabug cheat adopt`)로 채택한다. 프로필 `shop_moved`·`shop_missing`이 상점 변형을 고른다.
+
 ## target 다시 만들기
 
 target 이미지는 `../frames/*.png`를 `../tools/cut_targets.py`의 표대로 자른 것이다. 화면 PNG를 다시
