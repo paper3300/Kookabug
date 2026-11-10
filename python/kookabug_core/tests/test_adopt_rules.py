@@ -99,6 +99,104 @@ def test_region_shrink_or_move_ok_widen_refused() -> None:
     assert added is not None and added.code == "search_widened"
 
 
+def test_region_compared_as_pixels() -> None:
+    """넓힘 판정은 두 범위를 같은 클라이언트 크기(팀 `recorded`)의 픽셀 사각형으로 같은 방식으로
+    맞춘 뒤 본다 — 저장 자릿수·왕복 올림 차이는 넓힘이 아니고, 1px이라도 넓어지면 거부한다."""
+    team = {**BASE, "search": {"region": [0.0781, 0.6594, 0.2539, 0.1875]}}  # 260x120px
+
+    def check(region: list[float]) -> rules.Problem | None:
+        after = {**team, "search": {"region": region}}
+        changed: dict[str, tuple[bytes | None, bytes]] = {
+            TARGET: (json.dumps(team).encode(), json.dumps(after).encode())
+        }
+        return rules.candidate_problem(changed, team_files=TEAM_FILES, team_targets={TARGET: team})
+
+    # 같은 넓이 이동: daemon이 픽셀 왕복으로 맞춘 값(0.253907)은 정규 값으로는 더 크다 (양성)
+    moved = [0.644531, 0.8125, 0.253907, 0.1875]
+    assert moved[2] * moved[3] > 0.2539 * 0.1875
+    assert check(moved) is None
+    # 1px 넓힘 (261x120)
+    widened = check([0.644531, 0.8125, 0.254883, 0.1875])
+    assert widened is not None and widened.code == "search_widened"
+    # 줄이기 (259x120)
+    assert check([0.644531, 0.8125, 0.25293, 0.1875]) is None
+
+
+TEAM_REGION = [0.0781, 0.6594, 0.2539, 0.1875]
+REVIEW_REGION = [0.6435546875, 0.8125, 0.2548828125, 0.1875]  # 검수 재현값 (B6 검수 1)
+
+
+def sized(
+    region: list[float],
+    *,
+    team_size: list[int] | None,
+    after_size: list[int] | None,
+    frame_sizes: list[Any] | None = None,
+) -> rules.Problem | None:
+    """팀 `TEAM_REGION` → 후보 `region`. `None` 크기는 `recorded.client_size`를 뺀다."""
+
+    def target(reg: list[float], size: list[int] | None) -> dict[str, Any]:
+        value: dict[str, Any] = {**BASE, "search": {"region": reg}}
+        value["recorded"] = {"dpi": 96} if size is None else {"client_size": size, "dpi": 96}
+        return value
+
+    team, after = target(TEAM_REGION, team_size), target(region, after_size)
+    changed: dict[str, tuple[bytes | None, bytes]] = {
+        TARGET: (json.dumps(team).encode(), json.dumps(after).encode())
+    }
+    return rules.candidate_problem(
+        changed, team_files=TEAM_FILES, team_targets={TARGET: team}, frame_sizes=frame_sizes or ()
+    )
+
+
+def test_region_widened_at_any_known_size() -> None:
+    """넓힘은 알려진 모든 프레임 크기에서 본다. 과거 녹화 크기(512x320)의 반올림으로 같아 보여도
+    지금 크기(1024x640)에서 1px 넓으면 거부한다 (B6 검수 1 재현)."""
+    # 양성 대조: 팀 녹화 크기 512x320 하나에서는 넓이가 같다 (130x60) — 거기서만 보면 통과했던 값
+    assert sized(REVIEW_REGION, team_size=[512, 320], after_size=None) is None
+    # 후보 녹화 크기 1024x640: 261x120 > 260x120
+    p = sized(REVIEW_REGION, team_size=[512, 320], after_size=[1024, 640])
+    assert p is not None and p.code == "search_widened" and "1024x640" in p.detail
+    # 후보 녹화 크기가 없어도 서비스가 아는 현재 프레임 크기로 잡는다
+    p = sized(REVIEW_REGION, team_size=[512, 320], after_size=None, frame_sizes=[[1024, 640]])
+    assert p is not None and p.code == "search_widened"
+    # 틀린 현재 크기 값은 무시한다 (0 크기·모양 틀림)
+    assert (
+        sized(REVIEW_REGION, team_size=[512, 320], after_size=None, frame_sizes=[[0, 0], "x"])
+        is None
+    )
+
+
+def test_region_same_size_move_passes() -> None:
+    """같은 크기로 녹화한 같은 넓이 이동은 모든 알려진 크기에서 넓이가 같아 통과한다
+    (`shop_moved` 각본 값)."""
+    moved = [0.6445, 0.8125, 0.2539, 0.1875]
+    for size in ([1024, 640], [512, 320]):
+        assert sized(moved, team_size=size, after_size=size) is None
+    assert (
+        sized(moved, team_size=[1024, 640], after_size=[1024, 640], frame_sizes=[[1024, 640]])
+        is None
+    )
+    # 양성 대조: 같은 크기여도 1px 넓히면 거부
+    p = sized([0.6445, 0.8125, 0.254883, 0.1875], team_size=[1024, 640], after_size=[1024, 640])
+    assert p is not None and p.code == "search_widened"
+
+
+def test_region_without_sizes_compares_normalized() -> None:
+    """크기를 하나도 모르면 정규 값 넓이로 비교한다."""
+    # 픽셀로는 같은 넓이인 저장 자릿수 차이(0.253907)도 정규 값으로는 넓다 → 거부
+    assert 0.253907 * 0.1875 > 0.2539 * 0.1875
+    p = sized([0.644531, 0.8125, 0.253907, 0.1875], team_size=None, after_size=None)
+    assert p is not None and p.code == "search_widened"
+    # 같은 크기가 하나라도 있으면 픽셀로 비교해 통과한다 (양성 대조)
+    assert (
+        sized([0.644531, 0.8125, 0.253907, 0.1875], team_size=None, after_size=[1024, 640]) is None
+    )
+    # 정규 값이 같거나 작으면 통과
+    assert sized([0.6445, 0.8125, 0.2539, 0.1875], team_size=None, after_size=None) is None
+    assert sized([0.6445, 0.8125, 0.25, 0.1875], team_size=None, after_size=None) is None
+
+
 def test_target_used_by_assert_refused() -> None:
     files = {
         "tests/shop/buy.graph.json": graph(

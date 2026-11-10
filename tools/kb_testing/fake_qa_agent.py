@@ -14,20 +14,33 @@
 - `{"print": 글}`·`{"print_env": 이름}`·`{"print_split_env": 이름}` — 표준 출력에 쓴다(가림 검사의
   양성 입력: 값을 둘로 나눠 사이에 flush·쉼을 둔다)
 - `{"sleep": 초}`·`{"spawn_child_sleep": 초}`(손자 프로세스 — 트리 정리 검사)·`{"exit": 코드}`
+
+앞 결과를 잇는 키 (M8 B6 시나리오 각본):
+- `"label"` — 결과에 그대로 남긴다(검사가 단계를 찾는 이름)
+- `"save": {변수: 경로}` — 결과(성공이면 `structuredContent`, 오류면 `error` 객체)에서 점 경로
+  (`a.b.0.c`, 목록은 `[키=값]`으로 고름)의 값을 변수에 둔다. `${변수}`는 args 안에서 바뀐다(글자
+  전체가 `${변수}`면 값 그대로, 아니면 글자로). `${job}`은 작업 ID
+- `"check": {경로: 기대}` — 성공 결과의 값 단언. 기대는 값 그대로 또는 `{"$in": [...]}`·
+  `{"$len": n}`·`{"$contains": x}`·`{"$not": 값}`
+- `"expect": {"error": [코드, ...]}` — 그중 하나
+- `{"sha256_file": 경로, "save": {변수: ""}}` — 워크스페이스 파일(원본·위키)을 Agent가 직접 읽어
+  sha256(16진)을 둔다. 원본은 Kookabug 도구 밖에서 Agent가 읽는다(3.4)
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from kb_testing.mcp_client import McpClient
+from kb_testing.mcp_client import McpClient, McpError
 
 SCRIPTS = Path(__file__).resolve().parent / "qa_scripts"
 
@@ -68,20 +81,107 @@ def _spawn_mcp(config_path: Path, out: Path) -> McpClient:
 
 
 def _call(mcp: McpClient, step: dict[str, Any]) -> dict[str, Any]:
-    result = mcp.call_tool(
-        step["tool"], step.get("args") or {}, timeout=float(step.get("timeout", 300))
-    )
+    try:
+        result = mcp.call_tool(
+            step["tool"], step.get("args") or {}, timeout=float(step.get("timeout", 300))
+        )
+    except McpError as exc:
+        # 도구 입력 형식 거부(JSON-RPC -32602 — 도구 스키마에 없는 인자 등)도 결과로 남긴다
+        code = "invalid_params" if exc.code == -32602 else f"mcp_error_{exc.code}"
+        return {"error": code, "error_detail": {"code": exc.code, "message": exc.message}}
     if result.get("isError"):
-        return {"error": result["structuredContent"]["error"]["code"]}
+        error = result["structuredContent"]["error"]
+        return {"error": error["code"], "error_detail": error}
     return {"ok": result.get("structuredContent")}
 
 
-def _check(step: dict[str, Any], got: dict[str, Any]) -> None:
+_MISSING: Any = object()
+_VAR = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _pick(value: Any, path: str) -> Any:
+    """점 경로 값 (`a.b.0`, 목록에서 `[키=값]`으로 고르기). 없으면 `_MISSING`."""
+    for part in [p for p in re.split(r"\.(?![^\[]*\])", path) if p]:
+        chooser = re.fullmatch(r"\[([^=\]]+)=([^\]]*)\]", part)
+        if chooser is not None and isinstance(value, list):
+            key, want = chooser.group(1), chooser.group(2)
+            items = cast(list[Any], value)
+            value = next(
+                (i for i in items if isinstance(i, dict) and str(i.get(key)) == want), _MISSING
+            )
+        elif isinstance(value, list) and part.lstrip("-").isdigit():
+            items = cast(list[Any], value)
+            index = int(part)
+            value = items[index] if -len(items) <= index < len(items) else _MISSING
+        elif isinstance(value, dict):
+            value = cast(dict[str, Any], value).get(part, _MISSING)
+        else:
+            return _MISSING
+        if value is _MISSING:
+            return _MISSING
+    return value
+
+
+def _subst(value: Any, names: dict[str, Any]) -> Any:
+    if isinstance(value, str):
+        whole = _VAR.fullmatch(value)
+        if whole is not None:
+            if whole.group(1) not in names:
+                raise ScriptFailed(f"변수 {whole.group(1)}이(가) 없다")
+            return json.loads(json.dumps(names[whole.group(1)]))
+
+        def one(found: re.Match[str]) -> str:
+            if found.group(1) not in names:
+                raise ScriptFailed(f"변수 {found.group(1)}이(가) 없다")
+            got = names[found.group(1)]
+            return got if isinstance(got, str) else json.dumps(got, ensure_ascii=False)
+
+        return _VAR.sub(one, value)
+    if isinstance(value, list):
+        return [_subst(v, names) for v in cast(list[Any], value)]
+    if isinstance(value, dict):
+        return {k: _subst(v, names) for k, v in cast(dict[str, Any], value).items()}
+    return value
+
+
+def _matches(got: Any, want: Any) -> bool:
+    if isinstance(want, dict) and len(cast(dict[str, Any], want)) == 1:
+        (op, arg), *_ = cast(dict[str, Any], want).items()
+        if op == "$in":
+            return got in arg
+        if op == "$len":
+            return isinstance(got, list | dict | str) and len(cast(Any, got)) == arg
+        if op == "$contains":
+            return isinstance(got, list | str) and arg in got
+        if op == "$not":
+            return got != arg
+    return got == want
+
+
+def _check(step: dict[str, Any], got: dict[str, Any], names: dict[str, Any] | None = None) -> None:
     expect = step.get("expect", "ok")
+    name = step.get("label") or step.get("tool")
     if expect == "ok" and "error" in got:
-        raise ScriptFailed(f"{step['tool']}: 성공을 기대했는데 {got['error']}")
-    if isinstance(expect, dict) and got.get("error") != expect.get("error"):
-        raise ScriptFailed(f"{step['tool']}: {expect.get('error')}를 기대했는데 {got}")
+        raise ScriptFailed(f"{name}: 성공을 기대했는데 {got['error']}")
+    if isinstance(expect, dict):
+        want = expect.get("error")
+        codes = want if isinstance(want, list) else [want]
+        if got.get("error") not in codes:
+            raise ScriptFailed(f"{name}: {want}를 기대했는데 {got}")
+    for path, want in _subst(step.get("check") or {}, names or {}).items():
+        value = _pick(got.get("ok"), path)
+        if value is _MISSING or not _matches(value, want):
+            shown = "없음" if value is _MISSING else json.dumps(value, ensure_ascii=False)[:400]
+            raise ScriptFailed(f"{name}: {path} = {shown}, 기대 {want}")
+
+
+def _save(step: dict[str, Any], got: dict[str, Any], names: dict[str, Any]) -> None:
+    source = got["ok"] if "ok" in got else got.get("error_detail")
+    for var, path in (step.get("save") or {}).items():
+        value = _pick(source, path)
+        if value is _MISSING:
+            raise ScriptFailed(f"{step.get('label') or step.get('tool')}: 저장할 {path}가 없다")
+        names[var] = value
 
 
 def run(
@@ -96,10 +196,17 @@ def run(
     남는다."""
     results = [] if results is None else results
     mcp: McpClient | None = None
+    names: dict[str, Any] = {"job": os.environ.get("KOOKABUG_JOB_ID", "")}
     try:
         for n, step in enumerate(script.get("steps", [])):
             if save is not None:
                 save()
+            if "sha256_file" in step:
+                data = (root / str(step["sha256_file"])).read_bytes()
+                for var in step.get("save") or {}:
+                    names[var] = hashlib.sha256(data).hexdigest()
+                results.append({"step": n, "label": step.get("label"), "sha256_file": True})
+                continue
             if "print" in step:
                 print(step["print"], flush=True)
                 continue
@@ -145,8 +252,10 @@ def run(
             repeat = int(step.get("repeat", 1))
             for i in range(repeat):
                 args = json.loads(json.dumps(step.get("args") or {}).replace("{i}", str(i)))
+                args = _subst(args, names)
                 got = _call(mcp, {**step, "args": args})
-                results.append({"step": n, "i": i, "tool": step["tool"], **got})
+                label = step.get("label")
+                results.append({"step": n, "i": i, "tool": step["tool"], "label": label, **got})
                 then = step.get("then")
                 if then is not None and "ok" in got:
                     # 앞 결과의 실행 ID를 다음 호출에 (예: kb_run_start → kb_run_status 기다리기)
@@ -154,15 +263,18 @@ def run(
                     then_args = json.loads(
                         json.dumps(then.get("args") or {}).replace("{run}", run_id)
                     )
-                    after = _call(mcp, {**then, "args": then_args})
-                    results.append({"step": n, "i": i, "tool": then["tool"], **after})
+                    after = _call(mcp, {**then, "args": _subst(then_args, names)})
+                    results.append(
+                        {"step": n, "i": i, "tool": then["tool"], "label": label, **after}
+                    )
                 if until is not None:
                     if got.get("error") == until:
                         break
                     if "error" in got:
                         raise ScriptFailed(f"{step['tool']}: {until} 전에 {got['error']}")
                     continue
-                _check(step, got)
+                _check(step, got, names)
+                _save(step, got, names)
             else:
                 if until is not None:
                     raise ScriptFailed(f"{step['tool']}: {repeat}번 안에 {until}가 나지 않았다")

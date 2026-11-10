@@ -1,8 +1,8 @@
 ---
 format: kookabug.playbook/0
 name: init
-version: 1
-tools: [core, run, observe, screens, graph_edit, knowledge, cases]
+version: 2
+tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
 ---
 # 플레이북 init — 처음 지식 정리
 
@@ -20,4 +20,5 @@ tools: [core, run, observe, screens, graph_edit, knowledge, cases]
 ## 원칙
 - 위키·주장은 근거가 아니다. 근거는 원본·증거 묶음·실행이다.
 - 정책 파일(`kookabug.json`·`AGENTS.md`·플레이북)은 쓰지 않는다. 비밀값을 쓰지 않는다.
+- `kb_input_*`(직접 입력)는 탐침용이다. 그 입력과 그때의 화면·실행으로 사건을 닫거나 채택 근거로 쓸 수 없다. 채택 검증은 Kookabug가 고른 실행만 쓴다. 금지 동작·입력 임대권·예산은 Kookabug가 먼저 막는다.
 - `job_budget_exhausted`를 받으면 새 실행을 시작하지 말고 요약을 쓰고 끝낸다.

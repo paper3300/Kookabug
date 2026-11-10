@@ -43,6 +43,8 @@ pytestmark = [pytest.mark.process, pytest.mark.timeout(600)]
 SECRET = "pw-Zq81-unique-secret"
 SLOW = "tests/slow.graph.json"
 PASS = "tests/pass.graph.json"
+HELD = "tests/held.graph.json"
+"""게임을 띄워 키 하나를 보낸 뒤(입력 임대권을 쥔다) 오래 기다리는 실행."""
 
 
 def graphs(root: Path) -> None:
@@ -54,8 +56,24 @@ def graphs(root: Path) -> None:
         .node("n_pass", "core.test.pass")
         .build()
     )
+    launch = {
+        "args": {"$setting": "game.args"},
+        "cwd": {"$setting": "game.cwd"},
+        "path": {"$setting": "game.executable"},
+        "window_title": {"$setting": "game.title"},
+    }
+    held = (
+        GraphBuilder()
+        .entry("n_launch")
+        .node("n_launch", "core.app.launch", inputs=launch, next={"attached": "n_key"})
+        .node("n_key", "core.input.key", inputs={"keys": "f5"}, next={"done": "n_wait"})
+        .node("n_wait", "core.flow.delay", inputs={"ms": 300_000}, next={"done": "n_pass"})
+        .node("n_pass", "core.test.pass")
+        .build()
+    )
     (root / PASS).write_text(json.dumps(passing), encoding="utf-8")
     (root / SLOW).write_text(json.dumps(slow), encoding="utf-8")
+    (root / HELD).write_text(json.dumps(held), encoding="utf-8")
     local = root / ".kookabug" / "local.json"
     body = json.loads(local.read_text("utf-8"))
     body["permissions"] = {"preset": "curator"}
@@ -327,14 +345,16 @@ def test_time_budget_cancels_runs_and_releases_input(
         "slow",
         [
             {"toolsets": ["run"]},
-            {"tool": "kb_run_start", "args": {"path": SLOW, "idempotency_key": "s1"}},
+            {"tool": "kb_run_start", "args": {"path": HELD, "idempotency_key": "s1"}},
             {"sleep": 600},
         ],
     )
-    thread, box = start(ws, env_for(tmp_path), script, deadline_s=6.0)
+    thread, box = start(ws, env_for(tmp_path), script, deadline_s=10.0)
     assert box["started"].wait(120)
     wait_until(lambda: daemon.daemon.run_manager.active_run() is not None, timeout=120)
     run_id = daemon.daemon.run_manager.active_run()
+    # 양성 대조: 실행이 입력 임대권을 쥐었다 (아래 "임대권 없음"이 빈 검사가 아니다)
+    wait_until(lambda: daemon.daemon.input_busy() == "input_lease", timeout=60)
     ran = finish(ws, thread, box)
     assert ran.outcome.state == "budget_exhausted"
     assert dead(ran.pid)

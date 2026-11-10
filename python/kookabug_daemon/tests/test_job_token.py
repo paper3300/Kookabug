@@ -177,6 +177,20 @@ def test_job_token_curator_control_allowed(daemon: ThreadDaemon) -> None:
         assert control_kind(conn) not in PERMISSION_CODES
 
 
+def test_job_control_refused_during_verification(daemon: ThreadDaemon) -> None:
+    """작업 안 control allow(R0)여도 자동 채택 검증 세션 중의 작업 연결 입력은 거부한다 (R7)."""
+    job = begin(daemon)
+    manager = daemon.daemon.run_manager
+    with daemon.client(agent(job["agent_id"], token=job["token"])) as conn:
+        epoch = manager.begin_verification()
+        try:
+            assert control_kind(conn) == "verification_active"
+            assert manager.input_epoch() == epoch  # 거부된 시도는 세대를 올리지 않는다
+        finally:
+            manager.end_verification()
+        assert control_kind(conn) not in PERMISSION_CODES | {"verification_active"}  # 양성
+
+
 def test_outside_job_ask(daemon: ThreadDaemon) -> None:
     with daemon.client(agent("night", attended=False)) as conn:
         assert control_kind(conn) == "permission_denied"  # 무인 ask = deny

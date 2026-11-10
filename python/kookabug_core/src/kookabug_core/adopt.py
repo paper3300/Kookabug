@@ -179,7 +179,11 @@ def _region(value: Mapping[str, Any]) -> list[float] | None:
     return [float(v) for v in cast(Sequence[Any], region)]
 
 
-def _region_problem(before: Mapping[str, Any], after: Mapping[str, Any]) -> Problem | None:
+def _region_problem(
+    before: Mapping[str, Any],
+    after: Mapping[str, Any],
+    frame_sizes: Sequence[Any] = (),
+) -> Problem | None:
     rb, ra = _region(before), _region(after)
     if rb is None and ra is None:
         return None
@@ -187,9 +191,40 @@ def _region_problem(before: Mapping[str, Any], after: Mapping[str, Any]) -> Prob
         return Problem(2, "search_widened", "원래 검색 범위가 없던 target에 범위를 더하지 않는다")
     if ra is None:
         return Problem(2, "search_widened", "검색 범위를 지우면 화면 전체로 넓어진다")
+    known = [_size(before.get("recorded")), _size(after.get("recorded"))]
+    known += [_size({"client_size": s}) for s in frame_sizes]
+    sizes = sorted({s for s in known if s is not None})
+    if sizes:
+        # 알려진 모든 프레임 크기(팀·후보 녹화 크기, 서비스가 아는 현재 크기)에서 두 범위를
+        # 실행기와 같은 변환으로 픽셀 사각형으로 맞춰 넓이를 비교한다. 저장 자릿수 차이
+        # (0.2539 ↔ 0.253907)는 넓힘이 아니고, 한 크기에서라도 1px 넓으면 거부한다
+        from kookabug_platform.dpi import normalized_to_pixels
+
+        for size in sizes:
+            pb = normalized_to_pixels((rb[0], rb[1], rb[2], rb[3]), size)
+            pa = normalized_to_pixels((ra[0], ra[1], ra[2], ra[3]), size)
+            if pa[2] * pa[3] > pb[2] * pb[3]:
+                return Problem(
+                    2,
+                    "search_widened",
+                    f"새 검색 범위가 원래보다 넓다 ({size[0]}x{size[1]}에서 "
+                    f"{pa[2]}x{pa[3]} > {pb[2]}x{pb[3]})",
+                )
+        return None
     if ra[2] * ra[3] > rb[2] * rb[3] + _EPS:
         return Problem(2, "search_widened", "새 검색 범위가 원래보다 넓다")
     return None
+
+
+def _size(recorded: Any) -> tuple[int, int] | None:
+    """`{"client_size": [w, h]}`의 크기 (없거나 틀리면 None)."""
+    size = recorded.get("client_size") if isinstance(recorded, Mapping) else None
+    if not isinstance(size, list | tuple):
+        return None
+    parts = cast(Sequence[Any], size)
+    if len(parts) != 2 or not all(isinstance(v, int) and v > 0 for v in parts):
+        return None
+    return int(parts[0]), int(parts[1])
 
 
 def _field_problem(fields: Sequence[str]) -> Problem | None:
@@ -260,9 +295,11 @@ def candidate_problem(
     *,
     team_files: Mapping[str, Any],
     team_targets: Mapping[str, Any],
+    frame_sizes: Sequence[Any] = (),
 ) -> Problem | None:
     """조건 2. `changed` = 경로 → (팀 바이트 또는 None, 후보 바이트). `team_files` = 참조를 찾을 팀
-    JSON(tests·subgraphs·screens), `team_targets` = 팀 target 전부(경로 → 값, 공유 PNG 찾기)."""
+    JSON(tests·subgraphs·screens), `team_targets` = 팀 target 전부(경로 → 값, 공유 PNG 찾기).
+    `frame_sizes` = 서비스가 아는 현재 프레임 크기들(`[w, h]`, 넓힘 비교에 더한다)."""
     if len({_key(rel) for rel in changed}) != len(changed):
         return Problem(2, "path_alias", "같은 파일을 가리키는 후보 경로가 둘 이상이다")
     targets = [rel for rel in changed if is_target(rel)]
@@ -288,7 +325,7 @@ def candidate_problem(
         if image is None or _key(rel) != _key(image) or not is_png(rel):
             return Problem(2, "not_locator_only", f"'{rel}'은(는) target 이미지가 아니다")
     problem = _field_problem(changed_fields(before_map, after_map)) or _region_problem(
-        before_map, after_map
+        before_map, after_map, frame_sizes
     )
     if problem is not None:
         return problem

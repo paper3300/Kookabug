@@ -126,12 +126,15 @@ class RunVerifier:
         *,
         timeout_s: float = VERIFY_TIMEOUT_S,
         budget: Callable[[], None] | None = None,
+        job: str | None = None,
     ) -> None:
         self.manager = manager
         self.timeout_s = timeout_s
         self.budget = budget
         """작업 연결의 채택 요청이면 검증 실행마다 작업 실행 예산을 쓴다 (`job_budget_exhausted`면
         그 검증을 시작하지 않는다 — 조율자 결정: 검증 실행도 예산에 센다)."""
+        self.job = job
+        """채택을 요청한 작업 (검증 실행 `run.json.job` — 작업이 만든 실행 표시)."""
         self._epoch = manager.begin_verification()
         self._closed = False
         self._lock = threading.Lock()
@@ -181,7 +184,12 @@ class RunVerifier:
         try:
             # 세대 확인과 예약은 실행 관리자의 같은 잠금 안에서 한다 (확인 → 예약 사이 틈 없음)
             run_id = self.manager.start_verify(
-                graph, overlay=overlay, profile=profile, basis=basis, epoch=self._epoch
+                graph,
+                overlay=overlay,
+                profile=profile,
+                basis=basis,
+                epoch=self._epoch,
+                job=self.job,
             )
             with self._lock:
                 self._current = run_id
@@ -650,7 +658,12 @@ class Adopter:
         after_value = _loads(changed[target][1]) if target else None
         image = rules.image_rel(target, after_value) if target else None
         team_files, team_targets, refs, users = reference_scan(root, target, image)
-        problem = rules.candidate_problem(changed, team_files=team_files, team_targets=team_targets)
+        # 원래 실패 실행이 처음 관측한 창 크기도 넓힘 비교에 더한다 (지금 게임의 프레임 크기)
+        observed = (run_json or {}).get("observed")
+        frame_sizes = [observed.get("client_size")] if isinstance(observed, dict) else []
+        problem = rules.candidate_problem(
+            changed, team_files=team_files, team_targets=team_targets, frame_sizes=frame_sizes
+        )
         if problem is not None:
             return problem, None
         try:
@@ -791,6 +804,12 @@ class Adopter:
         for claim in claims:
             need = [str(n) for n in claim.get("assertions") or []]
             cid = str(claim.get("id"))
+            ran = set(need) & executed.get(cid, set())
+            if ran - passed.get(cid, set()):
+                # 판정 노드가 실제로 돌고 실패했다 (뒤 노드는 그 실패로 못 돌았을 수 있다)
+                return rules.Problem(
+                    4, "oracle_failed", f"주장 {cid}의 검증 노드가 실행됐지만 실패했다"
+                )
             if not need or not set(need) <= executed.get(cid, set()):
                 return rules.Problem(
                     4, "oracle_not_run", f"주장 {cid}의 검증 노드가 실행되지 않았다"

@@ -1,0 +1,97 @@
+{
+  "description": "Init (M8 3.12·3.16 init_sample): 설정 확인 → 원본 읽기(아이템 CSV는 Agent가 직접 읽음) → 주장 후보(expected는 원본 근거, 그 밖은 guess) → 치트 후보 → 읽지 못한 원본은 미지수(사람만 답할 수 있음) → 위키 → 보고 메모. 예제 sources: item_table(있음) + patch_notes(없는 경로) + design_doc(URL)",
+  "steps": [
+    {
+      "label": "info",
+      "tool": "kb_project_info",
+      "check": {
+        "job.job": "${job}",
+        "sources.[id=item_table].state": "ok",
+        "sources.[id=patch_notes].state": "missing",
+        "sources.[id=design_doc].state": "unchecked_url"
+      }
+    },
+    {"toolsets": ["knowledge", "cases", "observe"]},
+    {"label": "read_items", "sha256_file": "sources/items.csv", "save": {"items_sha": ""}},
+    {"label": "shop_get", "tool": "kb_knowledge_get", "args": {"file": "features/shop"}, "save": {"shop_rev": "revision"}},
+    {"label": "cheats_get", "tool": "kb_knowledge_get", "args": {"file": "cheats"}, "save": {"cheats_rev": "revision"}},
+    {
+      "label": "claims",
+      "tool": "kb_knowledge_apply",
+      "args": {
+        "request_id": "init-claims-1",
+        "ops": [
+          {"op": "add", "file": "features/shop", "base_revision": "${shop_rev}", "item": {
+            "id": "shop.blade.price", "kind": "expected", "statement": "낡은 칼 가격은 50골드다",
+            "subject": "shop.old_blade", "property": "price", "value": 50, "unit": "gold",
+            "basis": [{"type": "source", "ref": "sources:item_table#old_blade", "hash": "sha256:${items_sha}"}],
+            "status": "supported"}},
+          {"op": "add", "file": "features/shop", "base_revision": "${shop_rev}", "item": {
+            "id": "shop.sell.ratio", "kind": "guess", "statement": "판매 가격은 구매 가격의 절반일 것이다",
+            "subject": "shop.sell", "property": "ratio", "value": 0.5,
+            "basis": [], "status": "hypothesis"}},
+          {"op": "add", "file": "cheats", "base_revision": "${cheats_rev}", "item": {
+            "id": "give_potion", "title": "물약 지급", "effect": "가방에 체력 물약을 count개 넣는다",
+            "preconditions": ["상점 화면"], "args": {"count": {"type": "integer", "min": 1, "max": 10}},
+            "impl": {"kind": "console", "graph": "subgraphs/cheats/console.graph.json", "template": "give_potion {count}"},
+            "env": {}}},
+          {"op": "add", "file": "unknowns", "base_revision": 0, "item": {
+            "question": "패치 노트(patch_notes)는 어디에 있나요?", "human_only": true, "blocks": [],
+            "how": "kookabug.json sources의 경로를 고친다", "source": "sources:patch_notes"}},
+          {"op": "add", "file": "unknowns", "base_revision": 0, "item": {
+            "question": "판매 가격 비율이 기획 문서에 있는가", "human_only": false, "blocks": ["shop.sell.ratio"],
+            "how": "기획 문서(URL)를 읽는다", "source": "sources:design_doc"}}
+        ]
+      },
+      "check": {"applied": true}
+    },
+    {
+      "label": "hash_mismatch",
+      "tool": "kb_knowledge_apply",
+      "args": {
+        "request_id": "init-hash-mismatch",
+        "ops": [{"op": "add", "file": "features/shop", "base_revision": 2, "item": {
+          "id": "shop.close.label", "kind": "expected", "statement": "닫기 단추 글자는 '닫기'다",
+          "subject": "shop.close", "property": "label", "value": "닫기",
+          "basis": [{"type": "source", "ref": "sources:item_table#old_blade", "hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"}],
+          "status": "supported"}}]
+      },
+      "expect": {"error": "basis_hash_mismatch"}
+    },
+    {"label": "wiki_overview", "tool": "kb_wiki_write", "args": {"path": "wiki/overview.md", "base_sha256": null, "text": "# 개요\n\n예제 상점 하나가 있는 작은 RPG다.\n"}},
+    {"label": "read_overview", "sha256_file": "wiki/overview.md", "save": {"overview_sha": ""}},
+    {"label": "shop_get2", "tool": "kb_knowledge_get", "args": {"file": "features/shop"}, "save": {"shop_rev2": "revision"}},
+    {
+      "label": "self_cite",
+      "tool": "kb_knowledge_apply",
+      "args": {
+        "request_id": "init-self-cite",
+        "ops": [{"op": "add", "file": "features/shop", "base_revision": "${shop_rev2}", "item": {
+          "id": "shop.genre", "kind": "expected", "statement": "예제 상점 하나가 있는 작은 RPG다",
+          "subject": "game", "property": "genre", "value": "rpg",
+          "basis": [{"type": "source", "ref": "sources:game_folder#wiki/overview.md", "hash": "sha256:${overview_sha}"}],
+          "status": "supported"}}]
+      },
+      "expect": {"error": "basis_derived"}
+    },
+    {
+      "label": "folder_source",
+      "tool": "kb_knowledge_apply",
+      "args": {
+        "request_id": "init-folder-source",
+        "ops": [{"op": "add", "file": "features/shop", "base_revision": "${shop_rev2}", "item": {
+          "id": "shop.blade.listed", "kind": "expected", "statement": "낡은 칼이 아이템 테이블에 있다",
+          "subject": "shop.old_blade", "property": "listed", "value": true,
+          "basis": [{"type": "source", "ref": "sources:game_folder#sources/items.csv", "hash": "sha256:${items_sha}"}],
+          "status": "supported"}}]
+      },
+      "check": {"applied": true}
+    },
+    {"label": "wiki_glossary", "tool": "kb_wiki_write", "args": {"path": "wiki/glossary.md", "base_sha256": null, "text": "# 용어\n\n- 골드: 상점 화폐\n"}},
+    {"label": "wiki_roadmap", "tool": "kb_wiki_write", "args": {"path": "wiki/roadmap.md", "base_sha256": null, "text": "# 일정\n\n## 확인된 일정\n\n확인된 향후 일정 없음 (패치 노트를 읽지 못했다)\n\n## QA 계획\n\n- 상점 구매·판매\n"}},
+    {"label": "wiki_environment", "tool": "kb_wiki_write", "args": {"path": "wiki/environment.md", "base_sha256": null, "text": "# 환경\n\n- 창 1024x640\n"}},
+    {"label": "index_blocked", "tool": "kb_wiki_write", "args": {"path": "wiki/index.md", "base_sha256": null, "text": "# 목차\n"}, "expect": {"error": "policy_path"}},
+    {"label": "reports_blocked", "tool": "kb_wiki_write", "args": {"path": "wiki/reports/x.md", "base_sha256": null, "text": "# 보고\n"}, "expect": {"error": "policy_path"}},
+    {"label": "note", "tool": "kb_report_note", "args": {"text": "Init: 상점 기능 하나, 주장 후보 2개, 치트 후보 1개, 미지수 2개(사람만 답할 수 있는 것 1개)."}}
+  ]
+}

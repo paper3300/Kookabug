@@ -24,6 +24,14 @@ def test_playbooks_mention_required_rules() -> None:
         assert "kb_adopt_request" in body and "kb_case_open" in body, name
         assert "은폐 금지" in body, name  # 버그 은폐 금지 (KB문서 3장 4, 8장)
         assert "resolved" in body and "closed" in body, name  # 사건을 닫지 않는다
+    # 작업 허용 범위의 control (9장 R0·R7): 직접 입력은 탐침용 — 닫기·채택 근거가 아님을 적는다
+    for name in ("triage", "repair", "explore", "init", "author"):
+        assert "control" in every[name].tools, name
+        body = every[name].body
+        assert "탐침용" in body and "채택 근거로 쓸 수 없다" in body, name
+        assert "Kookabug가 고른 실행만" in body, name
+    for name in ("lint", "probe"):
+        assert "control" not in every[name].tools, name  # 양성 대조: 입력이 필요 없는 플레이북
     init = every["init"].body
     assert "확인된 향후 일정 없음" in init and "QA 계획" in init  # 9장 로드맵
     assert "human_only" in init and "미지수" in init

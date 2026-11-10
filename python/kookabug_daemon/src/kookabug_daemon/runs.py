@@ -1030,13 +1030,17 @@ class RunManager:
         basis: Mapping[str, Any],
         epoch: int,
         deadline_ms: int | None = None,
+        job: str | None = None,
     ) -> str:
         """자동 채택 검증 실행 (M8 3.8 조건 4·6, R1·E5). **공개 RPC가 아니다** — `adopt.request`
         처리기만 부른다. Kookabug가 고른 테스트를 manifest 바이트(`overlay` — 의존성 폐포 전체)로만,
         무인(치트는 무인 분류만)으로 돈다. 그래프 편집·임의 입력 경로가 없다. 시작 예약은
         `run.start`와 같다(실행 중·녹화 중·종료 중이면 `run_busy`·`recording_active`·
         `shutting_down`). `epoch`는 검증 세션을 연 때의 입력 세대 — 예약과 같은 잠금 안에서
-        다르면 `input_between_verifications`(R7). 실행 ID를 돌려준다 (막히는 호출)."""
+        다르면 `input_between_verifications`(R7). 실행 ID를 돌려준다 (막히는 호출).
+
+        `job`은 채택을 요청한 작업 — `run.json.job`에만 남긴다(작업이 만든 실행은 예약 `triage`의
+        입력이 아니다, 3.9 재트리거 방지). 취소는 검증 세션(`RunVerifier.cancel`)이 맡는다."""
         principal = Principal("user", "kookabug:adopt", attended=False)
         request = StartRequest(principal=principal, path=graph, profile=profile)
         decision = Decision("allow", "allow", None, "kookabug:adopt", "human")
@@ -1060,6 +1064,7 @@ class RunManager:
                     unattended=True,
                     overlay=dict(overlay),
                     basis=dict(basis),
+                    job=job,
                 )
                 handle = self._start_decided(principal, decision, graph, options)
             except BaseException:

@@ -169,8 +169,10 @@ def run(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     report: dict[str, Any] = {"command": f"agent-job {args.action}"}
     as_json = bool(getattr(args, "json", False))
 
-    def finish(code: int, text: str, **extra: Any) -> int:
-        report.update(exit_code=code, message=text, **extra)
+    def finish(code: int, text: str, /, **extra: Any) -> int:
+        # 위치 전용: 작업 결과의 `code`(예: job_active)가 종료 코드 인자와 부딪히지 않게
+        report.update(extra)
+        report.update(exit_code=code, message=text)
         if as_json:
             print(json.dumps(report, ensure_ascii=False), file=out)
         else:

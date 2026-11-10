@@ -1,8 +1,8 @@
 ---
 format: kookabug.playbook/0
 name: explore
-version: 1
-tools: [core, observe, screens, knowledge, cases]
+version: 2
+tools: [core, observe, control, screens, knowledge, cases]
 ---
 # 플레이북 explore — 화면 탐색
 
@@ -16,4 +16,7 @@ tools: [core, observe, screens, knowledge, cases]
 4. 기능과 화면의 연결은 `kb_wiki_write`로 쓰되 확인하지 못한 연결은 그대로 둔다.
 5. 끝내기 전에 `kb_report_note`로 요약을 쓴다.
 
-무인 작업에서 control이 거부되면(ask = deny) 탐색하지 말고 그 사실을 요약에 남긴다. 버그를 숨기지 않는다.
+## 직접 입력
+`kb_input_*`(직접 입력)는 탐침용이다. 그 입력과 그때의 화면·실행으로 사건을 닫거나 채택 근거로 쓸 수 없다. 채택 검증은 Kookabug가 고른 실행만 쓴다. 금지 동작·입력 임대권·예산은 Kookabug가 먼저 막는다.
+
+프리셋이 control을 허락하지 않아 거부되면(ask = deny) 탐색하지 말고 그 사실을 요약에 남긴다. 버그를 숨기지 않는다.

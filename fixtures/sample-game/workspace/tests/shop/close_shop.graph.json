@@ -1,0 +1,104 @@
+{
+  "format": "kookabug.graph/0",
+  "kind": "test",
+  "layout": {
+    "nodes": {
+      "n_assert_closed": {
+        "x": 840,
+        "y": 0
+      },
+      "n_assert_open": {
+        "x": 280,
+        "y": 0
+      },
+      "n_click_close": {
+        "x": 560,
+        "y": 0
+      },
+      "n_entry": {
+        "x": -280,
+        "y": 0
+      },
+      "n_launch": {
+        "x": 0,
+        "y": 0
+      }
+    }
+  },
+  "meta": {
+    "description": "닫기로 상점을 나갈 수 있는지 확인한다 (구매 target을 쓰지 않는 테스트 — 구매 단추가 없어도 계속 확인할 수 있다)",
+    "tags": ["shop"],
+    "title": "상점 닫기"
+  },
+  "nodes": {
+    "n_assert_closed": {
+      "in": {
+        "target": {
+          "$target": "targets/shop/closed_title.target.json"
+        },
+        "timeout_ms": 5000
+      },
+      "title": "상점이 닫혔나",
+      "type": "core.assert.visible",
+      "version": 1
+    },
+    "n_assert_open": {
+      "in": {
+        "equals": "12,345",
+        "region": [140, 96, 220, 76],
+        "timeout_ms": 5000
+      },
+      "next": {
+        "ok": "n_click_close"
+      },
+      "title": "상점이 열렸나 (골드 그대로)",
+      "type": "core.assert.text",
+      "version": 1
+    },
+    "n_click_close": {
+      "in": {
+        "point": [110, 586]
+      },
+      "next": {
+        "done": "n_assert_closed"
+      },
+      "title": "닫기 클릭",
+      "type": "core.input.click",
+      "version": 1
+    },
+    "n_entry": {
+      "next": {
+        "start": "n_launch"
+      },
+      "title": "시작",
+      "type": "core.graph.entry",
+      "version": 1
+    },
+    "n_launch": {
+      "in": {
+        "args": {
+          "$setting": "shop.args"
+        },
+        "cwd": {
+          "$setting": "game.cwd"
+        },
+        "path": {
+          "$setting": "game.executable"
+        },
+        "timeout_ms": 30000,
+        "window_title": {
+          "$setting": "shop.title"
+        }
+      },
+      "next": {
+        "attached": "n_assert_open"
+      },
+      "title": "상점 실행",
+      "type": "core.app.launch",
+      "version": 1
+    }
+  },
+  "plugins": {
+    "core": "0.1.0"
+  }
+}

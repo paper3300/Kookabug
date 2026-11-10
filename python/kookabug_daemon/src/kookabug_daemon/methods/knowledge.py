@@ -47,7 +47,9 @@ def knowledge_failed(exc: KnowledgeError | filetx.TxError) -> RequestFailed:
     if code == "revision_conflict":
         return RequestFailed("revision_conflict", exc.message, revision=None)
     if code in request_failed_codes():
-        safe = {k: v for k, v in fields.items() if k in ("field", "reason", "sha256", "hash")}
+        # 오류 data 계약(`RequestFailedData`)에 있는 필드만 — 없는 필드(예: R5 `hash`)를 실으면
+        # 응답 검사가 internal_error로 바꾼다
+        safe = {k: v for k, v in fields.items() if k in ("field", "reason")}
         return RequestFailed(code, exc.message, **safe)
     return RequestFailed("io_error", exc.message, message=exc.message)
 

@@ -1,0 +1,93 @@
+{
+  "description": "정상 수리 (M8 3.16 shop_moved): 구매 단추가 옮겨진 상점. 실행 → 실패 → 사건 → 조사 신호 → 가설 ui_change → 실패 증거 프레임에서 새 crop(같은 경로, 작업 기준) → 자동 채택 요청 → 관찰 주장·경험칙 → 위키 → 보고 메모",
+  "steps": [
+    {"label": "info", "tool": "kb_project_info", "check": {"job.job": "${job}"}},
+    {"toolsets": ["run", "observe", "graph_edit", "cases", "knowledge"]},
+    {
+      "label": "run_original",
+      "tool": "kb_run_start",
+      "args": {"path": "tests/shop/buy_potion.graph.json", "idempotency_key": "moved-original"},
+      "save": {"run": "run"}
+    },
+    {
+      "label": "status_original",
+      "tool": "kb_run_status",
+      "args": {"run": "${run}", "wait_ms": 30000},
+      "check": {"state": "ended", "outcome.verdict": "fail", "failure.failure.node": "n_click_buy", "failure.failure.exit": "not_found"},
+      "save": {"fail_step": "failure.failure.step"}
+    },
+    {
+      "label": "case_open",
+      "tool": "kb_case_open",
+      "args": {"run": "${run}", "title": "상점 구매 단추를 못 찾음"},
+      "check": {"attached": false},
+      "save": {"case": "case", "evidence": "evidence"}
+    },
+    {"label": "signals", "tool": "kb_triage_signals", "args": {"case": "${case}"}},
+    {"label": "case_get", "tool": "kb_case_get", "args": {"case": "${case}"}, "save": {"case_rev": "case.revision"}},
+    {
+      "label": "hypothesis",
+      "tool": "kb_case_update",
+      "args": {
+        "case": "${case}",
+        "base_revision": "${case_rev}",
+        "changes": {
+          "hypotheses": [{"cause": "ui_change", "state": "supported", "support": [{"type": "evidence", "ref": "${evidence}"}], "note": "구매 단추가 같은 그림으로 오른쪽 아래에 있다"}],
+          "actions": ["repair_candidate"]
+        }
+      }
+    },
+    {
+      "label": "target_probe",
+      "tool": "kb_target_create",
+      "args": {"path": "targets/shop/buy.target.json", "source": {"run": "${run}", "file": "steps/${fail_step}_fail.png"}, "rect": [700, 556, 180, 60]},
+      "expect": {"error": "exists"},
+      "save": {"target_rev": "revision"}
+    },
+    {
+      "label": "target_repair",
+      "tool": "kb_target_create",
+      "args": {
+        "path": "targets/shop/buy.target.json",
+        "source": {"run": "${run}", "file": "steps/${fail_step}_fail.png"},
+        "rect": [700, 556, 180, 60],
+        "spec": {"click": {"anchor": "center", "offset": [0, 0]}, "search": {"region": [0.6445, 0.8125, 0.2539, 0.1875]}},
+        "base_revision": "${target_rev}"
+      },
+      "check": {"basis": "working"},
+      "save": {"change": "change"}
+    },
+    {
+      "label": "adopt",
+      "tool": "kb_adopt_request",
+      "args": {"case": "${case}", "change": "${change}"},
+      "timeout": 600,
+      "check": {"adopted": true},
+      "save": {"adoption": "adoption", "verify_run": "runs.0"}
+    },
+    {"label": "claims_get", "tool": "kb_knowledge_get", "args": {"file": "features/shop"}, "save": {"shop_rev": "revision"}},
+    {
+      "label": "knowledge",
+      "tool": "kb_knowledge_apply",
+      "args": {
+        "request_id": "moved-knowledge-1",
+        "ops": [
+          {"op": "add", "file": "features/shop", "base_revision": "${shop_rev}", "item": {
+            "id": "shop.buy_button.position", "kind": "observed", "statement": "구매 단추가 상점 오른쪽 아래(700, 556)에 있다",
+            "subject": "shop.buy_button", "property": "position", "value": [700, 556],
+            "basis": [{"type": "run", "ref": "${verify_run}"}], "status": "supported"}},
+          {"op": "add", "file": "lessons", "base_revision": 0, "item": {
+            "id": "shop.button_moves", "advice": "상점 단추는 빌드마다 자리가 바뀔 수 있다. 그림이 같으면 locator 수리 후보로 본다",
+            "basis": [{"type": "evidence", "ref": "${evidence}"}]}}
+        ]
+      }
+    },
+    {"label": "wiki_sha", "sha256_file": "wiki/features/shop.md", "save": {"wiki_sha": ""}},
+    {
+      "label": "wiki",
+      "tool": "kb_wiki_write",
+      "args": {"path": "wiki/features/shop.md", "base_sha256": "${wiki_sha}", "text": "# 상점\n\n구매 단추 자리가 바뀐 빌드가 있었다. 자동 채택으로 locator를 고쳤다.\n\n<!-- kookabug:claims:begin -->\n<!-- kookabug:claims:end -->\n"}
+    },
+    {"label": "note", "tool": "kb_report_note", "args": {"text": "구매 단추 자리 변경(ui_change)을 locator 제자리 수리로 자동 채택했다."}}
+  ]
+}

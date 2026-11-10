@@ -1,8 +1,8 @@
 ---
 format: kookabug.playbook/0
 name: repair
-version: 1
-tools: [core, run, observe, screens, graph_edit, knowledge, cases]
+version: 2
+tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
 ---
 # 플레이북 repair — 실패 조사와 수리
 
@@ -26,6 +26,9 @@ tools: [core, run, observe, screens, graph_edit, knowledge, cases]
 6. 제품 회귀로 보이면 `product_regression` 가설과 증거를 남기고 사건을 연 채로 둔 뒤, 그 실패와 무관한 다른 테스트를 계속한다.
 7. 배운 것은 `kb_knowledge_apply`(관찰 `observed`·경험칙)로, 설명은 `kb_wiki_write`로 쓴다.
 8. 끝내기 전에 `kb_report_note`로 요약(무엇을 보고 무엇을 남겼는지)을 한 번 쓴다. 비밀값을 쓰지 않는다.
+
+## 직접 입력
+`kb_input_*`(직접 입력)는 탐침용이다. 그 입력과 그때의 화면·실행으로 사건을 닫거나 채택 근거로 쓸 수 없다. 채택 검증은 Kookabug가 고른 실행만 쓴다(초기 상태에서 다시 시작하고, 검증 사이에 입력이 있으면 그 검증은 무효다). 금지 동작·입력 임대권·예산은 Kookabug가 먼저 막는다.
 
 ## 예산
 실행 횟수·시간 예산이 있다. `job_budget_exhausted`를 받으면 새 실행을 시작하지 말고 요약을 쓰고 끝낸다.

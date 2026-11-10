@@ -147,7 +147,7 @@ async def _request(call: Call) -> dict[str, Any]:
         # 취소돼도(연결 끊김) 스레드는 계속 돌므로 그동안 Agent 입력 차단을 유지한다. 작업 연결의
         # 검증 실행은 작업 실행 예산을 쓴다 (조율자 결정)
         budget = None if job is None else functools.partial(daemon.jobs.take_run, job)
-        verifier = RunVerifier(daemon.run_manager, budget=budget)
+        verifier = RunVerifier(daemon.run_manager, budget=budget, job=job)
         try:
             if pending is not None:
                 daemon.job_adopts.attach(pending, verifier)
