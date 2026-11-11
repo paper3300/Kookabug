@@ -65,6 +65,10 @@ test("test_method_table_tools_and_internal_methods", () => {
     "screens.list",
     "screens.save",
     "session.hello",
+    // UX2: Agent의 설정 바꾸기 제안·원본 읽기 (수락은 보고함 report.decide — 사람 전용)
+    "setting.propose",
+    "sources.list",
+    "sources.read",
     "wiki.write",
     // M8 B3: 묶음 수락·거절은 보고함 report.decide로 (사람 전용)
     "working.accept",

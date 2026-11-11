@@ -275,8 +275,8 @@ test("test_wizard_to_init", async () => {
   await expect(questions).toHaveCount(1);
   await expect(questions).toContainText("데이터 테이블(data_table)은 어디에 있나요?");
   await expect(detail.getByText("상점 화면이 몇 개인가")).toHaveCount(0);
-  // 답하기 (unknowns.answer, 사람 전용)
-  const answer = questions.getByRole("button", { name: "답하기" });
+  // 답하기 (unknowns.answer, 사람 전용) — UX2부터 질문 묶음 아래 "답 보내기" 하나
+  const answer = detail.locator('[data-part="questions"] [data-part="send-answers"]');
   await expect(answer).toBeDisabled(); // 빈 답
   await questions.getByRole("textbox").fill("공유 폴더로 옮겼다");
   await expect(answer).toBeEnabled();

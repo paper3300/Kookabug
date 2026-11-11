@@ -42,6 +42,7 @@ _PASS: Final = frozenset(
         "exists",
         "secret_in_text",
         "secret_unchecked",
+        "setting_not_allowed",
     }
 )
 

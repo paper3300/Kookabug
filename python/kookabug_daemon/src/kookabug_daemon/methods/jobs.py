@@ -26,6 +26,7 @@ from kookabug_core.workspace import Workspace
 from kookabug_daemon.jobs import DEFAULT_TTL_S
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.methods.adopt import checker_of, guarded
+from kookabug_daemon.methods.proposals import apply_setting
 from kookabug_daemon.protocol import RequestFailed
 
 __all__ = ["METHODS"]
@@ -194,13 +195,40 @@ async def _reports_get(call: Call) -> dict[str, Any]:
     found = await asyncio.to_thread(guarded, reports.read_report, call.daemon.root, job)
     if found is None:
         raise RequestFailed("not_found", "그 작업의 보고가 없다", path=job)
+    await asyncio.to_thread(_attach_local, call.daemon.root, job, found)
     return {"report": found}
+
+
+def _attach_local(root: Any, job: str, report: dict[str, Any]) -> None:
+    """설정 제안 항목에 이 PC `proposals.json`의 값·현재 값을 붙인다 (UX2 검수 1 H1 — 팀 보고
+    파일에는 없다). 이 PC에 그 제안이 없으면 `local: null`(화면은 값을 못 보이고 수락을 끈다)."""
+    from kookabug_core.knowledge import setting_change
+
+    for group in report.get("groups") or []:
+        for item in group.get("items") or []:
+            setting = item.get("setting") if item.get("kind") == "setting_change" else None
+            if isinstance(setting, dict):
+                try:
+                    setting["local"] = setting_change.local_view(root, job, str(setting.get("id")))
+                except Exception:
+                    setting["local"] = None
 
 
 def _decide_sync(call: Call) -> dict[str, Any]:
     p = call.params
     root = call.daemon.root
     by = call.principal.id
+    job, group, decision = str(p["job"]), str(p["group"]), str(p["decision"])
+    if reports.setting_of(reports.read_report(root, job), group) is not None:
+        # 설정 바꾸기 제안 (UX2 C): 마법사 그 단계와 같은 검사·저장으로 적용한 뒤 결정을 남긴다
+        return reports.decide_setting(
+            root,
+            job,
+            group,
+            decision,
+            apply=lambda setting: apply_setting(call.daemon, job, setting),
+            by=by,
+        )
 
     def apply(changes: list[str], accept: bool, also: Any) -> Any:
         # 보고 결정·렌더는 같은 거래 안 (`also`) — 팀 변경과 따로 반영되지 않는다

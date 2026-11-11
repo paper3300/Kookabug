@@ -23,7 +23,7 @@ pytestmark = [pytest.mark.process, pytest.mark.timeout(600)]
 KNOWLEDGE = {"kb_knowledge_search", "kb_knowledge_get", "kb_knowledge_apply", "kb_wiki_write"}
 CASES = {
     "kb_case_list", "kb_case_get", "kb_triage_signals", "kb_case_open", "kb_case_update",
-    "kb_evidence_pin", "kb_adopt_request", "kb_report_note",
+    "kb_evidence_pin", "kb_adopt_request", "kb_report_note", "kb_setting_propose",
 }  # fmt: skip
 PASS_GRAPH = "tests/shop/qa_pass.graph.json"
 

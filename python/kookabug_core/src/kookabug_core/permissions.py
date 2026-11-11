@@ -93,6 +93,8 @@ TOOLS: Final[Mapping[str, ToolInfo]] = {
         "core", False,
         "kb_project_info", "kb_toolset_enable", "kb_graph_list", "kb_graph_get",
         "kb_graph_validate", "kb_node_search", "kb_run_status", "kb_log_search",
+        # UX2 A: 등록된 원본 읽기 (kb_project_info와 같은 기본 노출, 읽기 전용)
+        "kb_source_list", "kb_source_read",
     ),
     **_tools("graph_edit", True, "kb_graph_create", "kb_graph_patch", "kb_target_create"),
     **_tools("run", True, "kb_run_start", "kb_run_cancel"),
@@ -112,6 +114,8 @@ TOOLS: Final[Mapping[str, ToolInfo]] = {
     **_tools(
         "cases", True,
         "kb_case_open", "kb_case_update", "kb_evidence_pin", "kb_adopt_request", "kb_report_note",
+        # UX2 C: 설정 바꾸기 제안 (작업 연결 전용, 설정은 바꾸지 않는다 — 사람이 보고함에서 수락)
+        "kb_setting_propose",
     ),
 }  # fmt: skip
 

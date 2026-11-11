@@ -56,9 +56,12 @@ describe("ipc-guard 새 채널", () => {
 
   test("인자 모양 거부 (양성 대조: 맞는 모양은 지나간다)", () => {
     expect(() => checkJobArgs("agentJobRun", ["init", "claude-code"])).not.toThrow();
+    // UX2 D: 보고함 "이어서 진행"
+    expect(() => checkJobArgs("agentJobRun", ["followup", "claude-code"])).not.toThrow();
     expect(() => checkJobArgs("workspaceCreate", [{ parent: "C:/x", name: "a", git: true }])).not.toThrow();
     const bad: [string, unknown[]][] = [
       ["agentJobRun", ["repair", "claude-code"]], // 허용 목록 밖 플레이북
+      ["agentJobRun", ["probe", "claude-code"]],
       ["agentJobRun", ["init", "claude code"]], // 공백
       ["agentJobRun", ["init", "--agent-command"]], // 옵션처럼 보이는 값
       ["agentJobRun", ["init", "a", "--agent-command=calc"]], // 인자 더하기
@@ -493,9 +496,30 @@ describe("agent-job", () => {
       "--json",
     ]);
     expect(await r.runJob("init", "codex")).toEqual({ started: false, error_code: "job_active" });
-    finish({ code: 3, stdout: 'log line\n{"exit_code":3,"code":"job_active","job":"j-1","agent_log":"raw"}\n' });
+    // UX2 D: 이어 하기도 같은 경로 — 작업 중이면 띄우지 않는다
+    expect(await r.runJob("followup", "codex")).toEqual({ started: false, error_code: "job_active" });
+    expect(calls).toHaveLength(1);
+    finish({ code: 3, stdout:'log line\n{"exit_code":3,"code":"job_active","job":"j-1","agent_log":"raw"}\n' });
     expect(emitted).toEqual([{ action: "run", playbook: "init", exit_code: 3, code: "job_active", job: "j-1" }]);
     expect(await r.runJob("init", "codex")).toEqual({ started: true }); // 끝난 뒤에는 다시
+  });
+
+  test("이어서 진행: followup 플레이북을 Init과 같은 경로·인자로 띄운다 (UX2 D)", async () => {
+    const { r, calls } = runner();
+    expect(await r.runJob("followup", "codex")).toEqual({ started: true });
+    expect(calls[0].args).toEqual([
+      "agent-job",
+      "run",
+      "--workspace",
+      ROOT,
+      "--playbook",
+      "followup",
+      "--agent",
+      "codex",
+      "--launch-tag",
+      expect.stringMatching(/^[0-9a-f]{32}$/),
+      "--json",
+    ]);
   });
 
   test("결과 고르기: 마지막 JSON 줄, 객체·배열 값은 버림", () => {

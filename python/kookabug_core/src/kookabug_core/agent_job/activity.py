@@ -55,6 +55,7 @@ _TARGET_KEYS: Final = ("path", "file", "id", "run", "case", "key", "job")
 _WINDOW_METHODS: Final = frozenset({"control.click", "control.key", "control.type"})
 """권한 인자가 창 제목인 메서드 (창 제목은 판정·감사 기록에도 남는 값이다). 입력 글·키는
 남기지 않는다."""
+_SOURCE_METHODS: Final = frozenset({"sources.list", "sources.read"})
 _SAFE: Final = re.compile(rf"[^\x00-\x1f\x7f]{{1,{TARGET_MAX}}}")
 
 _lock = threading.Lock()
@@ -64,6 +65,13 @@ def short_target(method: str, params: Mapping[str, Any], arg: str = "") -> str:
     """활동 한 줄의 대상. 정해 둔 키의 짧은 글 하나, 아니면 빈 글."""
     if method in _WINDOW_METHODS:
         value: Any = params.get("window", arg)
+    elif method in _SOURCE_METHODS:
+        # UX2 A: 원본 읽기는 `원본id:상대경로`
+        source = params.get("source")
+        path = params.get("path")
+        value = (
+            f"{source}:{path if isinstance(path, str) else ''}" if isinstance(source, str) else ""
+        )
     else:
         value = next((params[k] for k in _TARGET_KEYS if isinstance(params.get(k), str)), "")
     text = str(value).strip() if isinstance(value, str) else ""

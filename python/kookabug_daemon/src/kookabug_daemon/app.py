@@ -582,6 +582,10 @@ class Daemon:
                 text_checker(self)([("notes", notes)])
             except Exception:
                 notes = None  # 확인하지 못한 글은 보고에 넣지 않는다
+        try:
+            checker = text_checker(self)  # 설정 제안 이유의 쓰기 직전 재검사 (UX2 검수 1 H1)
+        except Exception:
+            checker = None  # 없으면 이유를 보고에 싣지 않는다
         rendered: str | None = None
         try:
             built = reports.build(
@@ -592,6 +596,7 @@ class Daemon:
                 notes=notes,
                 stalled=sorted(job.stalled),
                 prep=prep,
+                check_secrets=checker,
             )
             written = reports.write(self.root, built)
             self.post(lambda: self.notify_ui("reports.changed", {}))

@@ -16,7 +16,7 @@ from typing import Final
 __all__ = ["FORMAT", "NAMES", "Playbook", "PlaybookError", "load", "versions"]
 
 FORMAT: Final = "kookabug.playbook/0"
-NAMES: Final = ("init", "triage", "repair", "explore", "author", "lint", "probe")
+NAMES: Final = ("init", "followup", "triage", "repair", "explore", "author", "lint", "probe")
 """배포하는 플레이북 이름 (허용 목록)."""
 _TOOLSETS: Final = frozenset(
     {"core", "graph_edit", "run", "observe", "control", "screens", "knowledge", "cases"}

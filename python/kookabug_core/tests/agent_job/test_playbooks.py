@@ -15,7 +15,7 @@ def test_playbooks_mention_required_rules() -> None:
     every = {name: playbooks.load(name) for name in playbooks.NAMES}
     for name, book in every.items():
         assert book.version >= 1 and "core" in book.tools, name
-    for name in ("init", "triage", "repair", "explore", "author", "lint"):
+    for name in ("init", "followup", "triage", "repair", "explore", "author", "lint"):
         body = every[name].body
         assert "kb_report_note" in body, name  # 요약 글은 이 도구로만
         assert "ask = deny" in body, name
@@ -25,7 +25,7 @@ def test_playbooks_mention_required_rules() -> None:
         assert "은폐 금지" in body, name  # 버그 은폐 금지 (KB문서 3장 4, 8장)
         assert "resolved" in body and "closed" in body, name  # 사건을 닫지 않는다
     # 작업 허용 범위의 control (9장 R0·R7): 직접 입력은 탐침용 — 닫기·채택 근거가 아님을 적는다
-    for name in ("triage", "repair", "explore", "init", "author"):
+    for name in ("triage", "repair", "explore", "init", "followup", "author"):
         assert "control" in every[name].tools, name
         body = every[name].body
         assert "탐침용" in body and "채택 근거로 쓸 수 없다" in body, name
@@ -36,6 +36,15 @@ def test_playbooks_mention_required_rules() -> None:
     assert "확인된 향후 일정 없음" in init and "QA 계획" in init  # 9장 로드맵
     assert "human_only" in init and "미지수" in init
     assert "kb_project_info" in every["probe"].body
+    # UX2: 원본은 Kookabug 도구로만 읽는다 (워크스페이스 밖 원본도), 이어 하기는 답 읽기 → 제안
+    for name in ("init", "followup"):
+        body = every[name].body
+        assert "kb_source_list" in body and "kb_source_read" in body, name
+    followup = every["followup"]
+    assert followup.tools == every["init"].tools
+    assert "kb_setting_propose" in followup.body and "answered" in followup.body
+    assert "다시 만들지 않는다" in followup.body  # 이미 답한 것은 다시 묻지 않는다
+    assert "QA 계획" in followup.body and "재귀 금지" in followup.body
     # 허용 목록 밖 이름 (경로 조각으로 다른 파일을 읽지 못한다)
     for bad in ("../README", "init.md", "wiki", ""):
         with pytest.raises(playbooks.PlaybookError):

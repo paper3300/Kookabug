@@ -101,8 +101,8 @@ export interface AppApi {
   workspaceCreate(request: { parent: string; name: string; git: boolean }): Promise<OpenResult>;
   /** 마법사 5단계 연결 시험 (agent-job probe). Agent는 사용자 설정의 ID */
   agentProbe(agentId: string): Promise<JobCliResult & { ok: boolean }>;
-  /** 마법사 9단계 Init (agent-job run, 기다리지 않음). 끝나면 jobs.cli 알림 */
-  agentJobRun(playbook: "init", agentId: string): Promise<{ started: boolean; error_code?: string }>;
+  /** 마법사 9단계 Init·보고함 "이어서 진행"(followup) (agent-job run, 기다리지 않음). 끝나면 jobs.cli 알림 */
+  agentJobRun(playbook: "init" | "followup", agentId: string): Promise<{ started: boolean; error_code?: string }>;
   /** 마법사 3단계 환경 점검 (kookabug doctor --json, 항목 ID·통과만) */
   doctor(): Promise<{ ok: boolean; checks: { id: string; ok: boolean }[] }>;
 }

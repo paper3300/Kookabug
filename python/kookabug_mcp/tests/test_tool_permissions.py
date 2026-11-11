@@ -99,6 +99,11 @@ CASES: dict[str, list[dict[str, Any]]] = {
     "kb_evidence_pin": [{"run": "abcd1234", "note": "n"}],
     "kb_adopt_request": [{"case": CASE, "change": "w-20261109-000000-abcd"}],
     "kb_report_note": [{"text": "요약"}],
+    # UX2: 원본 읽기(core)·설정 제안(cases)
+    "kb_source_list": [{}, {"source": "design_doc", "path": "a"}],
+    "kb_source_read": [{"source": "design_doc"}, {"source": "design_doc", "path": "a.md",
+                                                  "offset": 3}],
+    "kb_setting_propose": [{"key": "game.title", "value": "Sample", "reason": "r"}],
 }  # fmt: skip
 PROCESS_SKIP = {"kb_run_cancel"}
 """daemon이 판정 전에 대표 인자(실행의 그래프 경로)를 구하다 `run_not_found`가 되는 도구 — 정적
@@ -186,6 +191,10 @@ class RecordingLink:
             "adopt.request": {"adopted": False, "adoption": None, "failed": None,
                               "kept": "working", "manifest": None, "negatives": [], "runs": []},
             "job.note": {"job": "j-20261109-000000-abcd", "bytes": 6},
+            "sources.list": {"sources": []},
+            "sources.read": {"ref": "sources:design_doc", "format": "text", "chars": 0,
+                             "next_offset": None},
+            "setting.propose": {"id": "s-20261111-000000-abcd", "job": "j", "key": "game.title"},
         }[method]  # fmt: skip
 
     def enable(self, toolsets: list[str]) -> dict[str, Any]:

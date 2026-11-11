@@ -15,7 +15,8 @@
   양성 입력: 값을 둘로 나눠 사이에 flush·쉼을 둔다)
 - `{"sleep": 초}`·`{"spawn_child_sleep": 초}`(손자 프로세스 — 트리 정리 검사)·`{"exit": 코드}`
 - `{"exit": 코드, "if_playbook": 이름}` — 프롬프트 머리말의 플레이북이 그 이름일 때만 끝낸다
-  (앱 E2E 훅은 연결 시험과 Init에 같은 명령을 쓴다)
+  (앱 E2E 훅은 연결 시험과 Init에 같은 명령을 쓴다). UX2부터 `if_playbook`은 모든 단계에 쓴다 —
+  플레이북이 다르면 그 단계를 건너뛴다(Init과 이어 하기를 각본 하나로)
 
 앞 결과를 잇는 키 (M8 B6 시나리오 각본):
 - `"label"` — 결과에 그대로 남긴다(검사가 단계를 찾는 이름)
@@ -204,6 +205,9 @@ def run(
         for n, step in enumerate(script.get("steps", [])):
             if save is not None:
                 save()
+            only = step.get("if_playbook")
+            if only is not None and f"플레이북: {only} (" not in prompt:
+                continue
             if "sha256_file" in step:
                 data = (root / str(step["sha256_file"])).read_bytes()
                 for var in step.get("save") or {}:

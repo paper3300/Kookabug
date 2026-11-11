@@ -71,9 +71,25 @@ export interface ReportItem {
     | "init_summary"
     | "prep_failed"
     | "regression_suspect"
+    | "setting_change"
     | "stalled"
     | "undetermined"
     | "working_only";
+  /**
+   * UX2: 설정 바꾸기 제안 (Agent가 제안, 사람이 report.decide로 수락·거절). 팀 보고에는 ID·키·이유만 — 값·현재 값은 이 PC .kookabug/jobs/<작업>/proposals.json에만
+   */
+  setting?: {
+    id: string;
+    key:
+      | "automation.forbidden.add"
+      | "cheats.categories.add"
+      | "game.args"
+      | "game.cwd"
+      | "game.executable"
+      | "game.title"
+      | "sources.add";
+    reason: string;
+  };
   summary?: {
     [k: string]: number | undefined;
   };

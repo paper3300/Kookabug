@@ -1,6 +1,6 @@
 """`kookabug agent-job` (M8 계획 3.9·3.10·3.15) — 외부 Agent CLI 무인 감독. 사람만 쓴다.
 
-    kookabug agent-job run --workspace WS --playbook init|triage|repair|explore|author|lint
+    kookabug agent-job run --workspace WS --playbook init|followup|triage|repair|explore|author|lint
             [--agent claude|codex|custom] [--agent-command "<명령줄>"] [--basis working|team]
             [--minutes N] [--runs N] [--trigger manual|schedule|ci] [--pass-env 이름]... [--json]
     kookabug agent-job status [JOB] | list | cancel JOB | probe --agent ID [--agent-command ...]

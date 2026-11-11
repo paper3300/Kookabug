@@ -1,0 +1,58 @@
+{
+  "description": "UX2 E2E: Init은 워크스페이스 밖 원본(plans)을 kb_source_list·kb_source_read로 읽고 그 ref·hash로 expected 주장을 더한 뒤 사람만 답할 수 있는 질문 2개를 남긴다. 이어 하기(followup)는 답을 읽어(answered) 창 제목 답을 game.title 설정 제안으로 낸다. 연결 시험이면 설정 확인 뒤 끝낸다",
+  "steps": [
+    {"label": "probe_info", "tool": "kb_project_info"},
+    {"exit": 0, "if_playbook": "probe"},
+
+    {"if_playbook": "init", "label": "sources", "tool": "kb_source_list",
+     "check": {"sources.[id=plans].state": "ok", "sources.[id=plans].type": "dir"}},
+    {"if_playbook": "init", "label": "list_plans", "tool": "kb_source_list", "args": {"source": "plans"},
+     "check": {"entries.0.name": "plan", "entries.0.type": "dir"}},
+    {"if_playbook": "init", "label": "read_shop", "tool": "kb_source_read",
+     "args": {"source": "plans", "path": "plan/shop.md"},
+     "check": {"text": {"$contains": "물약 100골드"}, "ref": "sources:plans#plan/shop.md"},
+     "save": {"ref": "ref", "hash": "hash"}},
+    {"if_playbook": "init", "label": "outside_refused", "tool": "kb_source_read",
+     "args": {"source": "plans", "path": "../secret.txt"}, "expect": {"error": "policy_path"}},
+    {"if_playbook": "init", "toolsets": ["knowledge", "cases"]},
+    {"if_playbook": "init", "label": "claim", "tool": "kb_knowledge_apply",
+     "args": {"request_id": "ux2-init-claim", "ops": [
+       {"op": "add", "file": "features/planshop", "base_revision": 0, "item": {
+         "id": "planshop.potion.price", "kind": "expected", "statement": "체력 물약 1개 가격은 100골드다",
+         "subject": "item:potion", "property": "price", "value": 100, "unit": "gold", "status": "supported",
+         "basis": [{"type": "source", "ref": "${ref}", "hash": "${hash}"}]}}
+     ]},
+     "check": {"applied": true}},
+    {"if_playbook": "init", "label": "unknowns", "tool": "kb_knowledge_apply",
+     "args": {"request_id": "ux2-init-unknowns", "ops": [
+       {"op": "add", "file": "unknowns", "base_revision": 0, "item": {
+         "question": "게임 창 제목은 무엇인가요", "human_only": true, "blocks": [],
+         "how": "게임을 띄워 창 제목을 본다", "source": null}},
+       {"op": "add", "file": "unknowns", "base_revision": 0, "item": {
+         "question": "상점 기획 문서의 최신 판은 어디인가요", "human_only": true, "blocks": [],
+         "how": "기획 담당에게 묻는다", "source": "sources:plans"}}
+     ]},
+     "check": {"applied": true}},
+    {"if_playbook": "init", "label": "note", "tool": "kb_report_note",
+     "args": {"text": "Init: 밖 원본 plans에서 상점 문서 1개를 읽었다. 사람만 답할 수 있는 질문 2개."}},
+    {"exit": 0, "if_playbook": "init"},
+
+    {"if_playbook": "followup", "sleep": 8},
+    {"if_playbook": "followup", "toolsets": ["knowledge", "cases"]},
+    {"if_playbook": "followup", "label": "answers", "tool": "kb_knowledge_get", "args": {"file": "unknowns"},
+     "check": {"doc.unknowns.[question=게임 창 제목은 무엇인가요].state": "answered",
+               "doc.unknowns.[question=상점 기획 문서의 최신 판은 어디인가요].state": "answered"},
+     "save": {"title": "doc.unknowns.[question=게임 창 제목은 무엇인가요].answer.text",
+              "uid": "doc.unknowns.[question=게임 창 제목은 무엇인가요].id"}},
+    {"if_playbook": "followup", "label": "reread", "tool": "kb_source_read",
+     "args": {"source": "plans", "path": "plan/shop.md"}},
+    {"if_playbook": "followup", "label": "not_allowed", "tool": "kb_setting_propose",
+     "args": {"key": "agents.default", "value": "x", "reason": "허용 목록 밖"},
+     "expect": {"error": "setting_not_allowed"}},
+    {"if_playbook": "followup", "label": "propose", "tool": "kb_setting_propose",
+     "args": {"key": "game.title", "value": "${title}", "reason": "사람 답: 게임 창 제목", "unknowns": ["${uid}"]},
+     "check": {"key": "game.title"}},
+    {"if_playbook": "followup", "label": "note", "tool": "kb_report_note",
+     "args": {"text": "이어 하기: 답 2개를 읽고 창 제목 설정 제안 1개를 냈다."}}
+  ]
+}

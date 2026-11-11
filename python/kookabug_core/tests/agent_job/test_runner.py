@@ -678,6 +678,17 @@ def test_agent_env_exit5(
             "x",
         ],
         ["agent-job", "playbooks"],
+        # UX2 D: 이어 하기도 Agent가 만들지 못한다 (재귀 금지 — 보고함 단추는 사람 연결만)
+        [
+            "agent-job",
+            "run",
+            "--workspace",
+            str(ws),
+            "--playbook",
+            "followup",
+            "--agent-command",
+            "x",
+        ],
         ["agent-job", "cancel", "j-20261110-000000-abcd", "--workspace", str(ws)],
         [
             "agent-job",
@@ -702,7 +713,8 @@ def test_agent_env_exit5(
         )
         == 0
     )
-    assert json.loads(capsys.readouterr().out)["playbooks"]["repair"] >= 1
+    listed = json.loads(capsys.readouterr().out)["playbooks"]
+    assert listed["repair"] >= 1 and listed["followup"] >= 1
 
 
 def _streams() -> tuple[Any, Any]:

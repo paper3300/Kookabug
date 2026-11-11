@@ -237,6 +237,11 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     "job.note": "kb_report_note",
     # M8 B5: 플레이북 판·원본 상태·자동화 정책 (kb_project_info가 함께 준다)
     "project.qa_info": "kb_project_info",
+    # UX2 A: 등록된 원본 읽기 (core, 읽기 전용)
+    # UX2 C: 설정 바꾸기 제안 (작업 연결 전용, 설정은 안 바꾼다)
+    "sources.list": "kb_source_list",
+    "sources.read": "kb_source_read",
+    "setting.propose": "kb_setting_propose",
 }
 
 AGENT_DENIED: Final = frozenset(

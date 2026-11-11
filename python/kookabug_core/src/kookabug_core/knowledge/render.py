@@ -156,6 +156,7 @@ _ITEM_TITLES: Final = {
     "budget": "예산",
     "stalled": "진행 막힘",
     "prep_failed": "준비 실패",
+    "setting_change": "설정 바꾸기 제안 (수락·거절)",
 }
 
 
@@ -191,6 +192,10 @@ def render_report(report: Mapping[str, Any], claims: Mapping[str, int] | None = 
             lines.append(line)
             for c in item.get("claims", []):
                 lines.append(f"  - 주장 {c.get('id')} rev {c.get('rev')}")
+            setting = item.get("setting")
+            if isinstance(setting, dict):
+                # 이 PC 값(게임 경로·인자)은 팀 위키에 쓰지 않는다 — 키·이유만 (값은 보고함 화면)
+                lines.append(f"  - 키 `{setting.get('key')}` · {_cell(setting.get('reason'))}")
             if item.get("detail"):
                 lines.append(f"  - {_cell(item['detail'])}")
         decision = group.get("decision")

@@ -7,22 +7,34 @@ import { openFileTab } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
 import { SECURITY_BOUNDARY } from "../wizard/boundary";
 import {
-  answerUnknown,
+  answerAll,
   canCancel,
   cancelJob,
   decidable,
   decideGroup,
+  filledCount,
+  followupBlock,
+  followupPlaybook,
   initReports,
+  isSettingGroup,
   KIND_TEXT,
   openQuestions,
   reloadReports,
   revertable,
   revertAdoption,
   selectReport,
+  NOT_LOCAL_TEXT,
+  setDraft,
+  SETTING_LABEL,
+  settingAcceptable,
+  settingCurrentText,
+  settingValueText,
+  startFollowup,
   STATE_TEXT,
   useReports,
   type Report,
   type ReportItem,
+  type SettingProposal,
   type Unknown,
 } from "./reportsStore";
 import {
@@ -85,6 +97,7 @@ function Item({ item }: { item: ReportItem }) {
           <span className={css.muted}>관련 주장: {item.claims.map((c) => `${c.id} r${c.rev}`).join(", ")}</span>
         )}
         {item.cheat !== undefined && <span>치트 후보 {item.cheat}</span>}
+        {item.setting !== undefined && <Setting setting={item.setting} />}
         {item.summary !== undefined && <span className={css.muted}>{summaryText(item.summary)}</span>}
         {item.evidence !== undefined && (
           <button
@@ -114,9 +127,36 @@ function Item({ item }: { item: ReportItem }) {
   );
 }
 
+/** 설정 바꾸기 제안 (UX2 C): 키 · 현재 값 → 제안 값 · 이유. 값은 글로만 그린다 */
+function Setting({ setting }: { setting: SettingProposal }) {
+  const local = setting.local ?? null;
+  return (
+    <span className={css.setting} data-part="setting-change" data-key={setting.key} data-local={local !== null}>
+      <span className={css.settingKey}>{SETTING_LABEL[setting.key] ?? setting.key}</span>
+      {local !== null ? (
+        <span className={css.settingValues}>
+          <span className={css.mono} data-part="setting-current">
+            {settingCurrentText(setting.key, local.current, local.current_hidden)}
+          </span>
+          <span aria-hidden="true">→</span>
+          <span className={css.mono} data-part="setting-proposed">
+            {settingValueText(setting.key, local.value)}
+          </span>
+        </span>
+      ) : (
+        <span className={css.muted} data-part="setting-not-local">
+          {NOT_LOCAL_TEXT}
+        </span>
+      )}
+      <span className={css.muted}>이유: {local?.reason ?? setting.reason}</span>
+    </span>
+  );
+}
+
 function Question({ u }: { u: Unknown }) {
-  const [text, setText] = useState("");
-  const pending = useReports((s) => s.pending.has(`answer:${u.id}`));
+  const text = useReports((s) => s.drafts[u.id] ?? "");
+  const error = useReports((s) => s.answerErrors[u.id]);
+  const sending = useReports((s) => s.sending);
   return (
     <li className={css.question} data-unknown={u.id}>
       <span className={css.kind} data-kind="question">
@@ -124,20 +164,70 @@ function Question({ u }: { u: Unknown }) {
       </span>
       <span className={css.itemBody}>
         <span>{u.question}</span>
-        <span className={css.answerRow}>
-          <input className={css.input} aria-label={`답: ${u.question}`} value={text} onChange={(e) => setText(e.target.value)} />
-          <button
-            type="button"
-            className={css.button}
-            disabled={pending || text.trim() === ""}
-            onClick={() => void answerUnknown(u, text.trim()).then(() => setText(""))}
-          >
-            답하기
-          </button>
-        </span>
-        <Message k={`answer:${u.id}`} />
+        <textarea
+          className={css.input}
+          aria-label={`답: ${u.question}`}
+          rows={1}
+          value={text}
+          disabled={sending}
+          onChange={(e) => setDraft(u.id, e.target.value)}
+        />
+        {error !== undefined && (
+          <span className={css.error} role="alert" data-part="answer-error">
+            {error}
+          </span>
+        )}
       </span>
     </li>
+  );
+}
+
+function Questions({ job, questions }: { job: string; questions: Unknown[] }) {
+  const sending = useReports((s) => s.sending);
+  const filled = useReports((s) => filledCount(questions, s.drafts));
+  return (
+    <section className={css.group} data-part="questions">
+      <div className={css.groupHead}>
+        <span className={css.groupTitle}>질문 · 답하지 않아도 작업은 계속돼요</span>
+      </div>
+      <ul className={css.items}>
+        {questions.map((u) => (
+          <Question key={u.id} u={u} />
+        ))}
+      </ul>
+      <div className={`${css.answerRow} ${css.sendRow}`}>
+        <button type="button" className={css.button} data-part="send-answers" disabled={sending || filled === 0} onClick={() => void answerAll(job, questions)}>
+          답 보내기{filled > 0 ? ` (${filled})` : ""}
+        </button>
+        <Spinner active={sending} size="sm" label="보내는 중…" />
+        <span className={css.muted}>글을 넣은 질문만 보내요. 빈 칸은 건너뛰어요</span>
+      </div>
+    </section>
+  );
+}
+
+/** "이어서 진행" (UX2 D): Init·이어 하기 보고에서 새 followup 작업. 무인 작업 중이면 끄고 이유, 남은 질문 수 */
+function Followup({ report, remaining }: { report: Report; remaining: number }) {
+  const rows = useReports((s) => s.rows);
+  const key = `followup:${report.job}`;
+  const pending = useReports((s) => s.pending.has(key));
+  const blocked = followupBlock(rows);
+  return (
+    <div className={css.followup} data-part="followup-row">
+      <button type="button" className={css.button} data-part="followup" disabled={blocked !== null || pending} onClick={() => void startFollowup(report.job)}>
+        이어서 진행
+      </button>
+      <Spinner active={pending} size="sm" label="시작하는 중…" />
+      <span className={css.muted} data-part="followup-remaining">
+        {remaining > 0 ? `답하지 않은 질문 ${remaining}개 (그대로 진행해도 돼요)` : "남은 질문 없음"}
+      </span>
+      {blocked !== null && (
+        <span className={css.muted} data-part="followup-blocked">
+          {blocked}
+        </span>
+      )}
+      <Message k={key} />
+    </div>
   );
 }
 
@@ -162,9 +252,11 @@ function Detail({ report }: { report: Report }) {
           </button>
         )}
       </div>
+      {followupPlaybook(report) && <Followup report={report} remaining={questions.length} />}
       {report.groups.length === 0 && <p className={css.muted}>항목이 없어요.</p>}
       {report.groups.map((g) => {
         const key = `decide:${report.job}:${g.key}`;
+        const setting = isSettingGroup(g);
         return (
           <section key={g.key} className={css.group} data-group={g.key} data-decided={g.decision !== null}>
             <div className={css.groupHead}>
@@ -174,24 +266,28 @@ function Detail({ report }: { report: Report }) {
               )}
               {decidable(g) && (
                 <span className={css.groupActions}>
-                  <button
-                    type="button"
-                    className={css.button}
-                    data-part="accept"
-                    disabled={pending.has(key)}
-                    onClick={() => void decideGroup(report.job, g.key, "accept")}
-                  >
-                    묶음 수락
-                  </button>
+                  {/* 다른 PC에서 만든 설정 제안은 값을 몰라 수락할 수 없다 — 거절만 */}
+                  {(!setting || settingAcceptable(g.items.find((i) => i.kind === "setting_change")?.setting)) && (
+                    <button
+                      type="button"
+                      className={css.button}
+                      data-part="accept"
+                      disabled={pending.has(key)}
+                      onClick={() => void decideGroup(report.job, g.key, "accept", setting)}
+                    >
+                      {setting ? "수락" : "묶음 수락"}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className={css.button}
                     data-part="reject"
                     disabled={pending.has(key)}
-                    onClick={() => void decideGroup(report.job, g.key, "reject")}
+                    onClick={() => void decideGroup(report.job, g.key, "reject", setting)}
                   >
                     거절
                   </button>
+                  <Spinner active={pending.has(key)} size="sm" label="반영 중…" />
                 </span>
               )}
             </div>
@@ -204,18 +300,9 @@ function Detail({ report }: { report: Report }) {
           </section>
         );
       })}
-      {questions.length > 0 && (
-        <section className={css.group} data-part="questions">
-          <div className={css.groupHead}>
-            <span className={css.groupTitle}>질문 · 답하지 않아도 작업은 계속돼요</span>
-          </div>
-          <ul className={css.items}>
-            {questions.map((u) => (
-              <Question key={u.id} u={u} />
-            ))}
-          </ul>
-        </section>
-      )}
+      {questions.length > 0 && <Questions job={report.job} questions={questions} />}
+      {/* 다 보내면 질문 묶음이 사라지므로 결과 글은 묶음 밖에 */}
+      <Message k={`answers:${report.job}`} />
       {typeof report.notes === "string" && report.notes.trim() !== "" && (
         <section className={css.group}>
           <div className={css.groupHead}>

@@ -211,7 +211,8 @@ def test_default_preset_graph_author() -> None:
 # 계획 2.10 프리셋 표 그대로 (read_only, graph_author, runner, full) + M7 3.11 explorer
 # + M8 3.14 curator·qa_runner
 CORE = ["kb_project_info", "kb_toolset_enable", "kb_graph_list", "kb_graph_get",
-        "kb_graph_validate", "kb_node_search", "kb_run_status", "kb_log_search"]  # fmt: skip
+        "kb_graph_validate", "kb_node_search", "kb_run_status", "kb_log_search",
+        "kb_source_list", "kb_source_read"]  # fmt: skip
 PRESET_ORDER: tuple[Preset, ...] = (
     "read_only", "graph_author", "runner", "full", "explorer", "curator", "qa_runner"
 )  # fmt: skip
@@ -245,7 +246,13 @@ PRESET_TABLE: list[tuple[list[str], tuple[Verdict, ...]]] = [
     ),
     (["kb_case_list", "kb_case_get", "kb_triage_signals"], ALLOW5),
     (
-        ["kb_case_open", "kb_case_update", "kb_evidence_pin", "kb_report_note"],
+        [
+            "kb_case_open",
+            "kb_case_update",
+            "kb_evidence_pin",
+            "kb_report_note",
+            "kb_setting_propose",
+        ],
         ("deny", "deny", "ask", "allow", "deny", "allow", "allow"),
     ),
     (["kb_adopt_request"], ("deny", "deny", "ask", "allow", "deny", "allow", "deny")),

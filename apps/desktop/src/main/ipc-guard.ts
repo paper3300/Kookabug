@@ -223,8 +223,8 @@ export function checkAppAction(action: unknown): string {
   return action;
 }
 
-/** 렌더러가 띄울 수 있는 agent-job 플레이북 (M8 B7: 9단계 Init만) */
-export const JOB_PLAYBOOKS: ReadonlySet<string> = new Set(["init"]);
+/** 렌더러가 띄울 수 있는 agent-job 플레이북 (M8 B7: 9단계 Init, UX2: 보고함 "이어서 진행"의 followup) */
+export const JOB_PLAYBOOKS: ReadonlySet<string> = new Set(["init", "followup"]);
 const AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
 
 /**

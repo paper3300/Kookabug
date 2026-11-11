@@ -175,6 +175,10 @@ TOOLS = {
     ),
     # M8 B5 플레이북 판·원본 상태 (kb_project_info가 함께 준다)
     "project.qa_info": "kb_project_info",
+    # UX2 원본 읽기·설정 제안 (렌더러 표면 없음)
+    "sources.list": "kb_source_list",
+    "sources.read": "kb_source_read",
+    "setting.propose": "kb_setting_propose",
 }
 M8_B3 = {
     "adopt.request",
@@ -265,6 +269,8 @@ def test_method_table_matches_permission_table() -> None:
         "cheats.unadopt",
         *(M8_B3 - M8_B7_RENDERER),
         *(M8_B4 - M8_B7_RENDERER),
+        # UX2: Agent 도구만 (sources.list·sources.read는 M8_B4의 sources 이름공간에 든다)
+        "setting.propose",
     }
     for row in table.values():
         for part in ("params", "result"):

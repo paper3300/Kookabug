@@ -399,6 +399,22 @@ def _log_search(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     return ok_result(f"일치 {len(found['matches'])}건{note}", found)
 
 
+def _source_list(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params = {k: args[k] for k in ("source", "path") if k in args}
+    got = _daemon(link, "sources.list", params)
+    if "sources" in got:
+        return ok_result(f"등록된 원본 {len(got['sources'])}개", got)
+    more = " (잘림 — 더 좁은 path로)" if got.get("truncated") else ""
+    return ok_result(f"원본 {got['source']}: 항목 {len(got.get('entries') or [])}개{more}", got)
+
+
+def _source_read(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params = {k: args[k] for k in ("source", "path", "offset") if k in args}
+    got = _daemon(link, "sources.read", params)
+    more = f" · 이어 읽기 offset {got['next_offset']}" if got.get("next_offset") is not None else ""
+    return ok_result(f"{got['ref']} ({got['format']}, {got['chars']}자){more}", got)
+
+
 def _run_start(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     params: dict[str, Any] = {"path": args["path"], "idempotency_key": args["idempotency_key"]}
     for key in ("profile", "deadline_ms", "settings", "basis"):
@@ -736,6 +752,12 @@ def _report_note(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     return ok_result(f"작업 {done['job']} 보고 메모를 남겼다 ({done['bytes']}바이트)", done)
 
 
+def _setting_propose(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params = {k: args[k] for k in ("key", "value", "reason", "unknowns") if k in args}
+    done = _daemon(link, "setting.propose", params)
+    return ok_result(f"설정 제안 {done['id']} ({done['key']}) — 사람이 보고함에서 수락한다", done)
+
+
 CASE_ID: Final = {"type": "string", "pattern": "^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$"}
 
 
@@ -821,6 +843,23 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
             ("query",),
         ),
         _log_search,
+    ),
+    # UX2 A: 등록된 원본 읽기 (워크스페이스 밖 원본 폴더도 — 등록된 루트 아래만)
+    ToolDef(
+        "kb_source_list",
+        "원본 목록",
+        "등록된 원본(kookabug.json sources) 목록(id·종류·상태). source를 주면 그 원본, 폴더면 path "
+        "아래 한 단계 항목(500개까지). URL 원본은 읽지 않는다",
+        daemon_def("Ux2SourcesListParams"),
+        _source_list,
+    ),
+    ToolDef(
+        "kb_source_read",
+        "원본 읽기",
+        "등록된 원본 파일 하나의 글(텍스트·docx·xlsx·pptx). 200 KB씩, 나머지는 next_offset을 "
+        "offset으로. 결과의 ref·hash를 source 근거로 그대로 쓴다. 비밀값은 ***로 가린다",
+        daemon_def("Ux2SourcesReadParams"),
+        _source_read,
     ),
     # graph_edit
     ToolDef(
@@ -1174,6 +1213,15 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "이 작업 보고의 요약 글 (4 KB, 작업 연결 전용). 보고 항목은 Kookabug가 기록에서 만든다",
         daemon_def("Kb8JobNoteParams"),
         _report_note,
+    ),
+    ToolDef(
+        "kb_setting_propose",
+        "설정 바꾸기 제안",
+        "사람 답을 설정에 반영하자고 제안한다 (작업 연결 전용). 설정은 바꾸지 않고 보고함에 "
+        "'설정 바꾸기 제안'으로 남아 사람이 수락한다. key는 game.title·game.executable·game.args·"
+        "game.cwd·sources.add·cheats.categories.add·automation.forbidden.add뿐",
+        daemon_def("Ux2SettingProposeParams"),
+        _setting_propose,
     ),
 )
 

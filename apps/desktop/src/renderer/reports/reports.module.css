@@ -283,6 +283,57 @@
   color: var(--kb-wiz-info-fg);
 }
 
+/* UX2: 질문 답 칸(여러 줄)·실패 이유·설정 제안·이어서 진행 */
+textarea.input {
+  height: auto;
+  min-height: 26px;
+  padding: 4px 8px;
+  resize: vertical;
+  font: inherit;
+}
+
+.answerRow {
+  align-items: center;
+  margin-top: 6px;
+}
+
+.sendRow {
+  flex-wrap: wrap;
+  padding: 0 12px 10px;
+}
+
+.error {
+  font-size: 12px;
+  color: var(--kb-wiz-warn-fg);
+}
+
+.setting {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settingKey {
+  font-weight: 600;
+}
+
+.settingValues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  overflow-wrap: anywhere;
+}
+
+.followup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+}
+
 .notes {
   margin: 0;
   padding: 8px 12px;

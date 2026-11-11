@@ -142,10 +142,39 @@
                     "init_summary",
                     "prep_failed",
                     "regression_suspect",
+                    "setting_change",
                     "stalled",
                     "undetermined",
                     "working_only"
                   ]
+                },
+                "setting": {
+                  "additionalProperties": false,
+                  "description": "UX2: 설정 바꾸기 제안 (Agent가 제안, 사람이 report.decide로 수락·거절). 팀 보고에는 ID·키·이유만 — 값·현재 값은 이 PC .kookabug/jobs/<작업>/proposals.json에만",
+                  "properties": {
+                    "id": {
+                      "pattern": "^s-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+                      "type": "string"
+                    },
+                    "key": {
+                      "enum": [
+                        "automation.forbidden.add",
+                        "cheats.categories.add",
+                        "game.args",
+                        "game.cwd",
+                        "game.executable",
+                        "game.title",
+                        "sources.add"
+                      ]
+                    },
+                    "reason": {
+                      "maxLength": 2000,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": ["id", "key", "reason"],
+                  "type": "object"
                 },
                 "summary": {
                   "additionalProperties": {

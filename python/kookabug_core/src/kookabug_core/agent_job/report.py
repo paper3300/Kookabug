@@ -29,13 +29,16 @@ __all__ = [
     "EXPORTERS_GROUP",
     "ITEM_KINDS",
     "REPORTS_DIR",
+    "SUMMARY_PLAYBOOKS",
     "build",
     "decide",
+    "decide_setting",
     "group_key",
     "list_reports",
     "read_report",
     "rendered_rel",
     "report_rel",
+    "setting_of",
     "write",
 ]
 
@@ -52,8 +55,11 @@ ITEM_KINDS: Final = (
     "budget",
     "stalled",
     "prep_failed",
+    "setting_change",
 )
 """보고 항목 종류 (허용 목록 — 여기 밖 종류는 만들지 않는다)."""
+SUMMARY_PLAYBOOKS: Final = frozenset({"init", "followup"})
+"""Init 요약 항목을 다는 플레이북 (UX2 D: 이어 하기도 같은 요약)."""
 OPEN_STATES: Final = frozenset({"open", "needs_info", "watching"})
 _TITLES: Final = {
     "auto_adopted": "자동 수리",
@@ -65,6 +71,7 @@ _TITLES: Final = {
     "budget": "예산 소진",
     "stalled": "진행 막힘",
     "prep_failed": "준비 실패",
+    "setting_change": "설정 바꾸기 제안",
 }
 
 
@@ -115,7 +122,10 @@ def list_reports(root: Path) -> list[dict[str, Any]]:
                     1
                     for g in doc.get("groups") or []
                     if g.get("decision") is None
-                    and any(i.get("kind") == "working_only" for i in g.get("items") or [])
+                    and any(
+                        i.get("kind") in ("working_only", "setting_change")
+                        for i in g.get("items") or []
+                    )
                 ),
                 "rendered": doc.get("rendered"),
             }
@@ -285,9 +295,11 @@ def build(
     stalled: Sequence[str] = (),
     prep: str | None = None,
     ended_at: str | None = None,
+    check_secrets: Callable[[Sequence[tuple[str, str]]], None] | None = None,
 ) -> dict[str, Any]:
     """`job`(`job.json` 값: id·playbook·trigger·agent·started_at·budget)과 기록으로 보고를 만든다.
-    쓰지 않는다 (`write`)."""
+    쓰지 않는다 (`write`). `check_secrets`는 설정 제안 이유의 쓰기 직전 재검사 (없으면 이유를
+    보고에 싣지 않는다)."""
     job_id = str(job["id"])
     lines = _job_lines(root, job_id)
     items: list[tuple[str, str, str, dict[str, Any]]] = []
@@ -394,7 +406,30 @@ def build(
             ("cheat_candidate", "undetermined", cheat, {"kind": "cheat_candidate", "cheat": cheat})
         )
 
-    if job.get("playbook") == "init":
+    # 설정 바꾸기 제안 (UX2 C): 제안마다 묶음 하나 (수락·거절을 따로). 팀 보고에는 제안 ID·키·
+    # 이유·근거 질문만 — 값·현재 값은 이 PC `proposals.json`에만 둔다 (검수 1 H1). 이유는 쓰기
+    # 직전 다시 글자 검사하고, 못 하거나 걸리면 자리 글로 바꾼다
+    from kookabug_core.knowledge import setting_change
+
+    for proposal in setting_change.load_proposals(root, job_id):
+        if not setting_change.PROPOSAL_ID.fullmatch(str(proposal.get("id"))):
+            continue
+        if str(proposal.get("key")) not in setting_change.KEYS:
+            continue
+        reason = str(proposal.get("reason") or "")
+        try:
+            if check_secrets is None or not reason:
+                raise KnowledgeError("secret_unchecked", "검사기 없음")
+            check_secrets([("reason", reason)])
+        except Exception:
+            reason = setting_change.REASON_HIDDEN
+        setting = {"id": str(proposal["id"]), "key": str(proposal["key"]), "reason": reason[:2000]}
+        item = {"kind": "setting_change", "setting": setting}
+        if proposal.get("unknowns"):
+            item["unknowns"] = [str(u) for u in proposal["unknowns"]]
+        items.append(("setting_change", str(proposal.get("key")), str(proposal["id"]), item))
+
+    if job.get("playbook") in SUMMARY_PLAYBOOKS:
         summary = _init_summary(root, lines)
         items.append(
             ("init_summary", "undetermined", "-", {"kind": "init_summary", "summary": summary})
@@ -419,12 +454,14 @@ def build(
     for kind, cause, main, item in items:
         assert kind in ITEM_KINDS
         key = group_key(kind, cause[:150], main[:400])
+        # 설정 제안은 묶음 키에 제안 ID, 제목에는 키 이름
+        shown = cause if kind == "setting_change" else main
         group = groups.setdefault(
             key,
             {
                 "key": key,
                 "cause": cause[:200],
-                "title": (_TITLES[kind] + ("" if main == "-" else f" · {main}"))[:200],
+                "title": (_TITLES[kind] + ("" if shown == "-" else f" · {shown}"))[:200],
                 "items": [],
                 "decision": None,
             },
@@ -535,6 +572,68 @@ def decide(
 
     result = apply(changes, decision == "accept", also)
     return {"job": job, "group": group, "decision": decision, "result": result}
+
+
+def setting_of(report: Mapping[str, Any] | None, group: str) -> dict[str, Any] | None:
+    """묶음의 설정 제안 (`setting_change` 항목의 `setting`). 설정 제안 묶음이 아니면 None."""
+    found = next((g for g in (report or {}).get("groups") or [] if g.get("key") == group), None)
+    if found is None:
+        return None
+    item = next((i for i in found.get("items") or [] if i.get("kind") == "setting_change"), None)
+    setting = None if item is None else item.get("setting")
+    return dict(setting) if isinstance(setting, dict) else None
+
+
+def decide_setting(
+    root: Path,
+    job: str,
+    group: str,
+    decision: str,
+    *,
+    apply: Callable[[Mapping[str, Any]], Any],
+    by: str | None = None,
+) -> dict[str, Any]:
+    """`report.decide`의 설정 제안 묶음 (UX2 C, 사람 전용). 수락이면 `apply(setting)`(마법사 그
+    단계와 같은 검사·저장 — daemon이 준다)이 먼저 설정을 쓰고, 그 뒤 보고 결정·렌더·감사 이력을
+    한 거래로 남긴다. 거절은 결정·감사 이력만. 이미 결정한 묶음이면 `revision_conflict`."""
+    from kookabug_core.knowledge.ops import log_into
+
+    if decision not in ("accept", "reject"):
+        raise KnowledgeError("format", "결정은 accept·reject다")
+    report = read_report(root, job)
+    if report is None:
+        raise KnowledgeError("unknown_id", "없는 보고다", id=job)
+    found = next((g for g in report.get("groups") or [] if g.get("key") == group), None)
+    if found is None:
+        raise KnowledgeError("unknown_id", "보고에 없는 묶음이다", id=group)
+    if found.get("decision") is not None:
+        raise KnowledgeError("revision_conflict", "이미 결정한 묶음이다", id=group)
+    setting = setting_of(report, group)
+    if setting is None:
+        raise KnowledgeError("format", "이 묶음에는 설정 제안이 없다")
+    result: Any = None
+    if decision == "accept":
+        result = apply(setting)
+    with filetx.locked(root):
+        current = read_report(root, job)
+        target = next(
+            (g for g in (current or {}).get("groups") or [] if g.get("key") == group), None
+        )
+        if current is None or target is None or target.get("decision") is not None:
+            raise KnowledgeError("revision_conflict", "묶음이 그 사이 바뀌었다", id=group)
+        target["decision"] = {"decision": decision, "by": "human", "at": now()}
+        tx = filetx.Tx(root)
+        _put(tx, root, current)
+        entry = {
+            "op": "setting_accept" if decision == "accept" else "setting_reject",
+            "file": "settings",
+            "id": str(setting.get("id")),
+            "fields": [str(setting.get("key"))],
+            "result": "applied",
+        }
+        log_into(root, tx, [entry], Actor("human", by, job=job))
+        tx.commit()
+    return {"job": job, "group": group, "decision": decision, "result": {"applied": result}}
 
 
 def _undecided_changes(report: Mapping[str, Any] | None, job: str, group: str) -> list[str]:

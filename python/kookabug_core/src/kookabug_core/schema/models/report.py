@@ -42,6 +42,27 @@ class Check(RootModel[str]):
     root: Annotated[str, Field(max_length=200, min_length=1)]
 
 
+class Setting(BaseModel):
+    """
+    UX2: 설정 바꾸기 제안 (Agent가 제안, 사람이 report.decide로 수락·거절). 팀 보고에는 ID·키·이유만 — 값·현재 값은 이 PC .kookabug/jobs/<작업>/proposals.json에만
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: Annotated[str, Field(pattern="^s-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+    key: Literal[
+        "automation.forbidden.add",
+        "cheats.categories.add",
+        "game.args",
+        "game.cwd",
+        "game.executable",
+        "game.title",
+        "sources.add",
+    ]
+    reason: Annotated[str, Field(max_length=2000, min_length=1)]
+
+
 type SummaryAdditionalProperty = Annotated[int, Field(ge=0)]
 
 
@@ -68,10 +89,17 @@ class ReportItem(BaseModel):
         "init_summary",
         "prep_failed",
         "regression_suspect",
+        "setting_change",
         "stalled",
         "undetermined",
         "working_only",
     ]
+    setting: Annotated[
+        Setting | None,
+        Field(
+            description="UX2: 설정 바꾸기 제안 (Agent가 제안, 사람이 report.decide로 수락·거절). 팀 보고에는 ID·키·이유만 — 값·현재 값은 이 PC .kookabug/jobs/<작업>/proposals.json에만"
+        ),
+    ] = None
     summary: dict[str, SummaryAdditionalProperty] | None = None
     unknowns: list[Unknown] | None = None
 
