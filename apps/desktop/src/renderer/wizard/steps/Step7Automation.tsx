@@ -3,6 +3,7 @@
 // (`project.automation.set` → `cheats.categories.set`, 둘 다 사람 전용·sha 대조)
 import { useCallback, useEffect, useState } from "react";
 import { client, toRpcError } from "../../rpc/client";
+import { Spinner } from "../../app/Spinner";
 import { CHEAT_FOOTNOTE, SECURITY_BOUNDARY } from "../boundary";
 import { ConflictNotice, isConflict } from "../Conflict";
 import { StepShell } from "../Wizard";
@@ -132,7 +133,7 @@ export function Step7Automation() {
     <StepShell
       title="Agent가 어디까지 혼자 해도 될까요?"
       lead="사람이 하나하나 확인하지 않아도 진행해요. 한 일은 작업마다 보고함에 남아요."
-      primary={{ label: "다음", enabled: valid, run: save }}
+      primary={{ label: "다음", enabled: valid, run: save, busyLabel: "정책 저장 중…" }}
       right={
         <>
           <div className={css.caption}>이런 보고가 작업마다 보고함에 쌓여요</div>
@@ -170,7 +171,7 @@ export function Step7Automation() {
     >
       {p === null ? (
         <div className={css.list}>
-          <div className={css.row}>{error ?? "정책을 읽는 중…"}</div>
+          <div className={css.row}>{error ?? <Spinner label="정책을 읽는 중…" delay={0} />}</div>
         </div>
       ) : (
         <div className={css.policy} data-part="automation-policy">

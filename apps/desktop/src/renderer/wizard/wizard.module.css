@@ -249,6 +249,53 @@
   background: var(--kb-wiz-box-bg);
 }
 
+.windowList {
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+/* 6단계 원본 칸: 칸마다 줄 여러 개 (UX1 U4) */
+.sourceList {
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.sourceLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sourceLine .input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.iconButton {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: none;
+  color: var(--kb-wiz-text);
+  border: 1px solid var(--kb-wiz-box-border);
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.iconButton:disabled {
+  opacity: 0.4;
+}
+
+/* 진행 단추 안 스피너 (UX1 U1) */
+.nextBusy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .row {
   display: flex;
   align-items: center;

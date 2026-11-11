@@ -289,3 +289,53 @@
   white-space: pre-wrap;
   color: var(--kb-fg);
 }
+
+/* 작업 활동 (UX1 U3) */
+.activity {
+  margin: 0;
+  padding: 6px 12px;
+  list-style: none;
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.activityRow {
+  display: flex;
+  gap: 10px;
+  color: var(--kb-fg);
+}
+
+.activityRow > .mono {
+  flex: none;
+  color: var(--kb-fg-muted);
+}
+
+.activityRow [data-fail="true"] {
+  color: var(--kb-wiz-warn-fg);
+}
+
+.tail {
+  padding: 6px 12px 10px;
+  border-top: 1px solid var(--kb-wiz-row-border);
+  font-size: 12px;
+}
+
+.tail summary {
+  cursor: pointer;
+  color: var(--kb-fg-muted);
+}
+
+.tailText {
+  margin: 6px 0 0;
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: var(--kb-font-mono);
+  font-size: 11px;
+  color: var(--kb-fg);
+}

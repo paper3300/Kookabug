@@ -2,6 +2,7 @@
 // 승인 카드 두 종류), 입력창(@칩·보내기/중지), 바닥 줄 "<에이전트> · ACP · 권한: <프리셋> · MCP 툴셋 N".
 // 연결 안 된 상태는 빈 화면(감지 목록·직접 입력·권한 프리셋, 시안 Setup5 압축판 U7)
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Spinner } from "../app/Spinner";
 import { client, toRpcError } from "../rpc/client";
 import { useRun } from "../run/runStore";
 import { adoptPreview, useDocuments } from "../store/documents";
@@ -560,6 +561,7 @@ function Connect() {
   const candidates = useAgent((s) => s.candidates);
   const starting = useAgent((s) => s.starting);
   const startError = useAgent((s) => s.startError);
+  const autoStarting = useAgent((s) => s.autoStarting);
   const problem = useAgent((s) => s.agentsProblem);
   const permissions = useAgent((s) => s.permissions);
   const userConflict = useAgent((s) => s.userConflict);
@@ -588,6 +590,14 @@ function Connect() {
         쓰고, 확인이 필요한 일은 이 패널에서 물어봐요.
       </p>
       {problem !== null && <div className={css.startError}>사용자 설정을 읽지 못했어요: {problem}</div>}
+      {starting !== null && (
+        <div data-part="agent-connecting" data-auto={autoStarting}>
+          <Spinner
+            label={`${agents.find((a) => a.id === starting)?.name ?? starting}에 ${autoStarting ? "자동으로 " : ""}연결하는 중…`}
+            delay={0}
+          />
+        </div>
+      )}
       <button type="button" className={css.setupLink} data-part="open-agent-setup" onClick={openAgentSetup}>
         설정 도우미 열기
       </button>

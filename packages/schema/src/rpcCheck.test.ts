@@ -30,7 +30,6 @@ test("test_method_table_tools_and_internal_methods", () => {
     "adopt.request",
     "agent.toolsets.enable",
     "agent.toolsets.get",
-    "app.launch",
     "cases.open",
     "cases.signals",
     "cases.update",

@@ -93,6 +93,8 @@ M8_DENIED |= {
 M8_DENIED |= {"job.heartbeat"}
 """M8 B5 작업 소유 연결 heartbeat (R8) — 사람만."""
 M8_DENIED |= {"project.setup.set", "local.settings.set"}
+M8_DENIED |= {"jobs.activity"}
+"""UX1 진행 중 작업의 활동 목록 — 사람 화면용 읽기."""
 """M8 B7 마법사 2·8단계 설정 쓰기 — 사람만."""
 M6_DENIED = {
     "plugins.preview",

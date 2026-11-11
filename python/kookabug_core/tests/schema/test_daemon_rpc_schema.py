@@ -158,6 +158,8 @@ TOOLS = {
             "job.end",
             "job.finish",
             "jobs.list",
+            # UX1 진행 중 작업의 활동 목록 (사람 전용 읽기)
+            "jobs.activity",
             "reports.list",
             "reports.get",
             "report.decide",
@@ -204,6 +206,7 @@ M8_B7_RENDERER = {
     "cheats.list",
     "cheats.categories.set",
     "jobs.list",
+    "jobs.activity",
     "job.end",
     "reports.list",
     "reports.get",
@@ -216,7 +219,8 @@ M8_B7_RENDERER = {
 """M8 B7이 연 렌더러 다리 (마법사·보고함, 사람 경로만). 결정(수락·되돌리기·답)은 모두 사람 전용
 메서드다. Agent만 쓰는 쓰기(`knowledge.apply`·`wiki.write`·`cases.open/update`·`adopt.request`)와
 작업 토큰 쪽(`job.begin/finish/heartbeat`·`job.note`)은 렌더러 밖에 둔다."""
-AGENT_ONLY_B3 = {"control.click", "control.key", "control.type", "app.launch"}
+AGENT_ONLY_B3 = {"control.click", "control.key", "control.type"}
+"""app.launch는 UX1부터 사람(마법사 2단계 띄우기)도 렌더러로 부른다."""
 AGENT_ONLY_M7 = {"screens.identify", "screens.save", "explore.start", "explore.end"}
 AGENT_ONLY_B2 = {
     "run.failure",

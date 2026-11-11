@@ -34,14 +34,17 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import secrets
 import threading
 import time
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any, Final, Protocol
 
+from kookabug_core.agent_job import activity
 from kookabug_core.knowledge.formats import new_id
 from kookabug_core.permissions import Principal
 from kookabug_daemon.protocol import RequestFailed
@@ -382,6 +385,30 @@ class JobRegistry:
             if job is not None:
                 job.tool_calls += 1
                 job.tools_seen.add(tool)
+
+    def record_activity(self, job_id: str, tool: str, result: str, target: str) -> None:
+        """작업 활동 목록에 도구 호출 한 줄 (UX1 U3). 못 써도 요청은 그대로다 (화면 표시용).
+        대상은 쓰기 직전 `agent.log`와 같은 가림 대상(작업 토큰 + 워크스페이스 비밀값 공급자)으로
+        검사한다 — 못 모으면 대상을 비운다. 그 작업의 토큰 원문이 이미 없으면(끝난 작업·토큰을
+        지운 뒤 늦게 도는 기록·모르는 작업) 가릴 자료가 없으니 대상을 비운다."""
+        root = Path(self.workspace)
+        if target:
+            with self._lock:
+                own = self._tokens.get(job_id)
+                tokens = list(self._tokens.values())
+            values: list[str] | None = None
+            if own is not None:
+                try:
+                    from kookabug_core.agent_job.runner import known_secrets
+
+                    values = tokens + list(known_secrets(root, os.environ))
+                except Exception:
+                    values = None
+            target = activity.mask_target(target, values)
+        try:
+            activity.append(root, job_id, tool, result, target)
+        except Exception:
+            log.debug("작업 %s 활동 기록 실패", job_id, exc_info=True)
 
     def mark_stalled(self, job_id: str, test: str) -> None:
         with self._lock:

@@ -5,6 +5,7 @@ import { ApprovalCardView } from "./AgentPanel";
 import {
   applyEvent,
   approvalButtons,
+  autoConnectStep,
   belongsToSession,
   fromEndedSession,
   pendingCount,
@@ -234,5 +235,36 @@ describe("승인 대기 수 (검수 B5 M1)", () => {
     ]);
     expect(pendingCount({ items, approvals })).toBe(3);
     expect(pendingCount({ items: [], approvals: new Map() })).toBe(0);
+  });
+});
+
+describe("프로젝트를 열 때 자동 연결 (UX1 U2)", () => {
+  const base = {
+    tried: false,
+    userEnded: false,
+    session: null,
+    starting: null,
+    agentsLoaded: true,
+    wizardOpen: false,
+    defaultAgent: "claude-code",
+    agents: [{ id: "claude-code" }],
+  };
+
+  test("기본 에이전트가 있으면 연결", () => {
+    expect(autoConnectStep(base)).toBe("connect");
+  });
+
+  test("한 번만: 해 봤거나·사람이 끊었거나·이미 붙었거나 붙는 중(마법사 5단계 저장하고 연결)이면 하지 않는다", () => {
+    expect(autoConnectStep({ ...base, tried: true })).toBe("skip");
+    expect(autoConnectStep({ ...base, userEnded: true })).toBe("skip");
+    expect(autoConnectStep({ ...base, session: { id: "s1" } })).toBe("skip");
+    expect(autoConnectStep({ ...base, starting: "claude-code" })).toBe("skip");
+  });
+
+  test("기다림: 설정을 아직 못 읽음·마법사가 떠 있음·기본 에이전트 없음·목록에 없는 기본 에이전트", () => {
+    expect(autoConnectStep({ ...base, agentsLoaded: false })).toBe("wait");
+    expect(autoConnectStep({ ...base, wizardOpen: true })).toBe("wait");
+    expect(autoConnectStep({ ...base, defaultAgent: null })).toBe("wait");
+    expect(autoConnectStep({ ...base, defaultAgent: "gone" })).toBe("wait");
   });
 });

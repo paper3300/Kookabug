@@ -1,0 +1,54 @@
+/* 진행 중 표시 (UX1 U1): 테마 토큰만 쓴다 */
+.spinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+  vertical-align: middle;
+}
+
+.ring {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--kb-border);
+  border-top-color: var(--kb-accent);
+  animation: kb-spin 0.8s linear infinite;
+}
+
+.spinner[data-size="sm"] .ring {
+  width: 10px;
+  height: 10px;
+  border-width: 2px;
+}
+
+.label {
+  white-space: nowrap;
+}
+
+.hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes kb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 움직임 줄이기: 돌지 않고 강조색 점으로 */
+@media (prefers-reduced-motion: reduce) {
+  .ring {
+    animation: none;
+    border-color: var(--kb-accent);
+    background: var(--kb-accent);
+    transform: scale(0.6);
+  }
+}

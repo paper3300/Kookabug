@@ -117,6 +117,8 @@ HUMAN_KNOWLEDGE_METHODS: Final = frozenset(
         "job.finish",
         "job.heartbeat",
         "jobs.list",
+        # UX1 진행 중 작업의 활동 목록·agent.log 꼬리 (사람 화면용 읽기)
+        "jobs.activity",
         "reports.list",
         "reports.get",
         "report.decide",

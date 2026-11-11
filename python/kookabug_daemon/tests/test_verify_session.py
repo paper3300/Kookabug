@@ -141,6 +141,11 @@ def test_agent_input_refused_during_verification(tmp_path: Path) -> None:
                         agent.call(method, params, timeout=60)
                     assert caught.value.kind == "verification_active", method
             assert manager.input_epoch() == start  # 거부된 시도는 세대를 올리지 않는다
+            # 사람의 새 게임 띄우기도 검증 중엔 막는다 (UX1 검수 M2)
+            with d.client() as ui, pytest.raises(DaemonError) as caught:
+                ui.call("app.launch", {}, timeout=60)
+            assert caught.value.kind == "verification_active"
+            assert manager.input_epoch() == start
             # 사람 실행은 막지 않지만, 그 사이 검증은 무효가 된다
             with d.client() as ui:
                 run_id = ui.call("run.start", {"path": PASS_GRAPH})["run_id"]

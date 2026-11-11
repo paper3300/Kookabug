@@ -40,6 +40,7 @@ import {
   type AgentCandidate,
   type AgentSpec,
 } from "../../agent/agentStore";
+import { Spinner } from "../../app/Spinner";
 import { SECURITY_BOUNDARY } from "../boundary";
 import { ConflictNotice } from "../Conflict";
 import { StepShell } from "../Wizard";
@@ -89,6 +90,7 @@ export function Step5Agent() {
   const mode = useWizard((s) => s.progress.mode);
   const onlyMode = mode === "only";
   const candidates = useAgent((s) => s.candidates) ?? [];
+  const detecting = useAgent((s) => s.candidates === null);
   const agents = useAgent((s) => s.agents);
   const defaultAgent = useAgent((s) => s.defaultAgent);
   const agentsProblem = useAgent((s) => s.agentsProblem);
@@ -348,7 +350,9 @@ export function Step5Agent() {
       }
       if (connect && id !== null && id !== "apikey") {
         openAgentPanel();
-        void startSession(id);
+        // 패널이 이미 그 에이전트로 붙었거나 붙는 중이면(프로젝트 열 때 자동 연결, U2) 다시 붙지 않는다
+        const s = useAgent.getState();
+        if (s.session?.agentId !== id && s.starting !== id) void startSession(id);
       }
       return true;
     });
@@ -385,7 +389,7 @@ export function Step5Agent() {
       lead="Agent가 게임 정보를 모으고, 테스트를 만들고, 실패 원인을 찾아요. 나중에 연결해도 돼요."
       primary={
         onlyMode
-          ? { label: "저장하고 연결", enabled: ready.connect, run: () => progress(true) }
+          ? { label: "저장하고 연결", enabled: ready.connect, run: () => progress(true), busyLabel: "연결 중…" }
           : { label: "다음", enabled: ready.done, run: next }
       }
       {...(onlyMode ? { extra: { label: "저장", enabled: ready.done, run: () => progress(false) } } : {})}
@@ -410,7 +414,9 @@ export function Step5Agent() {
           <div className={css.card} data-part="probe-card" data-state={probe.state}>
             <div className={css.cardHead}>
               연결 시험{probe.state !== "idle" ? ` · ${probe.name}` : ""}
-              <small>{probe.state === "ok" ? `${probe.seconds.toFixed(1)}초` : probe.state === "running" ? "시험 중…" : ""}</small>
+              <small>
+                {probe.state === "ok" ? `${probe.seconds.toFixed(1)}초` : probe.state === "running" ? <Spinner label="시험 중…" delay={0} /> : ""}
+              </small>
             </div>
             {probe.state === "idle" && <div className={css.cardRow}>Agent를 고르면 시작해요</div>}
             {probe.state !== "idle" && (
@@ -444,6 +450,7 @@ export function Step5Agent() {
         </>
       }
     >
+      {detecting && <Spinner label="설치된 Agent를 찾는 중…" />}
       <div className={css.list} role="radiogroup" aria-label="Agent" data-part="agent-list">
         {candidates.map((c) => {
           const status = candidateStatus(c);

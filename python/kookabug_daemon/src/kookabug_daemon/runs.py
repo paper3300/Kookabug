@@ -410,6 +410,9 @@ class RunManager:
         self.job_busy: Callable[[], str | None] | None = None
         """끝나지 않은 작업의 ID (`JobRegistry.active_id`) — 작업 중이면 작업 토큰 없는 Agent의
         실행·제어·재시작·게임 띄우기를 `job_active`로 거부한다 (R8: 작업 예산·종료 감독 우회)."""
+        self.fake_launch: Callable[[list[str], str | None], int] | None = None
+        """검사 전용 (숨은 가짜 플랫폼의 `launch_fake`): `app.launch`가 프로세스 대신 장면 가짜
+        게임을 띄운다 (UX1 T2 E2E — 실제 게임 없이 띄우기 → 창 잡기)."""
 
     # ---------------------------------------------------------------- 검증 세션 (M8 R7)
 
@@ -895,16 +898,26 @@ class RunManager:
         게임을 띄운다. 실행 Job 밖이다(실행이 끝나도 게임은 남는다). 시작 예약과 같은 잠금 안에서
         실행 중·예약·녹화 중이면 거부한다 (막히는 호출). PID를 돌려준다. Agent 연결이면 검증 세션
         중 거부(M8 R7), 띄우면 입력 세대를 올린다(검증 사이 게임 상태가 바뀜). 작업 판정(R8)은
-        `refuse_job_bypass`와 같다 (`principal`이 없으면 사람 UI로 본다)."""
-        agent = principal is not None and principal.kind == "agent"
+        `refuse_job_bypass`와 같다 (`principal`이 없으면 사람 UI로 본다).
+
+        새로 띄우기는 사람 연결도 막는다 (UX1 검수 M2 — 마법사 2단계 띄우기): 무인 작업이
+        `running`·`ending`이면 `job_active`, 검증 세션 중이면 `verification_active`. 사람의 입력·
+        개별 실행 개입 정책은 그대로다."""
+        human = principal is None or (principal.kind != "agent" and principal.job is None)
         with self._start_lock:
             if principal is not None:
                 self.refuse_job_bypass(principal)
-            return self._launch_locked(profile, agent=agent)
+            if human and self.job_busy is not None:
+                busy = self.job_busy()
+                if busy is not None:
+                    raise RequestFailed(
+                        "job_active", f"작업 {busy}이(가) 도는 중이라 게임을 새로 띄우지 않는다"
+                    )
+            return self._launch_locked(profile)
 
-    def _launch_locked(self, profile: str | None, *, agent: bool) -> int:
+    def _launch_locked(self, profile: str | None) -> int:
         with self._lock:
-            if agent and self._verify_holds > 0:
+            if self._verify_holds > 0:
                 raise RequestFailed(
                     "verification_active", "자동 채택 검증 실행 중이라 게임을 띄우지 않는다"
                 )
@@ -922,6 +935,11 @@ class RunManager:
             if problems:
                 raise RequestFailed("launch_failed", problems[0].message)
             command = _launch_command(workspace, options)
+            if self.fake_launch is not None:
+                pid = self.fake_launch(command.argv, command.cwd)
+                log.info("가짜 게임을 띄웠다: PID %d", pid)
+                self._input_epoch += 1
+                return pid
 
             def spawn(flags: int) -> subprocess.Popen[bytes]:
                 return subprocess.Popen(

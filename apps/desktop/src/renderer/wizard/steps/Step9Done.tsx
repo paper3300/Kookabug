@@ -73,7 +73,12 @@ export function Step9Done() {
           ? "Agent가 게임 정보를 모으는 것부터 시작할게요. 설정은 언제든 바꿀 수 있어요."
           : "Agent 없이 시작해요. 게임을 직접 해 보며 첫 테스트를 만들어 볼까요?"
       }
-      primary={{ label: first === "init" ? "Init 시작" : "Kookabug 열기", enabled: first !== "init" || initReady, run: start }}
+      primary={{
+        label: first === "init" ? "Init 시작" : "Kookabug 열기",
+        enabled: first !== "init" || initReady,
+        run: start,
+        busyLabel: first === "init" ? "Init 시작 중…" : "여는 중…",
+      }}
       note={warnings > 0 ? `경고 ${warnings}개는 설정 도우미에 남아요` : undefined}
       right={
         initReady ? (

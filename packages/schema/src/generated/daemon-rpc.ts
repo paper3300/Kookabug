@@ -780,7 +780,7 @@ export interface AgentsSetResult {
   revision: Revision;
 }
 /**
- * 게임을 띄운다 (설정 game.executable·game.args·game.cwd, 프로필 계층 포함). 실행·녹화 중이면 거부. 실행 Job 밖
+ * 게임을 띄운다 (설정 game.executable·game.args·game.cwd, 프로필 계층 포함). 실행·녹화 중이면 거부. 실행 Job 밖. 사람(마법사 2단계 띄우기)도 부른다
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "AppLaunchParams".
@@ -2747,6 +2747,47 @@ export interface Kb8JobNoteResult {
   job: string;
 }
 /**
+ * Agent가 부른 Kookabug 도구 한 번 (activity.jsonl 한 줄). 값·비밀값·긴 인자는 없다 — 대상은 경로·ID·창 제목 같은 짧은 글만
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobsActivityEntry".
+ */
+export interface Kb8JobsActivityEntry {
+  at: string;
+  /**
+   * ok 또는 오류 코드
+   */
+  result: string;
+  seq: number;
+  target: string;
+  tool: string;
+}
+/**
+ * jobs.activity (사람 전용 읽기, UX1): 작업의 활동 목록과 agent.log 꼬리. after를 주면 그 seq 뒤 줄만
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobsActivityParams".
+ */
+export interface Kb8JobsActivityParams {
+  after?: number;
+  job: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobsActivityResult".
+ */
+export interface Kb8JobsActivityResult {
+  entries: Kb8JobsActivityEntry[];
+  job: string;
+  /**
+   * 비밀값을 가린 agent.log의 마지막 줄들 (최대 200줄, 글자 그대로)
+   */
+  log_tail: string[];
+  started_at: null | string;
+  state: string;
+  used: Kb8JobUsed | null;
+}
+/**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "Kb8JobsListResult".
  */
@@ -3245,7 +3286,7 @@ export interface Methods {
   };
   "app.launch": {
     params: AppLaunchParams;
-    renderer: false;
+    renderer: true;
     result: AppLaunchResult;
     tool: "kb_app_launch";
   };
@@ -3464,6 +3505,12 @@ export interface Methods {
     renderer: false;
     result: Kb8JobNoteResult;
     tool: "kb_report_note";
+  };
+  "jobs.activity": {
+    params: Kb8JobsActivityParams;
+    renderer: true;
+    result: Kb8JobsActivityResult;
+    tool: "ui_only";
   };
   "jobs.list": {
     params: EmptyParams;

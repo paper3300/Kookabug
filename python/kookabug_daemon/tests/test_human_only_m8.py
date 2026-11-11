@@ -52,6 +52,7 @@ PARAMS: dict[str, dict[str, Any]] = {
     "job.finish": {"job": JOB},
     "job.heartbeat": {"job": JOB},
     "jobs.list": {},
+    "jobs.activity": {"job": JOB},
     "reports.list": {},
     "reports.get": {"job": JOB},
     "report.decide": {"job": JOB, "group": "g", "decision": "accept"},

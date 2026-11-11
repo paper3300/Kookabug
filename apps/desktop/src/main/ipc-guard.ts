@@ -115,6 +115,9 @@ export const RENDERER_METHODS: ReadonlySet<string> = new Set([
   "report.decide",
   "adopt.revert",
   "adoptions.list",
+  // UX1: 마법사 2단계 "띄우기"(사람 — 설정 game.*로), 진행 중 작업의 활동 목록(사람 전용 읽기)
+  "app.launch",
+  "jobs.activity",
 ]);
 
 // 주 프로세스 안에서만 쓰는 메서드. 렌더러 표면에서 뺀다. run.export는 dest(쓸 경로)를 주 프로세스의

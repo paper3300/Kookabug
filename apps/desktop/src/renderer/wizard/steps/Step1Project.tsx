@@ -85,7 +85,7 @@ export function Step1Project() {
     <StepShell
       title="프로젝트를 만들어요"
       lead="게임 하나에 프로젝트 하나예요. 테스트, 찾기 대상, 실행 기록, 지식과 위키가 이 폴더에 모여요."
-      primary={{ label: "만들기", enabled: name.trim() !== "" && parent !== "", run: create }}
+      primary={{ label: "만들기", enabled: name.trim() !== "" && parent !== "", run: create, busyLabel: "만드는 중…" }}
       right={
         <div className={css.card}>
           <div className={css.cardHead}>만들어질 폴더</div>

@@ -2,6 +2,7 @@
 // 고치지 않고 시작 화면(Welcome)과 상태 바(ShortWizardWatch)에서 띄운다 — 둘 중 하나만 그려져 있다
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { Spinner, useDelayed } from "../app/Spinner";
 import { WindowControls } from "../app/WindowControls";
 import { EnterIcon } from "../theme/icons";
 import { StorageBadge } from "./StorageBadge";
@@ -35,6 +36,8 @@ export interface Primary {
   enabled: boolean;
   /** 누르면 할 일. true면 완료하고 다음 단계로 (없으면 바로 다음) */
   run?: () => Promise<boolean> | boolean;
+  /** 도는 동안 단추 글 (기본 "저장 중…") */
+  busyLabel?: string;
 }
 
 /** 단계 하나의 틀: 머리(번호·저장 위치)·제목·안내·본문 / 오른쪽 그림 / 아래 이전·진행 점·건너뛰기·다음 */
@@ -64,11 +67,15 @@ export function StepShell({
   const info = stepInfo(progress.step);
   const optional = canSkip(progress);
   const enabled = primary.enabled && !busy;
+  // 진행 표시는 짧은 일(200ms 안)에 깜빡이지 않게 늦게 보인다 (U1)
+  const [busyButton, setBusyButton] = useState<"primary" | "extra" | null>(null);
+  const showBusy = useDelayed(busy);
 
   const onPrimary = async (button: Primary = primary) => {
     if (!button.enabled || busy || inFlight.current) return;
     inFlight.current = true;
     setBusy(true);
+    setBusyButton(button === primary ? "primary" : "extra");
     try {
       const go = button.run === undefined ? true : await button.run();
       if (!go) return;
@@ -77,8 +84,19 @@ export function StepShell({
     } finally {
       inFlight.current = false;
       setBusy(false);
+      setBusyButton(null);
     }
   };
+
+  const label = (button: Primary, which: "primary" | "extra") =>
+    showBusy && busyButton === which ? (
+      <span className={css.nextBusy}>
+        <Spinner size="sm" delay={0} />
+        {button.busyLabel ?? "저장 중…"}
+      </span>
+    ) : (
+      button.label
+    );
 
   // ↵ = 다음 (입력 칸 안의 Enter는 그 칸의 몫)
   useEffect(() => {
@@ -143,7 +161,7 @@ export function StepShell({
                 disabled={!extra.enabled || busy}
                 onClick={() => void onPrimary(extra)}
               >
-                {extra.label}
+                {label(extra, "extra")}
               </button>
             )}
             <button
@@ -153,7 +171,7 @@ export function StepShell({
               disabled={!enabled || !canAdvance(progress, true)}
               onClick={() => void onPrimary()}
             >
-              {busy ? "잠시만요…" : primary.label} <EnterIcon />
+              {label(primary, "primary")} <EnterIcon />
             </button>
           </div>
         </div>

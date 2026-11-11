@@ -1,6 +1,8 @@
 // 보고함 탭 (M8 계획 3.17 "보고함 UI(최소)", KB문서 12장). 목록(작업·상태·묶음 수) / 상세(묶음별 항목, 되돌리기·
 // 묶음 수락/거절, 질문 답하기, 증거 묶음·보고서 파일 열기). 머리에 보안 경계 문구(3.15)
 import { useEffect, useState } from "react";
+import { Spinner } from "../app/Spinner";
+import { client, toRpcError } from "../rpc/client";
 import { openFileTab } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
 import { SECURITY_BOUNDARY } from "../wizard/boundary";
@@ -23,6 +25,16 @@ import {
   type ReportItem,
   type Unknown,
 } from "./reportsStore";
+import {
+  ACTIVITY_POLL_MS,
+  activityHead,
+  activityLive,
+  activityTime,
+  collapseActivity,
+  mergeActivity,
+  type ActivityEntry,
+  type ActivityUsed,
+} from "./activity";
 import css from "./reports.module.css";
 
 function shortTime(iso: string): string {
@@ -216,6 +228,89 @@ function Detail({ report }: { report: Report }) {
   );
 }
 
+/**
+ * 작업 활동 (UX1 U3): Kookabug가 아는 단계(Agent가 부른 kb_* 도구)·머리(쓴 시간·실행 수·도구 호출 수)·접힌 Agent 출력 꼬리.
+ * 진행 중일 때만 1.5초마다 `jobs.activity`를 이어 읽는다. Agent 출력은 글로만 그린다(HTML 아님)
+ */
+export function Activity({ job, state }: { job: string; state: string }) {
+  const [entries, setEntries] = useState<ActivityEntry[]>([]);
+  const [tail, setTail] = useState<string[]>([]);
+  const [used, setUsed] = useState<ActivityUsed | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const live = activityLive(state);
+
+  useEffect(() => {
+    let alive = true;
+    let after = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    setEntries([]);
+    setTail([]);
+    setUsed(null);
+    setLoaded(false);
+    setError(null);
+    const tick = async () => {
+      try {
+        const r = await client().call("jobs.activity", { job, after });
+        if (!alive) return;
+        const got = r.entries as ActivityEntry[];
+        if (got.length > 0) after = got[got.length - 1].seq;
+        setEntries((prev) => mergeActivity(prev, got));
+        setTail(r.log_tail);
+        setUsed((r.used as ActivityUsed | null) ?? null);
+        setError(null);
+      } catch (err) {
+        if (alive) setError(toRpcError(err).message);
+      }
+      if (!alive) return;
+      setLoaded(true);
+      if (live) timer = setTimeout(() => void tick(), ACTIVITY_POLL_MS);
+    };
+    void tick();
+    return () => {
+      alive = false;
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [job, live]);
+
+  // 끝난 작업은 남은 활동이 있을 때만 (옛 작업·연결 시험은 활동 파일이 없다)
+  if (!live && (!loaded || error !== null || (entries.length === 0 && tail.length === 0))) return null;
+  return (
+    <section className={css.group} data-part="job-activity" data-live={live}>
+      <div className={css.groupHead}>
+        <span className={css.groupTitle}>{live ? "지금 하는 일" : "한 일"}</span>
+        {live && <Spinner size="sm" label="진행 중" delay={0} />}
+        <span className={css.muted} data-part="activity-head">
+          {activityHead(used)}
+        </span>
+      </div>
+      {error !== null && <p className={css.muted}>활동을 읽지 못했어요: {error}</p>}
+      {loaded && entries.length === 0 && error === null && (
+        <p className={css.muted}>{live ? "Agent가 아직 Kookabug 도구를 부르지 않았어요." : "남은 활동이 없어요."}</p>
+      )}
+      {entries.length > 0 && (
+        <ol className={css.activity} data-part="activity-list">
+          {collapseActivity(entries)
+            .reverse()
+            .map((e) => (
+              <li key={e.seq} data-tool={e.tool} data-result={e.result} className={css.activityRow}>
+                <span className={css.mono}>{activityTime(e.at)}</span>
+                <span data-fail={e.result !== "ok"}>
+                  {e.text}
+                  {e.count > 1 && <span className={css.muted}> ×{e.count}</span>}
+                </span>
+              </li>
+            ))}
+        </ol>
+      )}
+      <details className={css.tail} data-part="agent-log-tail">
+        <summary>Agent 출력 (마지막 {tail.length}줄 · 비밀값은 가림)</summary>
+        <pre className={css.tailText}>{tail.join("\n")}</pre>
+      </details>
+    </section>
+  );
+}
+
 export function ReportsTab() {
   const rows = useReports((s) => s.rows);
   const loaded = useReports((s) => s.loaded);
@@ -225,6 +320,7 @@ export function ReportsTab() {
   const error = useReports((s) => s.error);
   const lastCli = useReports((s) => s.lastCli);
   const connected = useWorkspace((s) => s.daemon.status === "connected");
+  const selectedRow = rows.find((r) => r.job === selected);
 
   useEffect(() => {
     initReports();
@@ -288,12 +384,16 @@ export function ReportsTab() {
           })}
         </ul>
         <div className={css.pane}>
+          {selectedRow !== undefined && activityLive(selectedRow.state) && <Activity job={selectedRow.job} state={selectedRow.state} />}
           {detail !== null ? (
             <Detail report={detail} />
           ) : (
             <p className={css.muted}>
-              {selected !== null && rows.find((r) => r.job === selected)?.hasReport === false ? "작업이 끝나면 보고가 생겨요." : "보고를 고르세요."}
+              {selectedRow?.hasReport === false ? "작업이 끝나면 보고가 생겨요." : selected === null ? "보고를 고르세요." : ""}
             </p>
+          )}
+          {selectedRow !== undefined && !activityLive(selectedRow.state) && selectedRow.playbook !== "probe" && (
+            <Activity job={selectedRow.job} state={selectedRow.state} />
           )}
         </div>
       </div>

@@ -31,12 +31,13 @@ from websockets.datastructures import Headers
 from websockets.exceptions import ConnectionClosed
 from websockets.http11 import Request, Response
 
+from kookabug_core.agent_job import activity
 from kookabug_core.diagnostics import Diagnostic
 from kookabug_core.permissions import TOOLSETS, Principal
 from kookabug_daemon.approvals import ApprovalBroker
 from kookabug_daemon.methods import Call, DaemonContext, MethodSpec
 from kookabug_daemon.methods.session import InvalidHello, hello
-from kookabug_daemon.methods.tools import Authorizer
+from kookabug_daemon.methods.tools import METHOD_TOOLS, Authorizer
 from kookabug_daemon.protocol import (
     INTERNAL_ERROR,
     INVALID_PARAMS,
@@ -567,6 +568,8 @@ class Transport:
                 return
             fail(METHOD_NOT_FOUND, f"이 daemon에는 아직 {method}가 없다")
             return
+        arg = ""
+        outcome = "ok"
         try:
             if self.host.shutting_down:
                 raise _shutting_down()
@@ -587,18 +590,42 @@ class Transport:
                 await self.host.approvals.authorize(call, arg)
             result = await spec.handler(call)
         except RequestFailed as failed:
+            outcome = failed.code
             conn.send(error_message(request_id, **_fields(failed)))
             return
         except InvalidParams as exc:
+            outcome = "invalid_params"
             fail(INVALID_PARAMS, exc.message, exc.data or None)
             return
         except asyncio.CancelledError:
+            outcome = "cancelled"
             raise
         except Exception:
+            outcome = "internal_error"
             log.exception("연결 %d: %s 처리 중 오류", conn.number, method)
             fail(INTERNAL_ERROR, f"{method} 처리 중 daemon 내부 오류")
             return
+        finally:
+            self._note_job_call(conn, method, params, arg, outcome)
         self._respond(conn, request_id, method, result)
+
+    def _note_job_call(
+        self, conn: Connection, method: str, params: Mapping[str, Any], arg: str, outcome: str
+    ) -> None:
+        """작업 토큰 연결의 Kookabug 도구 호출을 작업 활동 목록에 남긴다 (UX1 U3, 사람 화면용)."""
+        principal = conn.principal
+        jobs = getattr(self.host.authorizer, "jobs", None)
+        if principal is None or principal.job is None or jobs is None:
+            return
+        tool = METHOD_TOOLS.get(method, "")
+        if not tool.startswith("kb_"):
+            return
+        target = activity.short_target(method, params, arg)
+        job = principal.job
+        # 파일 쓰기는 이벤트 루프 밖에서 (응답을 기다리게 하지 않는다)
+        asyncio.get_running_loop().run_in_executor(
+            None, jobs.record_activity, job, tool, outcome, target
+        )
 
     def _respond(self, conn: Connection, request_id: int, method: str, result: Any) -> None:
         if problems := result_problems(method, result):

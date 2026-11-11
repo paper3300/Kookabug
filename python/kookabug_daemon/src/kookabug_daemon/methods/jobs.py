@@ -18,10 +18,10 @@ from typing import Any, Final
 
 from kookabug_core import adopt as rules
 from kookabug_core import playbooks
-from kookabug_core.agent_job import jobdir
+from kookabug_core.agent_job import activity, jobdir
 from kookabug_core.agent_job import report as reports
 from kookabug_core.knowledge.formats import KnowledgeError
-from kookabug_core.knowledge.sources import check_sources
+from kookabug_core.knowledge.sources import check_sources, source_path, sources_of
 from kookabug_core.workspace import Workspace
 from kookabug_daemon.jobs import DEFAULT_TTL_S
 from kookabug_daemon.methods import Call, MethodSpec
@@ -149,6 +149,41 @@ async def _list(call: Call) -> dict[str, Any]:
     return await asyncio.to_thread(_list_sync, call)
 
 
+def _activity_sync(call: Call) -> dict[str, Any]:
+    """진행 중 작업의 활동 목록·agent.log 꼬리 (UX1 U3, 사람 전용 읽기). 작업 ID는 스키마 형식 +
+    이 워크스페이스의 작업(살아 있거나 `job.json`이 있는 것)만. 경로는 `jobdir.job_path` 경계."""
+    job_id = str(call.params["job"])
+    root = call.daemon.root
+    live = call.daemon.jobs.get(job_id)
+    doc = jobdir.read_job(root, job_id)
+    if live is None and doc is None:
+        raise RequestFailed("not_found", "모르는 작업이다", path=job_id)
+    head: dict[str, Any] = {
+        "state": None if doc is None else doc.get("state"),
+        "started_at": None if doc is None else doc.get("started_at"),
+        "used": None if doc is None else doc.get("used"),
+    }
+    if live is not None:
+        described = call.daemon.jobs.describe(live)
+        head = {k: described.get(k, head[k]) for k in head}
+    after = int(call.params.get("after") or 0)
+    used = head["used"]
+    return {
+        "job": job_id,
+        "state": str(head["state"] or "-"),
+        "started_at": None if head["started_at"] is None else str(head["started_at"]),
+        "used": used
+        if isinstance(used, dict) and {"minutes", "runs", "tool_calls"} <= used.keys()
+        else None,
+        "entries": activity.read(root, job_id, after),
+        "log_tail": activity.log_tail(root, job_id),
+    }
+
+
+async def _activity(call: Call) -> dict[str, Any]:
+    return await asyncio.to_thread(guarded, _activity_sync, call)
+
+
 async def _reports_list(call: Call) -> dict[str, Any]:
     found = await asyncio.to_thread(guarded, reports.list_reports, call.daemon.root)
     return {"reports": found}
@@ -180,9 +215,25 @@ async def _decide(call: Call) -> dict[str, Any]:
     return done
 
 
+def _source_location(workspace: Workspace, state: dict[str, Any]) -> dict[str, Any]:
+    """원본 상태 한 줄에 종류·이름·위치를 더한다 (UX1 U4): 같은 종류 원본이 여럿이어도
+    (`design_doc`·`design_doc_2`) Agent가 모두 찾아 읽게. 위치는 URL 또는 이 PC 경로(팀 상대 경로는
+    워크스페이스 기준)."""
+    found = next((s for s in sources_of(workspace) if s.get("id") == state.get("id")), None)
+    if found is None:
+        return {}
+    extra: dict[str, Any] = {"kind": found.get("kind"), "title": found.get("title")}
+    path = source_path(workspace, found)
+    if path is not None:
+        extra["path"] = str(path)
+    elif isinstance(found.get("url"), str):
+        extra["url"] = found["url"]
+    return extra
+
+
 def _qa_info_sync(call: Call) -> dict[str, Any]:
     workspace = Workspace.open(call.daemon.root)
-    sources = check_sources(workspace)
+    sources = [{**s, **_source_location(workspace, s)} for s in check_sources(workspace)]
     automation = workspace.automation()
     warnings: list[str] = []
     if not automation.get("forbidden"):
@@ -211,6 +262,7 @@ METHODS: Final[dict[str, MethodSpec]] = {
     "job.heartbeat": MethodSpec(_heartbeat),
     "job.note": MethodSpec(_note),
     "jobs.list": MethodSpec(_list),
+    "jobs.activity": MethodSpec(_activity),
     "reports.list": MethodSpec(_reports_list),
     "reports.get": MethodSpec(_reports_get),
     "report.decide": MethodSpec(_decide),

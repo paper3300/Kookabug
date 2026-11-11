@@ -3,7 +3,8 @@ import type { ResultOf } from "@kookabug/schema";
 import { create } from "zustand";
 import type { DaemonState, OpenResult, OutputLine, RecentProject } from "../../preload/bridge";
 import type { TreeEntry } from "../explorer/tree";
-import { agentConnected, initAgent, resetAgent } from "../agent/agentStore";
+import { agentConnected, initAgent, resetAgent, tryAutoConnect } from "../agent/agentStore";
+import { useWizard } from "../wizard/wizardStore";
 import { client, toRpcError } from "../rpc/client";
 import { SessionRecovery } from "../rpc/recovery";
 import { breakpointModel } from "../debug/breakpoints";
@@ -172,6 +173,23 @@ async function onDaemonState(state: DaemonState): Promise<void> {
     // 화면 지도·탐색 세션·카드 배치 (M7 B5 — 상태 바 탐색 표시·액티비티 점)
     mapConnected(),
   ]);
+  if (useWorkspace.getState().root === state.root) autoConnectAgent();
+}
+
+/**
+ * 프로젝트를 연 뒤 기본 에이전트로 에이전트 패널을 한 번 붙인다 (UX1 U2). 마법사가 떠 있으면 닫힌 뒤에 다시 본다.
+ * 무인 작업이 도는 중이면 붙지 않는다
+ */
+function autoConnectAgent(): void {
+  const ws = useWorkspace.getState();
+  if (ws.daemon.status !== "connected" || ws.root === null) return;
+  void tryAutoConnect({
+    wizardOpen: useWizard.getState().open,
+    jobActive: async () => {
+      const { jobs } = await client().call("jobs.list", {});
+      return jobs.some((j) => j.state === "running" || j.state === "ending");
+    },
+  });
 }
 
 async function loadRegistry(): Promise<void> {
@@ -224,6 +242,10 @@ export async function initWorkspace(): Promise<void> {
   client().on("debug.breakpoints.changed", (p) => breakpointModel.changed(p));
   // 에이전트 패널 세션·확인 요청·agent 연결 목록 (M5 B5)
   initAgent();
+  // 마법사가 닫히면 미뤄 둔 자동 연결을 다시 본다 (UX1 U2 — 5단계에서 기본 에이전트를 정했을 수 있다)
+  useWizard.subscribe((s, prev) => {
+    if (prev.open && !s.open) autoConnectAgent();
+  });
   // 화면 지도 변경·탐색 세션 변경·실행 끝 (M7 B5)
   initMap();
   client().on("agent.protect_corrupt", (p) =>

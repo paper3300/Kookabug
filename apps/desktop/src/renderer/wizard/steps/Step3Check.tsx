@@ -1,6 +1,7 @@
 // 3단계 환경 점검 (시안 Setup3Check): 주 프로세스가 `kookabug doctor --json`을 돌린다. 끝나면 "계속"이 켜진다 —
 // 경고가 있어도 진행하고 완료 요약에 남긴다 (KB문서 13장). 항목 설명(detail)에는 이 PC 경로가 있어 보이지 않는다
 import { useEffect, useState } from "react";
+import { Spinner } from "../../app/Spinner";
 import { StepShell } from "../Wizard";
 import { setReady, setStepWarnings, setSummary } from "../wizardStore";
 import { appErrorText } from "./Step1Project";
@@ -83,7 +84,11 @@ export function Step3Check() {
       }
     >
       <div className={css.list} data-part="check-list">
-        {checks === null && error === null && <div className={css.row}>점검하는 중… (몇 초 걸려요)</div>}
+        {checks === null && error === null && (
+          <div className={css.row}>
+            <Spinner label="점검하는 중… (몇 초 걸려요)" delay={0} />
+          </div>
+        )}
         {error !== null && <div className={css.row}>점검을 돌리지 못했어요: {error}</div>}
         {checks?.map((c) => (
           <div key={c.id} className={css.row} data-check={c.id} data-ok={c.ok}>

@@ -433,12 +433,13 @@ def test_non_job_agent_refused_during_job(ws: Path, daemon: ThreadDaemon) -> Non
         assert refused(panel, "control.click", click) == "job_active"
         panel.call("explore.end", {})
         assert daemon.daemon.run_manager.active_run() is None
-        # 양성 대조: 작업 중에도 사람은 실행·게임 띄우기를 그대로 한다
+        # 양성 대조: 작업 중에도 사람은 실행을 그대로 한다. 게임을 새로 띄우기는 사람도 막는다
+        # (UX1 검수 M2 — 마법사 2단계 띄우기)
         with daemon.client() as ui:
             run_id = ui.call("run.start", {"path": "tests/pass.graph.json"})["run_id"]
             outcome = daemon.daemon.run_manager.wait_outcome(run_id, 120)
             assert outcome is not None and outcome.verdict == "pass"
-            assert refused(ui, "app.launch", {}) == "launch_failed"  # game.executable 없음
+            assert refused(ui, "app.launch", {}) == "job_active"
         # 양성 대조: 작업이 끝난 뒤에는 같은 연결이 된다
         with daemon.client() as ui:
             ended = ui.call("job.finish", {"job": job["job"]}, timeout=300)

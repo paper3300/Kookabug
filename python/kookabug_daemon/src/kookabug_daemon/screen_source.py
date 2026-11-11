@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -147,15 +147,32 @@ class FakeSource:
         scenario: Path,
         state_file: Path | None,
         draw_fields: Mapping[str, Sequence[str]] | None = None,
+        *,
+        launches: bool = False,
     ) -> None:
         self.scenario = scenario
         self.state_file = state_file
         self.draw_fields = {k: tuple(v) for k, v in (draw_fields or {}).items()}
+        self._launched: list[tuple[str, tuple[str, ...]]] = []
+        """`app.launch`로 띄운 가짜 게임 (읽을 때마다 같은 순서로 다시 띄워 HWND·PID가 같다)."""
+        self.fake_launch: Callable[[list[str], str | None], int] | None = (
+            self._launch if launches else None
+        )
+        """검사 전용 (사양 `launch_fake: true`): `app.launch`가 이 원천에 가짜 게임을 띄운다
+        (UX1 T2)."""
 
     def _load(self) -> Any:
         from kookabug_core.engine.scenario import FakeScenario
 
-        return FakeScenario.load(self.scenario, state_file=self.state_file)
+        scenario = FakeScenario.load(self.scenario, state_file=self.state_file)
+        for path, args in self._launched:
+            scenario.launch_game(path, args)
+        return scenario
+
+    def _launch(self, argv: list[str], cwd: str | None) -> int:
+        del cwd
+        self._launched.append((argv[0], tuple(argv[1:])))
+        return int(self._load().games()[-1].window.pid)
 
     def windows(self) -> list[dict[str, Any]]:
         scenario = self._load()
@@ -256,4 +273,5 @@ def make_source(platform_fake: Path | None) -> ScreenSource:
         (base / str(data["scenario"])).resolve(),
         None if state is None else (base / str(state)).resolve(),
         draw if isinstance(draw, dict) else None,
+        launches=data.get("launch_fake") is True,
     )

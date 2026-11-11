@@ -95,6 +95,10 @@ interface AgentState {
   userBase: { revision: string | null } | null;
   /** 자기 agents.set이 마지막에 저장한 기본 에이전트와 그 revision (뒤이은 자기 permissions.set만 revision을 이어 받는다) */
   ownDefault: { agentId: string | null; revision: string } | null;
+  /** 이 프로젝트를 연 동안 사람이 패널에서 연결을 끊었다 (그러면 자동 연결하지 않는다, UX1 U2) */
+  userEnded: boolean;
+  /** 지금 연결이 프로젝트를 열 때의 자동 연결이다 (패널에 "기본 에이전트에 연결하는 중" 표시) */
+  autoStarting: boolean;
 }
 
 const EMPTY: Omit<
@@ -112,6 +116,8 @@ const EMPTY: Omit<
   leaseBlocked: null,
   jobBlocked: false,
   userConflict: false,
+  userEnded: false,
+  autoStarting: false,
 };
 
 export const useAgent = create<AgentState>(() => ({
@@ -542,6 +548,7 @@ export function resetAgent(): void {
     void app().agentStop(session.id).catch(() => {});
   }
   useAgent.setState({ ...EMPTY, approvals: new Map(), connections: [], permissions: null, candidates: null });
+  resetAutoConnect();
 }
 
 export async function startSession(agentId: string): Promise<boolean> {
@@ -656,8 +663,69 @@ export async function endSession(): Promise<void> {
   const { session } = useAgent.getState();
   if (session === null) return;
   stopping = session.id;
-  useAgent.setState({ session: null, items: [], leaseBlocked: null, jobBlocked: false });
+  useAgent.setState({ session: null, items: [], leaseBlocked: null, jobBlocked: false, userEnded: true });
   await app().agentStop(session.id).catch(() => {});
+}
+
+// ── 프로젝트를 열 때 기본 에이전트로 자동 연결 (UX1 U2) ─────────────────────
+
+export type AutoConnectStep = "connect" | "wait" | "skip";
+
+/**
+ * 자동 연결 판정 (프로젝트를 열 때마다 한 번):
+ * - skip: 이미 해 봤음·사람이 이 프로젝트에서 연결을 끊었음·이미 붙었거나 붙는 중(마법사 5단계 "저장하고 연결" 포함)
+ * - wait: 사용자 설정을 아직 못 읽었음·마법사가 떠 있음·기본 에이전트가 없거나 목록에 없음 (마법사가 닫힐 때 다시 본다)
+ * - connect: 기본 에이전트로 붙는다 (무인 작업 중인지는 호출자가 그다음에 본다)
+ */
+export function autoConnectStep(s: {
+  tried: boolean;
+  userEnded: boolean;
+  session: unknown;
+  starting: string | null;
+  agentsLoaded: boolean;
+  wizardOpen: boolean;
+  defaultAgent: string | null;
+  agents: readonly { id: string }[];
+}): AutoConnectStep {
+  if (s.tried || s.userEnded || s.session !== null || s.starting !== null) return "skip";
+  if (!s.agentsLoaded || s.wizardOpen) return "wait";
+  if (s.defaultAgent === null || !s.agents.some((a) => a.id === s.defaultAgent)) return "wait";
+  return "connect";
+}
+
+let autoTried = false;
+
+/**
+ * 자동 연결을 해 본다 (daemon에 붙은 뒤·마법사가 닫힌 뒤). 실패하면 지금의 연결 화면과 오류 글로 돌아가고 다시 시도하지 않는다.
+ * `jobActive`가 true면(무인 작업 중) 하지 않는다
+ */
+export async function tryAutoConnect(deps: { wizardOpen: boolean; jobActive: () => Promise<boolean> }): Promise<AutoConnectStep> {
+  const s = useAgent.getState();
+  const step = autoConnectStep({ ...s, tried: autoTried, wizardOpen: deps.wizardOpen });
+  if (step === "skip") autoTried = true;
+  if (step !== "connect") return step;
+  autoTried = true;
+  const agentId = s.defaultAgent!;
+  let busy = true;
+  try {
+    busy = await deps.jobActive();
+  } catch {
+    busy = true; // 작업 상태를 모르면 붙지 않는다 (작업 밖 Agent가 작업을 막지 않게)
+  }
+  const now = useAgent.getState();
+  if (busy || now.session !== null || now.starting !== null || now.userEnded) return "skip";
+  useAgent.setState({ autoStarting: true });
+  try {
+    await startSession(agentId);
+  } finally {
+    useAgent.setState({ autoStarting: false });
+  }
+  return "connect";
+}
+
+/** 프로젝트가 바뀌면 다시 한 번 할 수 있다 */
+export function resetAutoConnect(): void {
+  autoTried = false;
 }
 
 export async function sendPrompt(): Promise<void> {

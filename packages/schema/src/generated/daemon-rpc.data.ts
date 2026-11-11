@@ -433,7 +433,7 @@ export const daemonRpcSchema: unknown = {
     },
     "AppLaunchParams": {
       "additionalProperties": false,
-      "description": "게임을 띄운다 (설정 game.executable·game.args·game.cwd, 프로필 계층 포함). 실행·녹화 중이면 거부. 실행 Job 밖",
+      "description": "게임을 띄운다 (설정 game.executable·game.args·game.cwd, 프로필 계층 포함). 실행·녹화 중이면 거부. 실행 Job 밖. 사람(마법사 2단계 띄우기)도 부른다",
       "properties": {
         "profile": {
           "type": [
@@ -3268,6 +3268,107 @@ export const daemonRpcSchema: unknown = {
       "title": "Kb8JobUsed",
       "type": "object"
     },
+    "Kb8JobsActivityEntry": {
+      "additionalProperties": false,
+      "description": "Agent가 부른 Kookabug 도구 한 번 (activity.jsonl 한 줄). 값·비밀값·긴 인자는 없다 — 대상은 경로·ID·창 제목 같은 짧은 글만",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "result": {
+          "description": "ok 또는 오류 코드",
+          "type": "string"
+        },
+        "seq": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "target": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "at",
+        "result",
+        "seq",
+        "target",
+        "tool"
+      ],
+      "title": "Kb8JobsActivityEntry",
+      "type": "object"
+    },
+    "Kb8JobsActivityParams": {
+      "additionalProperties": false,
+      "description": "jobs.activity (사람 전용 읽기, UX1): 작업의 활동 목록과 agent.log 꼬리. after를 주면 그 seq 뒤 줄만",
+      "properties": {
+        "after": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "job": {
+          "pattern": "^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job"
+      ],
+      "title": "Kb8JobsActivityParams",
+      "type": "object"
+    },
+    "Kb8JobsActivityResult": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/Kb8JobsActivityEntry"
+          },
+          "type": "array"
+        },
+        "job": {
+          "type": "string"
+        },
+        "log_tail": {
+          "description": "비밀값을 가린 agent.log의 마지막 줄들 (최대 200줄, 글자 그대로)",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "started_at": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "state": {
+          "type": "string"
+        },
+        "used": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Kb8JobUsed"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "entries",
+        "job",
+        "log_tail",
+        "started_at",
+        "state",
+        "used"
+      ],
+      "title": "Kb8JobsActivityResult",
+      "type": "object"
+    },
     "Kb8JobsListResult": {
       "additionalProperties": false,
       "properties": {
@@ -4610,7 +4711,7 @@ export const daemonRpcSchema: unknown = {
               "$ref": "#/$defs/AppLaunchParams"
             },
             "renderer": {
-              "const": false
+              "const": true
             },
             "result": {
               "$ref": "#/$defs/AppLaunchResult"
@@ -5481,6 +5582,30 @@ export const daemonRpcSchema: unknown = {
             },
             "tool": {
               "const": "kb_report_note"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "jobs.activity": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/Kb8JobsActivityParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/Kb8JobsActivityResult"
+            },
+            "tool": {
+              "const": "ui_only"
             }
           },
           "required": [
@@ -7776,6 +7901,7 @@ export const daemonRpcSchema: unknown = {
         "job.end",
         "job.finish",
         "jobs.list",
+        "jobs.activity",
         "reports.list",
         "reports.get",
         "report.decide",

@@ -123,7 +123,7 @@ class AgentsDetectResult(BaseModel):
 
 class AppLaunchParams(BaseModel):
     """
-    게임을 띄운다 (설정 game.executable·game.args·game.cwd, 프로필 계층 포함). 실행·녹화 중이면 거부. 실행 Job 밖
+    게임을 띄운다 (설정 game.executable·game.args·game.cwd, 프로필 계층 포함). 실행·녹화 중이면 거부, 무인 작업(running·ending)·검증 세션 중이면 사람 연결도 job_active·verification_active. 실행 Job 밖. 사람(마법사 2단계 띄우기)도 부른다
     """
 
     model_config = ConfigDict(
@@ -1087,6 +1087,48 @@ class Kb8JobUsed(BaseModel):
     tool_calls: Annotated[int, Field(ge=0)]
 
 
+class Kb8JobsActivityEntry(BaseModel):
+    """
+    Agent가 부른 Kookabug 도구 한 번 (activity.jsonl 한 줄). 값·비밀값·긴 인자는 없다 — 대상은 경로·ID·창 제목 같은 짧은 글만
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    at: str
+    result: Annotated[str, Field(description="ok 또는 오류 코드")]
+    seq: Annotated[int, Field(ge=1)]
+    target: str
+    tool: str
+
+
+class Kb8JobsActivityParams(BaseModel):
+    """
+    jobs.activity (사람 전용 읽기, UX1): 작업의 활동 목록과 agent.log 꼬리. after를 주면 그 seq 뒤 줄만
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    after: Annotated[int | None, Field(ge=0)] = None
+    job: Annotated[str, Field(pattern="^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+
+
+class Kb8JobsActivityResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    entries: list[Kb8JobsActivityEntry]
+    job: str
+    log_tail: Annotated[
+        list[str],
+        Field(description="비밀값을 가린 agent.log의 마지막 줄들 (최대 200줄, 글자 그대로)"),
+    ]
+    started_at: str | None
+    state: str
+    used: Kb8JobUsed | None
+
+
 class Kb8JobsListResult(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1556,7 +1598,7 @@ class AppLaunch(BaseModel):
         extra="forbid",
     )
     params: AppLaunchParams
-    renderer: Literal[False]
+    renderer: Literal[True]
     result: AppLaunchResult
     tool: Literal["kb_app_launch"]
 
@@ -1739,6 +1781,16 @@ class JobNote(BaseModel):
     renderer: Literal[False]
     result: Kb8JobNoteResult
     tool: Literal["kb_report_note"]
+
+
+class JobsActivity(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Kb8JobsActivityParams
+    renderer: Literal[True]
+    result: Kb8JobsActivityResult
+    tool: Literal["ui_only"]
 
 
 class JobsList(BaseModel):
@@ -7119,6 +7171,7 @@ class Methods(BaseModel):
     job_finish: Annotated[JobFinish, Field(alias="job.finish")]
     job_heartbeat: Annotated[JobHeartbeat, Field(alias="job.heartbeat")]
     job_note: Annotated[JobNote, Field(alias="job.note")]
+    jobs_activity: Annotated[JobsActivity, Field(alias="jobs.activity")]
     jobs_list: Annotated[JobsList, Field(alias="jobs.list")]
     knowledge_apply: Annotated[KnowledgeApply, Field(alias="knowledge.apply")]
     knowledge_get: Annotated[KnowledgeGet, Field(alias="knowledge.get")]

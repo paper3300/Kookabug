@@ -308,6 +308,7 @@ class Daemon:
         self._run_manager.job_gate = self.jobs.require_running
         self._run_manager.job_busy = self.jobs.active_id
         self._run_manager.job_basis = self.jobs.basis_of
+        self._run_manager.fake_launch = getattr(self.screen_source, "fake_launch", None)
         self._runs: RunsLike = runs or self._run_manager
         # 상태 폴더는 runner에 넘기는 환경으로 정한다 (판정만 하는 서비스 대역에는 감독자가 없다)
         supervisor = getattr(self.service, "supervisor", None)
