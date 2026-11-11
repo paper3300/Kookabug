@@ -433,7 +433,7 @@ export const daemonRpcSchema: unknown = {
     },
     "AppLaunchParams": {
       "additionalProperties": false,
-      "description": "게임을 띄운다 (설정 game.executable·game.args·game.cwd, 프로필 계층 포함). 실행·녹화 중이면 거부. 실행 Job 밖. 사람(마법사 2단계 띄우기)도 부른다",
+      "description": "게임을 띄운다 (설정 game.executable·game.args·game.cwd, 프로필 계층 포함). 실행·녹화 중이면 거부, 무인 작업(running·ending)·검증 세션 중이면 사람 연결도 job_active·verification_active. 실행 Job 밖. 사람(마법사 2단계 띄우기)도 부른다",
       "properties": {
         "profile": {
           "type": [
