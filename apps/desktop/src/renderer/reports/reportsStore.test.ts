@@ -13,6 +13,7 @@ import {
   openQuestions,
   revertable,
   sendAnswers,
+  SETTING_LABEL,
   settingAcceptable,
   settingCurrentText,
   settingValueText,
@@ -190,6 +191,10 @@ describe("설정 바꾸기 제안 (UX2 C)", () => {
     expect(settingCurrentText("sources.add", ["a", "b"])).toBe("지금 2개");
     expect(settingValueText("automation.forbidden.add", { kind: "text", value: "결제" })).toBe('문구 "결제"');
     expect(settingValueText("cheats.categories.add", { id: "qa_only", title: "QA 전용", unattended: false })).toBe("QA 전용 (qa_only) · 무인 안 함");
+    // UX3 읽기 허용 폴더 추가: 폴더 경로 한 줄, 현재 값은 개수
+    expect(settingValueText("agent.read_roots.add", "D:/Tools/Launch")).toBe("D:/Tools/Launch");
+    expect(settingCurrentText("agent.read_roots.add", [])).toBe("지금 0개");
+    expect(SETTING_LABEL["agent.read_roots.add"]).toBe("Agent가 읽어도 되는 폴더 추가");
   });
 });
 

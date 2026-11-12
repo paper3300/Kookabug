@@ -85,6 +85,8 @@ def test_job_agent_reads_source_outside_workspace(
     (outside / "token.txt").write_bytes(f"token={job['token']}".encode())
     with daemon.client(agent(job["agent_id"], job["token"])) as conn:
         listed = conn.call("sources.list", {})["sources"]
+        # UX3: 읽기 허용 폴더(자동 포함 게임 폴더)도 같은 목록에 온다 — 원본만 본다
+        listed = [s for s in listed if s["kind"] != "read_root"]
         assert listed == [
             {"id": "plans", "kind": "design_doc", "title": "기획", "state": "ok", "type": "dir"}
         ]

@@ -1,0 +1,36 @@
+{
+  "description": "UX3 E2E: Init이 6단계에서 저장한 워크스페이스 밖 읽기 허용 폴더(read:1)와 자동 포함 게임 실행 파일 폴더(read:game)를 kb_source_list·kb_source_read로 읽는다. 민감한 이름(.env)은 거부, 읽기 허용 폴더 파일은 source 근거가 아니다(basis_unknown). 연결 시험이면 설정 확인 뒤 끝낸다",
+  "steps": [
+    {"label": "probe_info", "tool": "kb_project_info"},
+    {"exit": 0, "if_playbook": "probe"},
+
+    {"if_playbook": "init", "label": "roots", "tool": "kb_source_list",
+     "check": {"sources.[id=read:1].kind": "read_root", "sources.[id=read:1].state": "ok", "sources.[id=read:1].type": "dir",
+               "sources.[id=read:game].kind": "read_root", "sources.[id=read:game].state": "ok"}},
+    {"if_playbook": "init", "label": "list_tools", "tool": "kb_source_list", "args": {"source": "read:1"},
+     "check": {"entries": {"$len": 1}, "entries.0.name": "launch.bat"}},
+    {"if_playbook": "init", "label": "read_bat", "tool": "kb_source_read",
+     "args": {"source": "read:1", "path": "launch.bat"},
+     "check": {"text": {"$contains": "-server=dev"}, "ref": "read:1#launch.bat"},
+     "save": {"ref": "ref", "hash": "hash"}},
+    {"if_playbook": "init", "label": "read_game", "tool": "kb_source_read",
+     "args": {"source": "read:game", "path": "servers.json"},
+     "check": {"text": {"$contains": "dev-server"}}},
+    {"if_playbook": "init", "label": "env_refused", "tool": "kb_source_read",
+     "args": {"source": "read:1", "path": ".env"}, "expect": {"error": "policy_path"}},
+    {"if_playbook": "init", "label": "outside_refused", "tool": "kb_source_read",
+     "args": {"source": "read:1", "path": "../secret.txt"}, "expect": {"error": "policy_path"}},
+    {"if_playbook": "init", "toolsets": ["knowledge", "cases"]},
+    {"if_playbook": "init", "label": "not_basis", "tool": "kb_knowledge_apply",
+     "args": {"request_id": "ux3-not-basis", "ops": [
+       {"op": "add", "file": "features/launch", "base_revision": 0, "item": {
+         "id": "launch.server", "kind": "expected", "statement": "개발 서버로 접속한다",
+         "subject": "game", "property": "server", "value": "dev", "status": "supported",
+         "basis": [{"type": "source", "ref": "${ref}", "hash": "${hash}"}]}}
+     ]},
+     "expect": {"error": "basis_unknown"}},
+    {"if_playbook": "init", "label": "note", "tool": "kb_report_note",
+     "args": {"text": "Init: 읽기 허용 폴더에서 실행 bat와 서버 목록을 읽었다."}},
+    {"exit": 0, "if_playbook": "init"}
+  ]
+}

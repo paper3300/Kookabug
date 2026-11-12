@@ -2899,7 +2899,7 @@ export interface Kb8KnowledgeSearchResult {
   truncated: boolean;
 }
 /**
- * local.settings.set (사람 전용, B7 마법사 2단계): .kookabug/local.json settings의 게임 실행 키만 바꾼다 (이 PC). null이면 키를 지운다
+ * local.settings.set (사람 전용, B7 마법사 2단계·UX3 6단계): .kookabug/local.json settings의 게임 실행 키와 읽기 허용 폴더(agent.read_roots)만 바꾼다 (이 PC). null이면 키를 지운다. 허용하지 않는 읽기 허용 폴더는 policy_path(reason·index)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "Kb8LocalSettingsSetParams".
@@ -2910,6 +2910,185 @@ export interface Kb8LocalSettingsSetParams {
    */
   base_revision?: string | null;
   settings?: {
+    /**
+     * UX3 Agent 읽기 허용 폴더 (절대 경로 목록). 빈 목록·null이면 지운다
+     */
+    "agent.read_roots"?:
+      | []
+      | [string]
+      | [string, string]
+      | [string, string, string]
+      | [string, string, string, string]
+      | [string, string, string, string, string]
+      | [string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string]
+      | [string, string, string, string, string, string, string, string, string, string, string]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string
+        ]
+      | [
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string,
+          string
+        ]
+      | null;
     "game.args"?: string[] | null;
     "game.cwd"?: string | null;
     "game.executable"?: string | null;
@@ -3097,6 +3276,20 @@ export interface Kb8WizardGetResult {
    */
   local_sources: {
     [k: string]: string | undefined;
+  };
+  /**
+   * UX3 6단계 Agent 읽기 허용 폴더: paths = 이 PC 목록(local.json settings agent.read_roots), auto = 자동 포함(실효 game.executable 폴더·game.cwd, 계산 값 — 고칠 수 없음)
+   */
+  read_roots: {
+    auto: {
+      id: string;
+      message: null | string;
+      path: string;
+      reason: null | string;
+      state: "missing" | "ok" | "refused";
+      title: string;
+    }[];
+    paths: string[];
   };
   record: {
     [k: string]: unknown | undefined;
@@ -5717,13 +5910,13 @@ export interface SessionHelloResult {
  */
 export interface Ux2SettingProposeParams {
   /**
-   * 허용 목록: game.title·game.executable·game.args·game.cwd·sources.add·cheats.categories.add·automation.forbidden.add (밖이면 setting_not_allowed)
+   * 허용 목록: game.title·game.executable·game.args·game.cwd·sources.add·cheats.categories.add·automation.forbidden.add·agent.read_roots.add (밖이면 setting_not_allowed)
    */
   key: string;
   reason: string;
   unknowns?: string[];
   /**
-   * game.title·executable·cwd: 글, game.args: 글 목록, sources.add: {kind, location, title?}, cheats.categories.add: {id, title, description?, unattended}, automation.forbidden.add: {kind: text, value}·{kind: target, path}·{kind: screen, id}
+   * game.title·executable·cwd: 글, game.args: 글 목록, sources.add: {kind, location, title?}, cheats.categories.add: {id, title, description?, unattended}, automation.forbidden.add: {kind: text, value}·{kind: target, path}·{kind: screen, id}, agent.read_roots.add: 폴더 절대 경로 글 하나 (이 PC, 허용하지 않는 폴더는 policy_path)
    */
   value: {
     [k: string]: unknown | undefined;
@@ -5739,7 +5932,7 @@ export interface Ux2SettingProposeResult {
   key: string;
 }
 /**
- * sources.list (kb_source_list): source 없으면 등록된 원본 목록, 있으면 그 원본(폴더면 path 아래 한 단계 항목, 500개까지)
+ * sources.list (kb_source_list): source 없으면 등록된 원본 목록 + 읽기 허용 폴더(kind read_root, id read:<…>, UX3), 있으면 그 원본(폴더면 path 아래 한 단계 항목, 500개까지)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "Ux2SourcesListParams".
@@ -5749,6 +5942,9 @@ export interface Ux2SourcesListParams {
    * 원본 루트 기준 상대 경로 ('/'). 비면 루트
    */
   path?: string;
+  /**
+   * 원본 ID 또는 읽기 허용 폴더 ID(read:<…>)
+   */
   source?: string;
 }
 /**
@@ -5782,12 +5978,12 @@ export interface Ux2SourceEntry {
 export interface Ux2SourceState {
   id: string;
   kind: string | null;
-  state: "missing" | "ok" | "unchecked_url" | "unreadable";
+  state: "missing" | "ok" | "refused" | "unchecked_url" | "unreadable";
   title: string | null;
   type: ("dir" | "file") | null;
 }
 /**
- * sources.read (kb_source_read): 등록된 원본 파일 하나의 글 (텍스트·docx·xlsx·pptx, 200 KB씩 — 나머지는 offset으로). 비밀값은 가린다
+ * sources.read (kb_source_read): 등록된 원본 또는 읽기 허용 폴더(read:<…>, UX3) 파일 하나의 글 (텍스트·docx·xlsx·pptx, 200 KB씩 — 나머지는 offset으로). 비밀값은 가린다
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "Ux2SourcesReadParams".
@@ -5801,6 +5997,9 @@ export interface Ux2SourcesReadParams {
    * 원본 루트 기준 상대 경로 ('/'). 비면 루트
    */
   path?: string;
+  /**
+   * 원본 ID 또는 읽기 허용 폴더 ID(read:<…>)
+   */
   source: string;
 }
 /**
@@ -5816,7 +6015,7 @@ export interface Ux2SourcesReadResult {
   offset: number;
   path: string;
   /**
-   * source 근거 ref (sources:<원본 ID>#<경로>)
+   * source 근거 ref (sources:<원본 ID>#<경로>). 읽기 허용 폴더는 read:<…>#<경로> — source 근거가 아니다
    */
   ref: string;
   source: string;

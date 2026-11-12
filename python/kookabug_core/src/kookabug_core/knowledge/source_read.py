@@ -16,6 +16,9 @@
 - 한 번에 주는 글은 `TEXT_LIMIT`(JSON으로 실은 바이트)까지, 나머지는 `offset`(글자 단위)으로
   이어 읽는다. `ref`·`hash`는 `source` 근거(`sources:<id>#<경로>`)에 그대로 쓸 수 있다
   (`verify_basis`와 같은 hash)
+- UX3: 읽기 허용 폴더(`knowledge.read_roots`, ID `read:<…>`)도 같은 경계·크기·형식·가림 경로로
+  읽는다. 읽을 때 허용하지 않는 폴더 검사를 다시 하고, 안의 민감한 이름은 거부한다. ref는
+  `read:<…>#<경로>`라 `source` 근거가 아니다
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ from xml.etree import ElementTree
 from xml.parsers import expat
 
 from kookabug_core import filetx
+from kookabug_core.knowledge import read_roots
 from kookabug_core.knowledge.formats import KnowledgeError
 from kookabug_core.knowledge.sources import (
     _derived,  # pyright: ignore[reportPrivateUsage]
@@ -99,12 +103,26 @@ def _state(workspace: Workspace, source: Mapping[str, Any]) -> tuple[str, Path |
     path = source_path(workspace, source)
     if path is None:
         return "missing", None
+    # 확장·장치 경로 접두사·끝점/끝 공백 조각은 입구에서 거부 (UX3 검수 1 H1·H2)
+    if read_roots.device_path(str(path)):
+        return "device_path", None
+    # 관리 공유·이 PC를 가리키는 UNC는 실경로를 풀기 전에 거부 (검수 2)
+    if read_roots.admin_share(str(path)):
+        return "admin_share", None
+    if any(read_roots.odd_part(p) for p in path.parts[1:]):
+        return "odd_name", None
     lexical = Path(os.path.abspath(path))
     try:
         real = Path(os.path.realpath(lexical))
+        if read_roots.admin_share(str(real)):
+            return "admin_share", None
         if not real.exists():
             return "missing", None
-        if _derived_route(workspace, lexical) or _derived(workspace, real):
+        if (
+            _derived_route(workspace, lexical)
+            or _derived(workspace, real)
+            or read_roots.derived_path(workspace, lexical)
+        ):
             return "derived", None
         os.stat(real)
     except OSError:
@@ -112,7 +130,29 @@ def _state(workspace: Workspace, source: Mapping[str, Any]) -> tuple[str, Path |
     return "ok", real
 
 
+def _read_root(workspace: Workspace, root_id: str) -> tuple[dict[str, Any], Path]:
+    """읽기 허용 폴더 하나 (UX3). 읽을 때도 허용하지 않는 폴더 검사를 다시 한다."""
+    found = next((r for r in read_roots.read_roots(workspace) if r["id"] == root_id), None)
+    if found is None:
+        raise _fail("unknown_id", "없는 읽기 허용 폴더다", id=root_id)
+    if found["state"] == "refused":
+        reason = str(found["reason"])
+        raise _fail("policy_path", read_roots.REASONS[reason], reason=reason)
+    if found["state"] != "ok":
+        raise _fail(
+            "source_unavailable", "읽기 허용 폴더를 읽을 수 없다 (missing)", reason="missing"
+        )
+    source = {"id": root_id, "kind": "read_root", "title": found["title"]}
+    return source, Path(os.path.realpath(found["path"]))
+
+
+def _is_read_root(source_id: str) -> bool:
+    return source_id.startswith(read_roots.PREFIX)
+
+
 def _root_of(workspace: Workspace, source_id: str) -> tuple[dict[str, Any], Path]:
+    if _is_read_root(source_id):
+        return _read_root(workspace, source_id)
     source = _find(workspace, source_id)
     state, real = _state(workspace, source)
     if state == "derived":
@@ -120,6 +160,8 @@ def _root_of(workspace: Workspace, source_id: str) -> tuple[dict[str, Any], Path
             "policy_path",
             "워크스페이스의 파생 경로(knowledge·wiki·runs·tests 등)는 원본으로 읽지 않는다",
         )
+    if state in ("device_path", "odd_name", "admin_share"):
+        raise _fail("policy_path", read_roots.REASONS[state], reason=state)
     if real is None:
         raise _fail("source_unavailable", f"원본을 읽을 수 없다 ({state})", reason=state)
     return source, real
@@ -128,16 +170,30 @@ def _root_of(workspace: Workspace, source_id: str) -> tuple[dict[str, Any], Path
 _BAD_PART: Final = re.compile(r'[\x00-\x1f<>"|?*]')
 
 
-def _target(workspace: Workspace, real_root: Path, rel: str) -> Path:
-    """원본 루트 아래 `rel`의 경로 (경계를 지난 것). `rel`이 비면 루트."""
-    rel = rel.replace("\\", "/").strip()
-    if rel in ("", "."):
+def _target(workspace: Workspace, real_root: Path, rel: str, *, names: bool = False) -> Path:
+    """원본 루트 아래 `rel`의 경로 (경계를 지난 것). `rel`이 비면 루트. `names`면(읽기 허용 폴더)
+    민감한 이름(`read_roots.sensitive`)도 거부한다."""
+    rel = rel.replace("\\", "/")
+    if rel.strip() in ("", "."):
         return real_root
+    # 끝 공백을 미리 떼지 않는다 — 끝 공백 조각은 아래에서 거부한다 (검수 1 H2)
+    rel = rel.lstrip()
     parts = rel.split("/")
     if rel.startswith("/") or any(p in ("", ".", "..") or ":" in p for p in parts):
         raise _fail("policy_path", "원본 안 경로는 원본 루트 기준 상대 경로다 (.·..·드라이브 없음)")
     if any(_BAD_PART.search(p) for p in parts):
         raise _fail("policy_path", "원본 안 경로에 쓸 수 없는 글자가 있다")
+    # Windows는 끝 `.`·끝 공백을 떼고 연다 — 다른 이름으로 풀리는 조각은 받지 않는다 (UX3 검수 1 H2)
+    if any(read_roots.odd_part(p) for p in parts):
+        raise _fail(
+            "policy_path", "원본 안 경로 조각은 점·공백으로 끝날 수 없다", reason="odd_name"
+        )
+    if names and read_roots.sensitive(parts):
+        raise _fail(
+            "policy_path",
+            "읽기 허용 폴더 안의 민감한 이름(.ssh·.git·*.pem·.env·credentials 등)은 읽지 않는다",
+            reason="sensitive_name",
+        )
     try:
         target = filetx.plain(real_root, rel)
     except filetx.TxError as exc:
@@ -148,18 +204,29 @@ def _target(workspace: Workspace, real_root: Path, rel: str) -> Path:
     if (
         _derived_route(workspace, target)
         or _derived(workspace, real)
+        or read_roots.derived_path(workspace, target)
         or not real.is_relative_to(real_root)
     ):
         raise _fail(
             "policy_path",
             "워크스페이스의 파생 경로(knowledge·wiki·runs·tests 등)는 원본으로 읽지 않는다",
         )
+    # 요청 글뿐 아니라 실제로 풀린 경로(긴 이름)의 루트 아래 조각에도 민감한 이름 검사 (8.3 우회)
+    if names and read_roots.sensitive(read_roots.resolved_parts(real_root, real)):
+        raise _fail(
+            "policy_path",
+            "읽기 허용 폴더 안의 민감한 이름(.ssh·.git·*.pem·.env·credentials 등)은 읽지 않는다",
+            reason="sensitive_name",
+        )
     return target
 
 
 def _ref(source_id: str, rel: str) -> str:
+    """`source` 근거 ref (`sources:<id>#<경로>`). 읽기 허용 폴더는 `read:<id>#<경로>` — 근거가
+    아니다(`verify_basis`가 `basis_unknown`)."""
     rel = rel.replace("\\", "/").strip().strip("/")
-    return f"sources:{source_id}" if rel in ("", ".") else f"sources:{source_id}#{rel}"
+    head = source_id if _is_read_root(source_id) else f"sources:{source_id}"
+    return head if rel in ("", ".") else f"{head}#{rel}"
 
 
 # ---------------------------------------------------------------- 목록
@@ -174,18 +241,35 @@ def list_sources(workspace: Workspace) -> list[dict[str, Any]]:
             "id": str(source.get("id")),
             "kind": source.get("kind"),
             "title": source.get("title"),
-            "state": "unreadable" if state == "derived" else state,
+            "state": (
+                "unreadable"
+                if state in ("derived", "device_path", "odd_name", "admin_share")
+                else state
+            ),
             "type": None if real is None else ("dir" if real.is_dir() else "file"),
         }
         out.append(entry)
+    # 읽기 허용 폴더 (UX3): 실행·환경 확인용. 허용하지 않는 폴더는 `refused`로 보이고 읽지 않는다
+    for root in read_roots.read_roots(workspace):
+        out.append(
+            {
+                "id": root["id"],
+                "kind": "read_root",
+                "title": root["title"],
+                "state": root["state"],
+                "type": "dir" if root["state"] == "ok" else None,
+            }
+        )
     return out
 
 
 def list_source(workspace: Workspace, source_id: str, rel: str = "") -> dict[str, Any]:
     """원본 하나: 폴더면 `rel` 아래 한 단계 항목(이름·종류·크기, 상한 `LIST_LIMIT`), 파일이면 그
-    파일."""
+    파일. 읽기 허용 폴더면 민감한 이름은 거부하고 목록에서 뺀다."""
+    # 읽기 허용 폴더 여부와 폴더 항목 목록은 다른 변수다 (검수 1 M1 — 일반 원본 목록은 UX2 그대로)
+    hide = _is_read_root(source_id)
     source, real_root = _root_of(workspace, source_id)
-    target = _target(workspace, real_root, rel)
+    target = _target(workspace, real_root, rel, names=hide)
     head: dict[str, Any] = {
         "source": source_id,
         "kind": source.get("kind"),
@@ -206,6 +290,8 @@ def list_source(workspace: Workspace, source_id: str, rel: str = "") -> dict[str
         for name in names:
             entry = target / name
             if entry.is_symlink() or entry.is_junction():
+                continue
+            if hide and read_roots.sensitive([name]):
                 continue
             if _derived(workspace, Path(os.path.realpath(entry))):
                 continue
@@ -534,7 +620,7 @@ def read_source(
     if offset < 0:
         raise _fail("format", "offset은 0 이상이다")
     _source, real_root = _root_of(workspace, source_id)
-    target = _target(workspace, real_root, rel)
+    target = _target(workspace, real_root, rel, names=_is_read_root(source_id))
     clean = rel.replace("\\", "/").strip().strip("/")
     if target.is_dir():
         raise _fail("policy_path", "폴더다 — kb_source_list로 항목을 본다")

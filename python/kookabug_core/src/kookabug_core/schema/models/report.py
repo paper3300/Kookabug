@@ -52,6 +52,7 @@ class Setting(BaseModel):
     )
     id: Annotated[str, Field(pattern="^s-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
     key: Literal[
+        "agent.read_roots.add",
         "automation.forbidden.add",
         "cheats.categories.add",
         "game.args",

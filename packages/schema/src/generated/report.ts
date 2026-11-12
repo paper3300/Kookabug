@@ -81,6 +81,7 @@ export interface ReportItem {
   setting?: {
     id: string;
     key:
+      | "agent.read_roots.add"
       | "automation.forbidden.add"
       | "cheats.categories.add"
       | "game.args"

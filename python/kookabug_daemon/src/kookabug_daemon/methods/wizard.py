@@ -6,7 +6,8 @@
 - `wizard.set`: 진행을 원자 쓰기. 단계 상태만 받는다(입력 값·비밀값·경로 없음 — 스키마가 막는다)
 - `project.setup.set`: 2·8단계 팀 설정(`record`·`retention`·`game.title`·`game.client_size`),
   `kookabug.json` sha 대조 + 지식 잠금 + `filetx`
-- `local.settings.set`: 2단계 이 PC 게임 실행 설정(`game.executable`·`game.cwd`·`game.args`) →
+- `local.settings.set`: 2단계 이 PC 게임 실행 설정(`game.executable`·`game.cwd`·`game.args`)과
+  6단계 읽기 허용 폴더(`agent.read_roots`, UX3 — 허용하지 않는 폴더는 `policy_path`) →
   `.kookabug/local.json`(권한 파일과 같은 잠금·쓰기 규칙)
 """
 
@@ -17,13 +18,14 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from kookabug_core import filetx
 from kookabug_core.documents import write_atomic
-from kookabug_core.knowledge import human
+from kookabug_core.knowledge import human, read_roots
+from kookabug_core.knowledge.formats import KnowledgeError
 from kookabug_core.schema import check_shape
-from kookabug_core.workspace import LOCAL_FILE, WORKSPACE_FILE
+from kookabug_core.workspace import LOCAL_FILE, WORKSPACE_FILE, Workspace
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.methods.knowledge import run_guarded
 from kookabug_daemon.permission_files import revision_of
@@ -137,7 +139,26 @@ def _get_sync(call: Call) -> dict[str, Any]:
         "sources": [s for s in sources if isinstance(s, dict)] if isinstance(sources, list) else [],
         "local_sources": _local_sources(local),
         "local_revision": revision_of(local_raw),
+        "read_roots": _read_roots_view(root),
     }
+
+
+def _read_roots_view(root: Path) -> dict[str, Any]:
+    """6단계 "Agent가 읽어도 되는 폴더" 묶음 (UX3): 이 PC 목록 + 자동 포함 줄(계산 값)."""
+    workspace = Workspace.open(root)
+    auto = [
+        {
+            "id": r["id"],
+            "path": r["path"],
+            "title": r["title"],
+            "state": r["state"],
+            "reason": r["reason"],
+            "message": None if r["reason"] is None else read_roots.REASONS[r["reason"]],
+        }
+        for r in read_roots.read_roots(workspace)
+        if r["auto"]
+    ]
+    return {"paths": read_roots.configured(workspace), "auto": auto}
 
 
 async def _get(call: Call) -> dict[str, Any]:
@@ -184,6 +205,19 @@ async def _setup(call: Call) -> dict[str, Any]:
     return {"sha256": sha}
 
 
+def _read_roots(root: Path, value: list[Any]) -> list[str]:
+    """6단계 읽기 허용 폴더 저장 검사 (UX3): 허용하지 않는 폴더면 `policy_path`
+    (`reason`·`index`)."""
+    workspace = Workspace.open(root)
+    try:
+        return read_roots.normalize(workspace, value)
+    except KnowledgeError as exc:
+        code = exc.code if exc.code == "policy_path" else "invalid_params"
+        if code == "invalid_params":
+            raise InvalidParams(exc.message) from exc
+        raise RequestFailed(code, exc.message, **exc.fields) from exc
+
+
 async def _local(call: Call) -> dict[str, Any]:
     updates = dict(call.params.get("settings") or {})
     sources = dict(call.params.get("sources") or {})
@@ -192,6 +226,11 @@ async def _local(call: Call) -> dict[str, Any]:
     for source_id in sources:
         if not SOURCE_ID.fullmatch(source_id):
             raise InvalidParams(f"원본 ID 형식이 틀렸다: {source_id}")
+    roots = updates.get(read_roots.KEY)
+    if isinstance(roots, list):
+        clean = await asyncio.to_thread(_read_roots, call.daemon.root, cast(list[Any], roots))
+        # 빈 목록은 키를 지운다 (자동 포함 폴더만 남는다)
+        updates[read_roots.KEY] = clean or None
     # base_revision을 주면 화면을 채울 때 읽은 revision과 대조한다 (안 주면 키만 바꾸는 예전 동작)
     check = "base_revision" in call.params
     revision = await asyncio.to_thread(

@@ -3576,7 +3576,7 @@ export const daemonRpcSchema: unknown = {
     },
     "Kb8LocalSettingsSetParams": {
       "additionalProperties": false,
-      "description": "local.settings.set (사람 전용, B7 마법사 2단계): .kookabug/local.json settings의 게임 실행 키만 바꾼다 (이 PC). null이면 키를 지운다",
+      "description": "local.settings.set (사람 전용, B7 마법사 2단계·UX3 6단계): .kookabug/local.json settings의 게임 실행 키와 읽기 허용 폴더(agent.read_roots)만 바꾼다 (이 PC). null이면 키를 지운다. 허용하지 않는 읽기 허용 폴더는 policy_path(reason·index)",
       "properties": {
         "base_revision": {
           "anyOf": [
@@ -3593,6 +3593,21 @@ export const daemonRpcSchema: unknown = {
         "settings": {
           "additionalProperties": false,
           "properties": {
+            "agent.read_roots": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 20,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "UX3 Agent 읽기 허용 폴더 (절대 경로 목록). 빈 목록·null이면 지운다"
+            },
             "game.args": {
               "anyOf": [
                 {
@@ -4038,6 +4053,68 @@ export const daemonRpcSchema: unknown = {
           "description": "이 PC 원본 경로 (local.json sources.<id>.path, 6단계). 경로만 — 비밀값 없음",
           "type": "object"
         },
+        "read_roots": {
+          "additionalProperties": false,
+          "description": "UX3 6단계 Agent 읽기 허용 폴더: paths = 이 PC 목록(local.json settings agent.read_roots), auto = 자동 포함(실효 game.executable 폴더·game.cwd, 계산 값 — 고칠 수 없음)",
+          "properties": {
+            "auto": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": [
+                      "null",
+                      "string"
+                    ]
+                  },
+                  "state": {
+                    "enum": [
+                      "missing",
+                      "ok",
+                      "refused"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "message",
+                  "path",
+                  "reason",
+                  "state",
+                  "title"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "paths": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "auto",
+            "paths"
+          ],
+          "type": "object"
+        },
         "record": {
           "type": "object"
         },
@@ -4070,6 +4147,7 @@ export const daemonRpcSchema: unknown = {
         "game",
         "local_revision",
         "local_sources",
+        "read_roots",
         "record",
         "retention",
         "sources",
@@ -13829,7 +13907,7 @@ export const daemonRpcSchema: unknown = {
       "description": "setting.propose (kb_setting_propose): 작업 토큰 연결 전용. 사람 답을 설정에 반영하자는 제안 (설정은 바꾸지 않는다 — 사람이 보고함에서 수락). key는 허용 목록뿐",
       "properties": {
         "key": {
-          "description": "허용 목록: game.title·game.executable·game.args·game.cwd·sources.add·cheats.categories.add·automation.forbidden.add (밖이면 setting_not_allowed)",
+          "description": "허용 목록: game.title·game.executable·game.args·game.cwd·sources.add·cheats.categories.add·automation.forbidden.add·agent.read_roots.add (밖이면 setting_not_allowed)",
           "minLength": 1,
           "type": "string"
         },
@@ -13845,7 +13923,7 @@ export const daemonRpcSchema: unknown = {
           "type": "array"
         },
         "value": {
-          "description": "game.title·executable·cwd: 글, game.args: 글 목록, sources.add: {kind, location, title?}, cheats.categories.add: {id, title, description?, unattended}, automation.forbidden.add: {kind: text, value}·{kind: target, path}·{kind: screen, id}"
+          "description": "game.title·executable·cwd: 글, game.args: 글 목록, sources.add: {kind, location, title?}, cheats.categories.add: {id, title, description?, unattended}, automation.forbidden.add: {kind: text, value}·{kind: target, path}·{kind: screen, id}, agent.read_roots.add: 폴더 절대 경로 글 하나 (이 PC, 허용하지 않는 폴더는 policy_path)"
         }
       },
       "required": [
@@ -13921,6 +13999,7 @@ export const daemonRpcSchema: unknown = {
           "enum": [
             "missing",
             "ok",
+            "refused",
             "unchecked_url",
             "unreadable"
           ]
@@ -13961,14 +14040,15 @@ export const daemonRpcSchema: unknown = {
     },
     "Ux2SourcesListParams": {
       "additionalProperties": false,
-      "description": "sources.list (kb_source_list): source 없으면 등록된 원본 목록, 있으면 그 원본(폴더면 path 아래 한 단계 항목, 500개까지)",
+      "description": "sources.list (kb_source_list): source 없으면 등록된 원본 목록 + 읽기 허용 폴더(kind read_root, id read:<…>, UX3), 있으면 그 원본(폴더면 path 아래 한 단계 항목, 500개까지)",
       "properties": {
         "path": {
           "description": "원본 루트 기준 상대 경로 ('/'). 비면 루트",
           "type": "string"
         },
         "source": {
-          "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+          "description": "원본 ID 또는 읽기 허용 폴더 ID(read:<…>)",
+          "pattern": "^(read:)?[A-Za-z0-9_.-]{1,64}$",
           "type": "string"
         }
       },
@@ -14035,7 +14115,7 @@ export const daemonRpcSchema: unknown = {
     },
     "Ux2SourcesReadParams": {
       "additionalProperties": false,
-      "description": "sources.read (kb_source_read): 등록된 원본 파일 하나의 글 (텍스트·docx·xlsx·pptx, 200 KB씩 — 나머지는 offset으로). 비밀값은 가린다",
+      "description": "sources.read (kb_source_read): 등록된 원본 또는 읽기 허용 폴더(read:<…>, UX3) 파일 하나의 글 (텍스트·docx·xlsx·pptx, 200 KB씩 — 나머지는 offset으로). 비밀값은 가린다",
       "properties": {
         "offset": {
           "description": "글자 단위 (앞 결과의 next_offset)",
@@ -14047,7 +14127,8 @@ export const daemonRpcSchema: unknown = {
           "type": "string"
         },
         "source": {
-          "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+          "description": "원본 ID 또는 읽기 허용 폴더 ID(read:<…>)",
+          "pattern": "^(read:)?[A-Za-z0-9_.-]{1,64}$",
           "type": "string"
         }
       },
@@ -14098,7 +14179,7 @@ export const daemonRpcSchema: unknown = {
           "type": "string"
         },
         "ref": {
-          "description": "source 근거 ref (sources:<원본 ID>#<경로>)",
+          "description": "source 근거 ref (sources:<원본 ID>#<경로>). 읽기 허용 폴더는 read:<…>#<경로> — source 근거가 아니다",
           "type": "string"
         },
         "source": {

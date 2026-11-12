@@ -129,9 +129,10 @@ export const SETTING_LABEL: Record<string, string> = {
   "sources.add": "정보 원본 추가",
   "cheats.categories.add": "치트 분류 추가",
   "automation.forbidden.add": "금지 동작 추가",
+  "agent.read_roots.add": "Agent가 읽어도 되는 폴더 추가",
 };
 
-const ADD_KEYS = new Set(["sources.add", "cheats.categories.add", "automation.forbidden.add"]);
+const ADD_KEYS = new Set(["sources.add", "cheats.categories.add", "automation.forbidden.add", "agent.read_roots.add"]);
 
 function obj(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};

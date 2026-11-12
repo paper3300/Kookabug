@@ -1,6 +1,7 @@
 // 6단계 프로젝트 정보 원본 (선택, 시안 Wizard6Sources). 입력한 항목을 `project.sources.set`(팀)·`local.settings.set`
 // (이 PC 절대 경로)에 쓰고 `sources.check`로 읽기 확인. 읽지 못한 항목은 경고로 남기고 진행한다(Init이 미지수로 기록).
 // 칸마다 "+ 추가"로 줄을 더하고 "−"로 지운다 (UX1 U4 — 기획서가 여러 폴더에 있을 수 있다). 줄 ID 규칙은 sources.ts
+// 원본 칸 아래 "Agent가 읽어도 되는 폴더" 묶음(UX3, readRoots.tsx): 이 PC local.settings.set agent.read_roots
 import { useCallback, useEffect, useState } from "react";
 import { client, toRpcError } from "../../rpc/client";
 import { Spinner } from "../../app/Spinner";
@@ -18,6 +19,15 @@ import {
   type SourceDef,
   type SourceSlot,
 } from "../sources";
+import {
+  initialRootRows,
+  READ_ROOTS_KEY,
+  ReadRootsGroup,
+  rootErrorText,
+  rootsChanged,
+  rootsToSave,
+  type AutoRoot,
+} from "../readRoots";
 import { StorageBadge } from "../StorageBadge";
 import { StepShell } from "../Wizard";
 import { setStepWarnings, setSummary } from "../wizardStore";
@@ -38,6 +48,9 @@ interface Loaded {
   initial: Record<string, string>;
   base: string;
   localRevision: string | null;
+  /** 저장된 읽기 허용 폴더 (UX3, 이 PC) */
+  roots: string[];
+  auto: AutoRoot[];
 }
 
 export function Step6Sources() {
@@ -51,12 +64,16 @@ export function Step6Sources() {
   const [checking, setChecking] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** 읽기 허용 폴더 줄 (UX3) */
+  const [roots, setRoots] = useState<string[]>([""]);
+  const [rootError, setRootError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoaded(null);
     setChecks(null);
     setConflict(false);
     setError(null);
+    setRootError(null);
     try {
       // 팀 원본·이 PC 경로·sha·revision을 같은 읽기로 (사람 전용 wizard.get — 경로만, 비밀값 없음)
       const w = await client().call("wizard.get", {});
@@ -66,7 +83,16 @@ export function Step6Sources() {
       setValues(initial);
       setRows(firstRows);
       setUsed(new Set([...sources.map((s) => s.id), ...Object.values(firstRows).flat()]));
-      setLoaded({ sources, initial, base: w.config_sha256, localRevision: w.local_revision });
+      const saved = w.read_roots.paths;
+      setRoots(initialRootRows(saved));
+      setLoaded({
+        sources,
+        initial,
+        base: w.config_sha256,
+        localRevision: w.local_revision,
+        roots: saved,
+        auto: w.read_roots.auto as AutoRoot[],
+      });
     } catch (err) {
       // 못 읽으면 빈 설정으로 저장하지 않는다 (확인 단추가 꺼진다)
       setError(`원본 설정을 읽지 못했어요: ${toRpcError(err).message}`);
@@ -100,6 +126,31 @@ export function Step6Sources() {
     setChecks(null);
   };
 
+  const editRoot = (index: number, value: string) => {
+    setRoots((r) => r.map((v, i) => (i === index ? value : v)));
+    setRootError(null);
+    setChecks(null);
+  };
+
+  const addRoot = () => {
+    setRoots((r) => [...r, ""]);
+    setChecks(null);
+  };
+
+  /** 줄 지우기. 마지막 줄은 남기고 비우기만 한다 */
+  const removeRoot = (index: number) => {
+    setRoots((r) => (r.length <= 1 ? [""] : r.filter((_, i) => i !== index)));
+    setRootError(null);
+    setChecks(null);
+  };
+
+  /** 기존 폴더 고르기 대화 상자 (1단계 "찾아보기"와 같은 것) */
+  const pickRoot = (index: number) => {
+    void window.kookabug.app.pickFolder().then((picked) => {
+      if (picked !== null) editRoot(index, picked);
+    });
+  };
+
   // 같은 ID 원본이 여럿인 줄은 읽기 전용 + 안내 (그 항목들은 저장하지 않고 그대로 둔다)
   const duplicates = loaded === null ? new Set<string>() : duplicateIds(loaded.sources);
   const lines = SLOTS.flatMap((slot) =>
@@ -115,10 +166,13 @@ export function Step6Sources() {
     }
     if (loaded === null || conflict) return false;
     setError(null);
+    setRootError(null);
     setChecking(true);
+    let savingRoots = false;
     try {
       const plan = planSources(loaded.sources, loaded.initial, values);
       let { base, localRevision } = loaded;
+      let next = loaded;
       if (plan.changed) {
         // 팀 먼저 (충돌이면 아무것도 쓰지 않았다), 그다음 이 PC. 둘 다 화면을 채울 때 읽은 기준으로
         base = (await client().call("project.sources.set", { base_sha256: base, value: plan.defs as never })).sha256;
@@ -128,7 +182,19 @@ export function Step6Sources() {
         // 다음 저장의 기준: 지금 줄 값 (지운 줄은 빈 값 = 원본 없음)
         const nextInitial: Record<string, string> = {};
         for (const [id, v] of Object.entries(values)) if (v.trim() !== "") nextInitial[id] = v;
-        setLoaded({ sources: plan.defs, initial: nextInitial, base, localRevision });
+        next = { ...next, sources: plan.defs, initial: nextInitial, base, localRevision };
+        setLoaded(next);
+      }
+      // 읽기 허용 폴더 (UX3, 이 PC): 바뀌었을 때만. 허용하지 않는 폴더는 daemon이 거부 → 이유를 묶음 아래에
+      if (rootsChanged(loaded.roots, roots)) {
+        savingRoots = true;
+        const list = rootsToSave(roots);
+        localRevision = (
+          await client().call("local.settings.set", { base_revision: localRevision, settings: { [READ_ROOTS_KEY]: (list.length > 0 ? list : null) as never } })
+        ).revision;
+        savingRoots = false;
+        next = { ...next, localRevision, roots: list };
+        setLoaded(next);
       }
       const r = await client().call("sources.check", {});
       const result = (r.sources as Check[]).filter((c) => filled.some((e) => e.id === c.id));
@@ -138,6 +204,7 @@ export function Step6Sources() {
       return false; // 결과를 보여 주고 한 번 더 누르면 다음
     } catch (err) {
       if (isConflict(err)) setConflict(true);
+      else if (savingRoots) setRootError(rootErrorText(err, roots));
       else setError(toRpcError(err).message);
       return false;
     } finally {
@@ -247,6 +314,16 @@ export function Step6Sources() {
           );
         })}
       </div>
+      <ReadRootsGroup
+        rows={roots}
+        auto={loaded?.auto ?? []}
+        error={rootError}
+        disabled={loaded === null}
+        onChange={editRoot}
+        onAdd={addRoot}
+        onRemove={removeRoot}
+        onPick={pickRoot}
+      />
       {checking && <Spinner label="원본을 확인하는 중…" />}
       <div className={css.info}>
         원본은 프로젝트에 복사하지 않아요. <b>위치와 해시만</b> 남겨 두고, 바뀌면 관련 테스트를 먼저 다시 확인해요. 사람마다 경로가

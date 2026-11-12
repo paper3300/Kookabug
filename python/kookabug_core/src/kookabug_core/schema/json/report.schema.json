@@ -158,6 +158,7 @@
                     },
                     "key": {
                       "enum": [
+                        "agent.read_roots.add",
                         "automation.forbidden.add",
                         "cheats.categories.add",
                         "game.args",

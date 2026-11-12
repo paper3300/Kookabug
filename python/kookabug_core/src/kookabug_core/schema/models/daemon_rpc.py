@@ -1236,6 +1236,16 @@ class BaseRevision(RootModel[str]):
     ]
 
 
+class AgentReadRoots(RootModel[list[str]]):
+    root: Annotated[
+        list[str],
+        Field(
+            description="UX3 Agent 읽기 허용 폴더 (절대 경로 목록). 빈 목록·null이면 지운다",
+            max_length=20,
+        ),
+    ]
+
+
 class GameArgs(RootModel[list[str]]):
     root: Annotated[list[str], Field(max_length=64)]
 
@@ -1252,6 +1262,13 @@ class Settings(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    agent_read_roots: Annotated[
+        AgentReadRoots | None,
+        Field(
+            alias="agent.read_roots",
+            description="UX3 Agent 읽기 허용 폴더 (절대 경로 목록). 빈 목록·null이면 지운다",
+        ),
+    ] = None
     game_args: Annotated[GameArgs | None, Field(alias="game.args")] = None
     game_cwd: Annotated[GameCwd | None, Field(alias="game.cwd")] = None
     game_executable: Annotated[GameExecutable | None, Field(alias="game.executable")] = None
@@ -1263,7 +1280,7 @@ class Sources(RootModel[str]):
 
 class Kb8LocalSettingsSetParams(BaseModel):
     """
-    local.settings.set (사람 전용, B7 마법사 2단계): .kookabug/local.json settings의 게임 실행 키만 바꾼다 (이 PC). null이면 키를 지운다
+    local.settings.set (사람 전용, B7 마법사 2단계·UX3 6단계): .kookabug/local.json settings의 게임 실행 키와 읽기 허용 폴더(agent.read_roots)만 바꾼다 (이 PC). null이면 키를 지운다. 허용하지 않는 읽기 허용 폴더는 policy_path(reason·index)
     """
 
     model_config = ConfigDict(
@@ -1416,6 +1433,30 @@ class LocalRevision(RootModel[str]):
             pattern="^[0-9a-f]{64}$",
         ),
     ]
+
+
+class AutoItem(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: str
+    message: str | None
+    path: str
+    reason: str | None
+    state: Literal["missing", "ok", "refused"]
+    title: str
+
+
+class ReadRoots(BaseModel):
+    """
+    UX3 6단계 Agent 읽기 허용 폴더: paths = 이 PC 목록(local.json settings agent.read_roots), auto = 자동 포함(실효 game.executable 폴더·game.cwd, 계산 값 — 고칠 수 없음)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    auto: list[AutoItem]
+    paths: list[str]
 
 
 class DoneItem(RootModel[int]):
@@ -3872,7 +3913,7 @@ class Ux2SettingProposeParams(BaseModel):
     key: Annotated[
         str,
         Field(
-            description="허용 목록: game.title·game.executable·game.args·game.cwd·sources.add·cheats.categories.add·automation.forbidden.add (밖이면 setting_not_allowed)",
+            description="허용 목록: game.title·game.executable·game.args·game.cwd·sources.add·cheats.categories.add·automation.forbidden.add·agent.read_roots.add (밖이면 setting_not_allowed)",
             min_length=1,
         ),
     ]
@@ -3881,7 +3922,7 @@ class Ux2SettingProposeParams(BaseModel):
     value: Annotated[
         Any,
         Field(
-            description="game.title·executable·cwd: 글, game.args: 글 목록, sources.add: {kind, location, title?}, cheats.categories.add: {id, title, description?, unattended}, automation.forbidden.add: {kind: text, value}·{kind: target, path}·{kind: screen, id}"
+            description="game.title·executable·cwd: 글, game.args: 글 목록, sources.add: {kind, location, title?}, cheats.categories.add: {id, title, description?, unattended}, automation.forbidden.add: {kind: text, value}·{kind: target, path}·{kind: screen, id}, agent.read_roots.add: 폴더 절대 경로 글 하나 (이 PC, 허용하지 않는 폴더는 policy_path)"
         ),
     ]
 
@@ -3910,14 +3951,14 @@ class Ux2SourceState(BaseModel):
     )
     id: str
     kind: str | None
-    state: Literal["missing", "ok", "unchecked_url", "unreadable"]
+    state: Literal["missing", "ok", "refused", "unchecked_url", "unreadable"]
     title: str | None
     type: Literal["dir", "file"] | None
 
 
 class Ux2SourcesListParams(BaseModel):
     """
-    sources.list (kb_source_list): source 없으면 등록된 원본 목록, 있으면 그 원본(폴더면 path 아래 한 단계 항목, 500개까지)
+    sources.list (kb_source_list): source 없으면 등록된 원본 목록 + 읽기 허용 폴더(kind read_root, id read:<…>, UX3), 있으면 그 원본(폴더면 path 아래 한 단계 항목, 500개까지)
     """
 
     model_config = ConfigDict(
@@ -3926,7 +3967,13 @@ class Ux2SourcesListParams(BaseModel):
     path: Annotated[str | None, Field(description="원본 루트 기준 상대 경로 ('/'). 비면 루트")] = (
         None
     )
-    source: Annotated[str | None, Field(pattern="^[A-Za-z0-9_.-]{1,64}$")] = None
+    source: Annotated[
+        str | None,
+        Field(
+            description="원본 ID 또는 읽기 허용 폴더 ID(read:<…>)",
+            pattern="^(read:)?[A-Za-z0-9_.-]{1,64}$",
+        ),
+    ] = None
 
 
 class Ux2SourcesListResult(BaseModel):
@@ -3946,7 +3993,7 @@ class Ux2SourcesListResult(BaseModel):
 
 class Ux2SourcesReadParams(BaseModel):
     """
-    sources.read (kb_source_read): 등록된 원본 파일 하나의 글 (텍스트·docx·xlsx·pptx, 200 KB씩 — 나머지는 offset으로). 비밀값은 가린다
+    sources.read (kb_source_read): 등록된 원본 또는 읽기 허용 폴더(read:<…>, UX3) 파일 하나의 글 (텍스트·docx·xlsx·pptx, 200 KB씩 — 나머지는 offset으로). 비밀값은 가린다
     """
 
     model_config = ConfigDict(
@@ -3958,7 +4005,13 @@ class Ux2SourcesReadParams(BaseModel):
     path: Annotated[str | None, Field(description="원본 루트 기준 상대 경로 ('/'). 비면 루트")] = (
         None
     )
-    source: Annotated[str, Field(pattern="^[A-Za-z0-9_.-]{1,64}$")]
+    source: Annotated[
+        str,
+        Field(
+            description="원본 ID 또는 읽기 허용 폴더 ID(read:<…>)",
+            pattern="^(read:)?[A-Za-z0-9_.-]{1,64}$",
+        ),
+    ]
 
 
 class NextOffset(RootModel[int]):
@@ -3976,7 +4029,12 @@ class Ux2SourcesReadResult(BaseModel):
     next_offset: NextOffset | None
     offset: Annotated[int, Field(ge=0)]
     path: str
-    ref: Annotated[str, Field(description="source 근거 ref (sources:<원본 ID>#<경로>)")]
+    ref: Annotated[
+        str,
+        Field(
+            description="source 근거 ref (sources:<원본 ID>#<경로>). 읽기 허용 폴더는 read:<…>#<경로> — source 근거가 아니다"
+        ),
+    ]
     source: str
     text: str
 
@@ -4672,6 +4730,12 @@ class Kb8WizardGetResult(BaseModel):
         dict[str, str],
         Field(
             description="이 PC 원본 경로 (local.json sources.<id>.path, 6단계). 경로만 — 비밀값 없음"
+        ),
+    ]
+    read_roots: Annotated[
+        ReadRoots,
+        Field(
+            description="UX3 6단계 Agent 읽기 허용 폴더: paths = 이 PC 목록(local.json settings agent.read_roots), auto = 자동 포함(실효 game.executable 폴더·game.cwd, 계산 값 — 고칠 수 없음)"
         ),
     ]
     record: dict[str, Any]

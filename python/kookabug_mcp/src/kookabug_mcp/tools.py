@@ -848,16 +848,18 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_source_list",
         "원본 목록",
-        "등록된 원본(kookabug.json sources) 목록(id·종류·상태). source를 주면 그 원본, 폴더면 path "
-        "아래 한 단계 항목(500개까지). URL 원본은 읽지 않는다",
+        "등록된 원본(kookabug.json sources) 목록(id·종류·상태)과 읽기 허용 폴더(kind read_root, "
+        "id read:<…> — 실행·환경 확인용, 게임 실행 파일 폴더는 read:game). source를 주면 그 원본, "
+        "폴더면 path 아래 한 단계 항목(500개까지). URL 원본은 읽지 않는다",
         daemon_def("Ux2SourcesListParams"),
         _source_list,
     ),
     ToolDef(
         "kb_source_read",
         "원본 읽기",
-        "등록된 원본 파일 하나의 글(텍스트·docx·xlsx·pptx). 200 KB씩, 나머지는 next_offset을 "
-        "offset으로. 결과의 ref·hash를 source 근거로 그대로 쓴다. 비밀값은 ***로 가린다",
+        "등록된 원본 또는 읽기 허용 폴더 파일 하나의 글(텍스트·docx·xlsx·pptx). 200 KB씩, "
+        "나머지는 next_offset을 offset으로. 원본 결과의 ref·hash를 source 근거로 그대로 쓴다 "
+        "(읽기 허용 폴더 read:<…>는 근거가 아니다). 비밀값은 ***로 가린다",
         daemon_def("Ux2SourcesReadParams"),
         _source_read,
     ),
@@ -1219,7 +1221,7 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "설정 바꾸기 제안",
         "사람 답을 설정에 반영하자고 제안한다 (작업 연결 전용). 설정은 바꾸지 않고 보고함에 "
         "'설정 바꾸기 제안'으로 남아 사람이 수락한다. key는 game.title·game.executable·game.args·"
-        "game.cwd·sources.add·cheats.categories.add·automation.forbidden.add뿐",
+        "game.cwd·sources.add·cheats.categories.add·automation.forbidden.add·agent.read_roots.add뿐",
         daemon_def("Ux2SettingProposeParams"),
         _setting_propose,
     ),

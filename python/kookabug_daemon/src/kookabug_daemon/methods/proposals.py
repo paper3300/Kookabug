@@ -8,7 +8,7 @@
   함수·같은 sha/revision 대조다: 게임 제목 = 2단계 `project.setup.set`(`human.set_setup`),
   실행 파일·인자·작업 폴더 = 2단계 `local.settings.set`, 원본 추가 = 6단계 `project.sources.set`
   + `local.settings.set`, 금지 동작 = 7단계 `project.automation.set`, 치트 분류 = 7단계
-  `cheats.categories.set`
+  `cheats.categories.set`, 읽기 허용 폴더 추가(UX3) = 6단계 `local.settings.set`(`agent.read_roots`)
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from collections.abc import Mapping
 from typing import Any, Final, cast
 
 from kookabug_core import filetx
-from kookabug_core.knowledge import cheats, human, setting_change
+from kookabug_core.knowledge import cheats, human, read_roots, setting_change
 from kookabug_core.knowledge.formats import KnowledgeError
 from kookabug_core.workspace import LOCAL_FILE, WORKSPACE_FILE
 from kookabug_daemon.methods import Call, MethodSpec
@@ -110,6 +110,15 @@ def apply_setting(daemon: Any, job: str, setting: Mapping[str, Any]) -> dict[str
         _, sha = _config(root)
         human.set_setup(root, {}, {key: value}, base_sha256=sha)
         return {"key": key, "stored": "team"}
+    if key == setting_change.READ_ROOTS_ADD:
+        # 6단계 저장과 같은 검사(허용하지 않는 폴더·이미 있음)와 같은 local.json revision 대조
+        revision = _local_revision(root)
+        setting_change.check_read_root(root, value)
+        paths = [*setting_change.current_value(root, key), value.strip()]
+        daemon.permission_files.set_local_settings(
+            {read_roots.KEY: paths}, base_revision=revision, check_revision=True
+        )
+        return {"key": key, "stored": "local"}
     config, sha = _config(root)
     if key == "sources.add":
         existing = [

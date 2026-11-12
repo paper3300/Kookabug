@@ -7,8 +7,9 @@
 - 팀 보고(`knowledge/reports/`)에는 제안 ID·키·이유·근거 질문만 싣는다. 값·현재 값은 이 PC 파일에만
   두고 보고함 화면(`reports.get`)이 붙여 보인다(검수 1 H1)
 - 키는 허용 목록(`KEYS`)뿐이다 — 마법사가 이미 쓰는 사람 설정 키(2단계 게임, 6단계 원본 추가,
-  7단계 금지 동작 추가, 치트 분류 추가). 그 밖은 `setting_not_allowed`. 계정·비밀값·Agent 설정은
-  없다
+  7단계 금지 동작 추가, 치트 분류 추가)와 UX3 읽기 허용 폴더 추가(`agent.read_roots.add`, 이 PC —
+  6단계와 같은 허용하지 않는 폴더 검사). 그 밖은 `setting_not_allowed`. 계정·비밀값·그 밖의 Agent
+  설정은 없다
 - 값·이유는 제안 단계에서 글자 검사(`secret_in_text`). 값 모양은 제안 단계와 수락 단계 둘 다 본다
 - 제안은 그때의 그 키 값의 해시(`current_hash`)를 기억한다. 원문 스냅샷(`current`)은 글자 검사를
   지날 때만 남긴다(아니면 `current_hidden` — 화면은 "[가림]"). 수락은 지금 값 해시가 같을 때만
@@ -29,8 +30,9 @@ from typing import Any, Final, cast
 
 from kookabug_core import filetx
 from kookabug_core.agent_job import jobdir
+from kookabug_core.knowledge import read_roots
 from kookabug_core.knowledge.formats import KnowledgeError, SecretCheck, now, shape_problem
-from kookabug_core.workspace import LOCAL_FILE, WORKSPACE_FILE
+from kookabug_core.workspace import LOCAL_FILE, WORKSPACE_FILE, Workspace
 
 __all__ = [
     "FORMAT",
@@ -38,7 +40,9 @@ __all__ = [
     "LOCAL_KEYS",
     "MAX_PROPOSALS",
     "PROPOSAL_ID",
+    "READ_ROOTS_ADD",
     "REASON_HIDDEN",
+    "check_read_root",
     "current_value",
     "find_proposal",
     "load_proposals",
@@ -64,8 +68,13 @@ KEYS: Final = (
     "sources.add",
     "cheats.categories.add",
     "automation.forbidden.add",
+    "agent.read_roots.add",
 )
-"""제안할 수 있는 키 (허용 목록). 2단계 게임·6단계 원본·7단계 금지 동작·치트 분류."""
+"""제안할 수 있는 키 (허용 목록). 2단계 게임·6단계 원본·읽기 허용 폴더(UX3)·7단계 금지 동작·치트
+분류."""
+READ_ROOTS_ADD: Final = "agent.read_roots.add"
+"""읽기 허용 폴더 하나 더하기 (UX3). 이 PC `local.json` settings `agent.read_roots` 목록에
+더한다."""
 LOCAL_KEYS: Final = frozenset({"game.executable", "game.args", "game.cwd"})
 """이 PC(`local.json` settings)에 저장되는 키 (마법사 2단계와 같은 곳)."""
 SOURCE_KINDS: Final = ("code", "data", "strings", "design_doc", "patch_notes", "qa_sheet", "other")
@@ -111,7 +120,7 @@ def validate(key: str, value: Any) -> Any:
         raise KnowledgeError(
             "setting_not_allowed", "제안할 수 없는 설정 키다 (게임·원본 추가·금지 동작·치트 분류만)"
         )
-    if key in ("game.title", "game.executable", "game.cwd"):
+    if key in ("game.title", "game.executable", "game.cwd", READ_ROOTS_ADD):
         return _text(value, key, limit=200 if key == "game.title" else 1000)
     if key == "game.args":
         if not isinstance(value, list) or len(cast(list[Any], value)) > 64:
@@ -180,6 +189,16 @@ def current_value(root: Path, key: str) -> Any:
     if key in LOCAL_KEYS:
         settings = _json_file(root, LOCAL_FILE).get("settings")
         return cast(dict[str, Any], settings).get(key) if isinstance(settings, dict) else None
+    if key == READ_ROOTS_ADD:
+        settings = _json_file(root, LOCAL_FILE).get("settings")
+        got = (
+            cast(dict[str, Any], settings).get(read_roots.KEY)
+            if isinstance(settings, dict)
+            else None
+        )
+        return (
+            [v for v in cast(list[Any], got) if isinstance(v, str)] if isinstance(got, list) else []
+        )
     if key == "game.title":
         settings = config.get("settings")
         return cast(dict[str, Any], settings).get(key) if isinstance(settings, dict) else None
@@ -265,8 +284,10 @@ def _unknown_ids(root: Path) -> set[str]:
 
 def _dry_check(root: Path, key: str, value: Any) -> None:
     """적용했을 때 설정 파일 형식이 맞는가 (제안 단계 — 쓰지 않는다)."""
-    if key in LOCAL_KEYS:
+    if key in LOCAL_KEYS or key == READ_ROOTS_ADD:
         local = _json_file(root, LOCAL_FILE) or {"format": "kookabug.local/0"}
+        if key == READ_ROOTS_ADD:
+            key, value = read_roots.KEY, [*current_value(root, READ_ROOTS_ADD), value]
         local["settings"] = {**dict(local.get("settings") or {}), key: value}
         problem = shape_problem(local, "local")
     else:
@@ -321,6 +342,8 @@ def propose(
         raise KnowledgeError("exists", "이미 있는 치트 분류다")
     if key == "automation.forbidden.add" and clean in (current_value(root, key) or []):
         raise KnowledgeError("exists", "이미 있는 금지 동작이다")
+    if key == READ_ROOTS_ADD:
+        check_read_root(root, clean)
     _dry_check(root, key, clean)
     with filetx.locked(root):
         items = load_proposals(root, job)
@@ -350,6 +373,16 @@ def propose(
         data = (json.dumps(body, ensure_ascii=False, indent=1) + "\n").encode("utf-8")
         jobdir.write_bytes(root, _rel(job), data)
     return proposal
+
+
+def check_read_root(root: Path, path: str) -> None:
+    """읽기 허용 폴더 하나 더하기의 검사 (제안·수락 둘 다): 6단계 저장과 같은 허용하지 않는 폴더
+    검사(`policy_path`), 이미 목록에 있으면 `exists`."""
+    workspace = Workspace.open(root)
+    read_roots.check_root(workspace, path)
+    taken = {read_roots.canonical(p, real=False) for p in read_roots.configured(workspace)}
+    if read_roots.canonical(path.strip(), real=False) in taken:
+        raise KnowledgeError("exists", "이미 있는 읽기 허용 폴더다")
 
 
 def value_hash(value: Any) -> str:
