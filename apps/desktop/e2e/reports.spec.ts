@@ -72,11 +72,12 @@ test("정상 수리 보고: 자동 수리 되돌리기 한 번 → 원래 바이
   expect(readBytes(world, IMAGE).equals(teamImage)).toBe(true);
   // 두 번째 되돌리기는 daemon이 막는다 (렌더러 사람 경로로 직접 불러도)
   const adoption = await page.evaluate(async () => {
-    const list = (await (window as unknown as { kookabug: { rpc(m: string, p: unknown): Promise<{ adoptions: { id: string }[] }> } }).kookabug.rpc(
+    const list = (await (window as unknown as { kookabug: { rpc(m: string, p: unknown): Promise<{ adoptions: { id: string; kind?: string }[] }> } }).kookabug.rpc(
       "adoptions.list",
       {},
-    )) as { adoptions: { id: string }[] };
-    return list.adoptions[0].id;
+    )) as { adoptions: { id: string; kind?: string }[] };
+    // 목록은 파일 이름 순이라 되돌리기 기록이 앞에 올 수 있다 — 원래 채택을 고른다
+    return list.adoptions.filter((a) => a.kind !== "revert")[0].id;
   });
   const second = await page.evaluate(async (id) => {
     try {

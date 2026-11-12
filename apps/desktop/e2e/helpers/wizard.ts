@@ -24,6 +24,15 @@ export interface WizardWorld {
   env: Record<string, string>;
 }
 
+/**
+ * 세계마다 따로 쓰는 입력 임대권 뮤텍스 이름 (kb_testing/proc.py `isolated_env`와 같은 뜻).
+ * 기본 이름(`Local\Kookabug.InputLease`)은 Windows 세션 전체에 하나라, 같은 PC에서 사람이 띄운 Kookabug가
+ * 실행·녹화 중이면 검사 실행이 `input_lease_busy`로 끝난다. 상태 폴더(`KOOKABUG_STATE_DIR`)만 나눠서는 막지 못한다
+ */
+export function isolatedLeaseName(dir: string): string {
+  return `Local\\Kookabug.InputLease.e2e-${path.basename(dir)}`;
+}
+
 /** 가짜 QA CLI 명령줄 (agent-job custom 프로필이 CommandLineToArgvW로 나눈다) */
 export function fakeAgentCommand(script: string): string {
   return `"${VENV_PYTHON}" -m kb_testing.fake_qa_agent --script "${script}"`;
@@ -52,6 +61,7 @@ export function prepareWizardWorld(script = MIN_SCRIPT): WizardWorld {
       KOOKABUG_DAEMON_ARGS: JSON.stringify(["--platform-fake", platform]),
       KOOKABUG_OCR_MODELS: OCR_MODELS,
       KOOKABUG_STATE_DIR: state,
+      KOOKABUG_INPUT_LEASE_NAME: isolatedLeaseName(dir),
       KOOKABUG_USER_CONFIG_DIR: user,
       KOOKABUG_E2E_HOOKS: "1",
       KOOKABUG_E2E_AGENT_JOB: fakeAgentCommand(script),

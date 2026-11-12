@@ -6,7 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DEFAULT_TEST_AGENT, REPO_CLI } from "./app";
-import { fakeAgentCommand, OCR_MODELS, TOOLS_DIR, VENV_PYTHON } from "./wizard";
+import { fakeAgentCommand, isolatedLeaseName, OCR_MODELS, TOOLS_DIR, VENV_PYTHON } from "./wizard";
 
 export interface ShopWorld {
   dir: string;
@@ -37,6 +37,7 @@ export function prepareShopWorld(variant: "moved" | "missing"): ShopWorld {
       KOOKABUG_DAEMON_ARGS: JSON.stringify(["--platform-fake", platform]),
       KOOKABUG_OCR_MODELS: OCR_MODELS,
       KOOKABUG_STATE_DIR: state,
+      KOOKABUG_INPUT_LEASE_NAME: isolatedLeaseName(dir),
       KOOKABUG_USER_CONFIG_DIR: user,
       KOOKABUG_E2E_HOOKS: "1",
       PYTHONPATH: TOOLS_DIR,
