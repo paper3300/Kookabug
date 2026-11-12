@@ -323,3 +323,16 @@
   white-space: pre-wrap;
   overflow: hidden;
 }
+
+/* 입력 전 게임 창 앞으로가 그래프 기본값과 다른 입력 노드 (UX4): 머리 오른쪽 작은 글자 */
+.focusMark {
+  flex: 0 0 auto;
+  margin-right: 4px;
+  font-size: var(--kb-font-size-small);
+  font-weight: 400;
+  color: var(--kb-fg-muted);
+}
+
+.focusMark[data-focus="off"] {
+  color: var(--kb-status-warn);
+}

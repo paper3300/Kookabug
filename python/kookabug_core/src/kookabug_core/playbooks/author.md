@@ -1,7 +1,7 @@
 ---
 format: kookabug.playbook/0
 name: author
-version: 2
+version: 3
 tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
 ---
 # 플레이북 author — 테스트 작성
@@ -12,6 +12,7 @@ tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
 ## 원칙
 - 테스트 그래프 최상위 `qa`에 검증하는 주장(`claims[{id, rev, assertions}]`)을 적는다. `assertions`는 판정 노드여야 한다.
 - 추측한 기대 결과(`guess`)로 만든 테스트의 결과는 "가설 일치·불일치"다. 불일치만으로 제품 버그로 확정하지 않는다.
+- 입력 노드 앞에 창 앞으로 가져오는 노드를 넣지 않는다. 창 앞으로는 기본 옵션(그래프·노드 `focus_before_input`, 기본 켜짐)이 처리한다. `core.window.set_current`는 대상 창을 바꿀 때만 쓴다.
 - 치트는 채택된 것만 테스트의 `qa.cheats.allow` 범위 안에서 쓴다. 버그를 숨기는 데 쓰지 않는다(은폐 금지).
 
 ## 순서

@@ -394,9 +394,11 @@ function start(): void {
     },
     recorderArm: () => shortcuts.arm(),
     recorderDisarm: () => shortcuts.disarm(),
-    agentStart: agentAction((agentId: unknown) => {
+    agentStart: agentAction((agentId: unknown, load: unknown, root: unknown) => {
       if (typeof agentId !== "string" || agentId === "") throw new IpcGuardError("agentStart 인자가 문자열이 아니다");
-      return agentHost.start(agentId);
+      if (load !== undefined && load !== null && typeof load !== "string") throw new IpcGuardError("agentStart load 인자가 문자열이 아니다");
+      if (typeof root !== "string" || root === "") throw new IpcGuardError("agentStart root 인자가 문자열이 아니다");
+      return agentHost.start(agentId, typeof load === "string" && load !== "" ? load : undefined, root);
     }),
     agentPrompt: agentAction((session: unknown, text: unknown) => agentHost.prompt(session, text)),
     agentCancel: agentAction((session: unknown) => agentHost.cancel(session)),

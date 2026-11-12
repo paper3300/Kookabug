@@ -76,6 +76,50 @@ export async function requestCloseTab(path: string): Promise<boolean> {
   }
 }
 
+function pathDirty(path: string): boolean {
+  const target = getTarget(path);
+  if (target !== undefined) return targetDirty(target);
+  return getDoc(path)?.dirty === true;
+}
+
+/**
+ * 여러 탭을 한 번에 닫는다 (UX4 탭 메뉴 "다른 탭 닫기"·"모든 탭 닫기"). 저장 안 된 탭이 하나면 탭 하나 닫을 때와
+ * 같은 질문, 여럿이면 "저장 안 된 탭 N개" 한 번으로 묶는다. 취소하거나 저장이 실패하면 아무 탭도 닫지 않는다
+ */
+export async function requestCloseTabs(paths: readonly string[]): Promise<boolean> {
+  for (;;) {
+    const dirty = paths.filter(pathDirty);
+    if (dirty.length > 0) {
+      const one = dirty.length === 1 ? dirty[0] : null;
+      const r = await ask({
+        title: one !== null ? `'${displayName(one)}'의 변경을 저장할까요?` : `저장 안 된 탭이 ${dirty.length}개 있어요`,
+        message: one !== null ? "저장하지 않으면 변경이 사라져요." : `${dirty.join("\n")}\n저장하지 않으면 변경이 사라져요.`,
+        buttons: [
+          { label: one !== null ? "저장" : "모두 저장", value: "save", primary: true },
+          { label: "저장 안 함", value: "discard" },
+          { label: "취소", value: "cancel" },
+        ],
+        cancelValue: "cancel",
+      });
+      if (r.value === "cancel") return false;
+      if (r.value === "save") {
+        const unlock = lockEdits();
+        try {
+          // 새 target이 그래프 핀을 채울 수 있어 target 먼저 (confirmLeaveDirty와 같은 순서)
+          for (const p of dirty) if (getTarget(p) !== undefined && (await saveTarget(p)) !== "saved") return false;
+          for (const p of dirty) if (getTarget(p) === undefined && !saved(await saveDoc(p))) return false;
+        } finally {
+          unlock();
+        }
+        // 저장한 뒤에도 남은 저장 안 된 탭이 있으면 다시 묻는다
+        if (paths.some(pathDirty)) continue;
+      }
+    }
+    for (const p of paths) closeTab(p);
+    return true;
+  }
+}
+
 /**
  * 저장 안 된 그래프를 묻는다: 프로젝트를 떠나기 전(열기·바꾸기·닫기)과 앱 창을 닫기 전. "모두 저장"이면 저장이
  * 끝날 때까지 편집을 잠그고, 끝난 뒤 남은 저장 안 된 문서가 있으면 다시 묻는다

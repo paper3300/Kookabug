@@ -1,7 +1,7 @@
 // ACP 클라이언트 (M5 계획 3.10): 가짜 에이전트 프로세스로 initialize·session/new·prompt·권한 카드·취소를 본다
 import { describe, expect, test } from "vitest";
 import type { AgentEvent } from "./events";
-import { AgentHost, hostArgs, parseAgentOverride, type SpawnRequest } from "./host";
+import { AgentHost, hostArgs, parseAgentOverride, sameRoot, type SpawnRequest } from "./host";
 import { CLIENT_CAPABILITIES, parseSessionConfig, type AgentProcess } from "./session";
 
 /** 주 프로세스가 쓴 줄을 받아 각본대로 답하는 가짜 에이전트 */
@@ -12,6 +12,8 @@ class FakeProc implements AgentProcess {
   /** session/set_* 요청 답 (없으면 빈 객체) */
   setResult: unknown = {};
   killed = false;
+  /** initialize의 agentCapabilities.loadSession (UX4) */
+  canLoad = false;
   /** false면 kill() 뒤 끝남 알림을 바로 보내지 않는다 (도우미가 Job을 정리하는 동안) */
   exitOnKill = true;
   private out: (chunk: string) => void = () => {};
@@ -21,7 +23,13 @@ class FakeProc implements AgentProcess {
   write(line: string): void {
     const msg = JSON.parse(line) as (typeof this.received)[number];
     this.received.push(msg);
-    if (msg.method === "initialize") this.reply(msg.id!, { protocolVersion: 1, agentCapabilities: {} });
+    if (msg.method === "initialize") this.reply(msg.id!, { protocolVersion: 1, agentCapabilities: this.canLoad ? { loadSession: true } : {} });
+    else if (msg.method === "session/load") {
+      // 불러오는 동안 지난 대화를 다시 보낸다 (ACP) — 화면에는 내지 않아야 한다
+      this.update({ sessionUpdate: "user_message_chunk", content: { type: "text", text: "지난 질문" } });
+      this.update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "지난 답" } });
+      this.reply(msg.id!, {});
+    }
     else if (msg.method === "session/new") this.reply(msg.id!, { sessionId: "s1", ...this.sessionExtra });
     else if (msg.method?.startsWith("session/set_") === true) this.reply(msg.id!, this.setResult);
     else if (msg.method === "session/prompt") this.onPrompt(msg.id!);
@@ -325,5 +333,37 @@ describe("세션 설정 (Model·Effort)", () => {
 
   test("설정이 없는 에이전트는 빈 배열", () => {
     expect(parseSessionConfig({ sessionId: "s1" })).toEqual([]);
+  });
+
+  test("이전 대화 이어 가기 (UX4): loadSession이면 session/load, 다시 보내는 지난 대화는 내지 않는다", async () => {
+    const proc = new FakeProc();
+    proc.canLoad = true;
+    const { h, events } = host(proc);
+    const started = await h.start("fake", "old-session");
+    expect(started).toMatchObject({ acpSession: "old-session", loaded: true });
+    expect(proc.received.some((m) => m.method === "session/new")).toBe(false);
+    expect(proc.received.find((m) => m.method === "session/load")?.params).toMatchObject({ sessionId: "old-session", cwd: "C:/ws" });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(events.some((e) => e.type === "message" || e.type === "hidden")).toBe(false);
+  });
+
+  test("이전 대화 이어 가기 (UX4): loadSession이 없으면 session/new (loaded false)", async () => {
+    const proc = new FakeProc();
+    const { h } = host(proc);
+    const started = await h.start("fake", "old-session");
+    expect(started).toMatchObject({ acpSession: "s1", loaded: false });
+    expect(proc.received.some((m) => m.method === "session/load")).toBe(false);
+  });
+
+  test("시작 요청의 프로젝트 루트가 지금 루트와 다르면 열지 않는다 (UX4 검수 1 H2, load 없을 때도)", async () => {
+    const proc = new FakeProc();
+    const { h, spawned } = host(proc);
+    await expect(h.start("fake", "old-session", "C:/other")).rejects.toMatchObject({ code: "workspace_changed" });
+    await expect(h.start("fake", undefined, "D:/elsewhere")).rejects.toMatchObject({ code: "workspace_changed" });
+    expect(spawned).toHaveLength(0);
+    // 구분자·대소문자·끝 구분자만 다르면 같은 루트
+    await expect(h.start("fake", undefined, "c:\\WS\\")).resolves.toMatchObject({ agentId: "fake" });
+    expect(sameRoot("C:/ws", "c:\\ws\\")).toBe(true);
+    expect(sameRoot("C:/ws", "C:/ws2")).toBe(false);
   });
 });

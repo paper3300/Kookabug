@@ -90,6 +90,8 @@ class Node:
     raw: Mapping[str, Any]
     record: Mapping[str, Any] | None = None
     """노드 기록 정책 (스키마 v0 6장, `{screenshots, video}`)."""
+    focus_before_input: bool | None = None
+    """입력 효과 노드를 부르기 직전에 대상 창을 앞으로 (UX4). None이면 그래프 기본값을 따른다."""
 
     @property
     def retry(self) -> Mapping[str, Any] | None:
@@ -114,6 +116,14 @@ class Graph:
     data: Mapping[str, Any] = field(default_factory=dict[str, Any])
     record: Mapping[str, Any] | None = None
     """그래프 기록 정책 (테스트·서브그래프 구간)."""
+    focus_before_input: bool = True
+    """입력 효과 노드 직전 창 앞으로의 그래프 기본값 (UX4, 파일에 없으면 켜짐)."""
+
+    def focus_for(self, node: Node) -> bool:
+        """그 노드의 실효 "입력 전 게임 창 앞으로" 값: 노드 값, 없으면 그래프 기본값."""
+        return (
+            self.focus_before_input if node.focus_before_input is None else node.focus_before_input
+        )
 
     def exec_edges(self) -> Iterator[ExecEdge]:
         for node in self.nodes.values():

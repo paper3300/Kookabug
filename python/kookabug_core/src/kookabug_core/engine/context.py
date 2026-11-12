@@ -249,6 +249,17 @@ class ForegroundPlatform(Protocol):
 
 
 @runtime_checkable
+class InputFocusPlatform(Protocol):
+    """입력 효과 노드를 부르기 직전에 대상 창을 앞으로 가져오는 플랫폼 (UX4 "입력 전 게임 창
+    앞으로"). 실행기가 노드 옵션(없으면 그래프 기본값, 기본 켜짐)이 켜진 입력 노드마다 시도
+    직전에 부른다. **입력 임대권을 쥔 실행에서만** 가져오고, 쥐지 않았으면 아무것도 하지 않고
+    False. 최선 노력이라 결과와 상관없이 그 뒤 입력은 지금 포그라운드 확인을 그대로 거친다
+    (앞으로 안 왔으면 `window_not_foreground`)."""
+
+    def focus_before_input(self, window: WindowRef, step: str | None) -> bool | None: ...
+
+
+@runtime_checkable
 class _StatePlatform(Protocol):
     """지금 창의 캡처 방식·클라이언트 크기·DPI를 주는 플랫폼 (공용 입력 서비스의 `state`와 같다)."""
 

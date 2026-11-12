@@ -1,7 +1,8 @@
 // 화면 지도 탭 (M7 계획 3.14, 시안 ScreenMap): 위 줄 범례(있는 출처만)·요약, 점 격자 위 카드와 이동 간선
 // (가 본 이동 실선·안 가 본 이동 점선 "아직 안 가 봄"·합치기 후보 이동 보라 점선·실행 기록 주황), 선택 카드에
-// 걸린 간선은 파랑. 카드를 끌면 자리를 기억한다(.kookabug/screen-map.json). 오른쪽 아래 확대 단추
+// 걸린 간선은 파랑. 카드를 끌면 자리를 기억한다(.kookabug/screen-map.json). 오른쪽 단추로 끌면 화면 이동(UX4). 오른쪽 아래 확대 단추
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useRightDragPan } from "../app/rightDragPan";
 import { autoLayout, bounds, edgePath, fitZoom, mergeLayout, nextZoom, type Point } from "./layout";
 import { openFileTab } from "../store/tabs";
 import {
@@ -90,6 +91,13 @@ export function ScreenMapTab() {
   const onUp = () => {
     drag.current = null;
   };
+  // 오른쪽 단추 끌기 = 화면 이동 (UX4, 카드 위에서도). 캔버스는 스크롤 상자라 스크롤을 옮긴다
+  const rightPan = useRightDragPan((dx, dy) => {
+    const el = canvasRef.current;
+    if (el === null) return;
+    el.scrollLeft -= dx;
+    el.scrollTop -= dy;
+  });
 
   return (
     <div className={css.tab} data-part="screen-map" data-loading={loading}>
@@ -125,6 +133,8 @@ export function ScreenMapTab() {
         ref={canvasRef}
         className={css.canvas}
         data-part="map-canvas"
+        onPointerDownCapture={rightPan.onPointerDownCapture}
+        onContextMenuCapture={rightPan.onContextMenuCapture}
         onPointerMove={onMove}
         onPointerUp={onUp}
         onPointerCancel={onUp}

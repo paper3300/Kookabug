@@ -114,6 +114,16 @@ export function PluginIcon(props: IconProps) {
   );
 }
 
+/** 액티비티 바 "보고함" (UX4) — 받은 편지함 모양 */
+export function InboxIcon(props: IconProps) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden="true" {...props}>
+      <path d="M4 13l2.5-8h11l2.5 8v6H4z" />
+      <path d="M4 13h5l1 2h4l1-2h5" />
+    </svg>
+  );
+}
+
 /** 하단 패널 펼치기 (접힌 패널, M4 B5) */
 export function ChevronUpIcon(props: IconProps) {
   return (

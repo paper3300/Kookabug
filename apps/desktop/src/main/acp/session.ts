@@ -2,6 +2,9 @@
 // 띄우는 일은 host.ts가 넣어 준다 (vitest가 가짜 프로세스로 검사한다).
 // - initialize: fs 읽기·쓰기 false, terminal false
 // - session/new: cwd = 워크스페이스 루트, mcpServers = [kookabug mcp] 하나
+// - 이전 대화 이어 가기(UX4): 에이전트가 initialize에서 loadSession을 알렸으면 session/load로 그 세션을 연다.
+//   불러오는 동안 에이전트가 다시 보내는 지난 대화(session/update)는 화면에 내지 않는다 (화면은 저장한 대화를 그린다).
+//   지원하지 않거나 불러오기가 실패하면 session/new
 // - session/request_permission은 카드로만 묻는다. 자동 허용 없음 — 답이 오기 전에 세션이 끝나면 cancelled
 // - 그 밖의 에이전트 → 클라이언트 요청(fs/*·terminal/*)은 "메서드 없음"
 import { AcpError, LineRpc, METHOD_NOT_FOUND } from "./client";
@@ -125,6 +128,8 @@ export class AgentSession {
   private ended = false;
   private nextPermission = 1;
   private configOptions: AgentConfigOption[] = [];
+  private replaying = false;
+  private loadedSession = false;
 
   constructor(
     private readonly proc: AgentProcess,
@@ -141,25 +146,44 @@ export class AgentSession {
     return !this.ended;
   }
 
-  /** initialize → session/new. 실패하면 프로세스를 끝내고 오류를 던진다 */
-  async start(): Promise<void> {
+  /**
+   * initialize → session/new (또는 `load`가 있고 에이전트가 loadSession을 지원하면 session/load).
+   * 실패하면 프로세스를 끝내고 오류를 던진다
+   */
+  async start(load?: string): Promise<void> {
     this.options.emit({ type: "status", status: "starting" });
     try {
-      await this.rpc.request("initialize", {
-        protocolVersion: ACP_PROTOCOL_VERSION,
-        clientCapabilities: CLIENT_CAPABILITIES,
-        clientInfo: { name: "kookabug", version: "0" },
-      });
-      const { name, command, args } = this.options.mcpServer;
-      const result = obj(
-        await this.rpc.request("session/new", {
-          cwd: this.options.cwd,
-          mcpServers: [{ name, command, args, env: [] }],
+      const init = obj(
+        await this.rpc.request("initialize", {
+          protocolVersion: ACP_PROTOCOL_VERSION,
+          clientCapabilities: CLIENT_CAPABILITIES,
+          clientInfo: { name: "kookabug", version: "0" },
         }),
       );
-      const id = result.sessionId;
-      if (typeof id !== "string" || id === "") throw new AcpError(-32603, "session/new 결과에 sessionId가 없다");
-      this.acpSession = id;
+      const canLoad = obj(init.agentCapabilities).loadSession === true;
+      const { name, command, args } = this.options.mcpServer;
+      const mcpServers = [{ name, command, args, env: [] }];
+      let result: Obj | null = null;
+      if (load !== undefined && load !== "" && canLoad) {
+        this.replaying = true;
+        try {
+          result = obj(await this.rpc.request("session/load", { sessionId: load, cwd: this.options.cwd, mcpServers }));
+          this.acpSession = load;
+          this.loadedSession = true;
+        } catch (err) {
+          // 프로세스가 끝났으면 그대로 실패, 에이전트가 거절만 했으면 새 세션으로
+          if (this.ended) throw err;
+          result = null;
+        } finally {
+          this.replaying = false;
+        }
+      }
+      if (result === null) {
+        result = obj(await this.rpc.request("session/new", { cwd: this.options.cwd, mcpServers }));
+        const id = result.sessionId;
+        if (typeof id !== "string" || id === "") throw new AcpError(-32603, "session/new 결과에 sessionId가 없다");
+        this.acpSession = id;
+      }
       this.configOptions = parseSessionConfig(result);
     } catch (err) {
       this.stop();
@@ -168,6 +192,16 @@ export class AgentSession {
       throw err;
     }
     this.options.emit({ type: "status", status: "ready" });
+  }
+
+  /** 에이전트의 ACP 세션 ID (없으면 빈 글) */
+  get acpSessionId(): string {
+    return this.acpSession ?? "";
+  }
+
+  /** start(load)가 지난 세션을 불러왔는가 */
+  get loaded(): boolean {
+    return this.loadedSession;
   }
 
   /** 지금 세션 설정 (모델·생각 수준 등) */
@@ -288,6 +322,8 @@ export class AgentSession {
 
   private onNotification(method: string, params: unknown): void {
     if (method !== "session/update") return;
+    // session/load가 다시 보내는 지난 대화는 내지 않는다 (화면은 저장한 대화를 그린다)
+    if (this.replaying) return;
     const update = obj(obj(params).update);
     const kind = str(update.sessionUpdate);
     if (kind === "agent_message_chunk") {

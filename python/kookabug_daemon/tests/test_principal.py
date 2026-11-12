@@ -152,6 +152,11 @@ def test_every_method_has_tool_or_ui_only() -> None:
         "screens.discard",
         "screens.layout_get",
         "screens.layout_set",
+        # UX4 에이전트 패널 이전 대화
+        "conversations.list",
+        "conversations.get",
+        "conversations.save",
+        "conversations.delete",
     } | RECORDER_METHODS | HUMAN_ONLY_M8
 
 

@@ -52,4 +52,8 @@ export interface AgentStartResult {
   name: string;
   /** session/new가 알려 준 세션 설정 (없으면 빈 배열) */
   config: AgentConfigOption[];
+  /** 에이전트가 준 ACP 세션 ID (이전 대화에 남겨 session/load로 이어 간다, UX4) */
+  acpSession: string;
+  /** 요청한 지난 세션을 session/load로 불러 이어 가는가 (에이전트가 loadSession을 지원할 때만, UX4) */
+  loaded: boolean;
 }

@@ -584,3 +584,29 @@
   min-width: 72px;
   padding: 0 12px;
 }
+
+/* 오른쪽 속성 탭의 고른 카드 (UX4) */
+.props {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+  flex: 1 1 auto;
+}
+
+.propsTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--kb-fg);
+}
+
+.propsEmpty {
+  padding: 8px 20px;
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}

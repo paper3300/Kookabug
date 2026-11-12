@@ -3585,6 +3585,30 @@ export interface Methods {
     result: ControlResult;
     tool: "kb_input_type";
   };
+  "conversations.delete": {
+    params: Ux4ConversationsDeleteParams;
+    renderer: true;
+    result: Ux4ConversationsDeleteResult;
+    tool: "ui_only";
+  };
+  "conversations.get": {
+    params: Ux4ConversationsGetParams;
+    renderer: true;
+    result: Ux4ConversationsGetResult;
+    tool: "ui_only";
+  };
+  "conversations.list": {
+    params: Ux4ConversationsListParams;
+    renderer: true;
+    result: Ux4ConversationsListResult;
+    tool: "ui_only";
+  };
+  "conversations.save": {
+    params: Ux4ConversationsSaveParams;
+    renderer: true;
+    result: Ux4ConversationsSaveResult;
+    tool: "ui_only";
+  };
   "daemon.shutdown": {
     params: DaemonShutdownParams;
     renderer: false;
@@ -4269,6 +4293,136 @@ export interface Methods {
     result: WorkspaceTreeResult;
     tool: "kb_project_info";
   };
+}
+/**
+ * conversations.delete (사람 전용, UX4): 이전 대화 하나 지우기
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Ux4ConversationsDeleteParams".
+ */
+export interface Ux4ConversationsDeleteParams {
+  id: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Ux4ConversationsDeleteResult".
+ */
+export interface Ux4ConversationsDeleteResult {
+  deleted: boolean;
+}
+/**
+ * conversations.get (사람 전용, UX4): 이전 대화 하나. 없으면 not_found
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Ux4ConversationsGetParams".
+ */
+export interface Ux4ConversationsGetParams {
+  id: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Ux4ConversationsGetResult".
+ */
+export interface Ux4ConversationsGetResult {
+  conversation: Ux4Conversation;
+}
+/**
+ * 이전 대화 하나 (.kookabug/conversations/<id>.json, kookabug.conversation/0, 이 PC). acp_session = Agent가 준 ACP 세션 ID (session/load로 이어 갈 때)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Ux4Conversation".
+ */
+export interface Ux4Conversation {
+  acp_session: null | string;
+  agent_id: string;
+  agent_name: string;
+  created_at: string;
+  format: "kookabug.conversation/0";
+  id: string;
+  items: Ux4ChatItem[];
+  title: string;
+  updated_at: string;
+}
+/**
+ * 패널 대화 한 줄 (화면에 보인 그대로 — 가린 값은 가린 채): user(text·chips)·agent(text)·tools(도구 활동 요약 tools·hidden·seconds)·permission(Agent 자기 도구 권한 카드 title·outcome·chosen)·approval(Kookabug 확인 요청 title·outcome)·error(text)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Ux4ChatItem".
+ */
+export interface Ux4ChatItem {
+  /**
+   * @maxItems 50
+   */
+  chips?: string[];
+  chosen?: null | string;
+  hidden?: number;
+  kind: "user" | "agent" | "tools" | "permission" | "approval" | "error";
+  outcome?: string;
+  seconds?: number;
+  text?: string;
+  title?: string;
+  /**
+   * @maxItems 200
+   */
+  tools?: {
+    failed: boolean;
+    status: string;
+    title: string;
+  }[];
+}
+/**
+ * conversations.list (사람 전용, UX4): 이 PC 이전 대화 목록, 최근 고친 것부터
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Ux4ConversationsListParams".
+ */
+export interface Ux4ConversationsListParams {}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Ux4ConversationsListResult".
+ */
+export interface Ux4ConversationsListResult {
+  conversations: Ux4ConversationSummary[];
+}
+/**
+ * 이전 대화 목록 한 줄: 제목(첫 사용자 메시지 앞부분)·Agent·만든·고친 시각·줄 수
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Ux4ConversationSummary".
+ */
+export interface Ux4ConversationSummary {
+  agent_id: string;
+  agent_name: string;
+  count: number;
+  created_at: string;
+  id: string;
+  title: string;
+  updated_at: string;
+}
+/**
+ * conversations.save (사람 전용, UX4): 대화를 원자 쓰기. 쓰기 전 워크스페이스 비밀값을 ***로 가린다(가림 값을 못 모으면 secret_unchecked). 최근 50개를 넘으면 오래된 것부터 지운다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Ux4ConversationsSaveParams".
+ */
+export interface Ux4ConversationsSaveParams {
+  conversation: {
+    acp_session: null | string;
+    agent_id: string;
+    agent_name: string;
+    id: string;
+    /**
+     * @maxItems 5000
+     */
+    items: Ux4ChatItem[];
+  };
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Ux4ConversationsSaveResult".
+ */
+export interface Ux4ConversationsSaveResult {
+  conversation: Ux4ConversationSummary;
 }
 /**
  * 팔레트: 레지스트리의 플러그인마다 노드 스키마 문서 하나 (kookabug_core.palette.export). M6: plugins = 설치 플러그인 요약 (잠금이 없거나 깨졌으면 빈 목록)

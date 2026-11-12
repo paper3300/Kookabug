@@ -42,6 +42,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import uuid
 from collections.abc import Callable, Mapping
@@ -55,6 +56,7 @@ from kookabug_core.engine.context import (
     DEFAULT_CAPTURE_TIMEOUT_MS,
     PLUGIN_CAPTURE,
     ArtifactStore,
+    InputFocusPlatform,
     Mark,
     Platform,
     PreparingPlatform,
@@ -864,6 +866,18 @@ class _Run:
                 # capture 효과의 워커 노드도 ctx.ocr를 부를 수 있다 (BACKLOG sfix_2)
                 remote_capture = nodedef.remote and "capture" in nodedef.effects
                 rt.platform.before_node(PLUGIN_CAPTURE if remote_capture else node.type, rt.check)
+            if (
+                step_window is not None
+                and "input" in nodedef.effects
+                and frame.graph.focus_for(node)
+                and isinstance(rt.platform, InputFocusPlatform)
+            ):
+                # 입력 전 게임 창 앞으로 (UX4): 임대권을 쥔 실행에서만 플랫폼이 가져온다. 못
+                # 가져와도 여기서 막지 않는다 — 입력의 포그라운드 확인이 지금처럼
+                # window_not_foreground로 알린다
+                with contextlib.suppress(Exception):
+                    rt.platform.focus_before_input(step_window, step)
+                rt.check()
             began = rt.wall_clock.now_ms()
             trace.begin_attempt()
             ctx = StepContext(rt, frame, node, step, config, step_window, trace=trace)

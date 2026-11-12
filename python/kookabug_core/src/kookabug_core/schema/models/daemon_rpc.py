@@ -4039,6 +4039,152 @@ class Ux2SourcesReadResult(BaseModel):
     text: str
 
 
+class Tool(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    failed: bool
+    status: str
+    title: str
+
+
+class Ux4ChatItem(BaseModel):
+    """
+    패널 대화 한 줄 (화면에 보인 그대로 — 가린 값은 가린 채): user(text·chips)·agent(text)·tools(도구 활동 요약 tools·hidden·seconds)·permission(Agent 자기 도구 권한 카드 title·outcome·chosen)·approval(Kookabug 확인 요청 title·outcome)·error(text)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    chips: Annotated[list[str] | None, Field(max_length=50)] = None
+    chosen: str | None = None
+    hidden: Annotated[int | None, Field(ge=0)] = None
+    kind: Literal["user", "agent", "tools", "permission", "approval", "error"]
+    outcome: str | None = None
+    seconds: Annotated[int | None, Field(ge=0)] = None
+    text: str | None = None
+    title: str | None = None
+    tools: Annotated[list[Tool] | None, Field(max_length=200)] = None
+
+
+class Ux4Conversation(BaseModel):
+    """
+    이전 대화 하나 (.kookabug/conversations/<id>.json, kookabug.conversation/0, 이 PC). acp_session = Agent가 준 ACP 세션 ID (session/load로 이어 갈 때)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    acp_session: str | None
+    agent_id: str
+    agent_name: str
+    created_at: str
+    format: Literal["kookabug.conversation/0"]
+    id: Annotated[str, Field(pattern="^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4,8}$")]
+    items: list[Ux4ChatItem]
+    title: str
+    updated_at: str
+
+
+class Ux4ConversationSummary(BaseModel):
+    """
+    이전 대화 목록 한 줄: 제목(첫 사용자 메시지 앞부분)·Agent·만든·고친 시각·줄 수
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    agent_id: str
+    agent_name: str
+    count: Annotated[int, Field(ge=0)]
+    created_at: str
+    id: Annotated[str, Field(pattern="^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4,8}$")]
+    title: str
+    updated_at: str
+
+
+class Ux4ConversationsDeleteParams(BaseModel):
+    """
+    conversations.delete (사람 전용, UX4): 이전 대화 하나 지우기
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: Annotated[str, Field(pattern="^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4,8}$")]
+
+
+class Ux4ConversationsDeleteResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    deleted: bool
+
+
+class Ux4ConversationsGetParams(BaseModel):
+    """
+    conversations.get (사람 전용, UX4): 이전 대화 하나. 없으면 not_found
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: Annotated[str, Field(pattern="^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4,8}$")]
+
+
+class Ux4ConversationsGetResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    conversation: Ux4Conversation
+
+
+class Ux4ConversationsListParams(BaseModel):
+    """
+    conversations.list (사람 전용, UX4): 이 PC 이전 대화 목록, 최근 고친 것부터
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+
+class Ux4ConversationsListResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    conversations: list[Ux4ConversationSummary]
+
+
+class Conversation(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    acp_session: str | None
+    agent_id: str
+    agent_name: str
+    id: Annotated[str, Field(pattern="^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4,8}$")]
+    items: Annotated[list[Ux4ChatItem], Field(max_length=5000)]
+
+
+class Ux4ConversationsSaveParams(BaseModel):
+    """
+    conversations.save (사람 전용, UX4): 대화를 원자 쓰기. 쓰기 전 워크스페이스 비밀값을 ***로 가린다(가림 값을 못 모으면 secret_unchecked). 최근 50개를 넘으면 오래된 것부터 지운다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    conversation: Conversation
+
+
+class Ux4ConversationsSaveResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    conversation: Ux4ConversationSummary
+
+
 class Verdict(RootModel[Literal["error", "fail", "pass", "skipped"]]):
     root: Annotated[Literal["error", "fail", "pass", "skipped"], Field(title="Verdict")]
 
@@ -4899,6 +5045,46 @@ class ControlType(BaseModel):
     renderer: Literal[False]
     result: ControlResult
     tool: Literal["kb_input_type"]
+
+
+class ConversationsDelete(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Ux4ConversationsDeleteParams
+    renderer: Literal[True]
+    result: Ux4ConversationsDeleteResult
+    tool: Literal["ui_only"]
+
+
+class ConversationsGet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Ux4ConversationsGetParams
+    renderer: Literal[True]
+    result: Ux4ConversationsGetResult
+    tool: Literal["ui_only"]
+
+
+class ConversationsList(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Ux4ConversationsListParams
+    renderer: Literal[True]
+    result: Ux4ConversationsListResult
+    tool: Literal["ui_only"]
+
+
+class ConversationsSave(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: Ux4ConversationsSaveParams
+    renderer: Literal[True]
+    result: Ux4ConversationsSaveResult
+    tool: Literal["ui_only"]
 
 
 class ExploreList(BaseModel):
@@ -7381,6 +7567,10 @@ class Methods(BaseModel):
     control_click: Annotated[ControlClick, Field(alias="control.click")]
     control_key: Annotated[ControlKey, Field(alias="control.key")]
     control_type: Annotated[ControlType, Field(alias="control.type")]
+    conversations_delete: Annotated[ConversationsDelete, Field(alias="conversations.delete")]
+    conversations_get: Annotated[ConversationsGet, Field(alias="conversations.get")]
+    conversations_list: Annotated[ConversationsList, Field(alias="conversations.list")]
+    conversations_save: Annotated[ConversationsSave, Field(alias="conversations.save")]
     daemon_shutdown: Annotated[DaemonShutdown, Field(alias="daemon.shutdown")]
     debug_breakpoints_get: Annotated[DebugBreakpointsGet, Field(alias="debug.breakpoints.get")]
     debug_breakpoints_set: Annotated[DebugBreakpointsSet, Field(alias="debug.breakpoints.set")]

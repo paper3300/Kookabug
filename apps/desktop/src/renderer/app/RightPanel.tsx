@@ -1,8 +1,10 @@
-// 오른쪽 패널 (M5 계획 3.10, 시안 Main): 속성 | 에이전트 탭. 기본 폭 320px(M2 U1), 왼쪽 끝을 끌어 폭 조절, 접기 가능.
+// 오른쪽 패널 (M5 계획 3.10, 시안 Main): 속성 | 에이전트 탭. 클릭한 것의 정보는 속성 탭에 그린다(UX4 — 그래프 노드,
+// 화면 지도 카드). 기본 폭 320px(M2 U1), 왼쪽 끝을 끌어 폭 조절, 접기 가능.
 // 프로젝트를 열면 처음부터 보인다(2026-11-09 사용자 요청). TARGET·REC 탭은 에이전트 탭을 골랐을 때만 (편집 화면 폭을 그대로 둔다)
 import { AgentPanel } from "../agent/AgentPanel";
 import { pendingCount, useAgent } from "../agent/agentStore";
 import { InspectorContent } from "../inspector/Inspector";
+import { ScreenProps } from "../screens/ScreenSidebar";
 import css from "../inspector/inspector.module.css";
 import { useTabs } from "../store/tabs";
 import { useUi } from "../store/ui";
@@ -89,7 +91,7 @@ export function RightPanel() {
           »
         </button>
       </div>
-      {tab === "agent" ? <AgentPanel /> : <InspectorContent />}
+      {tab === "agent" ? <AgentPanel /> : kind === "map" ? <ScreenProps /> : <InspectorContent />}
     </aside>
   );
 }

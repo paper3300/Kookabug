@@ -94,6 +94,11 @@ export const RENDERER_METHODS: ReadonlySet<string> = new Set([
   // M8 B7 마법사·보고함 (사람 경로만 — 결정·설정 쓰기는 daemon이 agent 연결을 거부하는 사람 전용 메서드)
   "wizard.get",
   "wizard.set",
+  // UX4 에이전트 패널 이전 대화 (사람 전용 — daemon이 agent 연결을 거부한다)
+  "conversations.list",
+  "conversations.get",
+  "conversations.save",
+  "conversations.delete",
   "project.setup.set",
   "local.settings.set",
   "project.qa_info",

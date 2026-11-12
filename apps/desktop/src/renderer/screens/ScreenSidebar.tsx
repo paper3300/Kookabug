@@ -1,6 +1,7 @@
-// 화면 지도 사이드바 (M7 계획 3.14, 시안 ScreenMap 왼쪽): "화면 · N" 목록(출처 점·이동 수), 선택 섹션(대표
-// 스크린샷 또는 "보호로 스크린샷 없음"·설명·출처·"이 화면인지 판정"·UI 요소·단추 2개·원문 보기), "확인 전" 묶음
-// (세션별 후보: 옮기기·버리기, 합치기 후보: 합치기·버리기 — 판정 조건이 없는 후보는 옮기기 꺼짐)
+// 화면 지도 사이드바 (M7 계획 3.14, 시안 ScreenMap 왼쪽): "화면 · N" 목록(출처 점·이동 수), "확인 전" 묶음
+// (세션별 후보: 옮기기·버리기, 합치기 후보: 합치기·버리기 — 판정 조건이 없는 후보는 옮기기 꺼짐).
+// 고른 카드 정보(대표 스크린샷 또는 "보호로 스크린샷 없음"·설명·출처·"이 화면인지 판정"·UI 요소·단추 2개·원문 보기)는
+// 오른쪽 속성 탭에 그린다 (UX4: 클릭한 것의 정보는 속성 탭 — ScreenProps)
 import { useState } from "react";
 import { addChip, setDraft } from "../agent/agentStore";
 import { openFileTab } from "../store/tabs";
@@ -40,7 +41,7 @@ function originText(card: MapCard): string {
   return "직접 작성";
 }
 
-function Selected({ card, map }: { card: MapCard; map: ScreenMap | null }) {
+export function ScreenSelected({ card, map }: { card: MapCard; map: ScreenMap | null }) {
   const ask = (kind: "flow" | "test") => {
     if (map === null) return;
     const r = agentRequest(map, card.node, kind);
@@ -99,6 +100,33 @@ function Selected({ card, map }: { card: MapCard; map: ScreenMap | null }) {
   );
 }
 
+/** 오른쪽 속성 탭 (화면 지도 탭이 활성일 때): 고른 카드 정보, 없으면 안내 한 줄 */
+export function ScreenProps() {
+  const map = useMap((s) => s.map);
+  const selected = useMap((s) => s.selected);
+  return <ScreenPropsView map={map} selected={selected} />;
+}
+
+export function ScreenPropsView({ map, selected }: { map: ScreenMap | null; selected: string | null }) {
+  const card = map?.screens.find((s) => s.node === selected);
+  if (card === undefined) {
+    return (
+      <div className={css.propsEmpty} data-part="map-props-empty">
+        화면 지도에서 카드를 고르면 정보가 보여요
+      </div>
+    );
+  }
+  return (
+    <div className={css.props} data-part="map-props">
+      <div className={css.propsTitle}>
+        <span className={`${css.rowDot} ${SOURCE_CLASS[cardSource(card)]}`} />
+        {cardTitle(card)}
+      </div>
+      <ScreenSelected card={card} map={map} />
+    </div>
+  );
+}
+
 export function ScreenSidebar() {
   const map = useMap((s) => s.map);
   const selected = useMap((s) => s.selected);
@@ -108,11 +136,9 @@ export function ScreenSidebar() {
 /** 값만 받아 그린다 (vitest 렌더) */
 export function ScreenSidebarView({ map, selected }: { map: ScreenMap | null; selected: string | null }) {
   const [listOpen, setListOpen] = useState(true);
-  const [detailOpen, setDetailOpen] = useState(true);
   const [pendingOpen, setPendingOpen] = useState(true);
   const confirmed = confirmedCards(map);
   const groups = pendingGroups(map);
-  const card = map?.screens.find((s) => s.node === selected);
   const choose = (node: string) => {
     select(node);
     openMapTab();
@@ -139,12 +165,6 @@ export function ScreenSidebarView({ map, selected }: { map: ScreenMap | null; se
             </span>
           </button>
         ))}
-      {card !== undefined && (
-        <>
-          <Section title={`선택 · ${cardTitle(card)}`} open={detailOpen} onToggle={() => setDetailOpen(!detailOpen)} />
-          {detailOpen && <Selected card={card} map={map} />}
-        </>
-      )}
       {groups.length > 0 && (
         <>
           <Section title="확인 전" open={pendingOpen} onToggle={() => setPendingOpen(!pendingOpen)} />

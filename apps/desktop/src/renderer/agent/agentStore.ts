@@ -1,5 +1,7 @@
 // 에이전트 패널 상태 (M5 계획 3.10). 대화 한 줄 모델은 순수 함수(applyEvent·routeApproval)라 vitest로 본다.
-// - 세션 = 주 프로세스가 띄운 에이전트 프로세스 하나 (window.kookabug.app.agent*). 대화는 저장하지 않는다 (C13)
+// - 세션 = 주 프로세스가 띄운 에이전트 프로세스 하나 (window.kookabug.app.agent*)
+// - 대화는 대화 단위로 이 PC에 저장한다 (UX4, daemon conversations.* — 저장 전 비밀값 가림). 패널 상단 "이전 대화"에서
+//   다시 열면 에이전트가 loadSession을 지원할 때 session/load로 이어 가고, 아니면 읽기 전용 + "이 대화 이어 하기"
 // - 받은 조각은 마지막 답에 이어 붙이고, 도구 호출은 "작업 N초 · 도구 M개" 한 줄로 접는다 (진행 중이면 펼침)
 // - 에이전트 자기 도구의 권한 요청은 그 선택지 그대로 카드로 (자동 허용 없음)
 // - Kookabug 확인 요청(approval.requested): agent.id가 panel:<세션>이면 대화 안, 아니면 맨 위 "외부 에이전트" 카드
@@ -45,6 +47,8 @@ export type ChatItem =
       chosen: string | null;
     }
   | { kind: "approval"; key: number; id: string }
+  /** 이전 대화에서 다시 연 Kookabug 확인 요청 결과 (카드 없이 한 줄, UX4) */
+  | { kind: "past_approval"; key: number; title: string; outcome: string }
   | { kind: "error"; key: number; text: string; restart: boolean };
 
 export interface ApprovalCard {
@@ -62,7 +66,14 @@ export interface SessionInfo {
   status: "starting" | "ready" | "busy" | "ended" | "error";
   /** 에이전트가 알려 준 세션 설정 (모델·생각 수준 등, 없으면 빈 배열) */
   config: AgentConfigOption[];
+  /** 에이전트의 ACP 세션 ID (이전 대화에 남긴다, UX4) */
+  acpSession: string;
+  /** 지난 세션을 session/load로 불러 이어 가는 중 */
+  loaded: boolean;
 }
+
+export type ConversationSummary = ResultOf<"conversations.list">["conversations"][number];
+export type SavedItem = ResultOf<"conversations.get">["conversation"]["items"][number];
 
 interface AgentState {
   session: SessionInfo | null;
@@ -99,6 +110,16 @@ interface AgentState {
   userEnded: boolean;
   /** 지금 연결이 프로젝트를 열 때의 자동 연결이다 (패널에 "기본 에이전트에 연결하는 중" 표시) */
   autoStarting: boolean;
+  /** 지금 대화의 저장 ID (첫 사용자 메시지 때 정한다, UX4) */
+  conversationId: string | null;
+  /** 이전 대화를 읽기 전용으로 보는 중 (에이전트가 session/load를 지원하지 않음) */
+  readOnly: boolean;
+  /** "이 대화 이어 하기" 뒤 첫 메시지 앞에 붙일 지난 대화 요약 */
+  pendingContext: string | null;
+  /** 패널 상단 "이전 대화" 목록 (null = 아직 읽지 않음) */
+  history: ConversationSummary[] | null;
+  historyOpen: boolean;
+  historyError: string | null;
 }
 
 const EMPTY: Omit<
@@ -118,6 +139,12 @@ const EMPTY: Omit<
   userConflict: false,
   userEnded: false,
   autoStarting: false,
+  conversationId: null,
+  readOnly: false,
+  pendingContext: null,
+  history: null,
+  historyOpen: false,
+  historyError: null,
 };
 
 export const useAgent = create<AgentState>(() => ({
@@ -373,8 +400,10 @@ function onApprovalResolved(p: NotificationParamsOf<"approval.resolved">): void 
 }
 
 export async function refreshConnections(): Promise<void> {
+  const op = beginOp();
   try {
     const { connections } = await client().call("agent.connections", {});
+    if (op.stale()) return;
     useAgent.setState({ connections });
   } catch {
     // 연결 전: 다시 붙으면 다시 읽는다
@@ -404,18 +433,21 @@ export async function refreshAgents(): Promise<boolean> {
 }
 
 export async function refreshCandidates(): Promise<void> {
+  const op = beginOp();
   try {
     const { candidates } = await client().call("agents.detect", {});
-    useAgent.setState({ candidates });
+    if (!op.stale()) useAgent.setState({ candidates });
   } catch {
-    useAgent.setState({ candidates: [] });
+    if (!op.stale()) useAgent.setState({ candidates: [] });
   }
 }
 
 /** 권한 계층을 읽는다. 읽었으면 true */
 export async function refreshPermissions(): Promise<boolean> {
+  const op = beginOp();
   try {
     const permissions = await client().call("permissions.get", {});
+    if (op.stale()) return false;
     useAgent.setState((s) => ({
       permissions,
       ...(s.userBase === null ? { userBase: { revision: userLayerRevision(permissions) } } : {}),
@@ -519,8 +551,10 @@ export async function checkUserRevision(): Promise<boolean | null> {
 }
 
 async function loadApprovals(): Promise<void> {
+  const op = beginOp();
   try {
     const { requests } = await client().call("approval.list", {});
+    if (op.stale()) return;
     for (const r of requests) if (!useAgent.getState().approvals.has(r.id)) onApprovalRequested(r);
   } catch {
     // 연결 전
@@ -530,6 +564,10 @@ async function loadApprovals(): Promise<void> {
 /** 앱 시작 때 한 번 (store/workspace.ts initWorkspace) */
 export function initAgent(): void {
   window.kookabug.on("agent.session", (data) => onSessionEvent(data as AgentSessionEvent));
+  // 대화가 바뀌면 잠시 뒤 저장한다 (UX4)
+  useAgent.subscribe((s, prev) => {
+    if (s.items !== prev.items) scheduleSave();
+  });
   client().on("approval.requested", (p) => onApprovalRequested(p));
   client().on("approval.resolved", (p) => onApprovalResolved(p));
   client().on("agent.connections.changed", () => void refreshConnections());
@@ -540,8 +578,14 @@ export async function agentConnected(): Promise<void> {
   await Promise.all([refreshConnections(), refreshAgents(), refreshPermissions(), loadApprovals()]);
 }
 
-/** 프로젝트가 바뀜: 세션을 끝내고 비운다 */
+/** 프로젝트가 바뀜: 세션을 끝내고 비운다. 기다리던 대화 저장은 버리고(마지막 저장은 떠나기 확인 단계가 끝냈다),
+ * 세대를 올려 대기 중인 목록·열기·시작을 무효화한다 (UX4 검수 1 H2) */
 export function resetAgent(): void {
+  beginOp(true);
+  if (saveTimer !== null) clearTimeout(saveTimer);
+  saveTimer = null;
+  baseline = null;
+  openedSaved = null;
   const { session } = useAgent.getState();
   if (session !== null) {
     stopping = session.id;
@@ -551,24 +595,41 @@ export function resetAgent(): void {
   resetAutoConnect();
 }
 
-export async function startSession(agentId: string): Promise<boolean> {
+export async function startSession(agentId: string, load?: string | null): Promise<boolean> {
+  // 시작을 요청한 프로젝트·세대: 기다리는 동안 프로젝트가 바뀌면 그 세션은 버린다 (주 프로세스도 루트를 대조한다)
+  const op = beginOp();
+  if (op.root === null) return false;
   const before = useAgent.getState().session;
   if (before !== null) {
     stopping = before.id;
     await app().agentStop(before.id).catch(() => {});
+    if (op.stale()) return false;
   }
   useAgent.setState({ starting: agentId, startError: null, session: null });
   try {
-    const started = await app().agentStart(agentId);
+    const started = await app().agentStart(agentId, load ?? null, op.root);
+    if (op.stale()) {
+      stopping = started.session;
+      void app().agentStop(started.session).catch(() => {});
+      return false;
+    }
     useAgent.setState({
       starting: null,
-      session: { id: started.session, agentId: started.agentId, name: started.name, status: "ready", config: started.config ?? [] },
+      session: {
+        id: started.session,
+        agentId: started.agentId,
+        name: started.name,
+        status: "ready",
+        config: started.config ?? [],
+        acpSession: started.acpSession ?? "",
+        loaded: started.loaded === true,
+      },
     });
     void refreshConnections();
     void applyRememberedConfig(started.session, started.agentId, started.config ?? []);
     return true;
   } catch (err) {
-    useAgent.setState({ starting: null, startError: errorText(err) });
+    if (!op.stale()) useAgent.setState({ starting: null, startError: errorText(err) });
     return false;
   }
 }
@@ -596,13 +657,15 @@ function rememberConfig(agentId: string, id: string, value: string): void {
 }
 
 async function applyRememberedConfig(session: string, agentId: string, config: readonly AgentConfigOption[]): Promise<void> {
+  const op = beginOp();
   const saved = rememberedConfig(agentId);
   for (const option of config) {
     const value = saved[option.id];
     if (value === undefined || value === option.current || !option.options.some((c) => c.value === value)) continue;
-    if (useAgent.getState().session?.id !== session) return;
+    if (op.stale() || useAgent.getState().session?.id !== session) return;
     try {
       const next = await app().agentSetConfig(session, option.id, value);
+      if (op.stale()) return;
       useAgent.setState((s) => (s.session?.id !== session ? s : { session: { ...s.session, config: next } }));
     } catch {
       // 에이전트가 거절하면 에이전트 기본값으로 둔다
@@ -614,12 +677,14 @@ async function applyRememberedConfig(session: string, agentId: string, config: r
 export async function setAgentConfig(id: string, value: string): Promise<void> {
   const { session } = useAgent.getState();
   if (session === null) return;
+  const op = beginOp();
   try {
     const next = await app().agentSetConfig(session.id, id, value);
     rememberConfig(session.agentId, id, value);
+    if (op.stale()) return;
     useAgent.setState((s) => (s.session?.id !== session.id ? s : { session: { ...s.session, config: next } }));
   } catch (err) {
-    pushError(`설정을 바꾸지 못했어요: ${errorText(err)}`, false);
+    if (!op.stale()) pushError(`설정을 바꾸지 못했어요: ${errorText(err)}`, false);
   }
 }
 
@@ -646,15 +711,24 @@ export function effortOption(config: readonly AgentConfigOption[]): AgentConfigO
 export async function switchAgent(agentId: string, confirm: () => Promise<boolean>): Promise<void> {
   const { session, items } = useAgent.getState();
   if (session?.agentId === agentId) return;
+  const op = beginOp();
   if (session !== null && items.length > 0 && !(await confirm())) return;
-  useAgent.setState({ items: [], leaseBlocked: null, jobBlocked: false });
+  if (op.stale()) return;
+  await flushConversation();
+  if (op.stale()) return;
+  freshConversation();
+  useAgent.setState({ items: [], leaseBlocked: null, jobBlocked: false, ...FRESH });
   await startSession(agentId);
 }
 
 /** 새 대화: 같은 에이전트로 새 세션, 대화 비우기 */
 export async function newConversation(): Promise<void> {
   const { session } = useAgent.getState();
-  useAgent.setState({ items: [], leaseBlocked: null, jobBlocked: false });
+  const op = beginOp();
+  await flushConversation();
+  if (op.stale()) return;
+  freshConversation();
+  useAgent.setState({ items: [], leaseBlocked: null, jobBlocked: false, ...FRESH });
   if (session !== null) await startSession(session.agentId);
 }
 
@@ -662,8 +736,13 @@ export async function newConversation(): Promise<void> {
 export async function endSession(): Promise<void> {
   const { session } = useAgent.getState();
   if (session === null) return;
+  const op = beginOp();
+  await flushConversation();
+  // 기다리는 동안 프로젝트가 바뀌었으면 그 세션은 이미 resetAgent가 끝냈다 — 새 프로젝트 화면·세션은 건드리지 않는다
+  if (op.stale() || useAgent.getState().session?.id !== session.id) return;
   stopping = session.id;
-  useAgent.setState({ session: null, items: [], leaseBlocked: null, jobBlocked: false, userEnded: true });
+  freshConversation();
+  useAgent.setState({ session: null, items: [], leaseBlocked: null, jobBlocked: false, userEnded: true, ...FRESH });
   await app().agentStop(session.id).catch(() => {});
 }
 
@@ -706,19 +785,21 @@ export async function tryAutoConnect(deps: { wizardOpen: boolean; jobActive: () 
   if (step !== "connect") return step;
   autoTried = true;
   const agentId = s.defaultAgent!;
+  const op = beginOp();
   let busy = true;
   try {
     busy = await deps.jobActive();
   } catch {
     busy = true; // 작업 상태를 모르면 붙지 않는다 (작업 밖 Agent가 작업을 막지 않게)
   }
+  if (op.stale()) return "skip";
   const now = useAgent.getState();
   if (busy || now.session !== null || now.starting !== null || now.userEnded) return "skip";
   useAgent.setState({ autoStarting: true });
   try {
     await startSession(agentId);
   } finally {
-    useAgent.setState({ autoStarting: false });
+    if (!op.stale()) useAgent.setState({ autoStarting: false });
   }
   return "connect";
 }
@@ -729,20 +810,26 @@ export function resetAutoConnect(): void {
 }
 
 export async function sendPrompt(): Promise<void> {
-  const { session, draft, chips } = useAgent.getState();
-  if (session === null || session.status === "busy") return;
-  const text = promptText(draft, chips);
-  if (text === "") return;
+  const { session, draft, chips, readOnly, pendingContext } = useAgent.getState();
+  if (session === null || session.status === "busy" || readOnly) return;
+  const typed = promptText(draft, chips);
+  if (typed === "") return;
+  // "이 대화 이어 하기" 뒤 첫 메시지: 지난 대화 요약을 맥락으로 앞에 붙인다 (화면에는 사람이 쓴 글만)
+  const text = pendingContext === null ? typed : `${pendingContext}\n\n${typed}`;
   useAgent.setState((s) => ({
     draft: "",
     chips: [],
+    pendingContext: null,
+    conversationId: s.conversationId ?? newConversationId(new Date()),
     items: [...s.items, { kind: "user", key: key(), text: draft.trim(), chips: chips.map((c) => c.label) }],
   }));
+  const op = beginOp();
   try {
     await app().agentPrompt(session.id, text);
   } catch (err) {
     // 프로세스가 끝나 실패한 보내기는 끝남 오류 줄(다시 시작)이 대신한다
     await new Promise((r) => setTimeout(r, 200));
+    if (op.stale()) return;
     const now = useAgent.getState().session;
     if (now?.id === session.id && now.status !== "ended" && now.status !== "error") pushError(errorText(err), false);
   }
@@ -775,9 +862,11 @@ export async function respondApproval(id: string, verdict: ApprovalAnswer): Prom
       return c === undefined ? s : { approvals: new Map(s.approvals).set(id, { ...c, ...p }) };
     });
   patch({ busy: true, error: null });
+  const op = beginOp();
   try {
     await client().call("approval.respond", { id, verdict });
   } catch (err) {
+    if (op.stale()) return;
     const e = toRpcError(err);
     const text =
       e.kind === "not_found"
@@ -896,15 +985,18 @@ export async function saveAgentSetup(
 
 /** 감지한 에이전트로 연결: 설정에 없으면 더한 뒤 세션 시작 */
 export async function connectCandidate(c: AgentCandidate): Promise<void> {
+  const op = beginOp();
   try {
     if (!useAgent.getState().agents.some((a) => a.id === c.id)) {
       await saveAgent({ id: c.id, name: c.name, command: c.command, args: c.args });
     }
   } catch (err) {
+    if (op.stale()) return;
     useAgent.setState({ startError: toRpcError(err).message });
     await refreshAgents();
     return;
   }
+  if (op.stale()) return;
   await startSession(c.id);
 }
 
@@ -919,13 +1011,16 @@ export async function connectManual(name: string, line: string): Promise<void> {
   let n = 1;
   while (taken.has(`custom-${n}`)) n++;
   const id = `custom-${n}`;
+  const op = beginOp();
   try {
     await saveAgent({ id, name: name.trim() || command, command, args });
   } catch (err) {
+    if (op.stale()) return;
     useAgent.setState({ startError: toRpcError(err).message });
     await refreshAgents();
     return;
   }
+  if (op.stale()) return;
   await startSession(id);
 }
 
@@ -941,6 +1036,8 @@ export const USER_CONFLICT_TEXT = "다른 곳에서 설정이 바뀌었어요";
  */
 export async function setUserPreset(preset: string): Promise<string | null> {
   if (useAgent.getState().userConflict) return USER_CONFLICT_TEXT;
+  // 사용자 계층 저장이지만 오류 칸은 지금 프로젝트 화면 것이라 전환 뒤 늦은 실패는 쓰지 않는다
+  const op = beginOp();
   let problem: string | null = null;
   try {
     // 화면이 아직 한 번도 읽지 않았을 때만 지금 읽는다 (그 값이 곧 이 저장의 기준)
@@ -964,8 +1061,298 @@ export async function setUserPreset(preset: string): Promise<string | null> {
       return USER_CONFLICT_TEXT;
     }
     problem = e.message;
-    useAgent.setState({ startError: problem });
+    if (!op.stale()) useAgent.setState({ startError: problem });
   }
   await refreshPermissions();
   return problem;
+}
+
+// ── 이전 대화 (UX4) ──────────────────────────────────────────────
+
+/** 새 대화로 갈 때 비우는 값 */
+const FRESH = { conversationId: null, readOnly: false, pendingContext: null } as const;
+
+export const CONTEXT_MESSAGES = 20;
+export const CONTEXT_LIMIT = 12000;
+const SAVE_DELAY_MS = 800;
+
+/** 대화 저장 ID: c-<날짜>-<시각>-<16진 4자리> (daemon 형식 검사와 같다) */
+export function newConversationId(now: Date, rand: () => number = Math.random): string {
+  const pad = (n: number, w = 2) => String(n).padStart(w, "0");
+  const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const time = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const tail = Math.floor(rand() * 0x10000)
+    .toString(16)
+    .padStart(4, "0");
+  return `c-${date}-${time}-${tail}`;
+}
+
+/** 화면 줄 → 저장 줄 (사용자·Agent 메시지, 도구 활동 요약, 승인 결과, 오류. 화면에 보인 그대로) */
+export function toSavedItems(items: readonly ChatItem[], approvals: ReadonlyMap<string, ApprovalCard>): SavedItem[] {
+  const out: SavedItem[] = [];
+  for (const item of items) {
+    switch (item.kind) {
+      case "user":
+        out.push({ kind: "user", text: item.text, chips: [...item.chips] });
+        break;
+      case "agent":
+        out.push({ kind: "agent", text: item.text });
+        break;
+      case "tools":
+        out.push({
+          kind: "tools",
+          tools: item.tools.slice(0, 200).map((t) => ({ title: t.title, status: t.status, failed: t.failed })),
+          hidden: item.hidden,
+          seconds: Math.max(0, Math.round((item.updated - item.started) / 1000)),
+        });
+        break;
+      case "acp_permission": {
+        const chosen = item.options.find((o) => o.id === item.chosen)?.name ?? item.chosen;
+        out.push({ kind: "permission", title: item.title, outcome: item.state, chosen });
+        break;
+      }
+      case "approval": {
+        const card = approvals.get(item.id);
+        if (card !== undefined) out.push({ kind: "approval", title: card.request.tool, outcome: card.state });
+        break;
+      }
+      case "past_approval":
+        out.push({ kind: "approval", title: item.title, outcome: item.outcome });
+        break;
+      case "error":
+        out.push({ kind: "error", text: item.text });
+        break;
+    }
+  }
+  return out;
+}
+
+/** 저장 줄 → 화면 줄 (다시 열기). 답을 기다리던 카드는 닫힌 것으로 */
+export function fromSavedItems(saved: readonly SavedItem[]): ChatItem[] {
+  const out: ChatItem[] = [];
+  for (const item of saved) {
+    switch (item.kind) {
+      case "user":
+        out.push({ kind: "user", key: key(), text: item.text ?? "", chips: [...(item.chips ?? [])] });
+        break;
+      case "agent":
+        out.push({ kind: "agent", key: key(), text: item.text ?? "" });
+        break;
+      case "tools": {
+        const tools = (item.tools ?? []).map((t, i) => ({ id: `past${i}`, title: t.title, status: t.status, failed: t.failed }));
+        out.push({ kind: "tools", key: key(), started: 0, updated: (item.seconds ?? 0) * 1000, tools, hidden: item.hidden ?? 0, open: false });
+        break;
+      }
+      case "permission": {
+        const chosen = item.chosen ?? null;
+        const state = item.outcome === "selected" ? "selected" : "cancelled";
+        const options = chosen === null ? [] : [{ id: chosen, name: chosen, kind: "" }];
+        out.push({ kind: "acp_permission", key: key(), id: `past${out.length}`, title: item.title ?? "", options, state, chosen });
+        break;
+      }
+      case "approval":
+        out.push({ kind: "past_approval", key: key(), title: item.title ?? "", outcome: item.outcome ?? "" });
+        break;
+      case "error":
+        out.push({ kind: "error", key: key(), text: item.text ?? "", restart: false });
+        break;
+    }
+  }
+  return out;
+}
+
+/** "이 대화 이어 하기": 지난 대화 마지막 N개 메시지(사용자·Agent)를 크기 상한 안에서 맥락 글로 */
+export function continuationContext(saved: readonly SavedItem[], n = CONTEXT_MESSAGES, limit = CONTEXT_LIMIT): string {
+  const lines: string[] = [];
+  let size = 0;
+  const messages = saved.filter((i) => i.kind === "user" || i.kind === "agent").slice(-n);
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    const who = m.kind === "user" ? "사용자" : "Agent";
+    let text = (m.text ?? "").trim();
+    if (text.length > 2000) text = `${text.slice(0, 2000)}…`;
+    const line = `${who}: ${text}`;
+    if (size + line.length > limit) break;
+    size += line.length;
+    lines.unshift(line);
+  }
+  return ["[지난 대화 요약 — 이전 세션의 마지막 메시지들이다. 이 맥락을 이어서 답한다]", ...lines, "[요약 끝]"].join("\n");
+}
+
+/**
+ * 프로젝트·대화 전환 세대 (UX4 검수 1 H2): 프로젝트 전환(`resetAgent`)과 대화 열기·새 대화·끊기마다 오른다. 대화 조회·저장
+ * 비우기·세션 시작을 기다린 뒤 세대나 프로젝트 루트가 바뀌었으면 아무것도 하지 않는다
+ */
+let generation = 0;
+let rootSource: () => string | null = () => null;
+/** 지금 프로젝트 루트 (workspace 저장소가 넣는다 — 서로 가져오면 순환이라) */
+export function setAgentRootSource(fn: () => string | null): void {
+  rootSource = fn;
+}
+/** 비동기 작업 하나의 시작 표: 시작 때의 세대·프로젝트 루트. await 뒤 `stale()`이면 화면·세션을 바꾸지 않고 끝낸다 */
+export interface Op {
+  readonly root: string | null;
+  stale(): boolean;
+}
+
+/**
+ * 작업을 시작한다 (UX4 검수 2 H1 — 세션·화면을 바꾸는 모든 진입점 공용). `bump`면 세대를 먼저 올려 앞서 시작한 다른 작업을
+ * 무효로 만든다. 세대를 올리거나 화면·세션을 바꾸는 코드는 매 await 뒤 `stale()` 검사 다음에 둔다
+ */
+export function beginOp(bump = false): Op {
+  if (bump) generation++;
+  const gen = generation;
+  const root = rootSource();
+  return { root, stale: () => gen !== generation || rootSource() !== root };
+}
+
+/** 지금 대화를 끝내고 새 대화로 (세대를 올려 기다리던 열기·시작을 무효화) */
+function freshConversation(): void {
+  beginOp(true);
+  baseline = null;
+  openedSaved = null;
+}
+/** 다시 연 대화의 저장된(이미 가린) 줄 — "이 대화 이어 하기" 요약은 이것으로만 만든다 */
+let openedSaved: readonly SavedItem[] | null = null;
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+/** 다시 열기로 그린 줄 (그대로면 저장하지 않는다 — 열기만 해도 목록 순서가 바뀌지 않게) */
+let baseline: readonly ChatItem[] | null = null;
+
+function scheduleSave(): void {
+  if (saveTimer !== null) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    void saveConversation();
+  }, SAVE_DELAY_MS);
+}
+
+/** 떠나기·닫기·새 대화 전 마지막 저장을 기다리는 한도 (넘으면 포기하고 진행 — 보조 저장이다, 검수 2 H2) */
+export const FLUSH_LIMIT_MS = 1500;
+
+/**
+ * 기다리는 저장을 바로 한다 (새 대화·끊기·다른 대화 열기·떠나기·창 닫기 전). 저장 응답을 `limitMs`까지만 기다린다 — 넘으면
+ * 저장은 뒤에서 마저 끝나지만(늦은 결과는 세대 검사로 새 상태를 바꾸지 않는다) 부르는 쪽은 진행한다
+ */
+export async function flushConversation(limitMs = FLUSH_LIMIT_MS): Promise<void> {
+  if (saveTimer === null) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const limit = new Promise<void>((resolve) => (timer = setTimeout(resolve, limitMs)));
+  try {
+    await Promise.race([saveConversation(), limit]);
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+  }
+}
+
+async function saveConversation(): Promise<void> {
+  const op = beginOp();
+  const s = useAgent.getState();
+  if (s.conversationId === null || s.readOnly || s.items === baseline) return;
+  if (!s.items.some((i) => i.kind === "user")) return;
+  const agentId = s.session?.agentId ?? "";
+  const name = s.session?.name ?? s.agents.find((a) => a.id === agentId)?.name ?? agentId;
+  try {
+    await client().call("conversations.save", {
+      conversation: {
+        id: s.conversationId,
+        agent_id: agentId,
+        agent_name: name,
+        acp_session: s.session !== null && s.session.acpSession !== "" ? s.session.acpSession : null,
+        items: toSavedItems(s.items, s.approvals),
+      },
+    });
+    if (!op.stale() && useAgent.getState().historyOpen) void loadHistory();
+  } catch {
+    // 저장하지 못해도 대화는 이어 간다 (비밀값 확인 불가·디스크 오류 — 다음 바뀜에 다시 해 본다)
+  }
+}
+
+export async function loadHistory(): Promise<void> {
+  const op = beginOp();
+  try {
+    const { conversations } = await client().call("conversations.list", {});
+    if (!op.stale()) useAgent.setState({ history: conversations, historyError: null });
+  } catch (err) {
+    if (!op.stale()) useAgent.setState({ historyError: toRpcError(err).message });
+  }
+}
+
+export function toggleHistory(): void {
+  const open = !useAgent.getState().historyOpen;
+  useAgent.setState({ historyOpen: open });
+  if (open) void loadHistory();
+}
+
+/**
+ * 이전 대화 열기: 그 대화를 그린 뒤 그 Agent로 세션을 연다. 에이전트가 loadSession을 지원하면 session/load로
+ * 이어 가고, 아니면(또는 Agent를 띄우지 못하면) 읽기 전용
+ */
+export async function openConversation(id: string): Promise<void> {
+  const op = beginOp(true);
+  if (op.root === null) return;
+  let conv: ResultOf<"conversations.get">["conversation"];
+  try {
+    ({ conversation: conv } = await client().call("conversations.get", { id }));
+  } catch (err) {
+    if (!op.stale()) useAgent.setState({ historyError: toRpcError(err).message });
+    return;
+  }
+  if (op.stale()) return;
+  await flushConversation();
+  if (op.stale()) return;
+  const items = fromSavedItems(conv.items);
+  baseline = items;
+  openedSaved = conv.items;
+  useAgent.setState({
+    items,
+    conversationId: conv.id,
+    readOnly: false,
+    pendingContext: null,
+    historyOpen: false,
+    leaseBlocked: null,
+    jobBlocked: false,
+    userEnded: false,
+  });
+  const s = useAgent.getState();
+  // 세션 ID는 그 Agent의 것이다: 저장한 Agent로 열 때만 load를 넘긴다. 다른 Agent면 읽기 전용 (검수 1 M3)
+  const same = s.agents.some((a) => a.id === conv.agent_id);
+  const agentId = same ? conv.agent_id : (s.session?.agentId ?? s.defaultAgent);
+  const ok = agentId !== null && (await startSession(agentId, same ? conv.acp_session : null));
+  if (op.stale()) return;
+  if (!ok || !same || useAgent.getState().session?.loaded !== true) useAgent.setState({ readOnly: true });
+}
+
+/** 읽기 전용으로 본 대화를 새 세션에서 이어 간다: 지난 대화 요약을 첫 메시지 맥락으로 */
+export async function continueConversation(): Promise<void> {
+  const s = useAgent.getState();
+  if (!s.readOnly) return;
+  const op = beginOp();
+  // 요약은 저장된(이미 가린) 줄로만 만든다
+  const context = continuationContext(openedSaved ?? []);
+  const session = s.session;
+  if (session === null || session.status === "ended" || session.status === "error") {
+    const agentId = s.agents.find((a) => a.id === session?.agentId)?.id ?? s.defaultAgent;
+    if (agentId === null || !(await startSession(agentId)) || op.stale()) return;
+  }
+  if (op.stale()) return;
+  baseline = null;
+  openedSaved = null;
+  useAgent.setState({ readOnly: false, pendingContext: context });
+}
+
+/** 이전 대화 지우기 (확인은 부르는 쪽) */
+export async function deleteConversation(id: string): Promise<void> {
+  const op = beginOp();
+  try {
+    await client().call("conversations.delete", { id });
+    if (op.stale()) return;
+    if (useAgent.getState().conversationId === id) useAgent.setState({ conversationId: null });
+  } catch (err) {
+    if (op.stale()) return;
+    useAgent.setState({ historyError: toRpcError(err).message });
+  }
+  await loadHistory();
 }

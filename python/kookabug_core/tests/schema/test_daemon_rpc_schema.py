@@ -170,6 +170,11 @@ TOOLS = {
             # M8 B7 마법사 2·8단계 설정 쓰기
             "project.setup.set",
             "local.settings.set",
+            # UX4 에이전트 패널 이전 대화 (사람 전용, 이 PC)
+            "conversations.list",
+            "conversations.get",
+            "conversations.save",
+            "conversations.delete",
         ),
         "ui_only",
     ),

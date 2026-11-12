@@ -241,6 +241,12 @@ def _record_of(data: Mapping[str, Any]) -> Mapping[str, Any] | None:
     return dict(record) if isinstance(record, Mapping) else None
 
 
+def _focus_of(raw: Mapping[str, Any]) -> bool | None:
+    """노드의 `focus_before_input` (없으면 None = 그래프 기본값을 따른다)."""
+    value = raw.get("focus_before_input")
+    return value if isinstance(value, bool) else None
+
+
 class _Loader:
     def __init__(self, workspace: Workspace, options: RunOptions, secrets: SecretProvider) -> None:
         self.ws = workspace
@@ -383,6 +389,7 @@ class _Loader:
             interface=data.get("interface"),
             data=data,
             record=_record_of(data),
+            focus_before_input=data.get("focus_before_input", True) is not False,
         )
         for node_id, raw in data["nodes"].items():
             inputs = {
@@ -399,6 +406,7 @@ class _Loader:
                 next=dict(raw.get("next", {})),
                 raw=raw,
                 record=_record_of(raw),
+                focus_before_input=_focus_of(raw),
             )
             graph.nodes[node_id] = node
         return graph

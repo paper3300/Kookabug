@@ -2,7 +2,8 @@
 // 내용. 그래프 탭은 캔버스(T8), TARGET 탭은 target 편집기(T12), 그 밖 탐색기 파일은 읽기 전용 보기(다듬기 P1-B).
 // 탭 줄 오른쪽은 실행 툴바(T11).
 // 실행이 있으면 내용 위 가운데에 디버그 툴바, 멈췄으면 경로 표시줄 아래에 멈춤 띠 (M3 T9)
-import type { ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
+import { ContextMenu } from "./ContextMenu";
 import { DebugToolbar } from "../debug/DebugToolbar";
 import { FileView } from "../file/FileView";
 import { PauseBanner } from "../debug/PauseBanner";
@@ -16,7 +17,7 @@ import { TargetEditor } from "../target/TargetEditor";
 import { targetDirty, useTargets } from "../target/targetStore";
 import { useRun } from "../run/runStore";
 import { editedSinceRun } from "../run/view";
-import { requestCloseTab } from "../store/editing";
+import { requestCloseTab, requestCloseTabs } from "../store/editing";
 import {
   CONFLICT_DELETED,
   dismissConflict,
@@ -39,8 +40,19 @@ function Tabs() {
   const active = useTabs((s) => s.active);
   const docs = useDocuments((s) => s.docs);
   const targets = useTargets((s) => s.docs);
+  const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
   return (
     <div role="tablist" aria-label="열린 파일" className={css.tabs} data-part="tabs">
+      {menu !== null && (
+        <ContextMenu
+          label="탭 메뉴"
+          part="tab-menu"
+          at={menu}
+          onClose={closeMenu}
+          items={tabMenuItems(menu.path, tabs.map((t) => t.path))}
+        />
+      )}
       {tabs.map((tab) => {
         const badge = tabBadge(tab);
         const selected = tab.path === active;
@@ -55,6 +67,10 @@ function Tabs() {
             data-dirty={dirty}
             className={css.tab}
             title={tab.path}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu({ x: e.clientX, y: e.clientY, path: tab.path });
+            }}
           >
             <button type="button" className={css.tabLabel} onClick={() => activateTab(tab.path)}>
               <span
@@ -88,6 +104,24 @@ function Tabs() {
       })}
     </div>
   );
+}
+
+/** 탭 오른쪽 클릭 메뉴 (UX4): 닫기·다른 탭 닫기·모든 탭 닫기. 저장 안 된 탭 확인은 requestCloseTabs가 묶는다 */
+export function tabMenuItems(path: string, all: readonly string[]) {
+  const others = all.filter((p) => p !== path);
+  return [
+    { label: "닫기", part: "tab-menu-close", onSelect: () => void requestCloseTab(path) },
+    {
+      label: "다른 탭 닫기",
+      part: "tab-menu-close-others",
+      disabled: others.length === 0,
+      onSelect: () => {
+        activateTab(path);
+        void requestCloseTabs(others);
+      },
+    },
+    { label: "모든 탭 닫기", part: "tab-menu-close-all", onSelect: () => void requestCloseTabs(all) },
+  ];
 }
 
 function Breadcrumb() {

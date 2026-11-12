@@ -239,3 +239,23 @@ def test_bring_forward_taps_only_through_attached_actor(monkeypatch: pytest.Monk
     platform.attach_input(closed)
     assert platform.bring_forward(WindowRef(HWND, "Game"), "s2") is False
     assert closed.taps == []
+
+
+# ---------------------------------------------------------------- 입력 전 창 앞으로 (UX4)
+
+
+def test_focus_before_input_only_with_lease(monkeypatch: pytest.MonkeyPatch) -> None:
+    """입력 임대권(액터)이 없으면 창을 건드리지 않고 False. 있으면 `bring_forward`와 같은 경로
+    (입력 없는 방법 → 액터를 거친 Alt)."""
+    platform, _, _ = platform_with(monkeypatch)  # 입력 싱크가 액터가 아니다 (임대권 없는 실행)
+    seen = _foreground_calls(monkeypatch)
+    assert platform.focus_before_input(WindowRef(HWND, "Game"), "s1") is False
+    assert seen == []  # 가져오기 자체를 하지 않는다
+    actor = TapActor()
+    platform.attach_input(actor)
+    platform.focus_before_input(WindowRef(HWND, "Game"), "s1")
+    assert seen == [True] and actor.taps == [("alt", "s1")]
+    closed = TapActor(gate_closed=True)
+    platform.attach_input(closed)
+    assert platform.focus_before_input(WindowRef(HWND, "Game"), "s2") is False
+    assert closed.taps == []

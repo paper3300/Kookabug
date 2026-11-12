@@ -1,6 +1,6 @@
 // 최상위: 워크스페이스가 없으면 시작 화면, 있으면 앱 틀
 import { useEffect } from "react";
-import { confirmLeaveDirty } from "../store/editing";
+import { confirmClose } from "./closeFlow";
 import { useTheme } from "../store/theme";
 import { layoutOf, parseLayout, useUi } from "../store/ui";
 import { initWorkspace, useWorkspace } from "../store/workspace";
@@ -49,7 +49,8 @@ export function App() {
     initLayout();
     // 창 닫기(X·끝내기·OS 닫기) 전에 저장 안 된 그래프를 묻는다 (주 프로세스 close-guard.ts)
     window.kookabug.on("app.closeRequested", () => {
-      void confirmLeaveDirty().then((ok) => window.kookabug.app.closeAnswer(ok));
+      // 저장 안 된 그래프 확인 뒤 에이전트 패널 대화의 마지막 저장(최대 1.5초, UX4)
+      void confirmClose().then((ok) => window.kookabug.app.closeAnswer(ok));
     });
     void window.kookabug.app.closeGuard(true);
   }, []);

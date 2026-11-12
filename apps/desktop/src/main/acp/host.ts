@@ -65,6 +65,12 @@ export function hostArgs(root: string, command: string, args: readonly string[],
   return [...out, "--", command, ...args];
 }
 
+/** 같은 프로젝트 루트인가 (Windows 경로: 구분자·대소문자·끝 구분자 무시) */
+export function sameRoot(a: string, b: string): boolean {
+  const norm = (p: string) => p.replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
+  return norm(a) === norm(b);
+}
+
 export class AgentHost {
   private readonly sessions = new Map<string, AgentSession>();
   private counter = 0;
@@ -72,9 +78,16 @@ export class AgentHost {
   constructor(private readonly deps: HostDeps) {}
 
   /** 사용자 설정의 그 에이전트로 세션을 띄우고 ACP 세션을 연다 */
-  async start(agentId: string): Promise<AgentStartResult> {
+  /**
+   * `expectedRoot` = 렌더러가 시작을 요청한 프로젝트 루트. 지금 루트와 다르면(요청을 기다리는 동안 프로젝트가 바뀜) 세션을
+   * 열지 않는다 — 앞 프로젝트의 대화·세션을 새 프로젝트의 cwd·MCP에 붙이지 않게 (UX4 검수 1 H2)
+   */
+  async start(agentId: string, load?: string, expectedRoot?: string): Promise<AgentStartResult> {
     const root = this.deps.root();
     if (root === null) throw new AgentHostError("no_workspace", "프로젝트가 열려 있지 않아요");
+    if (expectedRoot !== undefined && !sameRoot(expectedRoot, root)) {
+      throw new AgentHostError("workspace_changed", "프로젝트가 바뀌어 에이전트를 열지 않았어요");
+    }
     const cli = this.deps.cli();
     if (cli === null) throw new AgentHostError("cli_not_found", "kookabug CLI를 찾지 못했어요");
     const spec = (await this.deps.agents()).find((a) => a.id === agentId);
@@ -110,12 +123,12 @@ export class AgentHost {
     });
     this.sessions.set(session, agent);
     try {
-      await agent.start();
+      await agent.start(load);
     } catch (err) {
       // 실패한 세션도 프로세스가 끝났다는 알림이 올 때까지 표에 둔다 (start가 이미 stop을 불렀다)
       throw new AgentHostError("agent_start_failed", `에이전트가 ACP 연결에 답하지 않았어요: ${(err as Error).message}`);
     }
-    return { session, agentId: spec.id, name: spec.name, config: agent.config };
+    return { session, agentId: spec.id, name: spec.name, config: agent.config, acpSession: agent.acpSessionId, loaded: agent.loaded };
   }
 
   private get(session: unknown): AgentSession {

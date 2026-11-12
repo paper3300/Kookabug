@@ -1,5 +1,5 @@
 // 액티비티 바와 사이드바 (시안 Main·RunViewer·Recorder). 액티비티 바는 탐색기·실행 기록(M3 T10)·녹화(M4 T9)·
-// 플러그인(M6 B5)이 보인다: 화면 지도·설정은 그 단계에서 붙인다 (U3). 실행 기록 배지는 지난 열람 이후 실패 수,
+// 플러그인(M6 B5)·보고함(UX4, 탭을 연다)이 보인다: 화면 지도·설정은 그 단계에서 붙인다 (U3). 실행 기록 배지는 지난 열람 이후 실패 수,
 // 플러그인 배지는 준비 필요·조건 다름 수다.
 // 사이드바 아래 "노드" 섹션은 팔레트다 (T9). 워크스페이스 머리 줄 오른쪽에 "새 테스트·새 서브그래프" 단추가
 // 있다 (graph.create, T9)
@@ -16,7 +16,9 @@ import { RecorderSidebar } from "../recorder/RecorderSidebar";
 import { attentionCount } from "../plugins/model";
 import { PluginsSidebar } from "../plugins/PluginsSidebar";
 import { reloadPlugins, usePlugins } from "../plugins/pluginStore";
-import { ChevronDownIcon, ChevronRightIcon, ExplorerIcon, HistoryIcon, MapIcon, PluginIcon, RecordIcon } from "../theme/icons";
+import { ChevronDownIcon, ChevronRightIcon, ExplorerIcon, HistoryIcon, InboxIcon, MapIcon, PluginIcon, RecordIcon } from "../theme/icons";
+import { inboxCount, openReportsTab, REPORTS_TAB_PATH, useReports } from "../reports/reportsStore";
+import { useTabs } from "../store/tabs";
 import { activeSession, loadMap, useMap } from "../screens/mapStore";
 import { ScreenSidebar } from "../screens/ScreenSidebar";
 import { Resizer } from "./Resizer";
@@ -113,7 +115,36 @@ export function ActivityBar() {
           </span>
         )}
       </button>
+      <ReportsActivity />
     </nav>
+  );
+}
+
+/** 보고함 (UX4): 사이드바 보기가 아니라 상태 막대 "보고함 N"과 같은 탭을 연다. 배지도 같은 수 */
+function ReportsActivity() {
+  const count = useReports((s) => inboxCount(s.rows));
+  const active = useTabs((s) => s.active === REPORTS_TAB_PATH);
+  return <ReportsActivityView count={count} active={active} />;
+}
+
+/** 값만 받아 그린다 (vitest 렌더) */
+export function ReportsActivityView({ count, active }: { count: number; active: boolean }) {
+  return (
+    <button
+      type="button"
+      aria-label={count > 0 ? `보고함, ${count}건` : "보고함"}
+      aria-pressed={active}
+      className={css.activityButton}
+      data-part="activity-reports"
+      onClick={openReportsTab}
+    >
+      <InboxIcon />
+      {count > 0 && (
+        <span className={runsCss.activityBadge} data-part="activity-reports-badge">
+          {count}
+        </span>
+      )}
+    </button>
   );
 }
 

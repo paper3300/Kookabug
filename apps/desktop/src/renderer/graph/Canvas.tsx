@@ -7,6 +7,7 @@
 // - 연결: 핀을 끌어 놓으면 연결 명령. 끌기 중 호환 핀 강조, 데이터 연결이면 숨긴 선택 입력 핀도 보인다
 // - 지우기: Delete·Backspace로 고른 노드·연결선을 명령 하나로 지운다
 // - 팔레트에서 끌어 놓으면 그 자리에 노드를 더한다
+// - 오른쪽 단추를 누른 채 끌면 화면 이동 (UX4, 노드 위에서도). 짧은 오른쪽 클릭은 노드 메뉴
 // - 서브그래프 호출 노드를 더블클릭하면 그 서브그래프 탭으로 간다 (다듬기 P1-B)
 import "@xyflow/react/dist/base.css";
 import {
@@ -26,6 +27,7 @@ import {
   type XYPosition,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useRightDragPan } from "../app/rightDragPan";
 import { PALETTE_MIME } from "../palette/groups";
 import { applyEdit, getDoc, saveViewport, setSelection, useDocuments, type GraphDoc } from "../store/documents";
 import { useEditsLocked } from "../store/dialog";
@@ -300,6 +302,14 @@ function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
   const debug = useTabDebugView(path, doc.value);
   const [menu, setMenu] = useState<NodeMenuAt | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  // 오른쪽 단추 끌기 = 화면 이동 (UX4). 짧은 오른쪽 클릭은 지금처럼 노드 메뉴
+  const rightPan = useRightDragPan(
+    (dx, dy) => {
+      const vp = rf.getViewport();
+      void rf.setViewport({ x: vp.x + dx, y: vp.y + dy, zoom: vp.zoom });
+    },
+    () => saveViewport(path, rf.getViewport()),
+  );
   // 스냅샷 그래프에는 브레이크포인트를 걸지 않는다 (브레이크포인트는 워크스페이스 그래프 경로가 열쇠)
   const onNodeContextMenu = useCallback((e: ReactMouseEvent, node: KbFlowNode) => {
     if (node.type !== "kb" || doc.readOnly) return;
@@ -330,6 +340,8 @@ function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
       <ConnectingContext.Provider value={connecting}>
         <ReactFlow<KbFlowNode, KbFlowEdge>
           ref={wrapper}
+          onPointerDownCapture={rightPan.onPointerDownCapture}
+          onContextMenuCapture={rightPan.onContextMenuCapture}
           nodes={nodes}
           edges={edges}
           nodeTypes={NODE_TYPES}

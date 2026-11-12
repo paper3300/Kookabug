@@ -3,7 +3,7 @@ import type { ResultOf } from "@kookabug/schema";
 import { create } from "zustand";
 import type { DaemonState, OpenResult, OutputLine, RecentProject } from "../../preload/bridge";
 import type { TreeEntry } from "../explorer/tree";
-import { agentConnected, initAgent, resetAgent, tryAutoConnect } from "../agent/agentStore";
+import { agentConnected, flushConversation, initAgent, resetAgent, setAgentRootSource, tryAutoConnect } from "../agent/agentStore";
 import { useWizard } from "../wizard/wizardStore";
 import { client, toRpcError } from "../rpc/client";
 import { SessionRecovery } from "../rpc/recovery";
@@ -60,6 +60,9 @@ export const useWorkspace = create<WorkspaceState>(() => ({
   recent: [],
   openError: null,
 }));
+
+// 에이전트 저장소가 시작·대화 열기를 요청한 프로젝트 루트를 대조한다 (UX4 검수 1 H2)
+setAgentRootSource(() => useWorkspace.getState().root);
 
 const app = () => window.kookabug.app;
 
@@ -279,6 +282,18 @@ function baseName(p: string): string {
  */
 type LeaveGuard = () => Promise<boolean> | boolean;
 const leaveGuards = new Set<LeaveGuard>();
+
+// 에이전트 패널 대화의 마지막 저장은 떠나기 확인 단계에서 끝낸다 (연결을 놓기 전, 실패하면 조용히 버린다 — UX4 검수 1 H2).
+// 루트가 바뀐 뒤에는 저장하지 않는다(resetAgent가 기다리던 저장을 버린다). 응답이 없어도 최대 1.5초만 기다린다(검수 2 H2)
+leaveGuards.add(async () => {
+  await flushConversation();
+  return true;
+});
+
+/** 떠나기 확인 (열기·바꾸기·닫기 전) — 검사용으로 내보낸다 */
+export function canLeave(): Promise<boolean> {
+  return canLeaveProject();
+}
 
 export function addLeaveGuard(guard: LeaveGuard): () => void {
   leaveGuards.add(guard);

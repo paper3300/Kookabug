@@ -104,6 +104,18 @@ export interface KbNodeData extends Record<string, unknown> {
   errors: number;
   warnings: number;
   unknown: boolean;
+  /** 입력 노드의 "입력 전 게임 창 앞으로"가 그래프 기본값과 다를 때만 그 값 (UX4, 노드 머리 작은 표시) */
+  focus?: "on" | "off";
+}
+
+/** 입력 효과 노드의 창 앞으로 옵션이 그래프 기본값과 다르면 그 값 (같거나 따르면 undefined) */
+export function focusMark(value: unknown, raw: unknown, effects: readonly string[] | undefined): "on" | "off" | undefined {
+  if (effects?.includes("input") !== true) return undefined;
+  const own = isObject(raw) ? raw.focus_before_input : undefined;
+  if (typeof own !== "boolean") return undefined;
+  const fallback = !isObject(value) || value.focus_before_input !== false;
+  if (own === fallback) return undefined;
+  return own ? "on" : "off";
 }
 
 export interface GroupNodeData extends Record<string, unknown> {
@@ -482,6 +494,10 @@ export function toFlow({ path, value, shapes, types, diagnostics, view }: Mappin
         errors,
         warnings,
         unknown,
+        ...(() => {
+          const focus = focusMark(value, node.raw, info?.effects);
+          return focus === undefined ? {} : { focus };
+        })(),
       },
     });
   }

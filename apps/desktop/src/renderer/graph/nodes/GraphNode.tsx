@@ -118,6 +118,16 @@ export function GraphNode({ data, selected }: NodeProps<Node<KbNodeData, "kb">>)
         <span className={css.title} title={data.type}>
           {data.title}
         </span>
+        {data.focus !== undefined && (
+          <span
+            className={css.focusMark}
+            data-part="node-focus"
+            data-focus={data.focus}
+            title={data.focus === "on" ? "입력 전 게임 창 앞으로: 켬 (그래프 기본값과 다름)" : "입력 전 게임 창 앞으로: 끔 (그래프 기본값과 다름)"}
+          >
+            {data.focus === "on" ? "창↑" : "창✕"}
+          </span>
+        )}
         {paused !== null ? (
           // 이유는 툴팁으로: 노드 머리(184px)에 다 쓰면 제목이 잘린다. 멈춤 띠·상태 바가 이유를 쓴다
           <span className={css.status} data-tone="paused" data-part="node-paused" title={`멈춤 · ${REASON_TEXT[paused.reason]}`}>

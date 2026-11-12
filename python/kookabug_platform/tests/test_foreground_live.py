@@ -159,3 +159,42 @@ def test_alt_fallback_breaks_lock_without_attach(
     assert how in ("direct", "alt"), how
     assert _root_foreground() == game.hwnd
     print(f"방법: {how}")
+
+
+def test_focus_before_input_brings_game_then_key_lands(game: SampleGame, holder: Holder) -> None:
+    """UX4 입력 전 게임 창 앞으로: 다른 프로세스가 포그라운드를 쥔 상태에서 임대권(액터)을 쥔
+    플랫폼이 입력 노드 직전처럼 `focus_before_input` → 게임이 앞에 오고 키가 게임에 들어간다.
+    가져오지 않으면(옵션 끔) 지금처럼 `window_not_foreground`로 입력하지 않는다."""
+    from kookabug_platform.errors import WINDOW_NOT_FOREGROUND, PlatformError
+    from kookabug_platform.platform import WindowsPlatform
+    from kookabug_platform.sendinput import WindowInputGuard
+
+    platform = WindowsPlatform(run_id="ux4")
+    events: list[dict[str, Any]] = []
+    a = InputActor(
+        SendInputBackend(),
+        emit=lambda e: events.append(dict(e)),
+        guard=WindowInputGuard(platform.tracker),
+    ).start()
+    try:
+        ref = platform._ref(game.hwnd)  # pyright: ignore[reportPrivateUsage]
+        target = platform.tracker.bind(game.hwnd)
+        # 옵션 끔: 가져오지 않으면 입력하지 않고 오류 (지금 동작)
+        holder.grab()
+        mark = game.last_seq()
+        with pytest.raises(PlatformError) as caught:
+            a.key("a", target=target)
+        assert caught.value.code == WINDOW_NOT_FOREGROUND
+        # 임대권 없는 플랫폼은 가져오지 않는다
+        assert platform.focus_before_input(ref, "s0") is False
+        assert _root_foreground() == holder.hwnd
+        # 옵션 켬: 액터를 붙인(임대권을 쥔) 플랫폼이 가져오고 키가 들어간다
+        platform.attach_input(a)
+        assert platform.focus_before_input(ref, "s1") is True
+        assert _root_foreground() == game.hwnd
+        a.key("a", target=target)
+        game.wait_event("key_up", key="a", after=mark)
+        _assert_nothing_left(a, events)
+    finally:
+        a.stop(10)
+        platform.close()

@@ -5191,6 +5191,102 @@ export const daemonRpcSchema: unknown = {
           ],
           "type": "object"
         },
+        "conversations.delete": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/Ux4ConversationsDeleteParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/Ux4ConversationsDeleteResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "conversations.get": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/Ux4ConversationsGetParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/Ux4ConversationsGetResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "conversations.list": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/Ux4ConversationsListParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/Ux4ConversationsListResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "conversations.save": {
+          "additionalProperties": false,
+          "properties": {
+            "params": {
+              "$ref": "#/$defs/Ux4ConversationsSaveParams"
+            },
+            "renderer": {
+              "const": true
+            },
+            "result": {
+              "$ref": "#/$defs/Ux4ConversationsSaveResult"
+            },
+            "tool": {
+              "const": "ui_only"
+            }
+          },
+          "required": [
+            "params",
+            "renderer",
+            "result",
+            "tool"
+          ],
+          "type": "object"
+        },
         "daemon.shutdown": {
           "additionalProperties": false,
           "properties": {
@@ -8068,7 +8164,11 @@ export const daemonRpcSchema: unknown = {
         "local.settings.set",
         "sources.list",
         "sources.read",
-        "setting.propose"
+        "setting.propose",
+        "conversations.list",
+        "conversations.get",
+        "conversations.save",
+        "conversations.delete"
       ],
       "title": "Methods",
       "type": "object"
@@ -14202,6 +14302,314 @@ export const daemonRpcSchema: unknown = {
         "text"
       ],
       "title": "Ux2SourcesReadResult",
+      "type": "object"
+    },
+    "Ux4ChatItem": {
+      "additionalProperties": false,
+      "description": "패널 대화 한 줄 (화면에 보인 그대로 — 가린 값은 가린 채): user(text·chips)·agent(text)·tools(도구 활동 요약 tools·hidden·seconds)·permission(Agent 자기 도구 권한 카드 title·outcome·chosen)·approval(Kookabug 확인 요청 title·outcome)·error(text)",
+      "properties": {
+        "chips": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 50,
+          "type": "array"
+        },
+        "chosen": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "hidden": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "user",
+            "agent",
+            "tools",
+            "permission",
+            "approval",
+            "error"
+          ]
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "seconds": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "tools": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "failed": {
+                "type": "boolean"
+              },
+              "status": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title",
+              "status",
+              "failed"
+            ],
+            "type": "object"
+          },
+          "maxItems": 200,
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "Ux4ChatItem",
+      "type": "object"
+    },
+    "Ux4Conversation": {
+      "additionalProperties": false,
+      "description": "이전 대화 하나 (.kookabug/conversations/<id>.json, kookabug.conversation/0, 이 PC). acp_session = Agent가 준 ACP 세션 ID (session/load로 이어 갈 때)",
+      "properties": {
+        "acp_session": {
+          "type": [
+            "null",
+            "string"
+          ]
+        },
+        "agent_id": {
+          "type": "string"
+        },
+        "agent_name": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "format": {
+          "const": "kookabug.conversation/0"
+        },
+        "id": {
+          "pattern": "^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4,8}$",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Ux4ChatItem"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "format",
+        "id",
+        "title",
+        "agent_id",
+        "agent_name",
+        "acp_session",
+        "created_at",
+        "updated_at",
+        "items"
+      ],
+      "title": "Ux4Conversation",
+      "type": "object"
+    },
+    "Ux4ConversationSummary": {
+      "additionalProperties": false,
+      "description": "이전 대화 목록 한 줄: 제목(첫 사용자 메시지 앞부분)·Agent·만든·고친 시각·줄 수",
+      "properties": {
+        "agent_id": {
+          "type": "string"
+        },
+        "agent_name": {
+          "type": "string"
+        },
+        "count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4,8}$",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "agent_id",
+        "agent_name",
+        "created_at",
+        "updated_at",
+        "count"
+      ],
+      "title": "Ux4ConversationSummary",
+      "type": "object"
+    },
+    "Ux4ConversationsDeleteParams": {
+      "additionalProperties": false,
+      "description": "conversations.delete (사람 전용, UX4): 이전 대화 하나 지우기",
+      "properties": {
+        "id": {
+          "pattern": "^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4,8}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Ux4ConversationsDeleteParams",
+      "type": "object"
+    },
+    "Ux4ConversationsDeleteResult": {
+      "additionalProperties": false,
+      "properties": {
+        "deleted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "deleted"
+      ],
+      "title": "Ux4ConversationsDeleteResult",
+      "type": "object"
+    },
+    "Ux4ConversationsGetParams": {
+      "additionalProperties": false,
+      "description": "conversations.get (사람 전용, UX4): 이전 대화 하나. 없으면 not_found",
+      "properties": {
+        "id": {
+          "pattern": "^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4,8}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Ux4ConversationsGetParams",
+      "type": "object"
+    },
+    "Ux4ConversationsGetResult": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation": {
+          "$ref": "#/$defs/Ux4Conversation"
+        }
+      },
+      "required": [
+        "conversation"
+      ],
+      "title": "Ux4ConversationsGetResult",
+      "type": "object"
+    },
+    "Ux4ConversationsListParams": {
+      "additionalProperties": false,
+      "description": "conversations.list (사람 전용, UX4): 이 PC 이전 대화 목록, 최근 고친 것부터",
+      "properties": {},
+      "required": [],
+      "title": "Ux4ConversationsListParams",
+      "type": "object"
+    },
+    "Ux4ConversationsListResult": {
+      "additionalProperties": false,
+      "properties": {
+        "conversations": {
+          "items": {
+            "$ref": "#/$defs/Ux4ConversationSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "conversations"
+      ],
+      "title": "Ux4ConversationsListResult",
+      "type": "object"
+    },
+    "Ux4ConversationsSaveParams": {
+      "additionalProperties": false,
+      "description": "conversations.save (사람 전용, UX4): 대화를 원자 쓰기. 쓰기 전 워크스페이스 비밀값을 ***로 가린다(가림 값을 못 모으면 secret_unchecked). 최근 50개를 넘으면 오래된 것부터 지운다",
+      "properties": {
+        "conversation": {
+          "additionalProperties": false,
+          "properties": {
+            "acp_session": {
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "agent_id": {
+              "type": "string"
+            },
+            "agent_name": {
+              "type": "string"
+            },
+            "id": {
+              "pattern": "^c-[0-9]{8}-[0-9]{6}-[0-9a-f]{4,8}$",
+              "type": "string"
+            },
+            "items": {
+              "items": {
+                "$ref": "#/$defs/Ux4ChatItem"
+              },
+              "maxItems": 5000,
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "agent_id",
+            "agent_name",
+            "acp_session",
+            "items"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "conversation"
+      ],
+      "title": "Ux4ConversationsSaveParams",
+      "type": "object"
+    },
+    "Ux4ConversationsSaveResult": {
+      "additionalProperties": false,
+      "properties": {
+        "conversation": {
+          "$ref": "#/$defs/Ux4ConversationSummary"
+        }
+      },
+      "required": [
+        "conversation"
+      ],
+      "title": "Ux4ConversationsSaveResult",
       "type": "object"
     },
     "Verdict": {

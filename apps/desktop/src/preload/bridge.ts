@@ -84,7 +84,8 @@ export interface AppApi {
   /** 녹화 단축키 해제 */
   recorderDisarm(): Promise<void>;
   /** 에이전트 패널 세션 시작 (M5 B5): 사용자 설정의 그 에이전트를 띄우고 ACP 세션을 연다 */
-  agentStart(agentId: string): Promise<AgentStartResult>;
+  /** root = 렌더러가 기대한 프로젝트 루트 (주 프로세스의 지금 루트와 다르면 열지 않는다, UX4 검수 1 H2) */
+  agentStart(agentId: string, load: string | null, root: string): Promise<AgentStartResult>;
   /** 글자 하나 보내기. 끝나면 stopReason (대화 갱신은 agent.session 알림) */
   agentPrompt(session: string, text: string): Promise<{ stopReason: string }>;
   /** 중지 (session/cancel) */

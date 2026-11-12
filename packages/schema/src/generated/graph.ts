@@ -84,6 +84,10 @@ export type TargetPath = string;
  * 테스트·서브그래프 그래프 파일 (*.graph.json). 테스트와 서브그래프는 같은 형식이고 kind만 다르다
  */
 export interface Graph {
+  /**
+   * 입력 효과 노드를 부르기 직전에 대상 창을 앞으로 가져오는 기본값. 없으면 켜짐 (UX4)
+   */
+  focus_before_input?: boolean;
   format: "kookabug.graph/0";
   interface?: Interface;
   kind: "subgraph" | "test";
@@ -218,6 +222,10 @@ export interface Meta {
  */
 export interface Node {
   config?: NodeConfig;
+  /**
+   * 입력 효과 노드를 부르기 직전에 대상 창을 앞으로 가져올지. 없으면 그래프의 focus_before_input을 따른다 (UX4)
+   */
+  focus_before_input?: boolean;
   /**
    * 입력 핀 값. 상수 또는 특수 값
    */

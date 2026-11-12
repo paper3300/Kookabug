@@ -28,6 +28,8 @@
 - `prompts`: `session/prompt`마다 다른 `steps` 목록 (n번째 프롬프트 = `prompts[n]`, 넘으면 마지막)
 - `config_options`: `session/new` 결과의 `configOptions`(모델·생각 수준 고르기).
   `session/set_config_option`을 받으면 그 값으로 `currentValue`를 바꿔 전체를 답한다
+- `load_session`(기본 false): `agentCapabilities.loadSession`. 켜면 `session/load`를 받아 지난 대화
+  한 쌍(`user_message_chunk`·`agent_message_chunk`)을 다시 보낸 뒤 답한다 (UX4 이전 대화 이어 가기)
 - `log_env`: 이름 목록 — 기록 파일 `start` 줄의 `logged_env`에 그 환경 변수 값을 그대로 남긴다
   (에이전트가 비밀값 env를 받았는지 가짜 쪽에서 확인하는 검사용, 앱으로는 보내지 않는다)
 
@@ -331,7 +333,7 @@ def main() -> None:
                     "result": {
                         "protocolVersion": 1,
                         "agentCapabilities": {
-                            "loadSession": False,
+                            "loadSession": bool(script.get("load_session", False)),
                             "promptCapabilities": {"image": script.get("image", True)},
                         },
                         "authMethods": [],
@@ -344,6 +346,18 @@ def main() -> None:
             if "config_options" in script:
                 result["configOptions"] = script["config_options"]
             _send({"id": rid, "result": result})
+        elif method == "session/load" and script.get("load_session"):
+            servers = list(params.get("mcpServers", []))
+            loaded = str(params.get("sessionId", "s1"))
+            _update(
+                loaded,
+                {
+                    "sessionUpdate": "user_message_chunk",
+                    "content": {"type": "text", "text": "(지난 질문)"},
+                },
+            )
+            _say(loaded, "(지난 답)")
+            _send({"id": rid, "result": {}})
         elif method == "session/set_config_option":
             for option in script.get("config_options", []):
                 if option.get("id") == params.get("configId"):

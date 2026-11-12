@@ -133,6 +133,11 @@ HUMAN_KNOWLEDGE_METHODS: Final = frozenset(
 사건을 닫거나 정책·원본을 바꾸거나 작업을 만들지 못한다(재귀 금지, E11). 처리기가 없는
 메서드(B5·B7)도 에이전트 연결은 판정 전에 거부된다."""
 
+CONVERSATION_METHODS: Final = frozenset(
+    {"conversations.list", "conversations.get", "conversations.save", "conversations.delete"}
+)
+"""UX4 에이전트 패널 이전 대화 (`.kookabug/conversations/`, 이 PC). 사람 전용."""
+
 HUMAN_ONLY_M8: Final = HUMAN_CHEAT_METHODS | HUMAN_BASIS_METHODS | HUMAN_KNOWLEDGE_METHODS
 """M8 사람 전용 메서드 전부 — 이 표 하나가 출처다 (`test_all_human_methods_denied_for_agent`가
 여기서 검사를 만들고, M8 이름공간의 `ui_only` 메서드가 빠짐없이 여기 있는지도 본다)."""
@@ -217,6 +222,8 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     "agents.get": UI_ONLY,
     "agents.detect": UI_ONLY,
     "agents.set": UI_ONLY,
+    # UX4: 에이전트 패널 이전 대화 — 사람 화면만 (이 PC 대화 기록)
+    **dict.fromkeys(sorted(CONVERSATION_METHODS), UI_ONLY),
     # M6 B4: 플러그인 — 목록은 조회(kb_project_info), 변경은 사람만
     "plugins.list": "kb_project_info",
     **dict.fromkeys(sorted(PLUGIN_CHANGE_METHODS), UI_ONLY),
@@ -263,6 +270,8 @@ AGENT_DENIED: Final = frozenset(
         "agents.get",
         "agents.detect",
         "agents.set",
+        # 에이전트는 사람의 패널 대화 기록을 읽거나 고치지 못한다 (UX4)
+        *CONVERSATION_METHODS,
         # 에이전트는 플러그인을 설치·제거·준비하지 못한다 (M6 3.9, 사람 확인으로도 — U3)
         *PLUGIN_CHANGE_METHODS,
         # 탐색 세션 목록은 사람 화면용 (M7 3.8)

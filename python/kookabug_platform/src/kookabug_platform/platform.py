@@ -316,6 +316,20 @@ class WindowsPlatform:
         tap = None if actor is None else (lambda: _tap_alt(actor, step))
         return wins.activate(hwnd, tap_alt=tap)
 
+    def focus_before_input(self, window: WindowRef, step: str | None) -> bool:
+        """입력 노드 직전 창 앞으로 (UX4, 노드 "실행 전" 옵션). 입력 임대권을 쥔 실행(액터가 붙은
+        실행)에서만 가져온다 — 액터가 없으면 아무것도 하지 않고 False. 방법은 `bring_forward`와
+        같다(입력 없는 방법 → 안 되면 액터를 거친 Alt, 게이트·입력 기록·복구 그대로). 이미 앞이면
+        아무 입력 없이 끝난다."""
+        actor = self._actor
+        if actor is None:
+            return False
+        try:
+            hwnd = self.resolve(window).hwnd
+        except PlatformError:
+            return False
+        return wins.activate(hwnd, tap_alt=lambda: _tap_alt(actor, step))
+
     # ------------------------------------------------------------ 프로세스
 
     def launch(self, path: str, args: Sequence[str], cwd: str | None) -> ProcessRef:

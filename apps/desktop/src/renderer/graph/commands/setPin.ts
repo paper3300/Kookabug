@@ -52,3 +52,32 @@ export function replaceNodeObject(value: GraphValue, node: string, field: NodeFi
   }
   return out;
 }
+
+/**
+ * 노드 "실행 전" 옵션 `focus_before_input` (UX4): null = 그래프 기본값을 따름(키 지움), true·false = 그 값.
+ * config가 아니라 노드 최상위 키다 (노드 설정을 더럽히지 않는다)
+ */
+export function setNodeFocus(value: GraphValue, node: string, focus: boolean | null): GraphValue {
+  if (!nodeExists(value, node)) return value;
+  if (focus === null) return deleteIn(value, ["nodes", node, "focus_before_input"]);
+  if (own(own(own(value, "nodes"), node), "focus_before_input") === focus) return value;
+  return setIn(value, ["nodes", node, "focus_before_input"], focus);
+}
+
+/** 그래프 기본값 "입력 전 게임 창 앞으로" (UX4): 켜짐이 기본이라 켜면 키를 지우고 끄면 false를 쓴다 */
+export function setGraphFocus(value: GraphValue, on: boolean): GraphValue {
+  if (on) return own(value, "focus_before_input") === undefined ? value : deleteIn(value, ["focus_before_input"]);
+  if (own(value, "focus_before_input") === false) return value;
+  return setIn(value, ["focus_before_input"], false);
+}
+
+/** 그래프 기본값 (없으면 켜짐) */
+export function graphFocus(value: GraphValue | null): boolean {
+  return value === null || own(value, "focus_before_input") !== false;
+}
+
+/** 노드 옵션: null = 그래프를 따름 */
+export function nodeFocus(value: GraphValue | null, node: string): boolean | null {
+  const v = value === null ? undefined : own(own(own(value, "nodes"), node), "focus_before_input");
+  return typeof v === "boolean" ? v : null;
+}

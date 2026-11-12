@@ -4,8 +4,21 @@
 // - 핀 모양은 daemon 결과다. config 배열(동적 출구)을 고치면 검증 응답으로 출구 핀이 바뀐다. 이름이 바뀌어 끊긴
 //   next는 그대로 두고 문제 패널에 나오게 한다
 // - 모르는 노드는 in·config를 JSON 상자로 보여 주고, 고치면 바뀐 키만 바꾼다
+// - 입력 효과 노드는 "실행 전" 묶음(입력 전 게임 창 앞으로: 그래프 기본값·켬·끔), 노드를 고르지 않았으면 그래프 설정
+//   (그 기본값 토글, UX4)
 import { useState } from "react";
-import { clearNodeValue, disconnect, replaceNodeObject, setNodeTitle, setNodeValue, type NodeField } from "../graph/commands";
+import {
+  clearNodeValue,
+  disconnect,
+  graphFocus,
+  nodeFocus,
+  replaceNodeObject,
+  setGraphFocus,
+  setNodeFocus,
+  setNodeTitle,
+  setNodeValue,
+  type NodeField,
+} from "../graph/commands";
 import { graphNodes, own, type Diagnostic, type GraphValue } from "../graph/model";
 import { openSubgraph } from "../graph/openSubgraph";
 import { GRAPH_CALL_TYPE } from "../graph/subgraphPlan";
@@ -261,7 +274,7 @@ function Field({ spec, field, value, node, diagnostics, edit, ctx: outer, extra,
   );
 }
 
-function NodeFields({ path, view, ctx }: { path: string; view: NodeInspector; ctx: EditorContext }) {
+function NodeFields({ path, view, ctx, graph }: { path: string; view: NodeInspector; ctx: EditorContext; graph: GraphValue }) {
   const { node } = view;
   const edit = (fn: (v: GraphValue) => GraphValue) => void applyEdit(path, fn);
   const field = (spec: FieldSpec, f: NodeField, extra = false) => (
@@ -340,7 +353,80 @@ function NodeFields({ path, view, ctx }: { path: string; view: NodeInspector; ct
           )}
         </>
       )}
+      {view.info?.effects.includes("input") === true && (
+        <Section title="실행 전" part="inspector-before">
+          <FocusChoice graph={graph} node={node.id} ctx={ctx} edit={edit} />
+        </Section>
+      )}
     </>
+  );
+}
+
+const FOCUS_CHOICES = [
+  { value: "inherit", label: "그래프 기본값 따름" },
+  { value: "on", label: "켬" },
+  { value: "off", label: "끔" },
+] as const;
+
+/** 입력 노드 "실행 전": 입력 전 게임 창 앞으로 (UX4). 그래프 기본값 따름·켬·끔 */
+function FocusChoice({
+  graph,
+  node,
+  ctx,
+  edit,
+}: {
+  graph: GraphValue;
+  node: string;
+  ctx: EditorContext;
+  edit(fn: (v: GraphValue) => GraphValue): void;
+}) {
+  const current = nodeFocus(graph, node);
+  const value = current === null ? "inherit" : current ? "on" : "off";
+  const fallback = graphFocus(graph) ? "켜짐" : "꺼짐";
+  return (
+    <div className={css.field} data-part="field" data-pin="focus_before_input">
+      <div className={css.fieldHead}>
+        <span className={css.fieldName}>입력 전 게임 창 앞으로</span>
+      </div>
+      <label className={css.box}>
+        <select
+          aria-label="입력 전 게임 창 앞으로"
+          data-part="focus-choice"
+          value={value}
+          disabled={ctx.locked}
+          onChange={(e) => {
+            const v = e.target.value;
+            edit((g) => setNodeFocus(g, node, v === "inherit" ? null : v === "on"));
+          }}
+        >
+          {FOCUS_CHOICES.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.value === "inherit" ? `${c.label} (${fallback})` : c.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className={css.hint}>입력하기 직전에 대상 창을 앞으로 가져와요. 끄면 앞에 없을 때 오류예요</div>
+    </div>
+  );
+}
+
+/** 노드를 고르지 않았을 때: 그래프 설정 (UX4 — 입력 전 게임 창 앞으로 기본값) */
+function GraphSettings({ path, graph, ctx }: { path: string; graph: GraphValue; ctx: EditorContext }) {
+  const on = graphFocus(graph);
+  return (
+    <Section title="그래프 설정" part="inspector-graph">
+      <label className={css.check} data-part="graph-focus">
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={ctx.locked}
+          onChange={(e) => void applyEdit(path, (g) => setGraphFocus(g, e.target.checked))}
+        />
+        입력 전 게임 창 앞으로 (기본값)
+      </label>
+      <div className={css.hint}>입력 노드마다 "실행 전"에서 따로 켜거나 끌 수 있어요</div>
+    </Section>
   );
 }
 
@@ -465,14 +551,21 @@ function Body({ path }: { path: string }) {
   }
   const nodes = graphNodes(doc.value);
   const node = nodes.find((n) => n.id === doc.view.selected);
-  if (node === undefined) return <div className={css.empty}>노드를 고르면 속성이 보여요</div>;
   const titles = new Map(nodes.map((n) => [n.id, n.title ?? types.get(n.type)?.title ?? n.id]));
   // 실행 스냅샷 그래프는 읽기 전용이다 (M3 2.10)
   const ctx: EditorContext = { locked: locked || doc.readOnly, titleOf: (id) => titles.get(id) ?? id, graph: path, running };
+  if (node === undefined) {
+    return (
+      <div className={css.body} data-part="inspector-body">
+        <div className={css.empty}>노드를 고르면 속성이 보여요</div>
+        <GraphSettings path={path} graph={doc.value} ctx={ctx} />
+      </div>
+    );
+  }
   const view = inspectNode(node, doc.shapes, types, doc.diagnostics, path);
   return (
     <div className={css.body} data-part="inspector-body" data-node={node.id}>
-      <NodeFields key={`${path}:${node.id}`} path={path} view={view} ctx={ctx} />
+      <NodeFields key={`${path}:${node.id}`} path={path} view={view} ctx={ctx} graph={doc.value} />
     </div>
   );
 }

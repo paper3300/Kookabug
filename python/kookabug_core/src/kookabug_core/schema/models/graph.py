@@ -351,6 +351,12 @@ class Node(BaseModel):
         extra="forbid",
     )
     config: NodeConfig | None = None
+    focus_before_input: Annotated[
+        bool | None,
+        Field(
+            description="입력 효과 노드를 부르기 직전에 대상 창을 앞으로 가져올지. 없으면 그래프의 focus_before_input을 따른다 (UX4)"
+        ),
+    ] = None
     in_: Annotated[
         dict[Annotated[str, StringConstraints(pattern=r"^[a-z_][a-z0-9_]*$")], JsonValue | None]
         | None,
@@ -397,6 +403,12 @@ class Graph(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    focus_before_input: Annotated[
+        bool | None,
+        Field(
+            description="입력 효과 노드를 부르기 직전에 대상 창을 앞으로 가져오는 기본값. 없으면 켜짐 (UX4)"
+        ),
+    ] = None
     format: Literal["kookabug.graph/0"]
     interface: Interface | None = None
     kind: Literal["subgraph", "test"]

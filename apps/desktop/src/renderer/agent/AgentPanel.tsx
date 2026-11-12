@@ -1,6 +1,7 @@
 // 에이전트 패널 (시안 Main 오른쪽, M5 계획 3.10): 세션 제목·새 대화, 대화(내 말풍선·답 본문·도구 호출 줄·
 // 승인 카드 두 종류), 입력창(@칩·보내기/중지), 바닥 줄 "<에이전트> · ACP · 권한: <프리셋> · MCP 툴셋 N".
-// 연결 안 된 상태는 빈 화면(감지 목록·직접 입력·권한 프리셋, 시안 Setup5 압축판 U7)
+// 연결 안 된 상태는 빈 화면(감지 목록·직접 입력·권한 프리셋, 시안 Setup5 압축판 U7).
+// 머리의 "이전 대화"(UX4): 이 PC에 저장한 대화 목록(제목·날짜·Agent, 지우기). 열면 이어 가거나 읽기 전용 + "이 대화 이어 하기"
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Spinner } from "../app/Spinner";
 import { client, toRpcError } from "../rpc/client";
@@ -8,7 +9,7 @@ import { useRun } from "../run/runStore";
 import { adoptPreview, useDocuments } from "../store/documents";
 import { openPreviewTab, openSettingsTab, PREVIEW_PREFIX, useTabs } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
-import { ChevronDownIcon, ChevronRightIcon, LockIcon, StopIcon } from "../theme/icons";
+import { ChevronDownIcon, ChevronRightIcon, HistoryIcon, LockIcon, StopIcon } from "../theme/icons";
 import css from "./agent.module.css";
 import { openAgentSetup } from "../wizard/ShortWizardWatch";
 import { Picker } from "./Picker";
@@ -16,6 +17,11 @@ import { Markdown } from "./markdown";
 import { ask } from "../store/dialog";
 import type { AgentConfigOption } from "../../preload/bridge";
 import {
+  continueConversation,
+  deleteConversation,
+  openConversation,
+  toggleHistory,
+  type ConversationSummary,
   addChip,
   candidateStatus,
   effortOption,
@@ -305,6 +311,16 @@ function Chat() {
             const card = approvals.get(item.id);
             return card === undefined ? null : <ApprovalCardView key={item.key} card={card} />;
           }
+          case "past_approval":
+            return (
+              <div key={item.key} className={css.card} data-part="past-approval">
+                <div className={css.cardHead}>
+                  <ShieldIcon />
+                  <span>{approvalTitle(item.title)}</span>
+                </div>
+                <div className={css.cardResult}>{RESULT_TEXT[item.outcome] ?? (item.outcome === "open" ? "답하지 않고 끝났어요" : item.outcome)}</div>
+              </div>
+            );
           case "error":
             return (
               <div key={item.key} className={css.error} data-part="chat-error" role="alert">
@@ -399,7 +415,8 @@ function Composer() {
   const session = useAgent((s) => s.session);
   const contextChip = useContextChip();
   const busy = session?.status === "busy";
-  const ready = session !== null && session.status !== "ended" && session.status !== "error";
+  const readOnly = useAgent((s) => s.readOnly);
+  const ready = session !== null && session.status !== "ended" && session.status !== "error" && !readOnly;
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
@@ -698,6 +715,83 @@ function Connect() {
   );
 }
 
+function historyDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** 패널 머리 아래 "이전 대화" 목록 (UX4): 제목(첫 사용자 메시지 앞부분)·날짜·Agent, 지우기는 확인 한 번 */
+export function HistoryList({ list, error, current }: { list: readonly ConversationSummary[] | null; error: string | null; current: string | null }) {
+  const remove = async (c: ConversationSummary) => {
+    const r = await ask({
+      title: "이 대화를 지울까요?",
+      message: `'${c.title}' 대화를 이 PC에서 지워요. 되돌릴 수 없어요.`,
+      buttons: [
+        { label: "지우기", value: "delete", primary: true },
+        { label: "취소", value: "cancel" },
+      ],
+      cancelValue: "cancel",
+    });
+    if (r.value === "delete") await deleteConversation(c.id);
+  };
+  return (
+    <div className={css.history} data-part="agent-history">
+      {error !== null && <div className={css.cardError}>{error}</div>}
+      {list === null ? (
+        <div className={css.historyEmpty}>읽는 중…</div>
+      ) : list.length === 0 ? (
+        <div className={css.historyEmpty} data-part="agent-history-empty">
+          저장한 대화가 없어요
+        </div>
+      ) : (
+        list.map((c) => (
+          <div key={c.id} className={css.historyRow} data-part="agent-history-row" data-id={c.id} data-current={c.id === current}>
+            <button type="button" className={css.historyOpen} onClick={() => void openConversation(c.id)} title={c.title}>
+              <span className={css.historyTitle}>{c.title}</span>
+              <span className={css.historyMeta}>
+                {historyDate(c.updated_at)} · {c.agent_name || c.agent_id}
+              </span>
+            </button>
+            <button
+              type="button"
+              aria-label={`'${c.title}' 대화 지우기`}
+              className={css.iconButton}
+              data-part="agent-history-delete"
+              onClick={() => void remove(c)}
+            >
+              ×
+            </button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+/** 이전 대화를 읽기 전용으로 보는 중 (에이전트가 지난 세션을 불러오지 못함, UX4) */
+function ReadOnlyBar() {
+  const readOnly = useAgent((s) => s.readOnly);
+  const pending = useAgent((s) => s.pendingContext !== null);
+  if (pending) {
+    return (
+      <div className={css.readOnly} role="status" data-part="agent-continue-note">
+        다음 메시지에 지난 대화 요약을 함께 보내요.
+      </div>
+    );
+  }
+  if (!readOnly) return null;
+  return (
+    <div className={css.readOnly} role="status" data-part="agent-read-only">
+      <span>이 Agent는 지난 세션을 이어 가지 못해 읽기 전용으로 보여요.</span>
+      <button type="button" className={css.secondary} data-part="agent-continue" onClick={() => void continueConversation()}>
+        이 대화 이어 하기
+      </button>
+    </div>
+  );
+}
+
 function sessionTitle(items: readonly ChatItem[], fallback: string): string {
   const first = items.find((i) => i.kind === "user");
   if (first?.kind !== "user") return fallback;
@@ -717,10 +811,28 @@ setLeaseSource(() => {
 export function AgentPanel() {
   const session = useAgent((s) => s.session);
   const items = useAgent((s) => s.items);
+  const historyOpen = useAgent((s) => s.historyOpen);
+  const history = useAgent((s) => s.history);
+  const historyError = useAgent((s) => s.historyError);
+  const conversationId = useAgent((s) => s.conversationId);
+  const readOnly = useAgent((s) => s.readOnly);
+  const connected = useWorkspace((s) => s.daemon.status === "connected");
   return (
     <div className={css.panel} data-part="agent-panel" data-session={session?.id ?? ""} data-status={session?.status ?? "none"}>
       <div className={css.head}>
-        <span className={css.headTitle}>{session === null ? "에이전트" : sessionTitle(items, session.name)}</span>
+        <span className={css.headTitle}>{session === null && !readOnly ? "에이전트" : sessionTitle(items, session?.name ?? "에이전트")}</span>
+        <button
+          type="button"
+          aria-label="이전 대화"
+          aria-expanded={historyOpen}
+          title="이전 대화"
+          className={css.iconButton}
+          data-part="agent-history-button"
+          disabled={!connected}
+          onClick={toggleHistory}
+        >
+          <HistoryIcon width={16} height={16} />
+        </button>
         {session !== null && (
           <>
             <button type="button" aria-label="새 대화" title="새 대화" className={css.iconButton} onClick={() => void newConversation()}>
@@ -738,10 +850,14 @@ export function AgentPanel() {
           </>
         )}
       </div>
+      {historyOpen && <HistoryList list={history} error={historyError} current={conversationId} />}
       <External />
       <LeaseBanner />
       <JobBanner />
-      {session === null ? (
+      <ReadOnlyBar />
+      {session === null && readOnly ? (
+        <Chat />
+      ) : session === null ? (
         <Connect />
       ) : (
         <>

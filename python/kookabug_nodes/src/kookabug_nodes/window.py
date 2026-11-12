@@ -1,8 +1,9 @@
 """창 노드: 붙기·현재 대상 창 바꾸기·크기 맞춤.
 
 창을 정한 노드(`attach`·`set_current`, `core.app.launch`)는 정한 직후 한 번 앞으로 가져온다(최선
-노력). 입력 노드는 가져오지 않는다 — 실행 중 포커스를 잃으면 입력하지 않고 오류다 (구현 계획 M1
-2.2, U1).
+노력). 입력 노드는 노드 "실행 전" 옵션 `focus_before_input`(없으면 그래프 기본값, 기본 켜짐)이 켜져
+있으면 실행기가 부르기 직전에 앞으로 가져온다(입력 임대권을 쥔 실행만, 최선 노력, UX4). 그래도 앞에
+없거나 옵션을 끈 노드는 지금처럼 입력하지 않고 오류다 (구현 계획 M1 2.2, U1).
 """
 
 from typing import Annotated
@@ -49,7 +50,7 @@ def attach(
 )
 def set_current(ctx: Context, window: WindowRef) -> Result:
     """호출 프레임의 현재 대상 창을 다음 노드부터 바꾼다. 서브그래프 안에서 바꾼 것은 부른 쪽에
-    나오지 않는다."""
+    나오지 않는다. 대상 창을 바꿀 때만 쓴다 — 입력 전 창 앞으로는 기본 옵션이 처리한다."""
     ctx.set_window(window)
     ctx.windows.activate(window)
     return Result.ok("done")
