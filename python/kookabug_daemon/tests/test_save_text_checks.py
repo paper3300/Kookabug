@@ -137,10 +137,9 @@ def test_session_fields_with_secret_refused(
     [
         ({**AGENT, "id": f"agent-{SECRET.lower()}"}, ("secret_in_text", "agent.id")),
         ({**AGENT, "name": f"mcp {SPACED}"}, ("secret_in_text", "agent.client")),
-        ({**AGENT, "id": "agent\x07bell"}, ("validation_failed", None)),
         ({**AGENT, "id": "a" * 201}, ("validation_failed", None)),
     ],
-    ids=["id_secret", "client_secret", "id_control_char", "id_too_long"],
+    ids=["id_secret", "client_secret", "id_too_long"],
 )
 def test_agent_identity_checked(
     game: FakeGame, daemon: ThreadDaemon, client: dict[str, Any], expected: tuple[str, Any]
@@ -150,6 +149,14 @@ def test_agent_identity_checked(
         error = refused(agent, "explore.start", {"title": "식별자"})
         assert (error.kind, error.data.get("field")) == expected
         no_value(error.message)
+    assert not (game.root / "screens" / "_explored").exists()
+
+
+def test_agent_id_control_char_refused_at_hello(game: FakeGame, daemon: ThreadDaemon) -> None:
+    """제어 문자 ID는 연결부터 거부한다 (UX5: 작업 토큰 없는 Agent ID는 공백 없는 ASCII만)."""
+    with pytest.raises(DaemonError) as caught, daemon.client({**AGENT, "id": "agent\x07bell"}):
+        pass
+    assert caught.value.kind == "job_token_invalid"
     assert not (game.root / "screens" / "_explored").exists()
 
 

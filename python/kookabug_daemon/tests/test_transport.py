@@ -445,15 +445,17 @@ def test_surrogate_event_roundtrip(daemon: ThreadDaemon) -> None:
 
 
 def test_surrogate_agent_id_hello_roundtrip(daemon: ThreadDaemon) -> None:
-    # Python 클라이언트 발신(hello params) → daemon 수신 → 응답(principal) → 클라이언트 수신
+    # Python 클라이언트 발신(hello params) → daemon 수신 → 응답 → 클라이언트 수신.
+    # 대리 문자 ID는 UX5부터 연결 거부(토큰 없는 Agent ID는 ASCII만) — 거부 응답이 깨지지 않고 온다
     client = {"kind": "agent", "name": "a\ud800", "version": "0", "id": "\ud800"}
-    with daemon.client(client) as conn:
-        assert conn.hello_result is not None
-        assert conn.hello_result["principal"]["id"] == "\ud800"
+    with pytest.raises(DaemonError) as caught, daemon.client(client):
+        pass
+    assert caught.value.kind == "job_token_invalid"
     # 원문 소켓으로도 같다 (클라이언트 코덱과 무관)
     with socket_client(daemon) as ws:
         ws.send(request("session.hello", hello_params(daemon, client=client)))
-        assert json.loads(ws.recv(timeout=10))["result"]["principal"]["id"] == "\ud800"
+        error = json.loads(ws.recv(timeout=10))["error"]
+        assert error["data"]["code"] == "job_token_invalid"
 
 
 def socket_client(d: ThreadDaemon) -> Any:

@@ -494,6 +494,15 @@ export async function answerAll(job: string, questions: readonly Unknown[]): Pro
 }
 
 /**
+ * 주 프로세스가 job_active로 거절했을 때의 안내. 목록에 도는 작업이 없으면 보고는 끝났고 앞 작업의 CLI가
+ * 마무리(보고 쓰기·프로세스 종료) 중인 짧은 틈이다 (UX5 CI). 저절로 다시 띄우지 않는다 — 프로젝트 전환·다른 단추와
+ * 겹쳐 엉뚱한 작업이 시작되지 않게 (UX6 검수 1 High 1·Mid 3)
+ */
+export function busyText(rows: readonly Pick<Row, "state">[]): string {
+  return followupBlock(rows) === null ? "앞 작업을 정리하는 중이에요. 잠시 뒤 다시 눌러 주세요" : ERROR_TEXT.job_active;
+}
+
+/**
  * 보고에서 새 무인 작업 (사람 전용 경로): 사용자 설정의 기본 Agent로 9단계 Init과 같은 주 프로세스 경로(`agentJobRun`,
  * 플레이북 허용 목록·예산 기본값). 렌더러는 명령줄을 주지 않는다. 자동으로 시작하지 않는다 — 사람이 단추를 눌렀을 때만
  */
@@ -511,7 +520,7 @@ function startJob(key: string, playbook: "followup" | "entry", text: { ok: strin
       const code = (err as { code?: unknown }).code;
       return code === "agent_job_unsupported" ? "무인 작업은 Claude Code·Codex CLI만 지원해요" : text.fail;
     }
-    if (!started.started) return started.error_code === "job_active" ? ERROR_TEXT.job_active : text.fail;
+    if (!started.started) return started.error_code === "job_active" ? busyText(useReports.getState().rows) : text.fail;
     useReports.setState({ follow: true });
     return text.ok;
   });

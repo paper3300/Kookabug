@@ -8,7 +8,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { DEFAULT_TEST_AGENT, REPO_BUILD, REPO_CLI, stubOpenDialog } from "./helpers/app";
 import {
   cleanupWorld,
@@ -60,6 +60,26 @@ async function shot(page: Page, name: string): Promise<void> {
 function filesUnder(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).map((e) => path.join(e.parentPath, e.name));
+}
+
+/**
+ * 보고의 시작 단추를 눌러 새 작업이 목록 맨 위에 생길 때까지. 보고가 끝난 직후엔 앞 작업의 CLI가 마무리 중이라
+ * "앞 작업을 정리하는 중이에요" 안내가 뜬다 — 사람처럼 다시 누른다 (UX5 CI: 느린 PC에서 드러남)
+ */
+async function startNewJob(page: Page, button: Locator, previous: string): Promise<void> {
+  const top = page.locator('[data-part="report-list"] li[data-job]').first();
+  const message = button.locator("xpath=..").locator('[data-part="action-message"]');
+  await button.click();
+  await expect
+    .poll(
+      async () => {
+        if ((await top.getAttribute("data-job")) !== previous) return "started";
+        if ((await message.count()) > 0 && /정리하는 중/.test(await message.innerText()) && (await button.isEnabled())) await button.click();
+        return "wait";
+      },
+      { timeout: 90_000, intervals: [1_000] },
+    )
+    .toBe("started");
 }
 
 /** 작업 폴더의 가짜 Agent 결과: 각본 단언이 모두 지났나 */
@@ -151,11 +171,10 @@ test("새 마법사 짧게 → Init(질문 없이 실행·종료 서브그래프
   // "다음: 게임 접속 경로 만들기"는 사람이 누른다 (자동으로 시작하지 않았다)
   await expect(page.locator('[data-part="report-list"] li[data-job]')).toHaveCount(1);
   await shot(page, "02-init-report");
-  await initDetail.locator('[data-part="start-entry"]').click();
+  await startNewJob(page, initDetail.locator('[data-part="start-entry"]'), initJob);
 
   // entry 첫 실행: 일반 질문은 거부되고 테스트 계정 질문 하나
   const entryRow = page.locator('[data-part="report-list"] li[data-job]').first();
-  await expect.poll(async () => entryRow.getAttribute("data-job"), { timeout: 60_000 }).not.toBe(initJob);
   await expect(entryRow).toHaveAttribute("data-state", "done", { timeout: 180_000 });
   const entryJob = String(await entryRow.getAttribute("data-job"));
   fakeOk(root, entryJob);
@@ -203,9 +222,8 @@ test("새 마법사 짧게 → Init(질문 없이 실행·종료 서브그래프
   // "이어서 진행" = entry를 다시 이어 간다
   const followup = entryDetail.locator('[data-part="followup-row"]');
   await expect(followup).toHaveAttribute("data-playbook", "entry");
-  await followup.locator('[data-part="followup"]').click();
+  await startNewJob(page, followup.locator('[data-part="followup"]'), entryJob);
   const againRow = page.locator('[data-part="report-list"] li[data-job]').first();
-  await expect.poll(async () => againRow.getAttribute("data-job"), { timeout: 60_000 }).not.toBe(entryJob);
   await expect(againRow).toHaveAttribute("data-state", "done", { timeout: 180_000 });
   const againJob = String(await againRow.getAttribute("data-job"));
   fakeOk(root, againJob);
