@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Spinner } from "../app/Spinner";
 import { client, toRpcError } from "../rpc/client";
 import { openFileTab } from "../store/tabs";
+import { showProps } from "../store/ui";
 import { useWorkspace } from "../store/workspace";
 import { SECURITY_BOUNDARY } from "../wizard/boundary";
 import { openCredentialStep } from "../wizard/ShortWizardWatch";
@@ -471,16 +472,20 @@ export function Activity({ job, state }: { job: string; state: string }) {
   );
 }
 
+/** 작업 줄을 골랐다: 그 보고는 오른쪽 속성 탭에 (UX6) */
+export function pickReport(job: string): Promise<void> {
+  showProps();
+  return selectReport(job);
+}
+
 export function ReportsTab() {
   const rows = useReports((s) => s.rows);
   const loaded = useReports((s) => s.loaded);
   const selected = useReports((s) => s.selected);
-  const detail = useReports((s) => s.detail);
   const pending = useReports((s) => s.pending);
   const error = useReports((s) => s.error);
   const lastCli = useReports((s) => s.lastCli);
   const connected = useWorkspace((s) => s.daemon.status === "connected");
-  const selectedRow = rows.find((r) => r.job === selected);
 
   useEffect(() => {
     initReports();
@@ -515,7 +520,11 @@ export function ReportsTab() {
             const key = `cancel:${r.job}`;
             return (
               <li key={r.job} className={css.row} data-job={r.job} data-state={r.state} aria-selected={r.job === selected}>
-                <button type="button" className={css.rowMain} onClick={() => void selectReport(r.job)}>
+                <button
+                  type="button"
+                  className={css.rowMain}
+                  onClick={() => void pickReport(r.job)}
+                >
                   <span className={css.rowTitle}>
                     {r.playbook}
                     <span className={css.state} data-state={r.state}>
@@ -543,20 +552,36 @@ export function ReportsTab() {
             );
           })}
         </ul>
-        <div className={css.pane}>
-          {selectedRow !== undefined && activityLive(selectedRow.state) && <Activity job={selectedRow.job} state={selectedRow.state} />}
-          {detail !== null ? (
-            <Detail report={detail} />
-          ) : (
-            <p className={css.muted}>
-              {selectedRow?.hasReport === false ? "작업이 끝나면 보고가 생겨요." : selected === null ? "보고를 고르세요." : ""}
-            </p>
-          )}
-          {selectedRow !== undefined && !activityLive(selectedRow.state) && selectedRow.playbook !== "probe" && (
-            <Activity job={selectedRow.job} state={selectedRow.state} />
-          )}
-        </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * 오른쪽 속성 탭의 작업 상세 (UX6): 묶음별 항목·수락·거절·되돌리기, 답하기(테스트 계정 카드 포함), 후속 작업 단추, 활동.
+ * 보고함 탭은 작업 목록만 남는다
+ */
+export function ReportProps() {
+  const rows = useReports((s) => s.rows);
+  const selected = useReports((s) => s.selected);
+  const detail = useReports((s) => s.detail);
+  const selectedRow = rows.find((r) => r.job === selected);
+  if (selected === null || selectedRow === undefined) {
+    return (
+      <div className={css.propsEmpty} data-part="report-props-empty">
+        보고함에서 작업을 고르면 보고가 보여요
+      </div>
+    );
+  }
+  return (
+    <div className={css.props} data-part="report-props" data-job={selected}>
+      {activityLive(selectedRow.state) && <Activity job={selectedRow.job} state={selectedRow.state} />}
+      {detail !== null ? (
+        <Detail report={detail} />
+      ) : (
+        <p className={css.muted}>{selectedRow.hasReport === false ? "작업이 끝나면 보고가 생겨요." : ""}</p>
+      )}
+      {!activityLive(selectedRow.state) && selectedRow.playbook !== "probe" && <Activity job={selectedRow.job} state={selectedRow.state} />}
     </div>
   );
 }

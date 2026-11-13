@@ -4,6 +4,7 @@
 // 매칭 결과(찾은 상자·점수·최고 후보·클릭 지점·같은 모양의 다른 자리 점선 상자)는 daemon 응답 그대로 그린다.
 // 편집은 문서 어댑터(adapter.ts)로 보낸다 — 파일 target과 녹화 초안이 같은 판을 쓴다 (M4 T11)
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { showProps } from "../store/ui";
 import {
   clickPoint,
   clientToImageRect,
@@ -197,6 +198,8 @@ export function FrameView({ doc, adapter }: { doc: TargetEditorView; adapter: Ta
     const d = drag;
     setDrag(null);
     if (d === null || view === null || frameSize === null) return;
+    // 영역·검색 범위·클릭 지점을 골랐다: 그 속성은 오른쪽 속성 탭에 있다 (UX6)
+    if (d.kind !== "pan") showProps();
     if (d.kind === "resize") {
       if (d.which === "template") adapter.setTemplate(d.rect);
       else commitSearch(d.rect);

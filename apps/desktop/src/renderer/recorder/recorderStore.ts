@@ -49,7 +49,20 @@ interface RecorderStoreState {
   retryBlocked: boolean;
   /** 변환 옵션을 서버 값으로 받은 세션 (그 뒤 사람이 바꾼 옵션을 상태 갱신이 덮지 않게, B5 검수 M3) */
   optionsSession: string | null;
+  /**
+   * 값 확인 스텝의 적용 안 한 기댓값 (스텝 → 글). 속성 탭(UX6)이 오른쪽 탭 전환·접기로 사라져도 남는다.
+   * 적용 성공·스텝 삭제·세션이 끝나거나 바뀌면 지운다
+   */
+  expectedDrafts: Readonly<Record<string, string>>;
 }
+
+const NO_DRAFTS: Readonly<Record<string, string>> = {};
+
+/**
+ * 초안 세대: 녹화 세션이 끝나거나 바뀔 때·resetRecorder 때 올린다. 스텝 ID는 세션마다 rs1부터 다시 쓰므로 늦게 온 글자 읽기·적용
+ * 응답이 다른 녹화의 같은 ID 초안을 바꾸지 않게 요청 때의 세대·세션을 대조한다 (UX6 검수 2 High)
+ */
+let draftGen = 0;
 
 export const useRecorder = create<RecorderStoreState>(() => ({
   state: null,
@@ -68,6 +81,7 @@ export const useRecorder = create<RecorderStoreState>(() => ({
   redactSecrets: false,
   retryBlocked: false,
   optionsSession: null,
+  expectedDrafts: NO_DRAFTS,
 }));
 
 // globalThis: 주 프로세스 검사(tsconfig.node, DOM 없음)도 이 파일을 타입 검사한다 (rpc/client.ts와 같음)
@@ -92,12 +106,20 @@ export function elapsedNow(s: Pick<RecorderStoreState, "state" | "stateAt">, now
 function setState(state: RecorderStateResult): void {
   // 세션이 끝나면 REC 탭도 닫는다 (2.11)
   if (!(state.owned && SESSION_STATES.has(state.state))) closeTab(REC_TAB_PATH);
+  const prev = useRecorder.getState().state;
+  const inSession = state.owned && SESSION_STATES.has(state.state);
+  // 세션이 끝나거나 바뀌면 초안 세대를 올린다: 그 전 세션에서 보낸 읽기·적용 응답은 초안을 건드리지 않는다
+  if (!inSession || (prev?.session ?? null) !== (state.session ?? null)) draftGen++;
   useRecorder.setState((s) => ({
     state,
     stateAt: Date.now(),
     // 세션이 끝나면 스텝·고름·확인 모드를 비운다 (글자를 들고 있지 않게)
-    ...(state.owned && SESSION_STATES.has(state.state) ? {} : { steps: [], rev: -1, selected: null, checkMode: null }),
-    ...(s.state?.session !== undefined && state.session !== undefined && s.state.session !== state.session ? { committed: null } : {}),
+    ...(state.owned && SESSION_STATES.has(state.state)
+      ? {}
+      : { steps: [], rev: -1, selected: null, checkMode: null, expectedDrafts: NO_DRAFTS }),
+    ...(s.state?.session !== undefined && state.session !== undefined && s.state.session !== state.session
+      ? { committed: null, expectedDrafts: NO_DRAFTS }
+      : {}),
   }));
   // 변환 옵션은 커밋 때 적용하므로 녹화 뒤에 바꿀 수 있다: 새 세션을 처음 받을 때만 서버 값을 쓴다
   const session = state.session ?? null;
@@ -160,6 +182,7 @@ export function onRecorderChanged(p: { state: string; rev?: number; session?: st
 
 export function resetRecorder(): void {
   closeTab(REC_TAB_PATH);
+  draftGen++;
   useRecorder.setState({
     retryBlocked: false,
     optionsSession: null,
@@ -172,6 +195,7 @@ export function resetRecorder(): void {
     windows: null,
     committed: null,
     checkMode: null,
+    expectedDrafts: NO_DRAFTS,
   });
 }
 
@@ -256,7 +280,57 @@ export function replaceStepFromServer(id: string, step: RecorderStep | null, rev
     rev,
     steps: step === null ? s.steps.filter((x) => x.step !== id) : s.steps.map((x) => (x.step === id ? step : x)),
     selected: step === null && s.selected === id ? null : s.selected,
+    ...(step === null && id in s.expectedDrafts ? { expectedDrafts: withoutDraft(s.expectedDrafts, id) } : {}),
   }));
+}
+
+function withoutDraft(drafts: Readonly<Record<string, string>>, step: string): Readonly<Record<string, string>> {
+  const next = { ...drafts };
+  delete next[step];
+  return next;
+}
+
+/** 값 확인 기댓값 초안 (null = 지우기 — 서버 값으로 돌아간다) */
+export function setExpectedDraft(step: string, text: string | null): void {
+  useRecorder.setState((s) => ({
+    expectedDrafts: text === null ? withoutDraft(s.expectedDrafts, step) : { ...s.expectedDrafts, [step]: text },
+  }));
+}
+
+/** 초안 요청 표: 요청을 보낸 때의 세대·세션·스텝 */
+export interface DraftTicket {
+  gen: number;
+  session: string | null;
+  step: string;
+}
+
+export function draftTicket(step: string): DraftTicket {
+  return { gen: draftGen, session: useRecorder.getState().state?.session ?? null, step };
+}
+
+/** 요청을 보낸 녹화가 아직 지금 녹화이고 그 스텝이 남아 있는가 */
+export function draftTicketLive(t: DraftTicket): boolean {
+  const s = useRecorder.getState();
+  return t.gen === draftGen && t.session === (s.state?.session ?? null) && s.steps.some((x) => x.step === t.step);
+}
+
+/** 글자 읽기로 채우기 응답: 같은 녹화일 때만 초안에 쓴다 */
+export function fillExpectedDraft(t: DraftTicket, text: string): boolean {
+  if (!draftTicketLive(t)) return false;
+  setExpectedDraft(t.step, text);
+  return true;
+}
+
+/**
+ * 기댓값 적용: 성공하면 초안을 지운다 (거부면 남겨 고칠 수 있게). 늦은 응답이 다른 녹화의 같은 ID 초안을 지우지 않게 같은 녹화일
+ * 때만, 그리고 요청 중에 고친 글은 남기게 보낸 글과 지금 초안이 같을 때만 지운다
+ */
+export async function applyExpected(step: string, value: string): Promise<boolean> {
+  const ticket = draftTicket(step);
+  const done = await updateStep(step, { equals: value });
+  if (done === false) return false;
+  if (draftTicketLive(ticket) && useRecorder.getState().expectedDrafts[step] === value) setExpectedDraft(step, null);
+  return true;
 }
 
 /** recorder.step.update. 거부(secret_region_overlap 등)는 띠에 보이고 false */

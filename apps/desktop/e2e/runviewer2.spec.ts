@@ -261,7 +261,8 @@ test("test_pick_other_baseline", async () => {
   await expect(select.locator(`option[value="${runs.other}"]`)).toHaveCount(1);
   await expect(select.locator(`option[value="${runs.fail}"]`)).toHaveCount(0);
   await select.selectOption(runs.other);
-  const box = page.locator('[data-part="compare-box"]');
+  // 속성 탭의 스텝 증거에도 비교 상자가 있다 (UX6) — 비교 탭 쪽을 본다
+  const box = page.locator('[data-part="compare-tab"] [data-part="compare-box"]');
   await expect(box).toHaveAttribute("data-baseline", runs.other, { timeout: 30_000 });
   await expect(box).toContainText(`#${runs.other.slice(0, 4)} (고른 실행) 과 차이`);
   await expect(page.locator('[data-part="subtab-compare"]')).toHaveText(`#${runs.other.slice(0, 4)} 과 비교`);
@@ -565,7 +566,7 @@ test("test_baseline_outside_first_page_shown_and_selectable", async () => {
   expect(page1.next).not.toBeNull();
   await openFromList(page, runs.fail);
   await page.locator('[data-part="subtab-compare"]').click();
-  const box = page.locator('[data-part="compare-box"]');
+  const box = page.locator('[data-part="compare-tab"] [data-part="compare-box"]');
   await expect(box).toHaveAttribute("data-baseline", runs.base, { timeout: 30_000 });
   // 기준 화면 (run.status로 읽은 기준 폴더)
   const image = page.locator('[data-part="baseline-image"]');

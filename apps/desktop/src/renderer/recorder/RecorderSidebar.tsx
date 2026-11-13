@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNow } from "../run/view";
 import { ask } from "../store/dialog";
 import { openTab, openRecTab, useTabs } from "../store/tabs";
+import { showProps } from "../store/ui";
 import { useWorkspace } from "../store/workspace";
 import { ChevronDownIcon, ChevronRightIcon } from "../theme/icons";
 import { commitInsert, commitNewTest, insertTarget, STUCK_TEXT } from "./commit";
@@ -258,8 +259,8 @@ async function revealAsOrdinary(step: RecorderStep): Promise<void> {
   if (r.value === "ok") void updateStep(step.step, { text_state: "ordinary", confirm_reveal: true });
 }
 
-/** 고른 글자 스텝의 판정 바꾸기 (2.8 사람 표시 — 사이드바 목록 전환, B5 검수 M5) */
-function TextToggle({ step }: { step: RecorderStep }) {
+/** 고른 글자 스텝의 판정 바꾸기 (2.8 사람 표시, B5 검수 M5 — UX6부터 오른쪽 속성 탭 RecProps) */
+export function TextToggle({ step }: { step: RecorderStep }) {
   if (step.text_state === "ordinary") {
     return (
       <button type="button" className={css.link} data-part="rec-mark-secret" onClick={(e) => (e.stopPropagation(), void updateStep(step.step, { text_state: "secret" }))}>
@@ -275,6 +276,26 @@ function TextToggle({ step }: { step: RecorderStep }) {
     );
   }
   return null;
+}
+
+/** 녹화 스텝 행을 골랐다: REC 탭(정지 화면)을 열고, 그 스텝의 정보·동작은 오른쪽 속성 탭에 (UX6) */
+export function pickRecStep(step: string, windowTitle: string | null): void {
+  selectStep(step);
+  openRecTab(windowTitle);
+  showProps();
+}
+
+/** 스텝 지우기: 한 번 묻는다 (행 Delete·오른쪽 클릭, 속성 탭 "지우기") */
+export async function removeStep(step: RecorderStep, mark: string): Promise<void> {
+  const r = await ask({
+    title: `스텝 ${mark || "(대기)"}을(를) 지울까요?`,
+    buttons: [
+      { label: "지우기", value: "delete", primary: true },
+      { label: "취소", value: "cancel" },
+    ],
+    cancelValue: "cancel",
+  });
+  if (r.value === "delete") void updateStep(step.step, { delete: true });
 }
 
 function ReviewRow({ step, mark }: { step: RecorderStep; mark: string }) {
@@ -303,17 +324,7 @@ function StepList({ steps, marks }: { steps: RecorderStep[]; marks: Map<string, 
   const flagged = useRecorder((s) => s.notice?.steps ?? NO_STEPS);
   const redact = useRecorder((s) => s.redactSecrets);
   const windowTitle = useRecorder((s) => s.state?.window?.title ?? null);
-  const remove = async (step: RecorderStep, mark: string) => {
-    const r = await ask({
-      title: `스텝 ${mark || "(대기)"}을(를) 지울까요?`,
-      buttons: [
-        { label: "지우기", value: "delete", primary: true },
-        { label: "취소", value: "cancel" },
-      ],
-      cancelValue: "cancel",
-    });
-    if (r.value === "delete") void updateStep(step.step, { delete: true });
-  };
+  const remove = removeStep;
   return (
     <ol className={css.steps} aria-label="녹화된 스텝" data-part="rec-steps">
       {steps.map((s) => {
@@ -330,10 +341,7 @@ function StepList({ steps, marks }: { steps: RecorderStep[]; marks: Map<string, 
             data-flagged={flagged.includes(s.step)}
             aria-selected={isSel}
             tabIndex={0}
-            onClick={() => {
-              selectStep(s.step);
-              openRecTab(windowTitle);
-            }}
+            onClick={() => pickRecStep(s.step, windowTitle)}
             onKeyDown={(e) => {
               if (e.key === "Delete") void remove(s, label.mark);
             }}
@@ -353,21 +361,6 @@ function StepList({ steps, marks }: { steps: RecorderStep[]; marks: Map<string, 
               {label.note !== "" && (
                 <span className={label.tone === "review" ? css.noteReview : label.tone === "secret" ? css.noteSecret : css.note} data-part="rec-note" data-tone={label.tone}>
                   {label.note}
-                </span>
-              )}
-              {isSel && s.kind === "text" && (
-                <span className={css.rowActions}>
-                  <TextToggle step={s} />
-                </span>
-              )}
-              {isSel && s.needs_review.length > 0 && s.kind !== "text" && (
-                <span className={css.rowActions}>
-                  <button type="button" className={css.link} onClick={(e) => (e.stopPropagation(), void updateStep(s.step, { keep: true }))}>
-                    그대로 남기기
-                  </button>
-                  <button type="button" className={css.link} onClick={(e) => (e.stopPropagation(), void remove(s, label.mark))}>
-                    지우기
-                  </button>
                 </span>
               )}
             </span>

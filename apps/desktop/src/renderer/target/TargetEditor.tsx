@@ -713,18 +713,52 @@ export function TargetEditor({ path }: { path: string }) {
   );
 }
 
-/** 편집기 부품 (정지 화면 판 + 패널). 파일 target·녹화 초안이 같이 쓴다 (문서 어댑터, M4 T11) */
+/**
+ * 편집기 부품의 판 (정지 화면 캔버스). 파일 target·녹화 초안이 같이 쓴다 (문서 어댑터, M4 T11). 고른 영역의 속성(매칭
+ * 미리보기·클릭 지점·검색 범위·글자·배율)은 오른쪽 속성 탭의 TargetAreaPanels가 그린다 (UX6)
+ */
 export function TargetEditorBody({ doc, adapter }: Body) {
   return (
     <div className={css.body}>
       <FrameView doc={doc} adapter={adapter} />
-      <div className={css.panels}>
-        <PreviewPanel doc={doc} adapter={adapter} />
-        <ClickPanel doc={doc} adapter={adapter} />
+    </div>
+  );
+}
+
+/** 고른 영역이 있는가: 새 대상은 영역을 그린 뒤, 기존 대상은 파일의 영역이 있다 */
+export function hasArea(doc: TargetEditorView): boolean {
+  return doc.template !== null || !doc.isNew;
+}
+
+/** 오른쪽 속성 탭의 영역 속성 (UX6): 매칭 미리보기·클릭 지점, 접힌 보조 패널(검색 범위·글자·다른 배율) */
+export function TargetAreaPanels({ doc, adapter }: Body) {
+  if (!hasArea(doc)) {
+    return (
+      <div className={css.propsEmpty} data-part="target-props-empty">
+        정지 화면에서 영역을 드래그하면 매칭 미리보기·클릭 지점이 보여요
       </div>
+    );
+  }
+  return (
+    <div className={css.props} data-part="target-props" data-path={doc.path}>
+      <PreviewPanel doc={doc} adapter={adapter} />
+      <ClickPanel doc={doc} adapter={adapter} />
       <ExtPanels doc={doc} adapter={adapter} />
     </div>
   );
+}
+
+/** TARGET 탭의 속성 (UX6): 그 탭의 대상 문서 */
+export function TargetProps({ path }: { path: string }) {
+  const doc = useTargetDoc(path);
+  if (doc === undefined || doc.status === "loading") {
+    return (
+      <div className={css.propsEmpty} data-part="target-props-empty">
+        찾기 대상을 여는 중이에요
+      </div>
+    );
+  }
+  return <TargetAreaPanels doc={doc} adapter={fileTargetAdapter(path)} />;
 }
 
 /** 보조 패널 열림 (탭을 오가도 이 세션 동안 기억한다) */

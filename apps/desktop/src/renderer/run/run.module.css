@@ -146,6 +146,14 @@
 }
 
 /* ── 노드 결과 ──────────────────────────────────────────────────── */
+/* 속성 탭 "마지막 실행 결과" (UX6): 하단 패널과 같은 글꼴 */
+.nodeResult {
+  font-family: var(--kb-font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  min-width: 0;
+}
+
 .resultTitle {
   display: flex;
   align-items: baseline;

@@ -6,7 +6,7 @@
 import type { ResultOf } from "@kookabug/schema";
 import { create } from "zustand";
 import { client, toRpcError } from "../rpc/client";
-import { useUi } from "../store/ui";
+import { showProps } from "../store/ui";
 
 export type ScreenMap = ResultOf<"screens.map">;
 export type MapCard = ScreenMap["screens"][number];
@@ -272,7 +272,7 @@ export async function loadSessions(): Promise<void> {
 /** 카드를 고른다. 고른 카드 정보는 오른쪽 속성 탭에 그리므로 접혀 있으면 펴고 속성 탭으로 (UX4) */
 export function select(node: string | null): void {
   useMap.setState({ selected: node });
-  if (node !== null) useUi.setState({ inspectorOpen: true, rightTab: "props" });
+  if (node !== null) showProps();
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;

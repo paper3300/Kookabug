@@ -46,13 +46,14 @@
   display: flex;
 }
 
+/* 작업 상세가 오른쪽 속성 탭으로 가서(UX6) 목록이 본문 전체를 쓴다 */
 .list {
-  flex: 0 0 300px;
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
   padding: 0;
   list-style: none;
   overflow: auto;
-  border-right: 1px solid var(--kb-border);
 }
 
 .empty {
@@ -123,11 +124,39 @@
   color: var(--kb-wiz-warn-fg);
 }
 
-.pane {
+/* 오른쪽 속성 탭의 작업 상세 (UX6, ReportProps) */
+.props {
   flex: 1 1 auto;
+  min-height: 0;
   min-width: 0;
-  overflow: auto;
-  padding: 12px 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 12px 12px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.propsEmpty {
+  padding: 8px 20px;
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* 좁은 패널: 머리·항목의 단추가 넘치면 아랫줄로 */
+.props .groupHead,
+.props .item,
+.props .question,
+.props .followup,
+.props .answerRow {
+  flex-wrap: wrap;
+}
+
+.props .itemBody {
+  min-width: 0;
+  flex: 1 1 160px;
 }
 
 .detail {

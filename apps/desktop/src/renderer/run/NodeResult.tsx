@@ -1,5 +1,5 @@
-// 노드 결과 패널 (M2 계획 2.8 "패널"): 지금 탭에서 고른 노드의 마지막 step.end (상태·출구·출력·오류·생략·
-// artifact 경로). 비밀값은 기록에 이미 가려져 있다
+// 노드 결과 (M2 계획 2.8 "패널" — UX6부터 오른쪽 속성 탭 노드 속성 아래 "마지막 실행 결과" 묶음): 지금 탭에서 고른
+// 노드의 마지막 step.end (상태·출구·출력·오류·생략·artifact 경로). 비밀값은 기록에 이미 가려져 있다
 import { graphNodes } from "../graph/model";
 import { useDocuments } from "../store/documents";
 import { useRegistry } from "../store/registry";
@@ -101,7 +101,7 @@ export function NodeResult() {
   const title = node?.title ?? (node !== undefined ? types.get(node.type)?.title : undefined) ?? selected;
   const view = run?.nodes.get(selected) ?? null;
   return (
-    <div data-part="node-result" data-node={selected} data-run-id={current?.runId ?? ""}>
+    <div className={css.nodeResult} data-part="node-result" data-node={selected} data-run-id={current?.runId ?? ""}>
       <div className={css.resultTitle}>
         <span className={css.resultNode}>{title}</span>
         <span className={css.muted}>{selected}</span>

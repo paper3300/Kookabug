@@ -1,8 +1,10 @@
-// 고른 스텝의 스크린샷 줄과 매칭 후보 표·지난 성공과 비교 상자 (시안 RunViewer 아래쪽). 칸은 evidenceCells.ts가
+// 고른 스텝의 스크린샷 줄과 매칭 후보 표·지난 성공과 비교 상자 (시안 RunViewer 아래쪽 — UX6부터 오른쪽 속성 탭,
+// 패널 폭에 맞춰 세로로 쌓고 "크게 보기"는 BigView). 칸은 evidenceCells.ts가
 // 정하고, 후보 상자는 마지막 칸 이미지 위에 그린다(후보 사각형은 _fail 이미지 좌표). 머리의 "스크린샷 | 영상"은 그
 // 실행에 영상 조각이 있을 때만(U8), 없으면 이유만. "그래프에서 보기"는 실행 스냅샷 그래프를 읽기 전용 탭으로
 // 연다 (viewInGraph.ts)
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { BigView } from "../app/BigView";
 import { formatClock } from "../run/highlight";
 import { CompareBox } from "./Compare";
 import { candidateRows, evidenceCells, fileUrl, fitted, headMessage, stepEnd, type EvidenceCell, type Size } from "./evidenceCells";
@@ -13,7 +15,27 @@ import { VideoPlayer } from "./VideoPlayer";
 import { videoHeader } from "./videoTimeline";
 import { viewInGraph } from "./viewInGraph";
 
-function Shot({ cell, runDir, detail, clock }: { cell: EvidenceCell; runDir: string; detail: StepDetail; clock: string }) {
+function ZoomButton({ part, onClick }: { part: string; onClick(): void }) {
+  return (
+    <button type="button" className={css.zoomButton} data-part={part} title="앱 안에서 크게 봐요" onClick={onClick}>
+      크게 보기
+    </button>
+  );
+}
+
+function Shot({
+  cell,
+  runDir,
+  detail,
+  clock,
+  onZoom,
+}: {
+  cell: EvidenceCell;
+  runDir: string;
+  detail: StepDetail;
+  clock: string;
+  onZoom?: () => void;
+}) {
   const [natural, setNatural] = useState<Size | null>(null);
   const [box, setBox] = useState<Size | null>(null);
   if (cell.file === null) {
@@ -38,6 +60,7 @@ function Shot({ cell, runDir, detail, clock }: { cell: EvidenceCell; runDir: str
       <div className={css.shotHead}>
         <span className={css.shotLabel}>{cell.label}</span>
         <span className={css.shotTime}>{clock}</span>
+        {onZoom !== undefined && <ZoomButton part="shot-zoom" onClick={onZoom} />}
       </div>
       <div
         className={css.frame}
@@ -151,10 +174,16 @@ export function Evidence({
   const reason = headMessage(step, typeof detail === "object" ? detail : null);
   const video = videoHeader(index.video, index.run?.video as { status?: unknown; deleted?: unknown } | undefined);
   const showVideo = video.toggle && view.media === "video" && index.video !== null;
+  // 크게 보기: 스크린샷 칸 키 또는 "video". 다른 스텝을 고르면 닫힌다
+  const [bigState, setBig] = useState<{ step: string; key: string } | null>(null);
+  const big = bigState !== null && bigState.step === step.step ? bigState.key : null;
+  const close = useCallback(() => setBig(null), []);
+  const bigCell = big === null || big === "video" ? undefined : cells.find((c) => c.key === big && c.file !== null);
+  const title = stepTitle(view, step, typeTitle);
   return (
     <section aria-label="스텝 증거" data-part="evidence" data-step={step.step}>
       <div className={css.stepHead}>
-        <span className={css.stepTitle}>{stepTitle(view, step, typeTitle)}</span>
+        <span className={css.stepTitle}>{title}</span>
         <span className={css.stepPath} title={step.path.join(" › ")}>
           {step.graph}
           {reason !== null ? ` · ${reason}` : ""}
@@ -197,7 +226,24 @@ export function Evidence({
       </div>
       {showVideo ? (
         <>
-          <VideoPlayer runDir={index.run_dir} runStart={runStart} step={step} video={index.video!} />
+          {/* 영상은 한 곳에서만 재생한다: 크게 보는 동안 패널 쪽은 비운다 */}
+          {big === "video" ? (
+            <div className={css.message} data-part="video-in-big">
+              크게 보는 중이에요
+            </div>
+          ) : (
+            <>
+              <div className={css.zoomRow}>
+                <ZoomButton part="video-zoom" onClick={() => setBig({ step: step.step, key: "video" })} />
+              </div>
+              <VideoPlayer runDir={index.run_dir} runStart={runStart} step={step} video={index.video!} />
+            </>
+          )}
+          {big === "video" && (
+            <BigView title={`${title} · 영상`} onClose={close}>
+              <VideoPlayer runDir={index.run_dir} runStart={runStart} step={step} video={index.video!} />
+            </BigView>
+          )}
           {typeof detail === "object" && (
             <div className={css.tables}>
               <Candidates detail={detail} />
@@ -218,9 +264,23 @@ export function Evidence({
           ) : (
             <div className={css.shots} data-part="shots">
               {cells.map((c) => (
-                <Shot key={c.key} cell={c} runDir={index.run_dir} detail={detail} clock={clockOf(c)} />
+                <Shot
+                  key={c.key}
+                  cell={c}
+                  runDir={index.run_dir}
+                  detail={detail}
+                  clock={clockOf(c)}
+                  onZoom={c.file === null ? undefined : () => setBig({ step: step.step, key: c.key })}
+                />
               ))}
             </div>
+          )}
+          {bigCell !== undefined && (
+            <BigView title={`${title} · ${bigCell.label}`} onClose={close}>
+              <div className={css.bigShot}>
+                <Shot cell={bigCell} runDir={index.run_dir} detail={detail} clock={clockOf(bigCell)} />
+              </div>
+            </BigView>
           )}
           <div className={css.tables}>
             <Candidates detail={detail} />

@@ -3,6 +3,11 @@
 import { useRef } from "react";
 import css from "./shell.module.css";
 
+/** 끈 폭을 최소·최대(그리고 창 폭 × 비율) 안으로 */
+export function clampWidth(w: number, min: number, max: number, viewport: number, fraction: number): number {
+  return Math.round(Math.min(Math.max(w, min), Math.max(min, Math.min(max, viewport * fraction))));
+}
+
 export function Resizer({
   edge,
   label,
@@ -10,7 +15,10 @@ export function Resizer({
   max,
   onWidth,
   onCollapse,
+  maxFraction = 0.6,
 }: {
+  /** 창 폭에 대한 최대 비율 (오른쪽 패널은 0.5, UX6) */
+  maxFraction?: number;
   /** 손잡이 자리: right = 부모 오른쪽 끝(왼쪽 사이드바), left = 부모 왼쪽 끝(오른쪽 패널) */
   edge: "left" | "right";
   label: string;
@@ -21,7 +29,7 @@ export function Resizer({
   onCollapse(): void;
 }) {
   const drag = useRef<{ x: number; width: number; raw: number } | null>(null);
-  const limit = (w: number) => Math.round(Math.min(Math.max(w, min), Math.max(min, Math.min(max, window.innerWidth * 0.6))));
+  const limit = (w: number) => clampWidth(w, min, max, window.innerWidth, maxFraction);
   const current = (el: HTMLElement) => (el.parentElement?.getBoundingClientRect().width ?? min + 1) - 1;
   return (
     <div

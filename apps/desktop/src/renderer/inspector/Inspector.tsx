@@ -29,6 +29,7 @@ import { useRegistry } from "../store/registry";
 import { openPluginTab, useTabs } from "../store/tabs";
 import { ENV_STATUS_TEXT, pluginTitle } from "../plugins/model";
 import { usePlugins } from "../plugins/pluginStore";
+import { NodeResult } from "../run/NodeResult";
 import { useRun } from "../run/runStore";
 import { ChevronDownIcon, ChevronRightIcon } from "../theme/icons";
 import {
@@ -566,6 +567,10 @@ function Body({ path }: { path: string }) {
   return (
     <div className={css.body} data-part="inspector-body" data-node={node.id}>
       <NodeFields key={`${path}:${node.id}`} path={path} view={view} ctx={ctx} graph={doc.value} />
+      {/* 하단 패널 "노드 결과"를 옮겼다 (UX6): 고른 노드의 마지막 step.end */}
+      <Section title="마지막 실행 결과" part="node-last-result">
+        <NodeResult />
+      </Section>
     </div>
   );
 }

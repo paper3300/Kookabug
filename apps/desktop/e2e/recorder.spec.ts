@@ -373,6 +373,12 @@ test("test_text_step_toggle_and_check_text_expected_value", async () => {
   const expected = page.locator('[data-part="rec-expected"]');
   await expect(expected).toBeVisible({ timeout: 30_000 });
   await expected.getByRole("textbox", { name: "기댓값" }).fill("서버 고르기");
+  // 적용 전 초안은 오른쪽 에이전트 탭을 다녀와도 남는다 (속성 탭이 사라졌다 다시 그려짐, UX6 검수 H2)
+  const rightTabs = page.getByRole("tablist", { name: "오른쪽 패널" });
+  await rightTabs.getByRole("tab", { name: /^에이전트/ }).click();
+  await expect(expected).toHaveCount(0);
+  await rightTabs.getByRole("tab", { name: "속성" }).click();
+  await expect(expected.getByRole("textbox", { name: "기댓값" })).toHaveValue("서버 고르기");
   await expected.getByRole("button", { name: "기댓값 적용" }).click();
   await expect(expected.getByRole("button", { name: "기댓값 적용" })).toBeDisabled({ timeout: 15_000 });
   // 비밀번호 원문은 기댓값으로 받지 않는다 (원문은 띠·화면에 나오지 않는다)
@@ -384,11 +390,13 @@ test("test_text_step_toggle_and_check_text_expected_value", async () => {
   const account = page.locator('[data-part="rec-step"][data-text-state="ordinary"]');
   const id = (await account.getAttribute("data-step")) ?? "";
   await account.click();
-  await account.locator('[data-part="rec-mark-secret"]').click();
+  // 고른 스텝의 전환 단추는 오른쪽 속성 탭에 있다 (UX6)
+  const props = page.locator(`[data-part="rec-props"][data-step="${id}"]`);
+  await props.locator('[data-part="rec-mark-secret"]').click();
   const row = page.locator(`[data-part="rec-step"][data-step="${id}"]`);
   await expect(row).toHaveAttribute("data-text-state", "secret", { timeout: 15_000 });
   await expect(row.locator('[data-part="rec-raw"]')).not.toContainText(ACCOUNT_TEXT);
-  await row.locator('[data-part="rec-mark-ordinary"]').click();
+  await props.locator('[data-part="rec-mark-ordinary"]').click();
   const dialog = page.getByRole("dialog", { name: "글자를 보이고 일반 글자로 저장할까요?" });
   await dialog.getByRole("button", { name: "일반 글자로" }).click();
   await expect(row).toHaveAttribute("data-text-state", "ordinary", { timeout: 15_000 });

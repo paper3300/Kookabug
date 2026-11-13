@@ -2,7 +2,9 @@
 // target 편집기 부품(TargetEditorBody)으로 고친다 — 편집은 녹화 초안 어댑터(recAdapter)가 recorder.step.update로 보낸다.
 // 머리: "정지 화면 · 스텝 3", 안내 줄, 프레임 고르기(클릭 직전·커서 들어오기 전·다음 동작 직전), "찾기 대상 탭으로 열기"
 // (초안은 recorder.target.materialize로 그 초안만 지금 파일로), "실시간 화면으로". 화면 확인·값 확인 넣기는 지금 화면에서
-// 영역을 고른 뒤 "넣기"(recorder.insert_check) — 그동안 기존 스텝은 편집 대상이 아니다. 값 확인 스텝은 기댓값 칸
+// 영역을 고른 뒤 "넣기"(recorder.insert_check) — 그동안 기존 스텝은 편집 대상이 아니다.
+// UX6: 탭에는 정지 화면 캔버스만. 고른 스텝의 동작(비밀값/일반 전환·남기기·지우기)·값 확인 기댓값·영역 속성은 오른쪽
+// 속성 탭(RecProps.tsx)
 import { useEffect, useMemo, useState } from "react";
 import { client, toRpcError } from "../rpc/client";
 import { FrameView } from "../target/FrameView";
@@ -11,7 +13,17 @@ import targetCss from "../target/target.module.css";
 import { openTab } from "../store/tabs";
 import { LIVE_STATES, recorderErrorText, stepMarks, type RecorderStep } from "./labels";
 import { checkRegion, flushDraft, loadRecFrame, readRegion, recAdapter, sendDraft, useRecDoc, type FrameWhich } from "./recAdapter";
-import { beginCheck, insertCheck, refreshSteps, selectStep, updateStep, useRecorder } from "./recorderStore";
+import {
+  applyExpected,
+  beginCheck,
+  draftTicket,
+  fillExpectedDraft,
+  insertCheck,
+  refreshSteps,
+  selectStep,
+  setExpectedDraft,
+  useRecorder,
+} from "./recorderStore";
 import css from "./recorder.module.css";
 
 const WHICH_LABEL: Record<FrameWhich, string> = {
@@ -49,8 +61,10 @@ async function openAsTarget(step: RecorderStep): Promise<void> {
 }
 
 /** 값 확인 스텝의 기댓값 (B5 검수 M6): 고치기 · 글자 읽기로 채우기 → recorder.step.update {equals} */
-function ExpectedText({ step }: { step: RecorderStep }) {
-  const [draft, setDraft] = useState<string | null>(null);
+export function ExpectedText({ step }: { step: RecorderStep }) {
+  // 초안은 저장소에 둔다: 속성 탭이 오른쪽 탭 전환·접기로 사라져도 남는다 (UX6 검수 H2)
+  const draft = useRecorder((s) => s.expectedDrafts[step.step] ?? null);
+  const setDraft = (text: string | null) => setExpectedDraft(step.step, text);
   const [note, setNote] = useState<string | null>(null);
   const value = draft ?? step.equals ?? "";
   const read = async () => {
@@ -59,19 +73,18 @@ function ExpectedText({ step }: { step: RecorderStep }) {
       setNote("읽을 영역이 없어요 — 정지 화면에서 영역을 고르세요");
       return;
     }
+    const ticket = draftTicket(step.step);
     try {
       const r = await client().call("target.read_text", { frame_id: region.frameId, rect: region.rect });
-      setDraft(r.text);
+      // 그 사이 녹화가 바뀌었으면(스텝 ID는 세션마다 다시 쓴다) 쓰지 않는다 (UX6 검수 2 High)
+      if (!fillExpectedDraft(ticket, r.text)) return;
       setNote(null);
     } catch (err) {
       const e = toRpcError(err);
       setNote(e.kind === "secret_region_overlap" ? "비밀값 칸과 겹쳐 읽지 않았어요" : `읽지 못했어요: ${e.message}`);
     }
   };
-  const apply = async () => {
-    const done = await updateStep(step.step, { equals: value });
-    if (done !== false) setDraft(null);
-  };
+  const apply = () => applyExpected(step.step, value);
   return (
     <div className={css.checkBand} data-part="rec-expected">
       <label className={css.secretField}>
@@ -87,6 +100,11 @@ function ExpectedText({ step }: { step: RecorderStep }) {
       {note !== null && <span data-part="rec-expected-note">{note}</span>}
     </div>
   );
+}
+
+/** 고른 스텝의 찾기 대상을 고칠 수 있는가 (정지 화면이 그 스텝 것이고 확인 넣기 중이 아님) */
+export function recEditable(step: RecorderStep | null, checkMode: string | null, docStep: string | null): boolean {
+  return checkMode === null && step !== null && step.target !== undefined && docStep === step.step;
 }
 
 export function RecTab() {
@@ -135,7 +153,7 @@ export function RecTab() {
   const draft = step?.target?.source === "draft";
   const fileTarget = checkMode === null && step?.target?.source === "file" && doc.step === step.step && doc.template === null;
   const canOpen = step?.target?.source === "file" || draft;
-  const editable = checkMode === null && step !== null && step.target !== undefined && doc.step === step.step;
+  const editable = recEditable(step, checkMode, doc.step);
   const region = checkMode !== null ? checkRegion() : null;
   return (
     <div
@@ -210,7 +228,6 @@ export function RecTab() {
           {FILE_TARGET_HINT}
         </div>
       )}
-      {checkMode === null && step?.kind === "check_text" && <ExpectedText key={step.step} step={step} />}
       {doc.refusal !== null && (
         <div role="alert" className={css.refusal} data-part="rec-refusal">
           {doc.refusal}

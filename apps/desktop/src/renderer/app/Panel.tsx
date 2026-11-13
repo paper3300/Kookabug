@@ -1,8 +1,7 @@
-// 하단 패널 (시안 Main): 문제·출력·실행 로그·노드 결과. 고정 데이터·터미널은 이후 (2.11).
-// 출력(daemon·연결 메시지)은 T7, 문제(검증 진단)는 T8, 실행 로그·노드 결과는 T11
+// 하단 패널 (시안 Main): 문제·출력·실행 로그. 고정 데이터·터미널은 이후 (2.11).
+// 출력(daemon·연결 메시지)은 T7, 문제(검증 진단)는 T8, 실행 로그는 T11. 노드 결과는 UX6부터 속성 탭 "마지막 실행 결과"
 import { useEffect, useRef } from "react";
 import { Problems, useProblems, useRunProblems } from "../problems/Problems";
-import { NodeResult } from "../run/NodeResult";
 import { RunLog } from "../run/RunLog";
 import { useTabs } from "../store/tabs";
 import { panelSide, useUi, type PanelTab } from "../store/ui";
@@ -14,7 +13,6 @@ const TABS: [PanelTab, string][] = [
   ["problems", "문제"],
   ["output", "출력"],
   ["runlog", "실행 로그"],
-  ["result", "노드 결과"],
 ];
 
 const LEVEL = { info: ["INFO", css.levelInfo], warn: ["WARN", css.levelWarn], error: ["ERROR", css.levelError] } as const;
@@ -92,8 +90,6 @@ export function Panel() {
           <Output />
         ) : tab === "problems" ? (
           <Problems />
-        ) : tab === "result" ? (
-          <NodeResult />
         ) : (
           <RunLog />
         )}

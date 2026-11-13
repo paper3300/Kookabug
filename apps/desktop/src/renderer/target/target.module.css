@@ -498,6 +498,39 @@
   gap: 8px;
 }
 
+/* 오른쪽 속성 탭의 영역 속성 (UX6, TargetAreaPanels): 패널 폭에 맞춰 세로로 쌓는다 */
+.props {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 12px 12px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.propsEmpty {
+  padding: 8px 20px;
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.props .panel {
+  flex: 0 0 auto;
+  padding: 10px 12px;
+}
+
+.props .panels {
+  flex-direction: column;
+  max-width: none;
+}
+
+.props .extSummary {
+  flex-wrap: wrap;
+}
+
 /* 보조 패널 묶음: 접으면 한 줄 (B4 검수 Mid 3) */
 .ext {
   flex: 0 0 auto;

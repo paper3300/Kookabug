@@ -423,3 +423,46 @@
   align-items: center;
   gap: 12px;
 }
+
+/* 오른쪽 속성 탭의 고른 스텝 (UX6, RecProps.tsx) */
+.props {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  font-size: 12px;
+}
+
+.propsEmpty {
+  padding: 8px 20px;
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.propsHead {
+  display: flex;
+  gap: 10px;
+  padding: 8px 12px 0 20px;
+}
+
+.props > .rowActions {
+  padding: 0 12px 0 48px;
+}
+
+.props > .checkBand {
+  flex-wrap: wrap;
+  margin: 0 12px 0 20px;
+  padding: 8px 10px;
+}
+
+/* 영역 속성은 자기 여백·스크롤을 쓰지 않고 속성 묶음 안에서 같이 내려간다 */
+.props > [data-part="target-props"],
+.props > [data-part="target-props-empty"] {
+  flex: 0 0 auto;
+  overflow: visible;
+}

@@ -32,6 +32,7 @@ import { PALETTE_MIME } from "../palette/groups";
 import { applyEdit, getDoc, saveViewport, setSelection, useDocuments, type GraphDoc } from "../store/documents";
 import { useEditsLocked } from "../store/dialog";
 import { useRegistry } from "../store/registry";
+import { showProps } from "../store/ui";
 import { NodeMenu, type NodeMenuAt } from "../debug/NodeMenu";
 import { TabDebugContext, useTabDebugView } from "../debug/view";
 import { TabRunContext, useTabRunView } from "../run/view";
@@ -349,6 +350,8 @@ function FlowView({ doc, types }: { doc: GraphDoc; types: TypeIndex }) {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeDragStop={onNodeDragStop}
+          // 노드를 눌러 골랐다: 속성·마지막 실행 결과는 오른쪽 속성 탭 (UX6)
+          onNodeClick={showProps}
           onNodeContextMenu={onNodeContextMenu}
           onNodeDoubleClick={onNodeDoubleClick}
           onDelete={onDelete}

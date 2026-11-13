@@ -242,11 +242,9 @@
 }
 
 /* ── 스텝 타임라인 ───────────────────────────────────────────── */
+/* 스텝 증거가 오른쪽 속성 탭으로 가서(UX6) 타임라인이 본문 전체를 쓴다 */
 .timeline {
   padding: 10px 12px 12px;
-  border-bottom: 1px solid var(--kb-border);
-  max-height: 380px;
-  overflow-y: auto;
 }
 
 .row {
@@ -440,8 +438,13 @@
 
 .shotHead {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
+}
+
+.shotHead .shotTime {
+  margin-left: auto;
 }
 
 .shotLabel {
@@ -816,4 +819,82 @@
   white-space: pre-wrap;
   word-break: break-all;
   user-select: text;
+}
+
+/* ── 오른쪽 속성 탭의 스텝 증거 (UX6): 패널 폭에 맞춰 한 줄에 하나씩 쌓는다 ───────── */
+.props {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 12px;
+}
+
+.propsEmpty {
+  padding: 8px 20px;
+  color: var(--kb-fg-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.props .stepHead {
+  flex-wrap: wrap;
+  padding: 10px 12px 0 20px;
+  row-gap: 6px;
+}
+
+.props .stepPath {
+  flex: 1 1 100%;
+  order: 1;
+}
+
+.props .stepHead > .button {
+  margin-left: 0;
+}
+
+.props .shots {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 10px 12px 10px 20px;
+}
+
+.props .tables {
+  flex-direction: column;
+  padding: 0 12px 12px 20px;
+}
+
+.props .box {
+  flex: 0 0 auto;
+}
+
+.props .video {
+  padding: 6px 12px 10px 20px;
+}
+
+.zoomRow {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px 0 20px;
+}
+
+.zoomButton {
+  flex: 0 0 auto;
+  background: none;
+  border: 1px solid var(--kb-input-border);
+  border-radius: 2px;
+  color: var(--kb-fg);
+  padding: 0 6px;
+  height: 20px;
+  font-size: 11px;
+}
+
+.zoomButton:hover {
+  background: var(--kb-hover-bg);
+}
+
+.bigShot {
+  padding: 12px;
+}
+
+.bigShot .video {
+  max-width: none;
 }

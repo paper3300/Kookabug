@@ -2,6 +2,7 @@
 // 끝난 스텝만). 행을 누르면 그 노드의 마지막 실패 스텝으로 간다 — 쪽을 다 읽지 않은 스텝이면 조상을 따라 올라가
 // 펼친다 (runIndexStore.revealStep)
 import { formatCount } from "../run/highlight";
+import { showProps } from "../store/ui";
 import { formatMs, stepTitle, type TypeTitle } from "./labels";
 import { runIndexModel, type RunIndex, type RunViewState } from "./runIndexStore";
 import css from "./runs.module.css";
@@ -48,7 +49,9 @@ export function NodeStats({ view, typeTitle }: { view: RunViewState; typeTitle: 
                 data-last-failure={target ?? ""}
                 title={target !== null ? "마지막 실패 스텝으로 가기" : undefined}
                 onClick={() => {
-                  if (target !== null) void runIndexModel.revealStep(view.runId, target);
+                  if (target === null) return;
+                  void runIndexModel.revealStep(view.runId, target);
+                  showProps();
                 }}
               >
                 <td>{stepTitle(view, s, typeTitle)}</td>

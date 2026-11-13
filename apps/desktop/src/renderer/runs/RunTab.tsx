@@ -3,6 +3,7 @@
 //   경로 · 해상도·DPI. 단추 "에디터에서 재현"(reproduce.ts)·"분석 번들 내보내기"(주 프로세스 저장 대화 상자),
 //   "에이전트에게 분석 요청"(M5 B5: 에이전트 패널을 열고 @run 칩 + 기본 문장). 두 단추의 결과는 머리 아래 알림 줄
 // - 하위 탭: 스텝 타임라인 · 노드별 통계 · `#<기준> 과 비교` · run.json. "수집 데이터"는 숨김(U11)
+// - 고른 스텝의 증거(스크린샷·영상·매칭 후보·지난 성공과 차이)는 오른쪽 속성 탭에 그린다 (UX6, RunStepProps)
 // - 처음 열면 실패 노드로 바로 이동한다(실패 사슬을 펼치고 실패 스텝을 고른 뒤 보이게 하고 그 증거를 보인다)
 // - 진행 중 실행은 실행 화면이 받은 이벤트를 따라 늘어난다 (runIndexStore, live.ts)
 import { useEffect } from "react";
@@ -219,7 +220,6 @@ export function RunTab({ runId }: { runId: string }) {
       </div>
     );
   }
-  const selected = view.selected === null ? null : findStep(view, view.selected);
   return (
     <div
       className={css.tab}
@@ -263,16 +263,32 @@ export function RunTab({ runId }: { runId: string }) {
         ) : view.view === "compare" ? (
           <CompareTab view={view} typeTitle={typeTitle} />
         ) : (
-          <>
-            <Timeline view={view} typeTitle={typeTitle} />
-            {selected !== null ? (
-              <Evidence view={view} step={selected} shortId={shortId} typeTitle={typeTitle} />
-            ) : (
-              <div className={css.message}>스텝을 고르면 화면과 매칭 후보가 보여요</div>
-            )}
-          </>
+          <Timeline view={view} typeTitle={typeTitle} />
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * 오른쪽 속성 탭의 RUN 스텝 상세 (UX6): 고른 스텝의 제목·경로, 스크린샷 줄·영상, 매칭 후보 표, 지난 성공과 차이,
+ * 그래프에서 보기. 고른 스텝은 실행마다 기억한다(runIndexStore) — 다른 RUN 탭으로 가면 그 탭의 스텝이 보인다
+ */
+export function RunStepProps({ runId }: { runId: string }) {
+  const view = useRunIndex((s) => s.runs.get(runId));
+  const types = useRegistry((s) => s.types);
+  const typeTitle = (type: string) => types.get(type)?.title ?? null;
+  const selected = view?.index == null || view.selected === null ? null : findStep(view, view.selected);
+  if (view === undefined || view.index === null || selected === null) {
+    return (
+      <div className={css.propsEmpty} data-part="run-props-empty">
+        RUN 탭에서 스텝을 고르면 화면과 매칭 후보가 보여요
+      </div>
+    );
+  }
+  return (
+    <div className={css.props} data-part="run-props" data-run-id={runId}>
+      <Evidence view={view} step={selected} shortId={shortIdOf(runId)} typeTitle={typeTitle} />
     </div>
   );
 }

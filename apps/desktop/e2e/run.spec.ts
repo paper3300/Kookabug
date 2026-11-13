@@ -312,8 +312,11 @@ test("test_broken_variant_fail_shows_fail_node_and_artifact_path", async () => {
   await expect(runNode(page, "n_enter_world")).toHaveAttribute("data-run-tone", "fail");
   await expect(status(runNode(page, "n_enter_world"))).toHaveText(/^✕ /);
   await runNode(page, "n_enter_world").click();
-  await page.getByRole("tab", { name: "노드 결과" }).click();
-  await expect(page.locator('[data-part="node-result"][data-node="n_enter_world"] [data-part="node-result-status"]')).toHaveAttribute(
+  // 노드 결과는 오른쪽 속성 탭 "마지막 실행 결과" 묶음 (UX6, 하단 "노드 결과" 탭 없음)
+  await expect(page.getByRole("tab", { name: "노드 결과" })).toHaveCount(0);
+  await expect(
+    page.locator('[data-part="inspector"] [data-part="node-last-result"] [data-part="node-result"][data-node="n_enter_world"] [data-part="node-result-status"]'),
+  ).toHaveAttribute(
     "data-status",
     "fail",
   );

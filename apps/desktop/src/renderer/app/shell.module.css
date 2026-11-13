@@ -986,3 +986,51 @@
   cursor: col-resize;
   user-select: none;
 }
+
+/* 크게 보기 (UX6, BigView.tsx): 속성 탭의 스크린샷·영상 */
+.bigBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--kb-shadow);
+}
+
+.bigBox {
+  width: min(94vw, calc((90vh - 60px) * 16 / 9));
+  max-height: 94vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--kb-editor-bg);
+  border: 1px solid var(--kb-input-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px var(--kb-shadow);
+  overflow: hidden;
+}
+
+.bigHead {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--kb-border);
+  font-size: 12px;
+}
+
+.bigTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--kb-fg-strong);
+}
+
+.bigBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}

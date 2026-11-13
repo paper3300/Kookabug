@@ -2,6 +2,7 @@
 // 회차의 스텝(run.children iteration)이 보인다. 반복 노드로 되돌아온 스텝(회차 끝)은 성공이면 숨긴다(회차 막대가
 // 보여 준다). 줄마다 상태·제목·경과·출구, 재시도 스텝은 시도 수, 끝나지 않은 스텝은 "중단"·"실행 중"
 import { useEffect, useRef } from "react";
+import { showProps } from "../store/ui";
 import { ChevronDownIcon, ChevronRightIcon } from "../theme/icons";
 import { IterationBars } from "./IterationBars";
 import { formatMs, STATUS_LABEL, stepTitle, type TypeTitle } from "./labels";
@@ -9,6 +10,12 @@ import { childrenOf, pageKey, runIndexModel, topSteps, type RunViewState, type S
 import css from "./runs.module.css";
 
 const INDENT = 18;
+
+/** 타임라인에서 스텝을 골랐다: 그 증거는 오른쪽 속성 탭에 (UX6) */
+export function pickRunStep(runId: string, step: string): void {
+  runIndexModel.select(runId, step);
+  showProps();
+}
 
 function expandable(step: StepNode): boolean {
   return step.children > 0 || step.calls !== undefined || step.iterations !== undefined;
@@ -56,7 +63,7 @@ function Row({ view, step, depth, typeTitle }: { view: RunViewState; step: StepN
         data-graph={step.graph}
         data-status={step.status}
         data-iteration={step.iteration ?? ""}
-        onClick={() => runIndexModel.select(view.runId, step.step)}
+        onClick={() => pickRunStep(view.runId, step.step)}
       >
         {canOpen ? (
           <button
