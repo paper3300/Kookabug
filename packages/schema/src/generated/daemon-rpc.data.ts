@@ -2948,6 +2948,7 @@ export const daemonRpcSchema: unknown = {
         "playbook": {
           "enum": [
             "author",
+            "entry",
             "explore",
             "followup",
             "init",
@@ -11156,7 +11157,9 @@ export const daemonRpcSchema: unknown = {
         "job_active",
         "source_unavailable",
         "unsupported_format",
-        "setting_not_allowed"
+        "setting_not_allowed",
+        "question_limit",
+        "secret_missing"
       ],
       "title": "RequestFailedCode",
       "type": "string"

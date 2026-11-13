@@ -20,6 +20,10 @@ export interface Unknown {
   human_only: boolean;
   id: string;
   /**
+   * UX5: 질문 종류. credential = 테스트 계정이 필요함 (글 답 없이 사람이 비밀값을 등록한다, 값은 남지 않는다). 없으면 question
+   */
+  kind?: "question" | "credential";
+  /**
    * @maxItems 20
    */
   options?:
@@ -199,6 +203,23 @@ export interface Unknown {
       ];
   question: string;
   rev: number;
+  /**
+   * UX5 credential: Agent가 쓸 비밀값 키 이름 제안 ({"$secret": 키}). 값이 아니다
+   *
+   * @maxItems 10
+   */
+  secret_keys?:
+    | []
+    | [string]
+    | [string, string]
+    | [string, string, string]
+    | [string, string, string, string]
+    | [string, string, string, string, string]
+    | [string, string, string, string, string, string]
+    | [string, string, string, string, string, string, string]
+    | [string, string, string, string, string, string, string, string]
+    | [string, string, string, string, string, string, string, string, string]
+    | [string, string, string, string, string, string, string, string, string, string];
   source?: string | null;
   state: "answered" | "dropped" | "open";
 }

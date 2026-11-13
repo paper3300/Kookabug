@@ -6,16 +6,21 @@ import { client, toRpcError } from "../rpc/client";
 import { openFileTab } from "../store/tabs";
 import { useWorkspace } from "../store/workspace";
 import { SECURITY_BOUNDARY } from "../wizard/boundary";
+import { openCredentialStep } from "../wizard/ShortWizardWatch";
 import {
   answerAll,
   canCancel,
   cancelJob,
+  continuePlaybook,
   decidable,
   decideGroup,
+  entryOffer,
+  featureTestHint,
   filledCount,
   followupBlock,
-  followupPlaybook,
   initReports,
+  isBlockedGroup,
+  isCredential,
   isSettingGroup,
   KIND_TEXT,
   openQuestions,
@@ -29,6 +34,7 @@ import {
   settingAcceptable,
   settingCurrentText,
   settingValueText,
+  startEntry,
   startFollowup,
   STATE_TEXT,
   useReports,
@@ -80,14 +86,14 @@ function Message({ k }: { k: string }) {
   );
 }
 
-function Item({ item }: { item: ReportItem }) {
+function Item({ item, blocked = false }: { item: ReportItem; blocked?: boolean }) {
   const reverted = useReports((s) => s.reverted);
   const pending = useReports((s) => s.pending);
   const key = `revert:${item.adoption ?? ""}`;
   return (
-    <li className={css.item} data-kind={item.kind}>
+    <li className={css.item} data-kind={item.kind} data-blocked={blocked}>
       <span className={css.kind} data-kind={item.kind}>
-        {KIND_TEXT[item.kind] ?? item.kind}
+        {blocked ? "막힘" : (KIND_TEXT[item.kind] ?? item.kind)}
       </span>
       <span className={css.itemBody}>
         {item.case !== undefined && <span className={css.mono}>{item.case}</span>}
@@ -153,10 +159,39 @@ function Setting({ setting }: { setting: SettingProposal }) {
   );
 }
 
+/**
+ * 테스트 계정 질문 (UX5): 글 칸 대신 "테스트 계정 등록" — 계정 화면(4단계)을 그 질문의 키로 연다. 값은 그 화면에서 자격 증명
+ * 관리자로만 가고, 등록하면 질문이 답함이 된다
+ */
+function CredentialQuestion({ u }: { u: Unknown }) {
+  const keys = u.secret_keys ?? [];
+  return (
+    <li className={css.question} data-unknown={u.id} data-kind="credential">
+      <span className={css.kind} data-kind="question">
+        테스트 계정
+      </span>
+      <span className={css.itemBody}>
+        <span>{u.question}</span>
+        {keys.length > 0 && <span className={`${css.muted} ${css.mono}`}>키: {keys.join(", ")}</span>}
+        <span className={css.muted}>값은 Windows 자격 증명 관리자에만 저장돼요. 보고·위키에는 남지 않아요.</span>
+      </span>
+      <button
+        type="button"
+        className={css.button}
+        data-part="register-credential"
+        onClick={() => void openCredentialStep({ unknown: u.id, rev: u.rev, keys, question: u.question })}
+      >
+        테스트 계정 등록
+      </button>
+    </li>
+  );
+}
+
 function Question({ u }: { u: Unknown }) {
   const text = useReports((s) => s.drafts[u.id] ?? "");
   const error = useReports((s) => s.answerErrors[u.id]);
   const sending = useReports((s) => s.sending);
+  if (isCredential(u)) return <CredentialQuestion u={u} />;
   return (
     <li className={css.question} data-unknown={u.id}>
       <span className={css.kind} data-kind="question">
@@ -185,6 +220,7 @@ function Question({ u }: { u: Unknown }) {
 function Questions({ job, questions }: { job: string; questions: Unknown[] }) {
   const sending = useReports((s) => s.sending);
   const filled = useReports((s) => filledCount(questions, s.drafts));
+  const texts = questions.some((u) => !isCredential(u));
   return (
     <section className={css.group} data-part="questions">
       <div className={css.groupHead}>
@@ -195,31 +231,42 @@ function Questions({ job, questions }: { job: string; questions: Unknown[] }) {
           <Question key={u.id} u={u} />
         ))}
       </ul>
-      <div className={`${css.answerRow} ${css.sendRow}`}>
+      {texts && <div className={`${css.answerRow} ${css.sendRow}`}>
         <button type="button" className={css.button} data-part="send-answers" disabled={sending || filled === 0} onClick={() => void answerAll(job, questions)}>
           답 보내기{filled > 0 ? ` (${filled})` : ""}
         </button>
         <Spinner active={sending} size="sm" label="보내는 중…" />
         <span className={css.muted}>글을 넣은 질문만 보내요. 빈 칸은 건너뛰어요</span>
-      </div>
+      </div>}
     </section>
   );
 }
 
-/** "이어서 진행" (UX2 D): Init·이어 하기 보고에서 새 followup 작업. 무인 작업 중이면 끄고 이유, 남은 질문 수 */
-function Followup({ report, remaining }: { report: Report; remaining: number }) {
+/**
+ * "이어서 진행" (UX2 D): Init·이어 하기 보고에서 새 followup 작업, 접속 경로 보고에서 entry 다시 (UX5). 막힘 보고에도 보인다 —
+ * 사람이 설정을 고친 뒤 누른다. 무인 작업 중이면 끄고 이유, 남은 질문·막힘 수
+ */
+function Followup({ report, remaining, stuck }: { report: Report; remaining: number; stuck: number }) {
   const rows = useReports((s) => s.rows);
   const key = `followup:${report.job}`;
   const pending = useReports((s) => s.pending.has(key));
   const blocked = followupBlock(rows);
+  const playbook = continuePlaybook(report) ?? "followup";
   return (
-    <div className={css.followup} data-part="followup-row">
-      <button type="button" className={css.button} data-part="followup" disabled={blocked !== null || pending} onClick={() => void startFollowup(report.job)}>
+    <div className={css.followup} data-part="followup-row" data-playbook={playbook}>
+      <button
+        type="button"
+        className={css.button}
+        data-part="followup"
+        disabled={blocked !== null || pending}
+        onClick={() => void startFollowup(report.job, playbook)}
+      >
         이어서 진행
       </button>
       <Spinner active={pending} size="sm" label="시작하는 중…" />
       <span className={css.muted} data-part="followup-remaining">
         {remaining > 0 ? `답하지 않은 질문 ${remaining}개 (그대로 진행해도 돼요)` : "남은 질문 없음"}
+        {stuck > 0 ? ` · 막힘 ${stuck}개 — 설정을 고친 뒤 누르세요` : ""}
       </span>
       {blocked !== null && (
         <span className={css.muted} data-part="followup-blocked">
@@ -231,10 +278,30 @@ function Followup({ report, remaining }: { report: Report; remaining: number }) 
   );
 }
 
+/** "다음: 게임 접속 경로 만들기" (UX5): 끝난 Init·이어 하기 보고에서 사람이 눌러 entry 작업을 만든다 (자동 시작 없음) */
+function EntryOffer({ report }: { report: Report }) {
+  const rows = useReports((s) => s.rows);
+  const key = `entry:${report.job}`;
+  const pending = useReports((s) => s.pending.has(key));
+  const blocked = followupBlock(rows);
+  return (
+    <div className={css.followup} data-part="entry-offer">
+      <span className={css.groupTitle}>다음: 게임 접속 경로 만들기</span>
+      <span className={css.muted}>게임 실행에서 로비까지 가는 길을 Agent가 만들어요. 로그인이 필요하면 그때 계정을 물어요.</span>
+      <button type="button" className={css.button} data-part="start-entry" disabled={blocked !== null || pending} onClick={() => void startEntry(report.job)}>
+        접속 경로 만들기
+      </button>
+      <Spinner active={pending} size="sm" label="시작하는 중…" />
+      <Message k={key} />
+    </div>
+  );
+}
+
 function Detail({ report }: { report: Report }) {
   const unknowns = useReports((s) => s.unknowns);
   const pending = useReports((s) => s.pending);
   const questions = openQuestions(report, unknowns);
+  const stuck = report.groups.filter(isBlockedGroup).length;
   return (
     <div className={css.detail} data-part="report-detail" data-job={report.job}>
       <div className={css.detailHead}>
@@ -252,7 +319,7 @@ function Detail({ report }: { report: Report }) {
           </button>
         )}
       </div>
-      {followupPlaybook(report) && <Followup report={report} remaining={questions.length} />}
+      {continuePlaybook(report) !== null && <Followup report={report} remaining={questions.length} stuck={stuck} />}
       {report.groups.length === 0 && <p className={css.muted}>항목이 없어요.</p>}
       {report.groups.map((g) => {
         const key = `decide:${report.job}:${g.key}`;
@@ -294,7 +361,7 @@ function Detail({ report }: { report: Report }) {
             <Message k={key} />
             <ul className={css.items}>
               {g.items.map((item, i) => (
-                <Item key={i} item={item} />
+                <Item key={i} item={item} blocked={isBlockedGroup(g)} />
               ))}
             </ul>
           </section>
@@ -303,6 +370,12 @@ function Detail({ report }: { report: Report }) {
       {questions.length > 0 && <Questions job={report.job} questions={questions} />}
       {/* 다 보내면 질문 묶음이 사라지므로 결과 글은 묶음 밖에 */}
       <Message k={`answers:${report.job}`} />
+      {entryOffer(report) && <EntryOffer report={report} />}
+      {featureTestHint(report, questions.length) && (
+        <p className={css.muted} data-part="feature-test-hint">
+          다음: 기능 테스트 만들기 — 에이전트 패널에서 만들고 싶은 테스트를 말해 보세요.
+        </p>
+      )}
       {typeof report.notes === "string" && report.notes.trim() !== "" && (
         <section className={css.group}>
           <div className={css.groupHead}>

@@ -22,6 +22,13 @@ class Option(RootModel[str]):
     root: Annotated[str, Field(max_length=200, min_length=1)]
 
 
+class SecretKey(RootModel[str]):
+    root: Annotated[
+        str,
+        Field(max_length=128, min_length=1, pattern="^[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)*$"),
+    ]
+
+
 class Source(RootModel[str]):
     root: Annotated[str, Field(pattern="^sources:[A-Za-z0-9_.-]{1,64}$")]
 
@@ -35,9 +42,22 @@ class Unknown(BaseModel):
     how: Annotated[str | None, Field(max_length=4000, min_length=1)] = None
     human_only: bool
     id: Annotated[str, Field(pattern="^u-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+    kind: Annotated[
+        Literal["question", "credential"] | None,
+        Field(
+            description="UX5: 질문 종류. credential = 테스트 계정이 필요함 (글 답 없이 사람이 비밀값을 등록한다, 값은 남지 않는다). 없으면 question"
+        ),
+    ] = None
     options: Annotated[list[Option] | None, Field(max_length=20)] = None
     question: Annotated[str, Field(max_length=4000, min_length=1)]
     rev: Annotated[int, Field(ge=1)]
+    secret_keys: Annotated[
+        list[SecretKey] | None,
+        Field(
+            description='UX5 credential: Agent가 쓸 비밀값 키 이름 제안 ({"$secret": 키}). 값이 아니다',
+            max_length=10,
+        ),
+    ] = None
     source: Source | None = None
     state: Literal["answered", "dropped", "open"]
 

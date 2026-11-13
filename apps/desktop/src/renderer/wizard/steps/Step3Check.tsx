@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Spinner } from "../../app/Spinner";
 import { StepShell } from "../Wizard";
-import { setReady, setStepWarnings, setSummary } from "../wizardStore";
+import { autoAdvance, autoPassCheck, enterStep, setReady, setStepWarnings, setSummary, useWizard } from "../wizardStore";
 import { appErrorText } from "./Step1Project";
 import css from "../wizard.module.css";
 
@@ -31,6 +31,9 @@ export function Step3Check() {
   const [checks, setChecks] = useState<Checks | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [round, setRound] = useState(0);
+  const mode = useWizard((s) => s.progress.mode);
+  // UX5: 처음 들어와 모두 통과하면 화면을 보이지 않고 넘어간다 (실패·"이전"으로 돌아옴·다시 점검이면 머문다)
+  const [first] = useState(() => enterStep(3));
 
   useEffect(() => {
     let alive = true;
@@ -47,6 +50,7 @@ export function Step3Check() {
         const passed = r.checks.length - failed.length;
         setSummary(3, failed.length === 0 ? `통과 ${passed}` : `통과 ${passed} · 경고 ${failed.length}`, failed.length > 0);
         setReady(3, true);
+        if (round === 0 && autoPassCheck(mode, r.checks, first)) void autoAdvance(3);
       })
       .catch((err: unknown) => {
         if (!alive) return;
@@ -59,6 +63,8 @@ export function Step3Check() {
     return () => {
       alive = false;
     };
+    // mode·first는 화면을 그릴 때 정해진다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [round]);
 
   const failed = checks?.filter((c) => !c.ok) ?? [];

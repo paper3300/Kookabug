@@ -13,7 +13,7 @@ import childProcess from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { JOB_PLAYBOOKS } from "./ipc-guard";
+import { JOB_PLAYBOOKS, SECRET_KEY, secretValueOk } from "./ipc-guard";
 
 export { JOB_PLAYBOOKS };
 
@@ -58,8 +58,8 @@ export interface JobDeps {
   root(): string | null;
   /** 사용자 설정의 Agent ID 목록 (daemon agents.get) */
   agentIds(): Promise<string[]>;
-  /** 셸 없이 띄우고 끝까지 기다린다 */
-  exec(file: string, args: string[], timeoutMs: number): Promise<ExecOutcome>;
+  /** 셸 없이 띄우고 끝까지 기다린다. `input`이 있으면 표준 입력으로 한 번 쓰고 닫는다 (UX5 비밀값) */
+  exec(file: string, args: string[], timeoutMs: number, input?: string): Promise<ExecOutcome>;
   /** 셸 없이 띄우고 기다리지 않는다. 끝나면 onExit */
   spawn(file: string, args: string[], onExit: (outcome: ExecOutcome) => void): RunningChild;
   /** 작업이 끝났다 (app 알림 jobs.cli) */
@@ -250,9 +250,10 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-type Busy = "probe" | "run" | "create";
+type Busy = "probe" | "run" | "create" | "secret";
 type DoctorResult = { ok: boolean; checks: { id: string; ok: boolean }[] };
 const BUSY_CODE: Record<Busy, [string, string]> = {
+  secret: ["secret_active", "계정을 등록하는 중이에요"],
   probe: ["probe_active", "연결 시험이 이미 진행 중이에요"],
   run: ["job_active", "다른 작업이 도는 중이에요"],
   create: ["create_active", "프로젝트를 만드는 중이에요"],
@@ -386,6 +387,30 @@ export class JobRunner {
     }
   }
 
+  /**
+   * 테스트 계정 등록 (UX5): `kookabug secret set <키> --replace --workspace <열린 루트> --json`에 값을 **표준 입력으로만**
+   * 넘긴다 — 명령줄·daemon RPC·로그에 값이 없다. 사람이 계정 화면에서 직접 고른 동작이라 이미 있는 키는 바꾼다.
+   * 실패 이유는 CLI의 오류 코드만 (값·출력 원문을 넘기지 않는다)
+   */
+  async setSecret(key: unknown, value: unknown): Promise<{ key: string }> {
+    if (typeof key !== "string" || key.length > 128 || !SECRET_KEY.test(key)) throw new JobsError("key_invalid", "비밀값 키 형식이 틀렸어요");
+    if (!secretValueOk(value)) throw new JobsError("value_invalid", "값이 비었거나 길거나 줄바꿈이 있어요");
+    const release = this.claim("secret");
+    try {
+      const args = ["secret", "set", key, "--replace", "--workspace", this.root(), "--json"];
+      const cli = this.cli();
+      this.open();
+      const outcome = await this.deps.exec(cli, args, 60_000, `${value}\n`);
+      if (outcome.code !== 0) {
+        const code = String(pickResult(outcome.stdout, outcome.code).error_code ?? "secret_failed");
+        throw new JobsError(code, "계정을 등록하지 못했어요");
+      }
+      return { key };
+    } finally {
+      release();
+    }
+  }
+
   /** 점검이 이미 돌면 그 결과를 같이 받는다 (인자가 없어 거부할 까닭이 없다 — 단계 다시 그리기·StrictMode 두 번 실행) */
   doctor(): Promise<DoctorResult> {
     if (this.doctoring !== null) return this.doctoring;
@@ -432,12 +457,21 @@ export class JobRunner {
 }
 
 /** 실제 프로세스 띄우기 (셸 없음·창 없음·표준 오류 버림·출력 상한) */
-function launch(env: NodeJS.ProcessEnv, file: string, args: string[], timeoutMs: number) {
-  const child = childProcess.spawn(file, args, { shell: false, windowsHide: true, env, stdio: ["ignore", "pipe", "ignore"] });
+function launch(env: NodeJS.ProcessEnv, file: string, args: string[], timeoutMs: number, input?: string) {
+  const child = childProcess.spawn(file, args, {
+    shell: false,
+    windowsHide: true,
+    env,
+    stdio: [input === undefined ? "ignore" : "pipe", "pipe", "ignore"],
+  });
+  if (input !== undefined && child.stdin !== null) {
+    child.stdin.on("error", () => {}); // 먼저 끝난 자식(EPIPE)은 종료 코드로 본다
+    child.stdin.end(input, "utf8");
+  }
   const result = new Promise<ExecOutcome>((resolve) => {
     let stdout = "";
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
       if (stdout.length < OUTPUT_LIMIT) stdout += chunk;
     });
     const timer = setTimeout(() => child.kill(), timeoutMs);
@@ -464,7 +498,8 @@ export function killProcessTree(child: childProcess.ChildProcess): void {
 }
 
 export function nodeExec(env: NodeJS.ProcessEnv) {
-  return (file: string, args: string[], timeoutMs: number): Promise<ExecOutcome> => launch(env, file, args, timeoutMs).result;
+  return (file: string, args: string[], timeoutMs: number, input?: string): Promise<ExecOutcome> =>
+    launch(env, file, args, timeoutMs, input).result;
 }
 
 export function nodeSpawn(env: NodeJS.ProcessEnv) {

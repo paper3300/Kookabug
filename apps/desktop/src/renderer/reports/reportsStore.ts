@@ -93,6 +93,20 @@ export interface Unknown {
   state: string;
   options?: string[];
   answer?: { text: string } | null;
+  /** UX5: credential = 테스트 계정 질문 (글 답 대신 "테스트 계정 등록") */
+  kind?: "question" | "credential";
+  /** credential: Agent가 쓸 비밀값 키 이름 제안 (값 아님) */
+  secret_keys?: string[];
+}
+
+/** 테스트 계정 질문인가 (UX5): 글 칸이 아니라 계정 등록 단추를 보인다 */
+export function isCredential(u: Pick<Unknown, "kind">): boolean {
+  return u.kind === "credential";
+}
+
+/** 막힘 묶음 (UX5 — 준비 플레이북의 needs_info 사건, 보고 제목이 "막힘") */
+export function isBlockedGroup(group: Pick<ReportGroup, "title">): boolean {
+  return group.title === "막힘" || group.title.startsWith("막힘 · ");
 }
 
 export const STATE_TEXT: Record<string, string> = {
@@ -222,9 +236,24 @@ export function decidable(group: ReportGroup): boolean {
   return group.decision === null && group.items.some((i) => i.kind === "working_only" || i.kind === "setting_change");
 }
 
-/** "이어서 진행"을 둘 보고: Init 또는 이어 하기 (UX2 D) */
-export function followupPlaybook(report: Pick<Report, "playbook">): boolean {
-  return report.playbook === "init" || report.playbook === "followup";
+/**
+ * "이어서 진행"이 만들 작업 (없으면 null): Init·이어 하기 보고 → followup (UX2 D, 막힘 보고도 — UX5), 접속 경로 보고 →
+ * entry를 다시 이어 간다 (UX5: 계정을 등록한 뒤)
+ */
+export function continuePlaybook(report: Pick<Report, "playbook">): "followup" | "entry" | null {
+  if (report.playbook === "init" || report.playbook === "followup") return "followup";
+  if (report.playbook === "entry") return "entry";
+  return null;
+}
+
+/** "다음: 게임 접속 경로 만들기"를 둘 보고 (UX5): 끝난 Init·이어 하기. 자동으로 시작하지 않는다 */
+export function entryOffer(report: Pick<Report, "playbook" | "state">): boolean {
+  return (report.playbook === "init" || report.playbook === "followup") && report.state !== "running" && report.state !== "ending";
+}
+
+/** 접속 경로 보고 끝의 "다음: 기능 테스트 만들기" 안내 (UX5, 단추 없음): 끝났고 남은 질문(계정)·막힘이 없을 때만 */
+export function featureTestHint(report: Pick<Report, "playbook" | "state" | "groups">, openQuestions: number): boolean {
+  return report.playbook === "entry" && report.state === "done" && openQuestions === 0 && !report.groups.some(isBlockedGroup);
 }
 
 /** "이어서 진행"을 막는 이유 (무인 작업이 도는 중). 없으면 null */
@@ -249,6 +278,7 @@ export async function sendAnswers(
 ): Promise<AnswerOutcome> {
   const out: AnswerOutcome = { answered: [], failed: {} };
   for (const u of questions) {
+    if (isCredential(u)) continue; // 계정 질문은 글로 답하지 않는다 (계정 등록이 답한다)
     const text = (drafts[u.id] ?? "").trim();
     if (text === "") continue;
     try {
@@ -271,7 +301,7 @@ const ANSWER_ERROR_TEXT: Record<string, string> = {
 
 /** 보낼 글이 있는 질문 수 */
 export function filledCount(questions: readonly Unknown[], drafts: Readonly<Record<string, string>>): number {
-  return questions.filter((u) => (drafts[u.id] ?? "").trim() !== "").length;
+  return questions.filter((u) => !isCredential(u) && (drafts[u.id] ?? "").trim() !== "").length;
 }
 
 /** 되돌리기 단추 (자동 채택 하나에 한 번) */
@@ -464,11 +494,11 @@ export async function answerAll(job: string, questions: readonly Unknown[]): Pro
 }
 
 /**
- * "이어서 진행" (UX2 D): 사용자 설정의 기본 Agent로 followup 무인 작업을 만든다 — 9단계 Init과 같은 주 프로세스 경로
- * (`agentJobRun`, 플레이북 허용 목록·예산 기본값). 렌더러는 명령줄을 주지 않는다
+ * 보고에서 새 무인 작업 (사람 전용 경로): 사용자 설정의 기본 Agent로 9단계 Init과 같은 주 프로세스 경로(`agentJobRun`,
+ * 플레이북 허용 목록·예산 기본값). 렌더러는 명령줄을 주지 않는다. 자동으로 시작하지 않는다 — 사람이 단추를 눌렀을 때만
  */
-export function startFollowup(job: string): Promise<void> {
-  return once(`followup:${job}`, async () => {
+function startJob(key: string, playbook: "followup" | "entry", text: { ok: string; fail: string }): Promise<void> {
+  return once(key, async () => {
     const agents = await client().call("agents.get", {});
     // 기본 Agent, 없고 하나뿐이면 그것 (9단계 Init도 5단계에서 고른 하나를 쓴다)
     const agentId = agents.default_agent ?? (agents.agents.length === 1 ? agents.agents[0].id : null);
@@ -476,14 +506,30 @@ export function startFollowup(job: string): Promise<void> {
     const bridge = (globalThis as unknown as { kookabug: KookabugBridge }).kookabug;
     let started: { started: boolean; error_code?: string };
     try {
-      started = await bridge.app.agentJobRun("followup", agentId);
+      started = await bridge.app.agentJobRun(playbook, agentId);
     } catch (err) {
       const code = (err as { code?: unknown }).code;
-      return code === "agent_job_unsupported" ? "무인 작업은 Claude Code·Codex CLI만 지원해요" : "이어서 진행하지 못했어요";
+      return code === "agent_job_unsupported" ? "무인 작업은 Claude Code·Codex CLI만 지원해요" : text.fail;
     }
-    if (!started.started) return started.error_code === "job_active" ? ERROR_TEXT.job_active : "이어서 진행하지 못했어요";
+    if (!started.started) return started.error_code === "job_active" ? ERROR_TEXT.job_active : text.fail;
     useReports.setState({ follow: true });
-    return "이어서 진행을 시작했어요. 새 작업이 목록 맨 위에 생겨요";
+    return text.ok;
+  });
+}
+
+/** "이어서 진행" (UX2 D): Init·이어 하기 보고면 followup, 접속 경로 보고면 entry를 다시 (UX5) */
+export function startFollowup(job: string, playbook: "followup" | "entry" = "followup"): Promise<void> {
+  return startJob(`followup:${job}`, playbook, {
+    ok: "이어서 진행을 시작했어요. 새 작업이 목록 맨 위에 생겨요",
+    fail: "이어서 진행하지 못했어요",
+  });
+}
+
+/** "다음: 게임 접속 경로 만들기" (UX5): entry 무인 작업 */
+export function startEntry(job: string): Promise<void> {
+  return startJob(`entry:${job}`, "entry", {
+    ok: "게임 접속 경로 만들기를 시작했어요. 새 작업이 목록 맨 위에 생겨요",
+    fail: "접속 경로 만들기를 시작하지 못했어요",
   });
 }
 

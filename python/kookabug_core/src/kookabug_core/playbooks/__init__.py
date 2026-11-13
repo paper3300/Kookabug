@@ -13,11 +13,57 @@ from dataclasses import dataclass
 from importlib import resources
 from typing import Final
 
-__all__ = ["FORMAT", "NAMES", "Playbook", "PlaybookError", "load", "versions"]
+__all__ = [
+    "FORMAT",
+    "NAMES",
+    "QUESTION_RULES",
+    "Playbook",
+    "PlaybookError",
+    "QuestionRule",
+    "load",
+    "question_rule",
+    "versions",
+]
 
 FORMAT: Final = "kookabug.playbook/0"
-NAMES: Final = ("init", "followup", "triage", "repair", "explore", "author", "lint", "probe")
+NAMES: Final = (
+    "init",
+    "followup",
+    "entry",
+    "triage",
+    "repair",
+    "explore",
+    "author",
+    "lint",
+    "probe",
+)
 """배포하는 플레이북 이름 (허용 목록)."""
+
+
+@dataclass(frozen=True, slots=True)
+class QuestionRule:
+    """작업 하나가 만들 수 있는 사람 질문(`human_only` 미지수) — UX5. 도구(지식 연산)가 막는다."""
+
+    limit: int
+    """이 작업이 더할 수 있는 사람 질문 수."""
+    kinds: frozenset[str] = frozenset({"question", "credential"})
+    """허용하는 질문 종류 (`kind`, 없으면 question)."""
+
+
+QUESTION_RULES: Final[dict[str, QuestionRule]] = {
+    # Init·이어 하기는 사람 질문을 만들지 않는다 (궁금한 것은 위키 "모르는 것", 막히면 막힘 사건)
+    "init": QuestionRule(0),
+    "followup": QuestionRule(0),
+    # 접속 경로는 테스트 계정 질문만
+    "entry": QuestionRule(3, frozenset({"credential"})),
+}
+"""작업 종류별 질문 규칙. 여기 없는 플레이북은 지금처럼 제한 없음."""
+
+
+def question_rule(playbook: str | None) -> QuestionRule | None:
+    return QUESTION_RULES.get(playbook or "")
+
+
 _TOOLSETS: Final = frozenset(
     {"core", "graph_edit", "run", "observe", "control", "screens", "knowledge", "cases"}
 )

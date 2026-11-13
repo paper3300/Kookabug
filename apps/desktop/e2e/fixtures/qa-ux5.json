@@ -1,0 +1,48 @@
+{
+  "description": "UX5 E2E: Init은 질문 없이(사람 질문은 question_limit 거부) 게임 실행·게임 종료 서브그래프를 만들고 보고한다. 접속 경로(entry) 첫 실행은 일반 질문이 거부되는 것을 보고 테스트 계정 질문(credential) 하나만 남긴다. 계정을 등록한 뒤 이어서 진행한 entry는 답함을 읽고 끝낸다. 연결 시험이면 설정 확인 뒤 끝낸다",
+  "steps": [
+    {"label": "probe_info", "tool": "kb_project_info"},
+    {"exit": 0, "if_playbook": "probe"},
+
+    {"if_playbook": "init", "toolsets": ["graph_edit", "knowledge", "cases"]},
+    {"if_playbook": "init", "label": "launch_graph", "tool": "kb_graph_create",
+     "args": {"path": "subgraphs/common/game_launch.graph.json", "kind": "subgraph", "title": "게임 실행"}},
+    {"if_playbook": "init", "label": "exit_graph", "tool": "kb_graph_create",
+     "args": {"path": "subgraphs/common/game_exit.graph.json", "kind": "subgraph", "title": "게임 종료"}},
+    {"if_playbook": "init", "label": "no_questions", "tool": "kb_knowledge_apply",
+     "args": {"request_id": "ux5-init-question", "ops": [
+       {"op": "add", "file": "unknowns", "base_revision": 0, "item": {
+         "question": "게임 창 제목은 무엇인가요", "human_only": true, "blocks": [], "how": "사람에게 묻는다"}}]},
+     "expect": {"error": "question_limit"}},
+    {"if_playbook": "init", "label": "note", "tool": "kb_report_note",
+     "args": {"text": "Init: 게임 실행·게임 종료 서브그래프를 만들었다. 궁금한 것은 위키 모르는 것에 남겼다. 다음: 접속 경로 만들기."}},
+    {"exit": 0, "if_playbook": "init"},
+
+    {"if_playbook": "entry", "unless_text": {"file": "knowledge/unknowns.json", "text": "\"answered\""},
+     "toolsets": ["knowledge", "cases"]},
+    {"if_playbook": "entry", "unless_text": {"file": "knowledge/unknowns.json", "text": "\"answered\""},
+     "label": "plain_refused", "tool": "kb_knowledge_apply",
+     "args": {"request_id": "ux5-entry-plain", "ops": [
+       {"op": "add", "file": "unknowns", "base_revision": 0, "item": {
+         "question": "서버는 어느 것을 고르나요", "human_only": true, "blocks": [], "how": "사람에게 묻는다"}}]},
+     "expect": {"error": "question_limit"}},
+    {"if_playbook": "entry", "unless_text": {"file": "knowledge/unknowns.json", "text": "\"answered\""},
+     "label": "credential", "tool": "kb_knowledge_apply",
+     "args": {"request_id": "ux5-entry-credential", "ops": [
+       {"op": "add", "file": "unknowns", "base_revision": 0, "item": {
+         "kind": "credential", "question": "로그인 화면이에요. 빈 계정 칸으로 눌러 봤지만 넘어가지 않았어요. 테스트 계정을 등록해 주세요",
+         "human_only": true, "blocks": [], "how": "사람이 테스트 계정을 등록한다",
+         "secret_keys": ["login.id", "login.password"]}}]},
+     "check": {"applied": true}},
+    {"if_playbook": "entry", "unless_text": {"file": "knowledge/unknowns.json", "text": "\"answered\""},
+     "label": "note_wait", "tool": "kb_report_note",
+     "args": {"text": "접속 경로: 로그인 화면에서 멈췄다. 테스트 계정을 등록한 뒤 이어서 진행을 눌러 주세요."}},
+    {"exit": 0, "if_playbook": "entry", "unless_text": {"file": "knowledge/unknowns.json", "text": "\"answered\""}},
+
+    {"if_playbook": "entry", "toolsets": ["knowledge", "cases"]},
+    {"if_playbook": "entry", "label": "answered", "tool": "kb_knowledge_get", "args": {"file": "unknowns"},
+     "check": {"doc.unknowns.0.kind": "credential", "doc.unknowns.0.state": "answered"}},
+    {"if_playbook": "entry", "label": "note_done", "tool": "kb_report_note",
+     "args": {"text": "접속 경로: 등록된 계정 키 login.id·login.password로 이어 갔다. 다음: 기능 테스트 만들기"}}
+  ]
+}

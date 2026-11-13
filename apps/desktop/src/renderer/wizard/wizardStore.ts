@@ -30,9 +30,18 @@ export const STEPS: readonly StepInfo[] = [
   { n: 9, title: "완료", required: false, storage: [] },
 ];
 
-/** 팀원용 짧은 마법사가 보는 이 PC·사용자 단계 (팀 설정 6~8은 이미 있다) */
-export const SHORT_STEPS: readonly StepNo[] = [2, 3, 4, 5];
-export const NEW_STEPS: readonly StepNo[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+/**
+ * 팀원용 짧은 마법사가 보는 이 PC·사용자 단계 (팀 설정 6~8은 이미 있다). UX5: 계정(4)은 묻지 않는다 — 접속 경로를 만들다
+ * 로그인 화면을 만나면 보고함 질문 카드로 묻는다
+ */
+export const SHORT_STEPS: readonly StepNo[] = [2, 3, 5];
+/**
+ * 새 프로젝트 순서 (UX5 설정·Init 간소화 3절): 계정(4)·자동화 정책(7)·기록(8)은 뺐다 — 지금 기본값으로 저장하고
+ * 설정 도우미에서 하나씩 연다. 3 점검·5 Agent는 자동으로 통과하면 화면을 건너뛴다
+ */
+export const NEW_STEPS: readonly StepNo[] = [0, 1, 2, 3, 5, 6, 9];
+/** 첫 실행 흐름에서 뺀 단계 (설정 도우미에서만 연다) */
+export const HELPER_ONLY: readonly StepNo[] = [4, 7, 8];
 
 export function stepInfo(n: number): StepInfo {
   return STEPS[n] ?? STEPS[0];
@@ -86,7 +95,6 @@ export function emptyShortSteps(s: SetupSnapshot): StepNo[] {
   const empty: StepNo[] = [];
   if (s.gameExecutable === null) empty.push(2);
   if (s.wizard === null || !s.wizard.done.includes(3)) empty.push(3);
-  if (s.secretKeys === 0) empty.push(4);
   if (s.agents === 0) empty.push(5);
   return empty;
 }
@@ -110,7 +118,8 @@ function shortOrResumePlan(s: SetupSnapshot): Progress | null {
   const w = s.wizard;
   if (w !== null) {
     if (w.done.includes(9)) return null;
-    if (w.done.includes(1)) return resume(w, "new", NEW_STEPS);
+    // 옛 순서에서 4·7·8에 멈춰 있던 진행은 그 단계에서 이어 간다 (이어서 끝내는 사람의 흐름을 바꾸지 않게)
+    if (w.done.includes(1)) return resume(w, "new", HELPER_ONLY.includes(w.step as StepNo) ? withOld(w.step as StepNo) : NEW_STEPS);
     // 짧은 마법사는 팀 첫 설정을 마친 프로젝트만 (U8). 설정 도우미·에이전트 패널로 단계 하나만 열었다 닫은 기록은
     // 팀 설정 전 프로젝트에서 짧은 마법사를 자동으로 띄우지 않는다 (R11 자동 띄우기 중복 제거)
     if (!s.teamSetup) return null;
@@ -121,6 +130,63 @@ function shortOrResumePlan(s: SetupSnapshot): Progress | null {
   const empty = emptyShortSteps(s);
   if (empty.length === 0) return null;
   return start("short", [...empty, 9]);
+}
+
+/** 설정 도우미 단계 줄 아래 글: 첫 실행 흐름에서 뺀 단계(UX5: 계정·자동화 정책·기록)는 기본값을 쓰고 거기서 연다 */
+export function helperSubText(n: number, touched: boolean, required: boolean): string {
+  if (HELPER_ONLY.includes(n as StepNo) && !touched) {
+    return n === 4 ? "필요할 때 물어요 · 여기서 미리 등록할 수 있어요" : "기본값 사용 중 · 여기서 바꿔요";
+  }
+  return required ? "필수" : "선택";
+}
+
+/** 새 순서에 옛 단계 하나를 제자리에 끼운다 */
+function withOld(n: StepNo): StepNo[] {
+  return [...NEW_STEPS, n].sort((a, b) => a - b) as StepNo[];
+}
+
+/**
+ * 진행 표시 (UX5): 이번 순서에서 실제로 보이는 단계 수와 지금 위치. 0(시작)과 자동으로 통과해 화면을 건너뛴 단계는 세지
+ * 않는다. 단계 하나만 연 화면(only)은 번호를 보이지 않는다(null)
+ */
+export function stepCount(p: Pick<Progress, "mode" | "steps" | "step">, auto: readonly number[] = []): { at: number; total: number } | null {
+  if (p.mode === "only") return null;
+  const shown = p.steps.filter((n) => n !== 0 && !auto.includes(n));
+  const at = shown.indexOf(p.step);
+  return { at: at < 0 ? 0 : at + 1, total: shown.length };
+}
+
+/**
+ * 3단계 환경 점검을 화면 없이 넘길까 (UX5): 새·짧은 순서에서 처음 들어왔고 점검이 모두 통과했을 때만. 실패·점검 못 함·
+ * 단계 하나만 연 화면(설정 도우미)·이전으로 돌아온 경우는 머문다
+ */
+export function autoPassCheck(mode: Mode, checks: readonly { ok: boolean }[] | null, firstVisit: boolean): boolean {
+  return mode !== "only" && firstVisit && checks !== null && checks.length > 0 && checks.every((c) => c.ok);
+}
+
+/**
+ * 5단계 Agent를 화면 없이 넘길까 (UX5): 새·짧은 순서에서 처음 들어왔고, 사용자 설정에 기본 Agent가 있어 프로젝트를 열면
+ * 자동 연결되는 경우(UX1 U2). 못 찾았을 때만 보인다
+ */
+export function autoPassAgent(
+  mode: Mode,
+  s: { agentsLoaded: boolean; defaultAgent: string | null; agents: readonly { id: string }[] },
+  firstVisit: boolean,
+): boolean {
+  return mode !== "only" && firstVisit && s.agentsLoaded && s.defaultAgent !== null && s.agents.some((a) => a.id === s.defaultAgent);
+}
+
+/**
+ * 5단계 자동 시험 뒤 화면을 건너뛸까 (UX5 검수 1 Mid): 그 기본 Agent의 연결 시험(무인 작업 probe)이 통과했고 그사이
+ * 사람이 다른 줄을 고르지 않았을 때만. 실패·미지원(`agent_job_unsupported` 등)·시험 중이면 머문다
+ */
+export function autoProbePassed(agentId: string, choice: string | null, probe: { state: string; agentId?: string }): boolean {
+  return probe.state === "ok" && probe.agentId === agentId && choice === agentId;
+}
+
+/** 9단계 Init에 쓸 Agent: 연결 시험(무인 작업 probe)을 통과한 것만 (API 키만·시험 전·실패면 없음) */
+export function initAgent(wizardAgent: { id: string; probed: boolean; kind: string } | null): string | null {
+  return wizardAgent !== null && wizardAgent.kind !== "apikey" && wizardAgent.probed ? wizardAgent.id : null;
 }
 
 export function start(mode: Mode, steps: readonly StepNo[], from?: StepNo): Progress {
@@ -266,6 +332,20 @@ interface WizardStore {
   /** 5단계에서 고른 Agent (연결 시험 통과면 Init에 쓴다) */
   agent: { id: string; name: string; probed: boolean; kind: "cli" | "apikey" | "custom" } | null;
   saveError: string | null;
+  /** 이번에 화면을 그린 단계 (처음 들어올 때만 자동으로 넘긴다 — "이전"으로 돌아오면 머문다) */
+  entered: number[];
+  /** 자동으로 통과해 화면을 건너뛴 단계 (진행 표시에서 뺀다) */
+  auto: number[];
+  /** 보고함 테스트 계정 질문에서 4단계를 열었다 (UX5): 등록하면 그 질문을 답함으로 */
+  credential: CredentialAsk | null;
+}
+
+/** 보고함 credential 질문 → 4단계 계정 등록 */
+export interface CredentialAsk {
+  unknown: string;
+  rev: number;
+  keys: string[];
+  question: string;
 }
 
 export const useWizard = create<WizardStore>(() => ({
@@ -276,7 +356,26 @@ export const useWizard = create<WizardStore>(() => ({
   summary: {},
   agent: null,
   saveError: null,
+  entered: [],
+  auto: [],
+  credential: null,
 }));
+
+/** 단계 화면을 처음 그리는가 (그리고 그렸다고 남긴다) */
+export function enterStep(n: number): boolean {
+  const first = !useWizard.getState().entered.includes(n);
+  if (first) useWizard.setState((s) => ({ entered: [...s.entered, n] }));
+  return first;
+}
+
+/** 자동 통과 (UX5 3·5단계): 완료로 남기고 화면 없이 다음으로 */
+export async function autoAdvance(n: number): Promise<void> {
+  const s = useWizard.getState();
+  if (!s.open || s.progress.step !== n) return;
+  useWizard.setState((cur) => ({ auto: cur.auto.includes(n) ? cur.auto : [...cur.auto, n] }));
+  setReady(n, true);
+  await goNext();
+}
 
 async function persist(): Promise<void> {
   const s = useWizard.getState();
@@ -299,12 +398,15 @@ export function openNewWizard(): void {
     summary: {},
     agent: null,
     saveError: null,
+    entered: [],
+    auto: [],
+    credential: null,
   });
 }
 
-/** 열린 프로젝트에서 마법사를 띄운다 (짧은 마법사·이어서·단계 하나) */
-export function openWizardWith(progress: Progress): void {
-  useWizard.setState({ open: true, progress, ready: {}, persisted: true, saveError: null });
+/** 열린 프로젝트에서 마법사를 띄운다 (짧은 마법사·이어서·단계 하나). `credential` = 보고함 계정 질문에서 연 4단계 */
+export function openWizardWith(progress: Progress, credential: CredentialAsk | null = null): void {
+  useWizard.setState({ open: true, progress, ready: {}, persisted: true, saveError: null, entered: [], auto: [], credential });
 }
 
 export function setReady(step: number, ready: boolean): void {
@@ -382,5 +484,5 @@ export async function finishWizard(): Promise<void> {
 
 /** 프로젝트를 닫으면 마법사도 닫는다 (진행은 파일에 있다) */
 export function resetWizard(): void {
-  useWizard.setState({ open: false, ready: {}, persisted: false, summary: {}, agent: null, saveError: null });
+  useWizard.setState({ open: false, ready: {}, persisted: false, summary: {}, agent: null, saveError: null, entered: [], auto: [], credential: null });
 }

@@ -1,4 +1,4 @@
-// 7단계 자동화 정책 (필수, 시안 Wizard7Automation): 자동 수리(기본 켬, 범위 tests/)·금지 동작(제품 기본값 없음)·
+// 7단계 자동화 정책 (UX5부터 첫 실행 흐름 밖 — 설정 도우미에서 연다, 시안 Wizard7Automation): 자동 수리(기본 켬, 범위 tests/)·금지 동작(기본 빈 목록)·
 // 작업 예산(60분·30회)·치트 사용. "다음" = 기본값 확인(바꾸지 않아도 확정). 팀 `kookabug.json`에 쓴다
 // (`project.automation.set` → `cheats.categories.set`, 둘 다 사람 전용·sha 대조)
 import { useCallback, useEffect, useState } from "react";
@@ -113,12 +113,12 @@ export function Step7Automation() {
         enabled: p.cheats,
       });
       setBase(cheats.sha256);
+      // UX5: 금지 동작 기본값은 빈 목록이다 (경고가 아니다 — 필요하면 여기서 더한다)
       const empty = p.forbidden.length === 0;
-      setStepWarnings(7, empty ? ["forbidden_empty"] : []);
+      setStepWarnings(7, []);
       setSummary(
         7,
         `자동 수리 ${p.repair ? "켬" : "끔"} · 금지 동작 ${empty ? "없음" : `${p.forbidden.length}개`} · ${p.minutes}분/${p.runs}회 · 치트 ${p.cheats ? "허용" : "끔"}`,
-        empty,
       );
       return true;
     } catch (err) {
@@ -206,8 +206,8 @@ export function Step7Automation() {
               </button>
             </div>
             {p.forbidden.length === 0 ? (
-              <div className={`${css.policyText} ${css.warnText}`} data-part="forbidden-empty">
-                비어 있어요. 게임마다 달라서 기본값을 두지 않아요.
+              <div className={css.policyText} data-part="forbidden-empty">
+                없음 (기본값). 막아야 할 동작이 있으면 더해요.
               </div>
             ) : (
               <div className={css.chipList} data-part="forbidden-list">

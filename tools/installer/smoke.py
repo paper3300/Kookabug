@@ -1154,7 +1154,17 @@ def screen_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:
         shutil.rmtree(base, ignore_errors=True)
 
 
-PLAYBOOKS: Final = ("init", "triage", "repair", "explore", "author", "lint", "probe")
+PLAYBOOKS: Final = (
+    "init",
+    "followup",
+    "entry",
+    "triage",
+    "repair",
+    "explore",
+    "author",
+    "lint",
+    "probe",
+)
 
 
 def qa_step(root: Path, env: Mapping[str, str]) -> tuple[bool, str]:

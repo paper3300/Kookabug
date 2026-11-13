@@ -25,6 +25,7 @@ import {
   goNext,
   goSkip,
   setReady,
+  stepCount,
   stepInfo,
   useWizard,
 } from "./wizardStore";
@@ -61,6 +62,9 @@ export function StepShell({
 }) {
   const progress = useWizard((s) => s.progress);
   const saveError = useWizard((s) => s.saveError);
+  const auto = useWizard((s) => s.auto);
+  // 진행 표시는 실제로 보이는 단계 수 (UX5: 0·자동 통과 단계는 세지 않는다)
+  const count = stepCount(progress, auto);
   const [busy, setBusy] = useState(false);
   // 진행 중 표시는 ref로 바로 잡는다: 상태(busy)는 다시 그린 뒤에야 보여 같은 틱의 두 번째 클릭·Enter가 지나간다 (B7 반대 검수)
   const inFlight = useRef(false);
@@ -113,7 +117,8 @@ export function StepShell({
       <section className={css.left} data-part="wizard-left">
         <div className={css.head}>
           <span className={css.crumb} data-part="wizard-crumb">
-            {progress.step} / 9 · {info.title}
+            {count !== null && count.at > 0 ? `${count.at} / ${count.total} · ` : ""}
+            {info.title}
             {progress.step > 0 && progress.step < 9 ? (info.required ? " · 필수" : " · 선택") : ""}
           </span>
           <span className={css.spacer} />
@@ -141,16 +146,17 @@ export function StepShell({
           >
             ‹ 이전
           </button>
-          <div className={css.dots} aria-hidden="true">
+          <div className={css.dots} aria-hidden="true" data-part="wizard-dots">
             {progress.mode === "new" &&
-              [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-                <span key={n} className={css.dot} data-on={n <= progress.step} data-current={n === progress.step} />
+              count !== null &&
+              Array.from({ length: count.total }, (_, i) => i + 1).map((n) => (
+                <span key={n} className={css.dot} data-on={n <= count.at} data-current={n === count.at} />
               ))}
           </div>
           <div className={css.actions}>
             {optional && (
-              <button type="button" className={css.skip} disabled={busy} onClick={() => void goSkip()}>
-                건너뛰기
+              <button type="button" className={css.skip} data-part="wizard-skip" disabled={busy} onClick={() => void goSkip()}>
+                {progress.step === 6 ? "나중에" : "건너뛰기"}
               </button>
             )}
             {extra !== undefined && (

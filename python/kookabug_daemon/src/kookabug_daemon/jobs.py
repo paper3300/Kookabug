@@ -38,6 +38,7 @@ import os
 import secrets
 import threading
 import time
+import unicodedata
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -82,6 +83,23 @@ RETRY_S: Final = 5.0
 def agent_id_of(job: str) -> str:
     """작업 토큰 연결의 주체 ID (`kookabug mcp --agent-id job:<작업>`)."""
     return f"job:{job}"
+
+
+def job_namespace(client_id: str) -> bool:
+    """작업 주체 ID 이름공간(`job:`)인가. 공백·제어·서식 문자를 빼고 NFKC·대소문자 무시로 본다.
+
+    UX5 검수 2: 실행 중 작업 ID와 정확히 같을 때만 막으면 대소문자·공백 변형으로 작업 밖 연결이 되어
+    작업 질문 규칙을 피한다. 이름공간 전체를 작업 토큰 전용으로 둔다(작업이 끝난 뒤에도)."""
+    text = unicodedata.normalize("NFKC", client_id)
+    kept = "".join(
+        ch for ch in text if not ch.isspace() and unicodedata.category(ch) not in ("Cc", "Cf")
+    )
+    return kept.casefold().startswith("job:")
+
+
+def plain_ascii_id(client_id: str) -> bool:
+    """공백 없는 출력 가능 ASCII(0x21~0x7E)로만 된 ID인가 (작업 토큰 없는 Agent 연결의 ID 조건)."""
+    return client_id != "" and all("!" <= ch <= "~" for ch in client_id)
 
 
 def _digest(token: str) -> str:
@@ -242,6 +260,11 @@ class JobRegistry:
             if client_id != job.agent:
                 raise _invalid("작업 토큰의 주체와 연결의 ID가 다르다 (다른 작업의 토큰)")
             return job
+
+    def reserved(self, client_id: str) -> bool:
+        """끝나지 않은 작업(시작 대기·실행·끝내는 중)에 예약된 주체 ID인가."""
+        with self._lock:
+            return any(j.agent == client_id and not j.ended.is_set() for j in self._jobs.values())
 
     def get(self, job_id: str) -> Job | None:
         with self._lock:

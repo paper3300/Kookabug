@@ -1,9 +1,10 @@
-// 환경설정 "설정 도우미" 탭 (`settings:wizard`, M8 계획 3.17): 단계마다 완료·건너뜀·경고. 그 단계만 다시 연다
+// 환경설정 "설정 도우미" 탭 (`settings:wizard`, M8 계획 3.17): 단계마다 완료·건너뜀·경고. 그 단계만 다시 연다.
+// UX5: 첫 실행 흐름에서 뺀 계정(4)·자동화 정책(7)·기록(8)도 여기서 하나씩 연다
 import { useEffect, useState } from "react";
 import { client, toRpcError } from "../rpc/client";
 import { openSetupStep } from "./ShortWizardWatch";
 import { StorageBadge } from "./StorageBadge";
-import { STEPS, useWizard, type StepNo, type WizardFile } from "./wizardStore";
+import { HELPER_ONLY, helperSubText as subText, STEPS, useWizard, type StepNo, type WizardFile } from "./wizardStore";
 import css from "./wizard.module.css";
 
 export function SetupHelper() {
@@ -50,14 +51,14 @@ export function SetupHelper() {
                     </span>
                   )}
                 </span>
-                <span className={css.rowSub}>{warns.map((w) => w.code).join(" · ") || (s.required ? "필수" : "선택")}</span>
+                <span className={css.rowSub}>{warns.map((w) => w.code).join(" · ") || subText(s.n, done || skipped, s.required)}</span>
               </span>
               {s.storage.map((st) => (
                 <StorageBadge key={st} storage={st} />
               ))}
               {s.n !== 1 && (
-                <button type="button" className={css.small} onClick={() => void openSetupStep(s.n as StepNo)}>
-                  다시 열기
+                <button type="button" className={css.small} data-part={`reopen-${s.n}`} onClick={() => void openSetupStep(s.n as StepNo)}>
+                  {HELPER_ONLY.includes(s.n) && !done ? "열기" : "다시 열기"}
                 </button>
               )}
             </div>

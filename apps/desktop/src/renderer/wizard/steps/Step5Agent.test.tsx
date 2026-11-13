@@ -188,7 +188,8 @@ function setup(user: { agents: (typeof A)[]; default_agent: string | null; prese
   H.effects = [];
   useAgent.setState({ agents: [], agentsRevision: null, defaultAgent: null, agentsLoaded: false, permissions: null, candidates: null, startError: null, userConflict: false, userBase: null, ownDefault: null } as never);
   const p = useWizard.getState().progress;
-  useWizard.setState({ agent: null, progress: { ...p, mode, steps: mode === "only" ? [5] : p.steps, step: 5 } });
+  // entered: [5] = 이미 그린 적 있는 5단계 (UX5 기본 Agent 자동 시험은 처음 들어올 때만 — 아래 (UX5) 묶음이 따로 본다)
+  useWizard.setState({ agent: null, entered: [5], auto: [], progress: { ...p, mode, steps: mode === "only" ? [5] : p.steps, step: 5 } });
 }
 
 /** 다른 곳(다른 창·사람)이 사용자 설정 파일을 바꾼다 */
@@ -516,5 +517,58 @@ describe.each(["new", "short"] as const)("(i) %s 모드: B 저장·시험 성공
     expect(rpc.file.default_agent).toBe(A.id);
     expect(useAgent.getState().userConflict).toBe(true);
     expect(elements(render()).some((e) => e.type === ConflictNotice)).toBe(true);
+  });
+});
+
+describe("(UX5) 기본 Agent 자동 시험: 처음 들어온 새 순서", () => {
+  function enterFresh(): void {
+    setup({ agents: [A, B], default_agent: A.id }, "new");
+    const p = useWizard.getState().progress;
+    useWizard.setState({ open: true, entered: [], ready: {}, persisted: false, progress: { ...p, steps: [0, 1, 2, 3, 5, 6, 9], step: 5, done: [], skipped: [] } });
+  }
+
+  test("시험이 실패하면(삭제된 CLI·미지원 등) 5단계에 머물고 Init 대상도 없다", async () => {
+    enterFresh();
+    const probe = probeStub();
+    render();
+    await flush();
+    expect(probe.calls).toEqual([A.id]); // 들어오자마자 기본 Agent로 시험
+    expect(elements(render()).some((e) => e.props["data-part"] === "auto-check")).toBe(true);
+    probe.finish(A.id, false);
+    await flush();
+    expect(useWizard.getState().progress.step).toBe(5);
+    expect(useWizard.getState().auto).toEqual([]);
+    expect(useWizard.getState().agent?.probed ?? false).toBe(false);
+    expect(elements(render()).some((e) => e.props["data-part"] === "auto-check")).toBe(false);
+    // 원인은 시험 카드에, 다른 줄 고르기·다시 시험이 그대로 된다 (기존 수동 화면)
+    expect(elements(render()).some((e) => e.props["data-part"] === "probe-fail")).toBe(true);
+    pickRow(B.id);
+    await flush();
+    expect(probe.calls).toEqual([A.id, B.id]);
+  });
+
+  test("시험이 통과하면 probed로 남기고 화면 없이 다음 단계로", async () => {
+    enterFresh();
+    const probe = probeStub();
+    render();
+    await flush();
+    probe.finish(A.id, true);
+    await flush();
+    expect(useWizard.getState().agent).toMatchObject({ id: A.id, probed: true, kind: "cli" });
+    expect(useWizard.getState().auto).toEqual([5]);
+    expect(useWizard.getState().progress.step).toBe(6);
+    expect(useWizard.getState().progress.done).toContain(5);
+    // 사용자 프리셋이 없으면 "다음"과 같은 규칙으로 추천 저장
+    expect(rpc.file.permissions).toMatchObject({ preset: "curator" });
+  });
+
+  test("다시 들어오면(이전으로 돌아옴) 자동 시험을 하지 않는다", async () => {
+    enterFresh();
+    useWizard.setState({ entered: [5] });
+    const probe = probeStub();
+    render();
+    await flush();
+    expect(probe.calls).toEqual([]);
+    expect(useWizard.getState().progress.step).toBe(5);
   });
 });

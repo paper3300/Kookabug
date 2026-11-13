@@ -8,7 +8,7 @@
    때문이다 (2.3 "프로토콜 판"). 그래서 토큰·판은 params 전체 형식 검사보다 먼저 본다
 3. params 형식이 틀리면 `invalid_params` (연결을 닫는다)
 4. `client.job_token`이 있으면 작업 토큰을 확인한다(M8 R7). 틀리면 `job_token_invalid` (연결을
-   닫는다)
+   닫는다). 토큰이 없는데 끝나지 않은 작업에 예약된 Agent ID(`job:<작업>`)면 같은 거부 (UX5)
 5. 주체를 정하고 결과를 돌려준다
 """
 
@@ -22,7 +22,7 @@ from typing import Any, Final
 from kookabug_core.diagnostics import Diagnostic
 from kookabug_core.permissions import Principal
 from kookabug_core.schema import check_shape
-from kookabug_daemon.jobs import JobRegistry
+from kookabug_daemon.jobs import JobRegistry, job_namespace, plain_ascii_id
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.principal import principal_json, principal_of
 from kookabug_daemon.protocol import DAEMON_VERSION, PROTOCOL, RequestFailed, params_problems
@@ -93,6 +93,19 @@ def hello(
         if jobs is None:
             raise RequestFailed("job_token_invalid", "이 daemon은 작업 토큰을 받지 않는다")
         job = jobs.bind(str(client["job_token"]), str(client["id"])).id
+    elif client["kind"] == "agent":
+        # 작업 토큰 없는 Agent 연결 (UX5 검수 1~3 High: 작업 ID를 대소문자·공백·닮은 문자로 바꿔
+        # 붙으면 작업 밖 연결로 보여 작업 질문 규칙을 피한다). ID를 공백 없는 출력 가능 ASCII로
+        # 한정해 닮은 문자 변형을 통째로 없애고, 작업 주체 이름공간(`job:`)은 토큰으로만 붙게 한다
+        agent_id = str(client["id"])
+        if not plain_ascii_id(agent_id):
+            raise RequestFailed(
+                "job_token_invalid", "작업 토큰 없는 Agent ID는 공백 없는 ASCII 글자만 쓴다"
+            )
+        if job_namespace(agent_id):
+            raise RequestFailed(
+                "job_token_invalid", "작업 Agent ID(job:…)는 작업 토큰 없이 붙을 수 없다"
+            )
     principal = principal_of(client, connection, job)
     return HelloOutcome(
         principal,

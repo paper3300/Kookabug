@@ -60,6 +60,9 @@ ITEM_KINDS: Final = (
 """보고 항목 종류 (허용 목록 — 여기 밖 종류는 만들지 않는다)."""
 SUMMARY_PLAYBOOKS: Final = frozenset({"init", "followup"})
 """Init 요약 항목을 다는 플레이북 (UX2 D: 이어 하기도 같은 요약)."""
+SETUP_PLAYBOOKS: Final = frozenset({"init", "followup", "entry"})
+"""사람 질문 대신 막힘 보고(사건 needs_info)로 끝내는 준비 플레이북 (UX5)."""
+BLOCKED_TITLE: Final = "막힘"
 OPEN_STATES: Final = frozenset({"open", "needs_info", "watching"})
 _TITLES: Final = {
     "auto_adopted": "자동 수리",
@@ -360,6 +363,7 @@ def build(
         if line.get("file") == "unknowns" and line.get("op") == "add" and line.get("id"):
             unknown_ids.append(str(line["id"]))
     questions = [u for u in _unknowns(root, unknown_ids) if u.get("human_only")]
+    blocked: set[str] = set()
     for cid in case_ids:
         case = cases[cid]
         if case is None or case.get("state") not in OPEN_STATES:
@@ -396,6 +400,12 @@ def build(
             needs = case.get("needs") or []
             if needs:
                 item["detail"] = f"필요한 추가 정보 {len(needs)}개"
+            if job.get("playbook") in SETUP_PLAYBOOKS and case.get("state") == "needs_info":
+                # UX5: Init·이어 하기·접속 경로의 막힘 보고 — 시도한 것과 결과(사건 needs, 글자
+                # 검사를 이미 지난 글)를 그대로 보인다. 사람이 설정을 고친 뒤 "이어서 진행"
+                tried = next((str(n.get("unknown")) for n in needs if isinstance(n, dict)), "")
+                item["detail"] = f"막힘: {tried}"[:2000] if tried else "막힘"
+                blocked.add(group_key("undetermined", _supported_cause(case)[:150], main[:400]))
             linked = [str(u["id"]) for u in questions]
             if linked:
                 item["unknowns"] = linked
@@ -456,12 +466,13 @@ def build(
         key = group_key(kind, cause[:150], main[:400])
         # 설정 제안은 묶음 키에 제안 ID, 제목에는 키 이름
         shown = cause if kind == "setting_change" else main
+        title = BLOCKED_TITLE if key in blocked else _TITLES[kind]
         group = groups.setdefault(
             key,
             {
                 "key": key,
                 "cause": cause[:200],
-                "title": (_TITLES[kind] + ("" if shown == "-" else f" · {shown}"))[:200],
+                "title": (title + ("" if shown == "-" else f" · {shown}"))[:200],
                 "items": [],
                 "decision": None,
             },

@@ -17,6 +17,8 @@
 - `{"exit": 코드, "if_playbook": 이름}` — 프롬프트 머리말의 플레이북이 그 이름일 때만 끝낸다
   (앱 E2E 훅은 연결 시험과 Init에 같은 명령을 쓴다). UX2부터 `if_playbook`은 모든 단계에 쓴다 —
   플레이북이 다르면 그 단계를 건너뛴다(Init과 이어 하기를 각본 하나로)
+- `"if_text"`·`"unless_text"`: `{"file": 상대 경로, "text": 글}` — 워크스페이스 파일에 그 글이 있을
+  때만(없을 때만) 그 단계를 한다 (UX5: 같은 플레이북의 계정 등록 전·후 실행)
 
 앞 결과를 잇는 키 (M8 B6 시나리오 각본):
 - `"label"` — 결과에 그대로 남긴다(검사가 단계를 찾는 이름)
@@ -125,6 +127,20 @@ def _pick(value: Any, path: str) -> Any:
     return value
 
 
+def _text_condition(root: Path, step: dict[str, Any]) -> bool:
+    """UX5 `if_text`·`unless_text`: `{"file": 워크스페이스 상대 경로, "text": 글}` — 그 파일에 글이
+    있을 때만(없을 때만) 그 단계를 한다 (같은 플레이북을 두 번 돌리는 각본: 계정 등록 전·후)."""
+    for key, want in (("if_text", True), ("unless_text", False)):
+        cond = step.get(key)
+        if cond is None:
+            continue
+        path = root / str(cond["file"])
+        has = path.is_file() and str(cond["text"]) in path.read_text("utf-8", errors="replace")
+        if has != want:
+            return False
+    return True
+
+
 def _subst(value: Any, names: dict[str, Any]) -> Any:
     if isinstance(value, str):
         whole = _VAR.fullmatch(value)
@@ -208,6 +224,8 @@ def run(
             only = step.get("if_playbook")
             if only is not None and f"플레이북: {only} (" not in prompt:
                 continue
+            if not _text_condition(root, step):
+                continue
             if "sha256_file" in step:
                 data = (root / str(step["sha256_file"])).read_bytes()
                 for var in step.get("save") or {}:
@@ -244,9 +262,6 @@ def run(
                 (out_dir / "grandchild.pid").write_text(str(child.pid), "utf-8")
                 continue
             if "exit" in step:
-                only = step.get("if_playbook")
-                if only is not None and f"플레이북: {only} (" not in prompt:
-                    continue
                 results.append({"step": n, "exit": step["exit"]})
                 return results
             if mcp is None:

@@ -14,6 +14,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final, cast
 
@@ -50,10 +51,13 @@ def answer_unknown(
     *,
     actor: Actor,
     check_secrets: SecretCheck,
+    secret_exists: Callable[[str], bool] | None = None,
 ) -> dict[str, Any]:
+    """`secret_exists`는 credential 미지수(UX5)의 키가 등록됐는지 본다. credential 답은 사람이 준
+    글을 쓰지 않고 키 이름만 담은 고정 글로 남긴다 (값이 지식에 남지 않게)."""
     if actor.is_agent:
         raise KnowledgeError("answer_reserved", "미지수 답은 사람만 단다")
-    check_secrets([("text", text), *actor.texts()])
+    check_secrets([*actor.texts()])
     try:
         with filetx.locked(root):
             loaded = store.load(root, UNKNOWNS, "unknowns")
@@ -65,6 +69,15 @@ def answer_unknown(
             current = items[pos]
             if int(current["rev"]) != int(base_rev):
                 raise KnowledgeError("revision_conflict", "미지수가 그사이 바뀌었다")
+            if current.get("kind") == "credential":
+                keys = [str(k) for k in current.get("secret_keys") or []]
+                missing = [k for k in keys if secret_exists is None or not secret_exists(k)]
+                if missing:
+                    raise KnowledgeError(
+                        "secret_missing", f"등록되지 않은 비밀값 키가 있다: {', '.join(missing)}"
+                    )
+                text = f"테스트 계정을 비밀값으로 등록했다 (키: {', '.join(keys)})"
+            check_secrets([("text", text)])
             doc.setdefault("history", []).append(copy.deepcopy(current))
             new = {
                 **current,

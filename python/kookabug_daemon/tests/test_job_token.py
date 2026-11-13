@@ -155,9 +155,10 @@ def test_token_binds_job(ws: Path, daemon: ThreadDaemon) -> None:
         assert caught.value.kind == "job_only"
         # 자기 신고 ID만으로는 작업에 묶이지 않는다
         assert plain.hello_result is not None and "job" not in plain.hello_result["principal"]
-    impostor = agent(job["agent_id"])  # 토큰 없이 같은 ID
-    with daemon.client(impostor) as conn:
-        assert conn.hello_result is not None and "job" not in conn.hello_result["principal"]
+    # 토큰 없이 같은 ID: 끝나지 않은 작업에 예약된 ID는 토큰으로만 붙는다 (UX5 검수 1 — 예전에는
+    # 작업 밖 연결로 붙어 작업 규칙을 피할 수 있었다)
+    impostor = agent(job["agent_id"])
+    assert refused_hello(daemon, impostor).kind == "job_token_invalid"
 
 
 def control_kind(conn: DaemonClient) -> str:

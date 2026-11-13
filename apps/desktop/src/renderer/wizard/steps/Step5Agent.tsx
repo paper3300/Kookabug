@@ -45,7 +45,18 @@ import { SECURITY_BOUNDARY } from "../boundary";
 import { ConflictNotice } from "../Conflict";
 import { StepShell } from "../Wizard";
 import { openAgentPanel } from "../../store/ui";
-import { agentPresetPlan, agentStepReady, setAgent, setStepWarnings, setSummary, useWizard } from "../wizardStore";
+import {
+  agentPresetPlan,
+  agentStepReady,
+  autoAdvance,
+  autoPassAgent,
+  autoProbePassed,
+  enterStep,
+  setAgent,
+  setStepWarnings,
+  setSummary,
+  useWizard,
+} from "../wizardStore";
 import { appErrorText } from "./Step1Project";
 import css from "../wizard.module.css";
 
@@ -146,10 +157,38 @@ export function Step5Agent() {
     return true;
   };
 
+  // UX5: 새·짧은 순서에서 처음 들어왔고 사용자 설정에 기본 Agent가 있으면 그 Agent로 연결 시험(무인 작업 probe)을 바로 돌린다.
+  // **시험이 통과했을 때만** 화면을 건너뛴다 (검수 1 Mid). 실패·미지원이면 이 화면에 머물러 원인·다시 시험·다른 Agent 고르기
+  const [first] = useState(() => enterStep(5));
+  /** 기본 Agent 자동 연결 시험 중 */
+  const [autoChecking, setAutoChecking] = useState(false);
+
   useEffect(() => {
     // 패널과 같은 저장소를 새로 읽는다 (패널에서 그 사이 바꿨을 수 있다). 이 화면의 저장 기준이 된다
-    void reloadUserSettings();
     void refreshCandidates();
+    void reloadUserSettings().then(async (ok) => {
+      if (!ok || !first) return;
+      const s = useAgent.getState();
+      if (!autoPassAgent(mode, s, first)) return;
+      const spec = s.agents.find((a) => a.id === s.defaultAgent);
+      if (spec === undefined || !setChoice(spec.id)) return;
+      setAutoChecking(true);
+      try {
+        await runProbe(spec);
+      } finally {
+        setAutoChecking(false);
+      }
+      if (!autoProbePassed(spec.id, latest.current, probeNow.current)) return; // 실패·미지원·그사이 다른 줄을 고름 → 머문다
+      // 권한 프리셋은 "다음"과 같은 규칙 (새 순서이면서 사용자 프리셋이 없을 때만 추천 저장)
+      const now = useAgent.getState();
+      const user = (now.permissions?.layers?.find((l) => l.layer === "user")?.permissions as { preset?: unknown } | null | undefined)?.preset;
+      const auto = agentPresetPlan(mode, { userPreset: typeof user === "string" ? user : null, effective: effectivePreset(now.permissions), picked: null });
+      if (auto.save !== null && (await setUserPreset(auto.save)) !== null) return; // 저장 실패면 화면을 보인다
+      setSummary(5, `${spec.name} · 기본 Agent 연결 시험 통과`);
+      await autoAdvance(5);
+    });
+    // 화면을 그릴 때 한 번
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // only 모드: 지금 기본 에이전트를 고른 줄로 보인다 (고른 에이전트 = 기본 에이전트). 사람이 고르기 전까지만
@@ -451,6 +490,11 @@ export function Step5Agent() {
       }
     >
       {detecting && <Spinner label="설치된 Agent를 찾는 중…" />}
+      {autoChecking && (
+        <div className={css.band} data-part="auto-check">
+          <Spinner label="기본 Agent 연결을 확인하는 중…" delay={0} />
+        </div>
+      )}
       <div className={css.list} role="radiogroup" aria-label="Agent" data-part="agent-list">
         {candidates.map((c) => {
           const status = candidateStatus(c);
@@ -538,7 +582,7 @@ export function Step5Agent() {
         <span className={css.hint} data-part="preset-hint" data-preset={plan.shown}>
           {PRESET_TEXT[plan.shown] ?? `지금: ${presetLabel(plan.shown)} (설정 > 권한에서 정한 값)`}
           <br />
-          혼자 도는 작업은 7단계 자동화 정책을 따라요.
+          혼자 도는 작업은 자동화 정책(설정 도우미)을 따라요.
         </span>
       </div>
       {userConflict && (

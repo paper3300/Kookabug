@@ -20,7 +20,7 @@ import {
   nextButton,
   openProject,
   prepareWizardWorld,
-  pressNext,
+  overlay,
   writeWizardProgress,
   type WizardSession,
   type WizardWorld,
@@ -141,7 +141,9 @@ test("T2: 실행 파일로 띄우기 → 그 창을 자동으로 잡고 연결, 
   expect(local["game.executable"]).toBe("C:\\Games\\Sample Game\\Game.exe");
   expect(local["game.args"]).toEqual(["-windowed", "-config", "C:\\My Game\\user.ini"]);
   expect(local["game.cwd"]).toBe("C:\\Games\\Sample Game");
-  await pressNext(page, 3);
+  // 2 → 3 점검 (UX5: 모두 통과면 화면 없이 그다음으로 넘어간다)
+  await nextButton(page).click();
+  await expect.poll(async () => overlay(page).getAttribute("data-step"), { timeout: 60_000 }).not.toBe("2");
   const team = readJson(path.join(root, "kookabug.json")).settings as Record<string, unknown>;
   expect(team["game.title"]).toBeTruthy();
 });

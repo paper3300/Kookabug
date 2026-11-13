@@ -227,13 +227,11 @@ test("test_wizard_to_init", async () => {
   for (const rel of ["kookabug.json", "AGENTS.md", ".gitignore", path.join("wiki", "index.md")]) {
     expect(fs.existsSync(path.join(root, rel)), rel).toBe(true);
   }
-  // 2 게임 → 3 점검 → 4 계정(건너뜀) → 5 Agent (직접 입력 + 연결 시험 = 실제 agent-job probe)
+  // 2 게임 → 3 점검(모두 통과면 화면 없이) → 5 Agent (UX5: 4 계정 없음. 직접 입력 + 연결 시험 = 실제 agent-job probe)
   await page.locator('[data-part="window-list"] input[type="radio"]').first().check();
   await expect(page.locator('[data-part="game-preview"]')).toBeVisible({ timeout: 30_000 });
-  await pressNext(page, 3);
-  await expect(page.locator('[data-part="check-list"] [data-check]').first()).toBeVisible({ timeout: 120_000 });
-  await pressNext(page, 4, 120_000);
-  await skipStep(page, 5);
+  await nextButton(page).click();
+  await passCheck(page, 5);
   await expect(nextButton(page)).toBeDisabled(); // 시험 전
   await page.getByRole("radio", { name: /직접 입력/ }).check();
   await page.getByLabel("Agent 이름").fill("fakeqa");
@@ -242,17 +240,13 @@ test("test_wizard_to_init", async () => {
   await expect(page.locator('[data-part="probe-card"]')).toHaveAttribute("data-state", "ok", { timeout: 120_000 });
   await pressNext(page, 6);
   const page2 = page;
-  // 6 원본: 없는 경로 (Init이 미지수로 남긴다) → 7 → 8 → 9
+  // 6 원본: 없는 경로 (Init이 위키 "모르는 것"·미지수로 남긴다) → 9 (UX5: 7·8은 기본값)
   await page2.getByLabel("데이터 테이블").fill(path.join(wiz.dir, "no-such-table.csv"));
   await nextButton(page2).click();
   await expect(page2.locator('[data-source="data_table"]')).toHaveAttribute("data-state", "missing", { timeout: 30_000 });
-  await pressNext(page2, 7);
-  await pressNext(page2, 8);
   await pressNext(page2, 9);
-  // 9 완료: Agent가 연결돼 Init이 켜져 있고 기본 선택
-  const init = page2.locator('[data-first="init"] input');
-  await expect(init).toBeEnabled();
-  await expect(init).toBeChecked();
+  // 9 완료: Agent가 연결돼 Init이 주 단추
+  await expect(page2.locator('[data-first="init"]')).toHaveAttribute("data-disabled", "false");
   await expect(nextButton(page2)).toHaveText(/Init 시작/);
   await nextButton(page2).click();
 
@@ -267,37 +261,43 @@ test("test_wizard_to_init", async () => {
   const job = readJson(path.join(root, "knowledge", "reports", `${await row.getAttribute("data-job")}.json`));
   expect(job).toMatchObject({ format: "kookabug.report/0", playbook: "init", state: "done" });
 
-  // 질문(사람만 답할 수 있는 것만) — Agent가 더 알아볼 미지수는 질문으로 나오지 않는다
+  // UX5: Init은 사람 질문을 만들지 않는다 (도구가 question_limit로 거부) — Agent가 더 알아볼 미지수만, 질문 묶음은 없다
+  const fake = readJson(path.join(root, ".kookabug", "jobs", String(await row.getAttribute("data-job")), "fake.json"));
+  expect(fake.failed, JSON.stringify(fake)).toBeUndefined();
   const unknownsFile = path.join(root, "knowledge", "unknowns.json");
   const before = (readJson(unknownsFile).unknowns as Json[]).map((u) => [u.human_only, u.state]);
-  expect(before).toEqual(expect.arrayContaining([[true, "open"], [false, "open"]]));
-  const questions = detail.locator('[data-part="questions"] li[data-unknown]');
-  await expect(questions).toHaveCount(1);
-  await expect(questions).toContainText("데이터 테이블(data_table)은 어디에 있나요?");
+  expect(before).toEqual([[false, "open"]]);
+  await expect(detail.locator('[data-part="questions"]')).toHaveCount(0);
   await expect(detail.getByText("상점 화면이 몇 개인가")).toHaveCount(0);
-  // 답하기 (unknowns.answer, 사람 전용) — UX2부터 질문 묶음 아래 "답 보내기" 하나
-  const answer = detail.locator('[data-part="questions"] [data-part="send-answers"]');
-  await expect(answer).toBeDisabled(); // 빈 답
-  await questions.getByRole("textbox").fill("공유 폴더로 옮겼다");
-  await expect(answer).toBeEnabled();
-  await answer.click();
-  await expect.poll(() => (readJson(unknownsFile).unknowns as Json[]).find((u) => u.human_only === true)?.state, { timeout: 30_000 }).toBe("answered");
-  const answered = (readJson(unknownsFile).unknowns as Json[]).find((u) => u.human_only === true) as Json;
-  expect(answered.answer).toMatchObject({ text: "공유 폴더로 옮겼다", by: "human" });
-  expect((readJson(unknownsFile).unknowns as Json[]).find((u) => u.human_only === false)?.state).toBe("open");
-  await expect(detail.locator('[data-part="questions"]')).toHaveCount(0, { timeout: 30_000 });
+  // 다음 단계는 사람이 누른다
+  await expect(detail.locator('[data-part="start-entry"]')).toBeVisible();
   const progress = readWizardFile(root);
-  expect(progress.done).toEqual(expect.arrayContaining([1, 2, 3, 5, 6, 7, 8, 9]));
-  expect(progress.skipped).toEqual([4]);
+  expect(progress.done).toEqual(expect.arrayContaining([1, 2, 3, 5, 6, 9]));
+  expect(progress.skipped).toEqual([]);
 });
+
+/** 3 점검: 모두 통과면 화면 없이 `next`로(UX5), 경고가 있으면 머문 화면에서 "계속" */
+async function passCheck(page: Page, next: number): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const step = await overlay(page).getAttribute("data-step");
+        if (step === String(next)) return "skipped";
+        return step === "3" && (await page.locator('[data-part="check-list"] [data-check]').count()) > 0 ? "stay" : "wait";
+      },
+      { timeout: 180_000 },
+    )
+    .not.toBe("wait");
+  if ((await overlay(page).getAttribute("data-step")) === "3") await pressNext(page, next, 120_000);
+}
 
 test("test_wizard_required_skip_resume_short", async () => {
   test.setTimeout(480_000);
   wiz = prepareWizardWorld();
-  // 이어서: 3단계까지 마친 진행이 남아 있는 프로젝트 → 4단계부터
+  // 이어서: 3단계까지 마친 진행이 남아 있는 프로젝트 → 5단계부터 (UX5: 4 계정은 첫 실행 흐름에 없다)
   const resumed = copySampleWorkspace("m8-resume");
   roots.push(resumed);
-  writeWizardProgress(resumed, { step: 4, done: [1, 2, 3], skipped: [] });
+  writeWizardProgress(resumed, { step: 5, done: [1, 2, 3], skipped: [] });
   // 짧은 마법사 양성(팀 첫 설정을 마친 프로젝트)·음성(마치지 않은 프로젝트)
   const team = copySampleWorkspace("m8-team");
   const plain = copySampleWorkspace("m8-plain");
@@ -318,32 +318,27 @@ test("test_wizard_required_skip_resume_short", async () => {
   // ── 이어서 + 건너뛰기 + Agent 없으면 녹화 기본
   await openProject(s, resumed);
   const page = s.page;
-  await expectStep(page, 4, 30_000);
+  await expectStep(page, 5, 30_000);
   await expect(overlay(page)).toHaveAttribute("data-mode", "new");
-  // 4 계정: 선택 단계 — 키가 없으면 "다음" 꺼짐, 건너뛰기 있음
+  // 5 Agent: 선택 단계 — 시험 전에는 "다음" 꺼짐 → 건너뛰기
   await expect(page.locator('[data-part="wizard-crumb"]')).toContainText("선택");
-  await expect(nextButton(page)).toBeDisabled();
-  await skipStep(page, 5);
-  // 5 Agent: 시험 전에는 "다음" 꺼짐 → 건너뛰기
   await expect(nextButton(page)).toBeDisabled();
   await skipStep(page, 6);
   // 양성 대조: 같은 "다음" 단추가 켜질 수 있는 단계 (6 원본 확인)
   await expect(nextButton(page)).toBeEnabled({ timeout: 30_000 });
   await nextButton(page).click();
   await expect(nextButton(page)).toHaveText(/다음/, { timeout: 30_000 });
-  await pressNext(page, 7);
-  await pressNext(page, 8);
   await pressNext(page, 9);
-  await expect(page.locator('[data-part="wizard-summary"] dd[data-step="4"]')).toHaveAttribute("data-skipped", "true");
+  await expect(page.locator('[data-part="wizard-summary"] dd[data-step="4"]')).toHaveCount(0);
   await expect(page.locator('[data-part="wizard-summary"] dd[data-step="5"]')).toHaveAttribute("data-skipped", "true");
   await expect(page.locator('[data-part="wizard-summary"] dd[data-step="6"]')).not.toHaveAttribute("data-skipped", "true");
-  await expect(page.locator('[data-first="init"] input')).toBeDisabled();
-  await expect(page.locator('[data-first="record"] input')).toBeChecked();
+  await expect(page.locator('[data-first="init"]')).toHaveAttribute("data-disabled", "true");
+  await expect(page.locator('[data-part="first-record"]')).toBeVisible();
   await expect(page.locator('[data-part="connect-now"]')).toBeVisible();
   await nextButton(page).click();
   await expect(overlay(page)).toHaveCount(0);
-  expect(readWizardFile(resumed)).toMatchObject({ skipped: [4, 5] });
-  expect(readWizardFile(resumed).done).toEqual(expect.arrayContaining([1, 2, 3, 6, 7, 8, 9]));
+  expect(readWizardFile(resumed)).toMatchObject({ skipped: [5] });
+  expect(readWizardFile(resumed).done).toEqual(expect.arrayContaining([1, 2, 3, 6, 9]));
   const userData = s.userData;
   await closeWizardApp(s);
   s = null;
@@ -359,7 +354,7 @@ test("test_wizard_required_skip_resume_short", async () => {
   expect(fs.existsSync(path.join(plain, ".kookabug", "wizard.json"))).toBe(false);
   await closeWizardApp(s);
   s = null;
-  // 양성: 팀 프로젝트는 빈 이 PC 단계(2·3·4·5)만, 6~8은 묻지 않는다
+  // 양성: 팀 프로젝트는 빈 이 PC 단계(2·3·5 — UX5부터 계정 4는 묻지 않는다)만, 6~8은 묻지 않는다
   s = await launchWizardApp(wiz, { userData, width: 1440, height: 900 });
   await openProject(s, team);
   const p2 = s.page;
@@ -368,15 +363,13 @@ test("test_wizard_required_skip_resume_short", async () => {
   await expect(nextButton(p2)).toBeDisabled(); // 2 게임: 창을 잡기 전
   await p2.locator('[data-part="window-list"] input[type="radio"]').first().check();
   await expect(p2.locator('[data-part="game-preview"]')).toBeVisible({ timeout: 30_000 });
-  await pressNext(p2, 3);
-  await expect(p2.locator('[data-part="check-list"] [data-check]').first()).toBeVisible({ timeout: 120_000 });
-  await pressNext(p2, 4, 120_000);
-  await skipStep(p2, 5);
+  await nextButton(p2).click();
+  await passCheck(p2, 5);
   await skipStep(p2, 9);
-  await expect(p2.locator('[data-part="wizard-summary"] dd')).toHaveCount(4);
+  await expect(p2.locator('[data-part="wizard-summary"] dd')).toHaveCount(3);
   await expect(p2.locator('[data-part="wizard-summary"] dd[data-step="6"]')).toHaveCount(0);
-  await expect(p2.locator('[data-first="record"] input')).toBeChecked();
+  await expect(p2.locator('[data-part="first-record"]')).toBeVisible();
   await nextButton(p2).click();
   await expect(overlay(p2)).toHaveCount(0);
-  expect(readWizardFile(team)).toMatchObject({ done: [2, 3, 9], skipped: [4, 5] });
+  expect(readWizardFile(team)).toMatchObject({ done: [2, 3, 9], skipped: [5] });
 });

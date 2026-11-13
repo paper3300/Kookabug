@@ -1,5 +1,5 @@
 {
-  "description": "Init (M8 3.12·3.16 init_sample): 설정 확인 → 원본 읽기(아이템 CSV는 Agent가 직접 읽음) → 주장 후보(expected는 원본 근거, 그 밖은 guess) → 치트 후보 → 읽지 못한 원본은 미지수(사람만 답할 수 있음) → 위키 → 보고 메모. 예제 sources: item_table(있음) + patch_notes(없는 경로) + design_doc(URL)",
+  "description": "Init (M8 3.12·3.16 init_sample): 설정 확인 → 원본 읽기(아이템 CSV는 Agent가 직접 읽음) → 주장 후보(expected는 원본 근거, 그 밖은 guess) → 치트 후보 → 읽지 못한 원본은 미지수(UX5: Init은 사람 질문을 만들지 않는다 — question_limit) → 위키 → 보고 메모. 예제 sources: item_table(있음) + patch_notes(없는 경로) + design_doc(URL)",
   "steps": [
     {
       "label": "info",
@@ -36,7 +36,7 @@
             "impl": {"kind": "console", "graph": "subgraphs/cheats/console.graph.json", "template": "give_potion {count}"},
             "env": {}}},
           {"op": "add", "file": "unknowns", "base_revision": 0, "item": {
-            "question": "패치 노트(patch_notes)는 어디에 있나요?", "human_only": true, "blocks": [],
+            "question": "패치 노트(patch_notes)는 어디에 있나요?", "human_only": false, "blocks": [],
             "how": "kookabug.json sources의 경로를 고친다", "source": "sources:patch_notes"}},
           {"op": "add", "file": "unknowns", "base_revision": 0, "item": {
             "question": "판매 가격 비율이 기획 문서에 있는가", "human_only": false, "blocks": ["shop.sell.ratio"],
@@ -44,6 +44,17 @@
         ]
       },
       "check": {"applied": true}
+    },
+    {
+      "label": "question_refused",
+      "tool": "kb_knowledge_apply",
+      "args": {
+        "request_id": "init-question",
+        "ops": [{"op": "add", "file": "unknowns", "base_revision": 1, "item": {
+          "question": "패치 노트를 어디로 옮겼나요?", "human_only": true, "blocks": [],
+          "how": "사람에게 묻는다", "source": "sources:patch_notes"}}]
+      },
+      "expect": {"error": "question_limit"}
     },
     {
       "label": "hash_mismatch",

@@ -532,3 +532,57 @@ describe("agent-job", () => {
     expect(out).toEqual({ ok: false, checks: [{ id: "dpi", ok: true }, { id: "ocr.models", ok: false }] });
   });
 });
+
+describe("UX5 테스트 계정 등록·접속 경로", () => {
+  const VALUE = "ux5-pass Zq81!";
+
+  test("agentJobRun은 entry를 받는다 (보고함 '접속 경로 만들기'·접속 경로 이어서 진행)", () => {
+    expect(() => checkJobArgs("agentJobRun", ["entry", "claude-code"])).not.toThrow();
+    expect(APP_ACTIONS.has("secretSet")).toBe(true);
+  });
+
+  test("secretSet 인자: 키 꼴·값(비지 않음·1024자·줄바꿈 없음), 오류 글에 값이 없다", () => {
+    expect(() => checkJobArgs("secretSet", ["login.password", VALUE])).not.toThrow();
+    const bad: unknown[][] = [
+      ["../x", "v"],
+      ["login password", "v"],
+      ["login.password", ""],
+      ["login.password", "a\nb"],
+      ["login.password", "x".repeat(1025)],
+      ["login.password"],
+      ["login.password", VALUE, "--replace"],
+      ["login.password", 5],
+    ];
+    for (const args of bad) {
+      let message = "";
+      try {
+        checkJobArgs("secretSet", args);
+      } catch (err) {
+        message = String(err);
+      }
+      expect(message, JSON.stringify(args)).toContain("secretSet");
+      expect(message).not.toContain(VALUE);
+    }
+  });
+
+  test("값은 표준 입력으로만 — 명령줄 인자에 없다. 실패면 CLI 오류 코드만", async () => {
+    const seen: { args: string[]; input?: string }[] = [];
+    const { r } = runner({
+      exec: async (_file, args, _t, input) => {
+        seen.push({ args, input });
+        return { code: 0, stdout: '{"exit_code":0}\n' };
+      },
+    });
+    expect(await r.setSecret("login.password", VALUE)).toEqual({ key: "login.password" });
+    expect(seen[0].args).toEqual(["secret", "set", "login.password", "--replace", "--workspace", ROOT, "--json"]);
+    expect(seen[0].args.join(" ")).not.toContain(VALUE);
+    expect(seen[0].input).toBe(`${VALUE}\n`);
+    const failing = runner({ exec: async () => ({ code: 1, stdout: `{"exit_code":1,"error_code":"io_error","message":"${VALUE}"}\n` }) });
+    const err = await failing.r.setSecret("login.password", VALUE).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(JobsError);
+    expect((err as JobsError).code).toBe("io_error");
+    expect(String(err)).not.toContain(VALUE);
+    await expect(r.setSecret("bad key", VALUE)).rejects.toMatchObject({ code: "key_invalid" });
+    await expect(r.setSecret("login.id", "a\nb")).rejects.toMatchObject({ code: "value_invalid" });
+  });
+});

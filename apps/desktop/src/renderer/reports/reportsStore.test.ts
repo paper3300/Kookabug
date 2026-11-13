@@ -5,9 +5,13 @@ import {
   canCancel,
   decidable,
   filledCount,
+  continuePlaybook,
+  entryOffer,
+  featureTestHint,
   followupBlock,
-  followupPlaybook,
   inboxCount,
+  isBlockedGroup,
+  isCredential,
   isSettingGroup,
   mergeRows,
   openQuestions,
@@ -199,15 +203,70 @@ describe("설정 바꾸기 제안 (UX2 C)", () => {
 });
 
 describe("이어서 진행 (UX2 D)", () => {
-  test("Init·이어 하기 보고에만 둔다", () => {
-    expect(followupPlaybook({ playbook: "init" })).toBe(true);
-    expect(followupPlaybook({ playbook: "followup" })).toBe(true);
-    expect(followupPlaybook({ playbook: "repair" })).toBe(false);
+  test("Init·이어 하기 보고는 followup, 접속 경로 보고는 entry를 다시 (UX5), 그 밖은 없음", () => {
+    expect(continuePlaybook({ playbook: "init" })).toBe("followup");
+    expect(continuePlaybook({ playbook: "followup" })).toBe("followup");
+    expect(continuePlaybook({ playbook: "entry" })).toBe("entry");
+    expect(continuePlaybook({ playbook: "repair" })).toBeNull();
   });
 
   test("무인 작업이 도는 중이면 끄고 이유를 보인다", () => {
     expect(followupBlock([{ state: "done" }, { state: "failed" }])).toBeNull();
     expect(followupBlock([{ state: "done" }, { state: "running" }])).toContain("도는 중");
     expect(followupBlock([{ state: "ending" }])).not.toBeNull();
+  });
+});
+
+describe("UX5 테스트 계정 질문·접속 경로·막힘", () => {
+  const login: Unknown = {
+    id: "u-20261113-000000-cccc",
+    rev: 1,
+    question: "로그인 화면이에요",
+    human_only: true,
+    state: "open",
+    kind: "credential",
+    secret_keys: ["login.id", "login.password"],
+  };
+  const plain: Unknown = { id: "u-20261113-000000-dddd", rev: 1, question: "창 제목", human_only: true, state: "open" };
+
+  test("credential 질문은 질문 목록에 오지만 글 답(답 보내기)에서는 빠진다", async () => {
+    const report = { job: JOB_A, playbook: "entry", state: "done", groups: [], unknowns: [login.id, plain.id] } as Report;
+    expect(openQuestions(report, [login, plain]).map((u) => u.id)).toEqual([login.id, plain.id]);
+    expect(isCredential(login)).toBe(true);
+    expect(isCredential(plain)).toBe(false);
+    const drafts = { [login.id]: "hunter2", [plain.id]: "SampleRPG" };
+    expect(filledCount([login, plain], drafts)).toBe(1);
+    const sent: string[] = [];
+    const out = await sendAnswers([login, plain], drafts, async (u, text) => {
+      sent.push(`${u.id}:${text}`);
+    });
+    // 계정 질문에 넣은 글(값일 수 있다)은 어디에도 보내지 않는다
+    expect(sent).toEqual([`${plain.id}:SampleRPG`]);
+    expect(out.answered).toEqual([plain.id]);
+  });
+
+  test('"다음: 게임 접속 경로 만들기"는 끝난 Init·이어 하기 보고에만 (자동 시작 없음)', () => {
+    expect(entryOffer({ playbook: "init", state: "done" })).toBe(true);
+    expect(entryOffer({ playbook: "followup", state: "budget_exhausted" })).toBe(true);
+    expect(entryOffer({ playbook: "init", state: "running" })).toBe(false);
+    expect(entryOffer({ playbook: "entry", state: "done" })).toBe(false);
+    expect(entryOffer({ playbook: "triage", state: "done" })).toBe(false);
+  });
+
+  test('접속 경로 보고 끝에만 "다음: 기능 테스트 만들기" 안내 (계정 질문·막힘이 남았으면 아직)', () => {
+    expect(featureTestHint({ playbook: "entry", state: "done", groups: [] }, 0)).toBe(true);
+    expect(featureTestHint({ playbook: "entry", state: "done", groups: [] }, 1)).toBe(false);
+    const stuck = { key: "k", cause: "undetermined", title: "막힘 · x", items: [], decision: null };
+    expect(featureTestHint({ playbook: "entry", state: "done", groups: [stuck] }, 0)).toBe(false);
+    expect(featureTestHint({ playbook: "entry", state: "failed", groups: [] }, 0)).toBe(false);
+    expect(featureTestHint({ playbook: "init", state: "done", groups: [] }, 0)).toBe(false);
+  });
+
+  test("막힘 묶음 (보고 제목) → Init 보고의 이어서 진행이 그대로 보인다", () => {
+    const blocked = { key: "k", cause: "undetermined", title: "막힘 · subgraphs/common/game_launch.graph.json", items: [], decision: null };
+    expect(isBlockedGroup(blocked)).toBe(true);
+    expect(isBlockedGroup({ title: "판단 불가 · x" })).toBe(false);
+    expect(isBlockedGroup({ title: "막힘" })).toBe(true);
+    expect(continuePlaybook({ playbook: "init" })).toBe("followup");
   });
 });

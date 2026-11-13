@@ -46,6 +46,7 @@ from kookabug_core.knowledge.formats import (
     shape_problem,
     strings_of,
 )
+from kookabug_core.playbooks import QuestionRule
 from kookabug_core.workspace import Workspace, WorkspaceError
 
 __all__ = [
@@ -129,10 +130,20 @@ def scopes_overlap(a: Mapping[str, Any] | None, b: Mapping[str, Any] | None) -> 
 
 
 class _Engine:
-    def __init__(self, root: Path, workspace: Workspace, actor: Actor) -> None:
+    def __init__(
+        self,
+        root: Path,
+        workspace: Workspace,
+        actor: Actor,
+        questions: QuestionRule | None = None,
+    ) -> None:
         self.root = root
         self.ws = workspace
         self.actor = actor
+        self.questions = questions
+        """이 작업의 사람 질문 규칙 (UX5, daemon이 작업 플레이북으로 정한다). None = 제한 없음."""
+        self.asked = 0
+        """이 요청에서 더한 사람 질문 수."""
         self.team: dict[str, store.Loaded] = {}
         self.start: dict[str, int] = {}
         self.working: dict[str, store.Loaded] = {}
@@ -496,6 +507,18 @@ class _Engine:
         elif kind == "unknowns":
             if item.get("answer") not in (None,) or item.get("state") == "answered":
                 raise KnowledgeError("answer_reserved", f"{where}: 미지수 답은 사람만 단다")
+            if item.get("kind") == "credential":
+                # 테스트 계정: 사람이 비밀값으로 등록한다 — 키 이름 제안이 있고 늘 사람 질문이다
+                if not item.get("secret_keys"):
+                    raise KnowledgeError(
+                        "format", f"{where}: credential 미지수에는 secret_keys(키 이름)가 필요하다"
+                    )
+                if item.get("human_only") is not True:
+                    raise KnowledgeError(
+                        "format", f"{where}: credential 미지수는 human_only: true다"
+                    )
+            if item.get("human_only") is True:
+                self.check_question(str(item.get("kind") or "question"), where)
             item.setdefault("id", new_id("u"))
             item.setdefault("state", "open")
             item["answer"] = None
@@ -561,6 +584,15 @@ class _Engine:
                 raise KnowledgeError("adoption_reserved", f"{where}: 치트 채택은 사람만 한다")
             if kind == "unknowns" and ("answer" in changes or changes.get("state") == "answered"):
                 raise KnowledgeError("answer_reserved", f"{where}: 미지수 답은 사람만 단다")
+            if (
+                kind == "unknowns"
+                and self.questions is not None
+                and any(k in changes for k in ("human_only", "kind", "secret_keys"))
+            ):
+                # 질문 규칙이 있는 작업은 있던 미지수를 사람 질문으로 바꿔 규칙을 넘지 못한다
+                raise KnowledgeError(
+                    "question_limit", f"{where}: 이 작업은 미지수의 질문 여부·종류를 바꿀 수 없다"
+                )
             if kind == "claims" and "superseded_by" in changes:
                 raise KnowledgeError("format", f"{where}: superseded_by는 supersede 연산으로만")
             new.update(copy.deepcopy(changes))
@@ -625,6 +657,51 @@ class _Engine:
         if not fields:
             return None, []
         return new, fields
+
+    def check_question(self, kind: str, where: str) -> None:
+        """UX5 질문 규칙: 이 작업이 더한 사람 질문이 상한 안이고 허용 종류인가. 아니면
+        `question_limit` (어디에 쓰라는 안내 포함)."""
+        rule = self.questions
+        if rule is None or not self.actor.is_agent:
+            return
+        if rule.limit <= 0:
+            raise KnowledgeError(
+                "question_limit",
+                f"{where}: 이 작업은 사람 질문을 만들지 않는다 — 궁금한 것은 위키 '모르는 것' 절에 "
+                "쓰고, 실행·종료가 막혔으면 사건(needs_info)으로 막힘 보고를 남긴다",
+            )
+        if kind not in rule.kinds:
+            raise KnowledgeError(
+                "question_limit",
+                f"{where}: 이 작업의 사람 질문은 테스트 계정(kind: credential)뿐이다 — 그 밖의 "
+                "막힘은 사건(needs_info)으로 막힘 보고를 남기고, 궁금한 것은 위키 '모르는 것' "
+                "절에 쓴다",
+            )
+        if self._job_questions() + self.asked >= rule.limit:
+            raise KnowledgeError(
+                "question_limit",
+                f"{where}: 이 작업의 사람 질문 상한({rule.limit}개)에 닿았다 — 위키 '모르는 것' "
+                "절에 쓰거나 막힘 보고(사건 needs_info)로 남긴다",
+            )
+        self.asked += 1
+
+    def _job_questions(self) -> int:
+        """이 작업이 앞 요청에서 더한 사람 질문 수 (감사 이력의 이 작업 `add` 줄 → 지금 항목)."""
+        job = self.actor.job
+        if job is None:
+            return 0
+        ids = {
+            str(line.get("id"))
+            for line in store.log_lines(self.root)
+            if line.get("job") == job
+            and line.get("file") == "unknowns"
+            and line.get("op") == "add"
+            and line.get("result") == "applied"
+        }
+        if not ids:
+            return 0
+        items = _items(self.doc("unknowns").doc, "unknowns")
+        return sum(1 for u in items if u.get("id") in ids and u.get("human_only") is True)
 
     def claim_exists(self, file: str, ref: Mapping[str, Any], where: str) -> None:
         """`{id, rev}` 주장이 팀 파일(지금 또는 옛 rev)에 있나. 기능은 ID 접두로 찾는다."""
@@ -948,8 +1025,10 @@ def apply(
     *,
     actor: Actor,
     check_secrets: SecretCheck,
+    questions: QuestionRule | None = None,
 ) -> dict[str, Any]:
-    """`kb_knowledge_apply`. 전부 적용하고 결과를 주거나, 아무것도 바꾸지 않고 `KnowledgeError`."""
+    """`kb_knowledge_apply`. 전부 적용하고 결과를 주거나, 아무것도 바꾸지 않고 `KnowledgeError`.
+    `questions`는 이 작업의 사람 질문 규칙 (UX5 — daemon이 작업의 플레이북으로 고른다)."""
     request_id = request.get("request_id") if isinstance(request, Mapping) else None
     if not isinstance(request_id, str) or not REQUEST_ID.fullmatch(request_id):
         raise KnowledgeError("format", "request_id가 없거나 형식이 틀렸다")
@@ -995,7 +1074,9 @@ def apply(
                     error = dict(record["error"])
                     raise KnowledgeError(str(error.pop("code")), str(error.pop("message")), **error)
                 return {**record["result"], "replayed": True}
-            return _apply_locked(root, workspace, request, request_id, digest, actor, check_secrets)
+            return _apply_locked(
+                root, workspace, request, request_id, digest, actor, check_secrets, questions
+            )
     except filetx.TxError as exc:
         raise _tx_error(exc) from exc
 
@@ -1008,6 +1089,7 @@ def _apply_locked(
     digest: str,
     actor: Actor,
     check_secrets: SecretCheck,
+    questions: QuestionRule | None = None,
 ) -> dict[str, Any]:
     ops_raw = request.get("ops")
     # (글자 검사·digest는 `apply`가 이미 했다)
@@ -1028,7 +1110,7 @@ def _apply_locked(
         raise exc
     ops = cast(list[dict[str, Any]], request["ops"])
     store.ensure_layout(root)
-    engine = _Engine(root, workspace, actor)
+    engine = _Engine(root, workspace, actor, questions)
     try:
         engine.run(ops)
         for file in engine.touched:

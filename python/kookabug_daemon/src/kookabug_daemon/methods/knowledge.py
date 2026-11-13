@@ -13,14 +13,16 @@ B1의 경계(정책 경로 차단·`human` 근거·치트 채택·`expected` 주
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 import unicodedata
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any, Final, cast
 
-from kookabug_core import filetx
+from kookabug_core import filetx, playbooks
 from kookabug_core.knowledge import human, ops, sources, store
 from kookabug_core.knowledge.formats import KnowledgeError, file_kind, file_rel
-from kookabug_core.workspace import Workspace, WorkspaceError
+from kookabug_core.workspace import Workspace, WorkspaceError, secret_env_name, workspace_id
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.methods.adopt import actor_of, checker_of
 from kookabug_daemon.protocol import RequestFailed, request_failed_codes
@@ -181,12 +183,22 @@ async def _get(call: Call) -> dict[str, Any]:
 # ---------------------------------------------------------------- 변경 (Agent 도구)
 
 
+def _question_rule(call: Call) -> playbooks.QuestionRule | None:
+    """작업 연결이면 그 작업 플레이북의 사람 질문 규칙 (UX5). 작업 밖 연결은 제한 없음."""
+    job_id = call.principal.job
+    if job_id is None:
+        return None
+    job = call.daemon.jobs.get(job_id)
+    return None if job is None else playbooks.question_rule(job.playbook)
+
+
 def _apply_sync(call: Call) -> dict[str, Any]:
     result = ops.apply(
         call.daemon.root,
         {"request_id": call.params["request_id"], "ops": call.params["ops"]},
         actor=actor_of(call),
         check_secrets=checker_of(call),
+        questions=_question_rule(call),
     )
     _changed(call, ["knowledge"])
     return result
@@ -218,6 +230,26 @@ async def _wiki(call: Call) -> dict[str, Any]:
 # ---------------------------------------------------------------- 사람 전용
 
 
+def _secret_exists(root: Any) -> Callable[[str], bool]:
+    """credential 미지수 답(UX5): 키가 이 워크스페이스 비밀값으로 있나 (환경 변수 → 자격 증명
+    관리자). 값은 읽어 비교하지 않고 있는지만 본다."""
+
+    def exists(key: str) -> bool:
+        if os.environ.get(secret_env_name(key)):
+            return True
+        if sys.platform != "win32":
+            return False
+        from kookabug_core.win.credentials import CredentialError, CredentialStore
+
+        try:
+            wid = workspace_id(Workspace.open(root))
+            return wid is not None and key in CredentialStore().keys(wid)
+        except CredentialError, WorkspaceError:
+            return False
+
+    return exists
+
+
 def _answer_sync(call: Call) -> dict[str, Any]:
     p = call.params
     result = human.answer_unknown(
@@ -227,6 +259,7 @@ def _answer_sync(call: Call) -> dict[str, Any]:
         str(p["text"]),
         actor=actor_of(call),
         check_secrets=checker_of(call),
+        secret_exists=_secret_exists(call.daemon.root),
     )
     _changed(call, [human.UNKNOWNS])
     return result

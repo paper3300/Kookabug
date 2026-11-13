@@ -13,6 +13,7 @@
     kookabug mcp [--workspace DIR] [--agent-id ID] [--unattended] [--client 이름]   (kookabug_mcp)
     kookabug workspace new <폴더> --name 이름 [--git] [--json]                       (workspace_cmd)
     kookabug cheat list|adopt|unadopt ... (사람만: KOOKABUG_AGENT면 종료 5)          (cheat_cmd)
+    kookabug secret set|delete <키> ... (사람만, 값은 표준 입력)                     (secret_cmd)
     kookabug agent-job run|status|list|cancel|probe|schedule|playbooks ... (사람만)  (agent_job_cmd)
     kookabug agent-host --workspace DIR [--env 이름=값] [--secret-env 이름=키] -- 명령 ...
                                                      (앱의 에이전트 패널 세션 도우미)
@@ -54,6 +55,7 @@ from kookabug_cli import (
     cheat_cmd,
     daemon_cmd,
     plugin_cmd,
+    secret_cmd,
     workspace_cmd,
 )
 from kookabug_core.agents import host as agent_host
@@ -329,6 +331,7 @@ def build_parser() -> argparse.ArgumentParser:
     agent_host.add_parser(commands)
     workspace_cmd.add_parser(commands)
     cheat_cmd.add_parser(commands)
+    secret_cmd.add_parser(commands)
     agent_job_cmd.add_parser(commands)
     return parser
 
@@ -732,6 +735,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return workspace_cmd.run(args, sys.stdout, sys.stderr)
     if args.command == "cheat":
         return cheat_cmd.run(args, sys.stdout, sys.stderr)
+    if args.command == "secret":
+        return secret_cmd.run(args, sys.stdout, sys.stderr)
     if args.command == "agent-job":
         return agent_job_cmd.run(args, sys.stdout, sys.stderr)
     # 비전 명령은 opencv를 불러오므로 쓸 때만 import한다 (`kookabug run` 시작을 가볍게)

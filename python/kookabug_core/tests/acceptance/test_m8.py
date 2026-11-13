@@ -1301,10 +1301,8 @@ def test_init_collects_unknowns(
         job = w.job("init_sample", "init")
         with w.daemon.client() as ui:
             doc = ui.call("knowledge.get", {"file": "unknowns"})["doc"]
-            [question] = [u for u in doc["unknowns"] if u["human_only"]]
-            # 사람이 보고함에서 답한다 (사람 전용) — 답하지 않아도 작업은 끝났다(차단 조건 아님)
-            answer = {"id": question["id"], "base_rev": question["rev"], "text": "옮겼다"}
-            ui.call("unknowns.answer", answer)
+            # UX5: Init은 사람 질문을 만들지 않는다 (도구가 question_limit로 거부)
+            assert [u for u in doc["unknowns"] if u["human_only"]] == []
     assert job.code == 0 and job.out["state"] == "done", (job.out, job.fake.get("failed"))
     assert not job.fake.get("failed") and job.fake["prompt"] == [], job.fake
     # 1 설정 확인: 읽지 못한 원본은 kb_project_info에 missing, URL은 받지 않음
@@ -1346,8 +1344,9 @@ def test_init_collects_unknowns(
     assert unknowns["format"] == "kookabug.unknowns/0"
     by_source = {u["source"]: u for u in unknowns["unknowns"]}
     patch = by_source["sources:patch_notes"]
-    assert patch["human_only"] is True and patch["id"].startswith("u-") and patch["question"]
-    assert patch["state"] == "answered" and patch["answer"]["by"] == "human"  # 사람 답 (양성)
+    assert patch["human_only"] is False and patch["id"].startswith("u-") and patch["question"]
+    assert patch["state"] == "open"
+    assert job.step("question_refused")["error"] == "question_limit"
     assert by_source["sources:design_doc"]["human_only"] is False
     cheats = {c["id"]: c for c in read_json(root / "knowledge" / "cheats.json")["cheats"]}
     assert cheats["give_potion"]["adoption"] is None  # 후보만 (채택은 사람)
@@ -1365,13 +1364,13 @@ def test_init_collects_unknowns(
     assert {rel: (root / rel).read_bytes() for rel in policy} == policy
     changed = {k for k in team_tree(root) if team_tree(root).get(k) != team.get(k)}
     assert changed == {"knowledge/features/shop.json"}
-    # 5 보고: init_summary(결정적 요약) + 치트 후보 + 사람만 답할 수 있는 질문
+    # 5 보고: init_summary(결정적 요약) + 치트 후보. 사람 질문은 없다 (UX5)
     stored = job.report()
     assert stored["playbook"] == "init" and stored["state"] == "done"
     [summary] = job.items("init_summary")
     assert summary["summary"]["unknowns"] == 2 and summary["summary"]["cheat_candidates"] == 1
     assert [i["cheat"] for i in job.items("cheat_candidate")] == ["give_potion"]
-    assert stored["unknowns"] == [patch["id"]]
+    assert stored["unknowns"] == []
     assert "미지수 2개" in stored["notes"]
 
 

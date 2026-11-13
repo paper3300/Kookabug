@@ -280,7 +280,9 @@ export type RequestFailedCode =
   | "job_active"
   | "source_unavailable"
   | "unsupported_format"
-  | "setting_not_allowed";
+  | "setting_not_allowed"
+  | "question_limit"
+  | "secret_missing";
 /**
  * 플러그인 작업 ID (= 설치 거래 ID, 작업 로그 이름)
  *
@@ -2618,7 +2620,8 @@ export interface Kb8JobBeginParams {
     minutes?: number;
     runs?: number;
   };
-  playbook: "author" | "explore" | "followup" | "init" | "lint" | "probe" | "repair" | "triage";
+  playbook:
+    "author" | "entry" | "explore" | "followup" | "init" | "lint" | "probe" | "repair" | "triage";
   toolsets?: Toolset[];
   trigger?: "ci" | "manual" | "schedule";
   ttl_s?: number;

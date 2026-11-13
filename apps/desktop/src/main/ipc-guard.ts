@@ -215,6 +215,8 @@ export const APP_ACTIONS: ReadonlySet<string> = new Set([
   "agentProbe",
   "agentJobRun",
   "doctor",
+  // UX5 테스트 계정 등록: 값은 주 프로세스가 `kookabug secret set`의 표준 입력으로만 넘긴다
+  "secretSet",
 ]);
 
 export class IpcGuardError extends Error {
@@ -228,9 +230,21 @@ export function checkAppAction(action: unknown): string {
   return action;
 }
 
-/** 렌더러가 띄울 수 있는 agent-job 플레이북 (M8 B7: 9단계 Init, UX2: 보고함 "이어서 진행"의 followup) */
-export const JOB_PLAYBOOKS: ReadonlySet<string> = new Set(["init", "followup"]);
+/**
+ * 렌더러가 띄울 수 있는 agent-job 플레이북 (M8 B7: 9단계 Init, UX2: 보고함 "이어서 진행"의 followup,
+ * UX5: "다음: 게임 접속 경로 만들기"·접속 경로 이어서 진행의 entry)
+ */
+export const JOB_PLAYBOOKS: ReadonlySet<string> = new Set(["init", "followup", "entry"]);
 const AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
+/** 비밀값 키 (kookabug_core.recorder.secrets.SECRET_KEY와 같은 꼴) */
+export const SECRET_KEY = /^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$/;
+export const SECRET_VALUE_LIMIT = 1024;
+
+/** 테스트 계정 값: 비지 않고 상한 안, 줄바꿈·제어 문자 없음 (CLI가 표준 입력 한 줄로 읽는다) */
+export function secretValueOk(value: unknown): value is string {
+  // eslint-disable-next-line no-control-regex
+  return typeof value === "string" && value.length > 0 && value.length <= SECRET_VALUE_LIMIT && !/[\u0000-\u001f]/.test(value);
+}
 
 /**
  * M8 B7 마법사·보고함 앱 동작의 인자 모양 (preload와 주 프로세스가 같이 본다). 실행 파일·명령줄·워크스페이스 루트는
@@ -260,6 +274,11 @@ export function checkJobArgs(action: string, args: readonly unknown[]): void {
     case "agentJobRun":
       if (args.length !== 2 || typeof args[0] !== "string" || !JOB_PLAYBOOKS.has(args[0])) fail("허용된 플레이북");
       if (typeof args[1] !== "string" || !AGENT_ID.test(args[1])) fail("Agent ID");
+      return;
+    case "secretSet":
+      // 오류 글에 값을 넣지 않는다
+      if (args.length !== 2 || typeof args[0] !== "string" || args[0].length > 128 || !SECRET_KEY.test(args[0])) fail("비밀값 키");
+      if (!secretValueOk(args[1])) fail("값 (비었거나 길거나 줄바꿈이 있음)");
       return;
     default:
       return;

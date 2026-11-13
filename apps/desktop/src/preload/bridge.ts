@@ -103,7 +103,9 @@ export interface AppApi {
   /** 마법사 5단계 연결 시험 (agent-job probe). Agent는 사용자 설정의 ID */
   agentProbe(agentId: string): Promise<JobCliResult & { ok: boolean }>;
   /** 마법사 9단계 Init·보고함 "이어서 진행"(followup) (agent-job run, 기다리지 않음). 끝나면 jobs.cli 알림 */
-  agentJobRun(playbook: "init" | "followup", agentId: string): Promise<{ started: boolean; error_code?: string }>;
+  agentJobRun(playbook: "init" | "followup" | "entry", agentId: string): Promise<{ started: boolean; error_code?: string }>;
+  /** UX5 테스트 계정 등록: 값은 주 프로세스가 `kookabug secret set`의 표준 입력으로만 넘긴다 (자격 증명 관리자) */
+  secretSet(key: string, value: string): Promise<{ key: string }>;
   /** 마법사 3단계 환경 점검 (kookabug doctor --json, 항목 ID·통과만) */
   doctor(): Promise<{ ok: boolean; checks: { id: string; ok: boolean }[] }>;
 }
@@ -169,6 +171,7 @@ function appApi(ipc: IpcRendererLike): AppApi {
     agentProbe: call("agentProbe"),
     agentJobRun: call("agentJobRun"),
     doctor: call("doctor"),
+    secretSet: call("secretSet"),
   };
 }
 

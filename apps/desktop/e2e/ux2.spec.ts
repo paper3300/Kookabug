@@ -104,32 +104,40 @@ test("Init이 밖 원본을 읽고 → 질문 일괄 답 → 이어서 진행 �
     .map((l) => JSON.parse(l) as Json);
   expect(activity.some((e) => e.tool === "kb_source_read" && e.target === "plans:plan/shop.md")).toBe(true);
 
-  // B: 보고함 질문 둘 → "답 보내기" 한 번
+  // B: 보고함 질문 둘 → "답 보내기" 한 번. UX5부터 Init은 질문을 만들지 않아 질문은 조사(triage) 작업이 남긴다
+  const triage = await runAgentJob({ dir: w.dir, root, platform: w.platform, env: w.env }, SCRIPT, "triage");
+  expect(triage.code, JSON.stringify(triage.json)).toBe(0);
+  const triageJob = String(triage.json.job);
+  const triageFake = readJson(path.join(root, ".kookabug", "jobs", triageJob, "fake.json"));
+  expect(triageFake.failed, JSON.stringify(triageFake)).toBeUndefined();
   await page.locator('[data-part="status-reports"]').click();
-  const row = page.locator(`[data-part="report-list"] li[data-job="${initJob}"]`);
+  const row = page.locator(`[data-part="report-list"] li[data-job="${triageJob}"]`);
   await expect(row).toBeVisible({ timeout: 30_000 });
   await row.locator("button").first().click();
-  const detail = page.locator(`[data-part="report-detail"][data-job="${initJob}"]`);
-  const questions = detail.locator('[data-part="questions"]');
+  const qdetail = page.locator(`[data-part="report-detail"][data-job="${triageJob}"]`);
+  const questions = qdetail.locator('[data-part="questions"]');
   await expect(questions.locator("li[data-unknown]")).toHaveCount(2, { timeout: 30_000 });
   // 질문마다 단추는 없고 묶음 아래 "답 보내기" 하나
   await expect(questions.getByRole("button")).toHaveCount(1);
   const send = questions.locator('[data-part="send-answers"]');
   await expect(send).toBeDisabled(); // 빈 칸뿐
-  await expect(detail.locator('[data-part="followup-remaining"]')).toContainText("2개");
   await questions.getByLabel("답: 게임 창 제목은 무엇인가요").fill(TITLE_ANSWER);
   await questions.getByLabel("답: 상점 기획 문서의 최신 판은 어디인가요").fill("plans 폴더의 plan/shop.md가 최신");
   await shot(page, "reports-ux2-questions");
   await expect(send).toHaveText("답 보내기 (2)");
   await send.click();
-  await expect(detail.locator('[data-part="questions"]')).toHaveCount(0, { timeout: 30_000 }); // 둘 다 답해 질문이 사라진다
-  await expect(detail.locator('[data-part="action-message"]').filter({ hasText: "답 2개를 보냈어요" })).toBeVisible();
+  await expect(qdetail.locator('[data-part="questions"]')).toHaveCount(0, { timeout: 30_000 }); // 둘 다 답해 질문이 사라진다
+  await expect(qdetail.locator('[data-part="action-message"]').filter({ hasText: "답 2개를 보냈어요" })).toBeVisible();
   const unknowns = (readJson(path.join(root, "knowledge", "unknowns.json")).unknowns as Json[]).filter((u) => u.human_only === true);
   expect(unknowns.map((u) => u.state)).toEqual(["answered", "answered"]);
   expect(unknowns.map((u) => (u.answer as Json).text)).toContain(TITLE_ANSWER);
-  await expect(detail.locator('[data-part="followup-remaining"]')).toHaveText("남은 질문 없음");
+  // 조사 보고에는 "이어서 진행"이 없다 (Init·이어 하기·접속 경로 보고에만)
+  await expect(qdetail.locator('[data-part="followup"]')).toHaveCount(0);
 
-  // D: "이어서 진행" → followup 무인 작업 (주 프로세스 agentJobRun, E2E 훅의 가짜 CLI)
+  // D: Init 보고의 "이어서 진행" → followup 무인 작업 (주 프로세스 agentJobRun, E2E 훅의 가짜 CLI)
+  await page.locator(`[data-part="report-list"] li[data-job="${initJob}"] button`).first().click();
+  const detail = page.locator(`[data-part="report-detail"][data-job="${initJob}"]`);
+  await expect(detail.locator('[data-part="followup-remaining"]')).toHaveText("남은 질문 없음", { timeout: 30_000 });
   const followup = detail.locator('[data-part="followup"]');
   await expect(followup).toBeEnabled();
   await followup.click();

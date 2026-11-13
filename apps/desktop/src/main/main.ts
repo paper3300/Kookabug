@@ -419,6 +419,7 @@ function start(): void {
     agentProbe: agentAction((agentId: unknown) => jobs.probe(agentId)),
     agentJobRun: agentAction((playbook: unknown, agentId: unknown) => jobs.runJob(playbook, agentId)),
     doctor: agentAction(() => jobs.doctor()),
+    secretSet: agentAction((key: unknown, value: unknown) => jobs.setSecret(key, value)),
     agentSetConfig: agentAction((session: unknown, id: unknown, value: unknown) => agentHost.setConfig(session, id, value)),
   };
   // 창 닫기 확인 (close-guard.ts): 저장 안 된 그래프가 있으면 렌더러가 저장·버림·취소를 묻는다

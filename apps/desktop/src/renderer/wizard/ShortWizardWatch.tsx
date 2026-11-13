@@ -1,14 +1,23 @@
 // 프로젝트를 연 뒤 마법사를 띄우는 작은 감시 (M8 계획 3.17 "진입점"). 상태 바에 붙인다. 자동으로 뜨는 설정 화면은 이것
 // 하나다(옛 에이전트 첫 설정 대화 상자의 자동 띄우기를 대신한다, R11). daemon에 붙을 때마다 한 번 본다:
 // - 이 PC 진행(wizard.json)이 있고 끝나지 않았으면 이어서 연다
-// - 진행이 없고 팀 첫 설정을 마친 프로젝트(wiki/index.md)면 비어 있는 이 PC·사용자 단계(2·3·4·5)만 짧은 마법사 (U8)
+// - 진행이 없고 팀 첫 설정을 마친 프로젝트(wiki/index.md)면 비어 있는 이 PC·사용자 단계(2·3·5, UX5부터 계정 4는 뺐다)만 짧은 마법사 (U8)
 // - 둘 다 아니고 사용자 설정에 에이전트가 없으면 5단계만 한 번 (닫으면 wizard.json 건너뜀)
 // 마법사 겹 화면(WizardHost)도 여기서 그린다 (시작 화면에서는 Welcome이 그린다)
 import { useEffect } from "react";
 import { client } from "../rpc/client";
 import { useWorkspace } from "../store/workspace";
 import { WizardHost } from "./Wizard";
-import { autoOpenPlan, openWizardWith, only, useWizard, type SetupSnapshot, type StepNo, type WizardFile } from "./wizardStore";
+import {
+  autoOpenPlan,
+  openWizardWith,
+  only,
+  useWizard,
+  type CredentialAsk,
+  type SetupSnapshot,
+  type StepNo,
+  type WizardFile,
+} from "./wizardStore";
 
 export async function loadSnapshot(): Promise<SetupSnapshot> {
   const [w, secrets, agents] = await Promise.all([
@@ -40,6 +49,17 @@ export async function openSetupStep(n: StepNo): Promise<void> {
     // 못 읽으면 빈 기록에서
   }
   openWizardWith(only(n, base));
+}
+
+/** 보고함 테스트 계정 질문의 "테스트 계정 등록" (UX5): 4단계 계정 화면만, 그 질문의 키를 채워 연다 */
+export async function openCredentialStep(ask: CredentialAsk): Promise<void> {
+  let base: WizardFile | null = null;
+  try {
+    base = (await client().call("wizard.get", {})).wizard as WizardFile | null;
+  } catch {
+    // 못 읽으면 빈 기록에서
+  }
+  openWizardWith(only(4, base), ask);
 }
 
 /** 에이전트 패널 "설정 도우미 열기"·하단 "에이전트 설정…": 마법사 5단계만 (옛 첫 설정 대화 상자를 대신한다, M8 R11) */

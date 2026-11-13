@@ -1,11 +1,19 @@
 // 마법사 판정 (M8 계획 3.17·B7): 완료 조건·건너뛰기·이어서·짧은 마법사 판정
 import { describe, expect, test } from "vitest";
+import { automationDefault, FORBIDDEN_DEFAULT, missingBlocks } from "./defaults";
 import { duplicateIds, initialValues, planSources } from "./sources";
 import {
+  helperSubText as subText,
   advance,
   agentPresetPlan,
   agentStepReady,
   autoOpenPlan,
+  autoPassAgent,
+  autoPassCheck,
+  autoProbePassed,
+  HELPER_ONLY,
+  initAgent,
+  stepCount,
   closedProgress,
   back,
   canAdvance,
@@ -85,12 +93,17 @@ describe("5단계 Agent 완료 판정", () => {
 
 describe("건너뛰기", () => {
   test("선택 단계(4·5·6)만 건너뛴다, 필수 단계는 그대로", () => {
-    for (const n of [4, 5, 6] as const) {
+    // UX5: 새 순서는 0·1·2·3·5·6·9 — 5 건너뛰면 6, 6 "나중에"면 9
+    for (const [n, next] of [
+      [5, 6],
+      [6, 9],
+    ] as const) {
       const r = skip(start("new", NEW_STEPS, n));
       expect(r.progress.skipped).toEqual([n]);
-      expect(r.progress.step).toBe(n + 1);
+      expect(r.progress.step).toBe(next);
       expect(r.progress.done).not.toContain(n);
     }
+    expect(canSkip(only(4, null))).toBe(true);
     for (const n of [1, 2, 3, 7, 8] as const) {
       const p = start("new", NEW_STEPS, n);
       expect(canSkip(p)).toBe(false);
@@ -137,11 +150,12 @@ describe("이어서 · 짧은 마법사", () => {
   });
 
   test("이 PC 진행이 없고 팀 설정을 마친 프로젝트면 빈 단계만 + 완료", () => {
+    // UX5: 계정(4)은 짧은 마법사에서도 묻지 않는다 (키가 없어도)
     const snap = { ...SNAP, gameExecutable: null, secretKeys: 0 };
-    expect(emptyShortSteps(snap)).toEqual([2, 3, 4]);
+    expect(emptyShortSteps(snap)).toEqual([2, 3]);
     const plan = autoOpenPlan(snap);
     expect(plan?.mode).toBe("short");
-    expect(plan?.steps).toEqual([2, 3, 4, 9]);
+    expect(plan?.steps).toEqual([2, 3, 9]);
     expect(plan?.step).toBe(2);
   });
 
@@ -182,15 +196,110 @@ describe("이어서 · 짧은 마법사", () => {
   });
 
   test("짧은 마법사 중간에 닫았으면 남은 짧은 단계부터", () => {
-    const plan = autoOpenPlan({ ...SNAP, wizard: file({ step: 4, done: [2, 3], skipped: [] }) });
+    const plan = autoOpenPlan({ ...SNAP, wizard: file({ step: 5, done: [2, 3], skipped: [] }) });
     expect(plan?.mode).toBe("short");
-    expect(plan?.steps).toEqual([4, 5, 9]);
-    expect(plan?.step).toBe(4);
+    expect(plan?.steps).toEqual([5, 9]);
+    expect(plan?.step).toBe(5);
+    // 옛 순서에서 4에 멈춘 짧은 마법사는 남은 짧은 단계 첫 칸에서
+    const old = autoOpenPlan({ ...SNAP, wizard: file({ step: 4, done: [2, 3], skipped: [] }) });
+    expect(old?.steps).toEqual([5, 9]);
+    expect(old?.step).toBe(5);
   });
 
   test("3 점검은 이 PC 기록이 없으면 늘 빈 단계 (양성 대조: 기록 있으면 빠진다)", () => {
     expect(emptyShortSteps({ ...SNAP })).toEqual([3]);
     expect(emptyShortSteps({ ...SNAP, wizard: file({ done: [3] }) })).toEqual([]);
+  });
+});
+
+describe("UX5 새 흐름", () => {
+  test("새 순서에서 계정·자동화 정책·기록을 뺐다 (설정 도우미에서만)", () => {
+    expect(NEW_STEPS).toEqual([0, 1, 2, 3, 5, 6, 9]);
+    expect(HELPER_ONLY).toEqual([4, 7, 8]);
+    for (const n of HELPER_ONLY) expect(NEW_STEPS).not.toContain(n);
+    // 6 → 다음은 9 (7·8 없음)
+    expect(advance(start("new", NEW_STEPS, 6)).progress.step).toBe(9);
+  });
+
+  test("3단계: 처음 들어와 모두 통과하면 건너뛰고, 실패·점검 못 함·다시 들어옴·단계 하나 화면이면 머문다", () => {
+    const ok = [{ ok: true }, { ok: true }];
+    expect(autoPassCheck("new", ok, true)).toBe(true);
+    expect(autoPassCheck("short", ok, true)).toBe(true);
+    expect(autoPassCheck("new", [{ ok: true }, { ok: false }], true)).toBe(false);
+    expect(autoPassCheck("new", null, true)).toBe(false);
+    expect(autoPassCheck("new", [], true)).toBe(false);
+    expect(autoPassCheck("new", ok, false)).toBe(false); // "이전"으로 돌아옴
+    expect(autoPassCheck("only", ok, true)).toBe(false); // 설정 도우미
+  });
+
+  test("5단계: 사용자 설정에 기본 Agent가 있으면(자동 연결) 건너뛰고, 없을 때만 보인다", () => {
+    const has = { agentsLoaded: true, defaultAgent: "codex", agents: [{ id: "codex" }] };
+    expect(autoPassAgent("new", has, true)).toBe(true);
+    expect(autoPassAgent("short", has, true)).toBe(true);
+    expect(autoPassAgent("new", { ...has, defaultAgent: null }, true)).toBe(false);
+    expect(autoPassAgent("new", { ...has, agents: [{ id: "claude-code" }] }, true)).toBe(false); // 목록에 없는 기본
+    expect(autoPassAgent("new", { ...has, agentsLoaded: false }, true)).toBe(false);
+    expect(autoPassAgent("new", has, false)).toBe(false);
+    expect(autoPassAgent("only", has, true)).toBe(false); // 패널·설정 도우미
+  });
+
+  test("9단계 Init Agent: 연결 시험을 통과한 것만 (기본 Agent라도 시험 전·실패면 없음, API 키만이면 없음)", () => {
+    expect(initAgent({ id: "claude-code", probed: true, kind: "cli" })).toBe("claude-code");
+    expect(initAgent({ id: "codex", probed: false, kind: "cli" })).toBeNull();
+    expect(initAgent(null)).toBeNull();
+    expect(initAgent({ id: "apikey", probed: false, kind: "apikey" })).toBeNull();
+  });
+
+  test("5단계 자동 시험: 그 기본 Agent의 시험이 통과했을 때만 넘어간다 (실패·미지원·시험 중·다른 줄을 고름이면 머문다)", () => {
+    expect(autoProbePassed("codex", "codex", { state: "ok", agentId: "codex" })).toBe(true);
+    // 삭제된 CLI·인증 실패·무인 작업 미지원(custom)
+    expect(autoProbePassed("codex", "codex", { state: "fail", agentId: "codex" })).toBe(false);
+    expect(autoProbePassed("custom-x", "custom-x", { state: "fail", agentId: "custom-x" })).toBe(false);
+    expect(autoProbePassed("codex", "codex", { state: "running", agentId: "codex" })).toBe(false);
+    expect(autoProbePassed("codex", "codex", { state: "idle" })).toBe(false);
+    // 시험 중에 사람이 다른 줄을 골랐다
+    expect(autoProbePassed("codex", "claude-code", { state: "ok", agentId: "codex" })).toBe(false);
+    expect(autoProbePassed("codex", "codex", { state: "ok", agentId: "claude-code" })).toBe(false);
+  });
+
+  test("진행 표시는 실제로 보이는 단계 수 (0·자동 통과 단계 빼고, 단계 하나 화면은 번호 없음)", () => {
+    const p = start("new", NEW_STEPS, 2);
+    expect(stepCount(p)).toEqual({ at: 2, total: 6 });
+    // 3·5를 자동으로 넘기면 프로젝트·게임·원본·완료 4화면
+    expect(stepCount({ ...p, step: 6 }, [3, 5])).toEqual({ at: 3, total: 4 });
+    expect(stepCount({ ...p, step: 9 }, [3, 5])).toEqual({ at: 4, total: 4 });
+    expect(stepCount(start("short", [2, 3, 5, 9], 2))).toEqual({ at: 1, total: 4 });
+    expect(stepCount(only(7, null))).toBeNull();
+  });
+
+  test("옛 순서에서 7·8에 멈춘 진행은 그 단계에서 이어 간다 (마법사를 끝낸 프로젝트는 그대로)", () => {
+    const plan = autoOpenPlan({ ...SNAP, wizard: file({ step: 7, done: [1, 2, 3, 5, 6] }) });
+    expect(plan?.mode).toBe("new");
+    expect(plan?.step).toBe(7);
+    expect(plan?.steps).toEqual([0, 1, 2, 3, 5, 6, 7, 9]);
+    expect(autoOpenPlan({ ...SNAP, wizard: file({ step: 9, done: [1, 2, 3, 4, 5, 6, 7, 8, 9] }) })).toBeNull();
+  });
+
+  test("뺀 단계 기본값: 금지 동작은 빈 목록, 이미 있는 블록은 건드리지 않는다", () => {
+    expect(FORBIDDEN_DEFAULT).toEqual([]);
+    const block = automationDefault({ auto_repair: { enabled: true, scope: ["tests/"], max_adoptions: 3 }, forbidden: [{ kind: "text", value: "x" }], budget: { minutes: 60, runs: 30 } });
+    expect(block).toEqual({
+      format: "kookabug.automation/0",
+      auto_repair: { enabled: true, scope: ["tests/"], max_adoptions: 3 },
+      forbidden: [],
+      budget: { minutes: 60, runs: 30 },
+    });
+    expect(automationDefault({}).budget).toEqual({ minutes: 60, runs: 30 });
+    expect(missingBlocks({ format: "kookabug.workspace/0" })).toEqual({ automation: true, cheats: true, record: true, retention: true });
+    expect(missingBlocks({ automation: {}, cheats: {}, record: {}, retention: {} })).toEqual({ automation: false, cheats: false, record: false, retention: false });
+  });
+
+  test("설정 도우미: 뺀 단계는 기본값 사용 중 글, 손댄 뒤에는 필수·선택", () => {
+    expect(subText(7, false, true)).toContain("기본값");
+    expect(subText(8, false, true)).toContain("기본값");
+    expect(subText(4, false, false)).toContain("필요할 때");
+    expect(subText(7, true, true)).toBe("필수");
+    expect(subText(6, false, false)).toBe("선택");
   });
 });
 
