@@ -17,6 +17,15 @@ import { gapText, locate, nextAfter, runTimeAt, seekSeconds, segmentChain, stepV
 /** 조각 사이 빈 구간 이유를 보이는 시간 */
 export const GAP_NOTICE_MS = 1200;
 
+/**
+ * 막 연 조각에 위치를 넣는 때: 첫 프레임까지 받은 뒤(HAVE_CURRENT_DATA, `loadeddata`). 메타데이터만 받은 때
+ * (`loadedmetadata`)는 시작 프리롤이 아직 돌 수 있다. 그때 옮기면 Chromium이 위치·`seeked`·`ended`는 새 칸으로 알리면서
+ * 화면에는 시작 칸(0초)을 남기는 일이 있다. 멈춘 채 옮긴 경우 다시 그릴 계기가 없어 고른 스텝 대신 조각 처음이 계속 보인다
+ * (UX6 후속 6: CI의 "파랑 칸 기대, 빨강 = 0초 칸"과 같은 증상을 조사 스크립트로 재현 — 메타데이터 때 옮기면 100번 중
+ * 1번, 첫 프레임 뒤에 옮기면 200번 모두 맞는 칸)
+ */
+export const SEEK_READY = 2;
+
 type GapSpot = Extract<VideoSpot, { kind: "gap" }>;
 
 export function VideoPlayer({ runDir, runStart, step, video }: { runDir: string; runStart: number | null; step: StepNode; video: VideoView }) {
@@ -36,20 +45,22 @@ export function VideoPlayer({ runDir, runStart, step, video }: { runDir: string;
    * 다음 조각으로 넘어가지 않는다 (재생을 시작하면 풀린다)
    */
   const held = useRef(false);
+  /** 첫 프레임까지 받은 src: 같은 조각 안에서 옮기는 중(readyState가 잠깐 1로 내려감)에 다시 골라도 loadeddata는 다시 오지 않는다 */
+  const loadedSrc = useRef<string | null>(null);
 
   const clearTimer = () => {
     if (timer.current !== null) clearTimeout(timer.current);
     timer.current = null;
   };
 
-  /** 조각 index의 seconds 위치로 (src가 바뀌면 메타데이터를 받은 뒤) */
+  /** 조각 index의 seconds 위치로 (src가 바뀌면 첫 프레임을 받은 뒤 — SEEK_READY) */
   const go = (index: number, seconds: number, play: boolean) => {
     setError(null);
     pending.current = { seconds, play };
     setSeekTarget(seconds);
     setCur(index);
     const el = ref.current;
-    if (el !== null && index === cur && el.readyState >= 1) apply(el);
+    if (el !== null && index === cur && (el.readyState >= SEEK_READY || (el.readyState >= 1 && loadedSrc.current === el.currentSrc))) apply(el);
   };
 
   const apply = (el: HTMLVideoElement) => {
@@ -128,7 +139,10 @@ export function VideoPlayer({ runDir, runStart, step, video }: { runDir: string;
             controls
             muted
             preload="auto"
-            onLoadedMetadata={(e) => apply(e.currentTarget)}
+            onLoadedData={(e) => {
+              loadedSrc.current = e.currentTarget.currentSrc;
+              apply(e.currentTarget);
+            }}
             onTimeUpdate={(e) => cur !== null && setNow(runTimeAt(chain[cur], e.currentTarget.currentTime))}
             onSeeked={(e) => cur !== null && setNow(runTimeAt(chain[cur], e.currentTarget.currentTime))}
             onEnded={onEnded}

@@ -2,7 +2,7 @@
 
 M8(자기 진화 QA v1) 완료도 두 단계다 ([[구현 계획 v0]] 1장 M8 행, [[자기 진화 QA 지식 베이스 v0]] 14장).
 
-1. **자동 완료**: CI 자동 검사(가짜 QA 에이전트 CLI `tools/kb_testing/fake_qa_agent.py` + 실제 `kookabug agent-job`·`kookabug mcp`·daemon·runner + 예제 상점 가짜 게임), 인수 테스트(`python/kookabug_core/tests/acceptance/test_m8.py`, `apps/desktop/e2e/acceptance.m8.spec.ts`), 마법사 시안 비교 PNG(`node tools/design-ref/compare.mjs wizard0 wizard1 wizard2 wizard3 wizard4 wizard5 wizard6 wizard7 wizard8 wizard9 wizard9-noagent` — 시안 `Wizard5Agent`·`Wizard6Sources`·`Wizard7Automation`·`Wizard9Init`·`Wizard9NoAgent`, 나머지는 옛 첫 실행 시안 `Setup*`), 설치본 스모크 QA 단계(`cli.qa` — 설치 트리의 `agent-job playbooks`·`workspace new`), 이 절차서·결과 양식
+1. **자동 완료**: CI 자동 검사(가짜 QA 에이전트 CLI `tools/kb_testing/fake_qa_agent.py` + 실제 `kookabug agent-job`·`kookabug mcp`·daemon·runner + 예제 상점 가짜 게임), 인수 테스트(`python/kookabug_core/tests/acceptance/test_m8.py`, `apps/desktop/e2e/acceptance.m8.spec.ts`), 마법사 시안 비교 PNG(`node tools/design-ref/compare.mjs wizard0 wizard1 wizard2 wizard5 wizard6 wizard9 wizard9-noagent` — 시안 `Wizard5Agent`·`Wizard6Sources`·`Wizard9Init`·`Wizard9NoAgent`, 나머지는 옛 첫 실행 시안 `Setup*`. UX5부터 첫 실행 순서는 0·1·2·(3)·5·6·9라 `wizard3`은 환경 점검에 경고가 있어 3단계에 머물 때만 찍히고(찍혔으면 `wizard3`도 비교), 계정 4·자동화 정책 7·기록 8은 설정 도우미에서만 열려 찍지 않는다), 설치본 스모크 QA 단계(`cli.qa` — 설치 트리의 `agent-job playbooks`·`workspace new`), 이 절차서·결과 양식
 2. **최종 완료**: 이 절차서의 결과가 결과 양식(`m8-result-template.md`)에 기록되고 모든 항목이 통과 기준을 만족. 그리고 main 합치기 뒤 AgentSetupDialog → 마법사 5단계 대체·자동 띄우기 중복 제거 검사(M8 계획 R11)
 
 > 사람 확인은 [[mvp-human-check]] 순서로 몰아서 한다. 실제 Agent CLI(Claude Code·Codex)·실제 `schtasks`·실제 게임 창은 CI에서 쓰지 않는다 — 여기서만 본다.
@@ -98,11 +98,11 @@ M8(자기 진화 QA v1) 완료도 두 단계다 ([[구현 계획 v0]] 1장 M8 �
 
 ### H6 마법사 0→9 실제 화면·팀원 짧은 마법사
 
-1. 시작 화면 "시작하기" → 0~9를 실제 예제 게임 창(2단계)·실제 `doctor`(3단계)·실제 Agent CLI(5단계 감지·연결 시험)로 끝까지
+1. 시작 화면 "시작하기" → 첫 실행 순서 0·1·2·(3)·(5)·6·9(UX5)를 실제 예제 게임 창(2단계)·실제 `doctor`(3단계 — 모두 통과하면 화면 없이 넘어간다)·실제 Agent CLI(5단계 감지·연결 시험 — 기본 Agent가 시험을 통과하면 화면 없이 넘어간다)로 끝까지. 계정 4·자동화 정책 7·기록 8은 기본값으로 저장되고 환경설정 "설정 도우미"에서 하나씩 연다
 2. 시안(`Docs/Design/UX 시안 v0.1/Wizard5Agent.dc.html` 등)과 비교 PNG(`build/ui-compare/wizard*.png`)를 나란히 본다. 다크·라이트
-3. 만든 프로젝트를 다른 PC(또는 `.kookabug/`를 지운 사본)에서 연다 → 짧은 마법사(빈 2·3·4·5 + 9)
+3. 만든 프로젝트를 다른 PC(또는 `.kookabug/`를 지운 사본)에서 연다 → 짧은 마법사(빈 2·3·5 + 9 — UX5부터 계정 4는 묻지 않는다)
 
-- 기대 결과: 필수 단계(1~3)는 다음이 잠기고, 선택 단계(4~8)는 건너뛰기, 건너뛴 단계는 9단계 요약·환경설정 "설정 도우미"에서 다시 연다. 저장 위치 배지(팀·이 PC·사용자·Windows 자격 증명)가 실제 저장 위치와 맞는다. 4단계에 계정 값 칸이 없다(U12). 시작 화면 단추 배치가 시안과 같다(U15: 주 단추 "시작하기", 글자 단추 "이미 있는 프로젝트 열기"). 에이전트 패널 "설정 도우미 열기"는 마법사 5단계만 연다. 조작감·문구·간격 차이를 적는다
+- 기대 결과: 필수 단계(1~3)는 다음이 잠기고, 선택 단계(5·6)는 건너뛰기(6은 "나중에"), 건너뛴 단계는 9단계 요약·환경설정 "설정 도우미"에서 다시 연다. 저장 위치 배지(팀·이 PC·사용자·Windows 자격 증명)가 실제 저장 위치와 맞는다. 4단계에 계정 값 칸이 없다(U12). 시작 화면 단추 배치가 시안과 같다(U15: 주 단추 "시작하기", 글자 단추 "이미 있는 프로젝트 열기"). 에이전트 패널 "설정 도우미 열기"는 마법사 5단계만 연다. 조작감·문구·간격 차이를 적는다
 
 ### H7 보고함 되돌리기·수락·거절 (실제 결과로)
 

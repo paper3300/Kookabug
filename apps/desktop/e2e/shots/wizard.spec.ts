@@ -4,8 +4,9 @@
 //   wizard9-noagent-dark  Agent 건너뜀 → Init 꺼짐 → "Kookabug 열기" 주 단추·녹화 보조 링크
 //   reports-dark          9단계 Init 시작 뒤 보고함 (1440×900)
 // 계정(4)·자동화 정책(7)·기록(8)은 UX5부터 첫 실행 흐름에 없고 설정 도우미에서만 연다 → 여기서 찍지 않는다
-// 결과 build/ui-shots/<이름>-dark.png (reports는 시안 없음). 시안 비교:
-// node tools/design-ref/compare.mjs wizard0 wizard1 wizard2 wizard5 wizard6 wizard9 wizard9-noagent (wizard3은 찍혔을 때)
+// 결과 build/ui-shots/<이름>-dark.png (reports는 시안 없음). wizard3은 찍혔을 때만 따로 비교한다(id는 compare.mjs에 있다).
+// 시안 비교:
+// node tools/design-ref/compare.mjs wizard0 wizard1 wizard2 wizard5 wizard6 wizard9 wizard9-noagent
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";

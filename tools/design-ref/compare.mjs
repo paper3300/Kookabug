@@ -66,17 +66,15 @@ export const SCREENS = {
   screenmap: { dark: "ScreenMap", light: "ScreenMap" },
   "screenmap-promote": { dark: "ScreenMap" },
   "screenmap-protected": { dark: "ScreenMap" },
-  // 첫 프로젝트 마법사(창 1120×720 전체 겹 화면), M8 B7. 확정 시안은 5·6·7·9·9NoAgent, 나머지 단계는 같은 배치의
-  // 옛 첫 실행 시안(Setup0~6)과 나란히 본다 (8단계 = 옛 6 기록)
+  // 첫 프로젝트 마법사(창 1120×720 전체 겹 화면), M8 B7. 확정 시안은 5·6·9·9NoAgent, 나머지 단계는 같은 배치의
+  // 옛 첫 실행 시안(Setup0~3)과 나란히 본다. 첫 실행 순서는 0·1·2·(3)·5·6·9(UX5): 3은 점검에 경고가 있어 머물 때만
+  // 찍히고, 계정(4)·자동화 정책(7)·기록(8)은 설정 도우미에서만 열려 찍지 않는다
   wizard0: { dark: "Setup0Welcome" },
   wizard1: { dark: "Setup1Project" },
   wizard2: { dark: "Setup2Game" },
   wizard3: { dark: "Setup3Check" },
-  wizard4: { dark: "Setup4Accounts" },
   wizard5: { dark: "Wizard5Agent" },
   wizard6: { dark: "Wizard6Sources" },
-  wizard7: { dark: "Wizard7Automation" },
-  wizard8: { dark: "Setup6Record" },
   wizard9: { dark: "Wizard9Init" },
   "wizard9-noagent": { dark: "Wizard9NoAgent" },
 };
