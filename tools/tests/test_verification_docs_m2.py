@@ -66,7 +66,8 @@ M7_SCREENS: Final = frozenset({"screenmap", "screenmap-promote", "screenmap-prot
 """M7에서 늘린 비교 화면 (M7 계획 B5). M7 절차서 H3가 맡는다."""
 M8_SCREENS: Final = frozenset({*(f"wizard{i}" for i in (0, 1, 2, 3, 5, 6, 9)), "wizard9-noagent"})
 """M8에서 늘린 비교 화면 (마법사, M8 계획 B7). M8 절차서 H6이 맡는다. UX5부터 첫 실행 순서는
-0·1·2·(3)·5·6·9 — 4·7·8은 설정 도우미에서만 열려 찍지 않고, 3은 점검에 경고가 있어 머물 때만 찍힌다."""
+0·1·2·(3)·5·6·9 — 4·7·8은 설정 도우미에서만 열려 찍지 않고,
+3은 점검에 경고가 있어 머물 때만 찍힌다."""
 
 
 NO_DESIGN_SHOTS: Final = frozenset({"plugins.spec.ts", "plugin-widget.spec.ts"})
