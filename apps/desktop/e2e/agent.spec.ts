@@ -339,6 +339,11 @@ test("setup helper keeps the user's preset when untouched; the picked agent beco
   const read = () => JSON.parse(fs.readFileSync(settingsFile, "utf8")) as { default_agent?: string; permissions?: { preset?: string } };
   const wizard = page.locator('[data-screen="wizard"]');
   const panel = await showAgentTab(page);
+  // 기본 에이전트가 있으면 프로젝트를 열 때 저절로 붙는다(UX1 U2). 붙으면 대화 화면이라 "설정 도우미 열기"가 없다 —
+  // 붙기를 기다렸다가 사람이 끊는다(끊은 뒤엔 다시 저절로 붙지 않아 연결 화면이 남는다)
+  await expect(panel).toHaveAttribute("data-status", "ready", { timeout: 30_000 });
+  await panel.getByRole("button", { name: "에이전트 연결 끊기" }).click();
+  await expect(panel.locator('[data-part="agent-connect"]')).toBeVisible();
   await panel.locator('[data-part="open-agent-setup"]').click();
   await expect(wizard).toHaveAttribute("data-mode", "only", { timeout: 30_000 });
   // 지금 프리셋(read_only)과 지금 기본 에이전트가 고른 상태로 보인다 (curator 추천이 아님)

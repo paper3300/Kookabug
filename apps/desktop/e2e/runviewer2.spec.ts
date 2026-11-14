@@ -208,11 +208,31 @@ async function waitFrame(page: Page, seconds: number, last = false): Promise<voi
     .toMatchObject({ ready: true, at: true, paused: true });
 }
 
-/** 영상 가운데 픽셀의 색 (표본: 칸 0~4 빨강, 5~9 초록, 10~14 파랑) */
+/**
+ * 영상 가운데 위쪽 픽셀의 색 (표본: 칸 0~4 빨강, 5~9 초록, 10~14 파랑). 무채색(검정·흰색·회색 — 아직 그리지 않은
+ * 프레임이나 기본 컨트롤)은 빨강으로 치지 않고 "none(r,g,b)". 속성 탭의 영상은 작아서(UX6) 기본 컨트롤이 프레임을 많이
+ * 덮으므로 읽는 동안만 컨트롤을 끈다
+ */
 async function frameColor(page: Page): Promise<string> {
-  const shot = await page.locator('[data-part="video"]').screenshot();
-  const png = decodePng(shot);
-  return dominant(pixel(png, png.width / 2, png.height / 3));
+  const video = page.locator('[data-part="video"]');
+  await video.evaluate((v: HTMLVideoElement) => {
+    v.controls = false;
+  });
+  try {
+    const png = decodePng(await video.screenshot());
+    const [r, g, b] = pixel(png, png.width / 2, png.height / 3);
+    if (Math.max(r, g, b) - Math.min(r, g, b) < 64) return `none(${r},${g},${b})`;
+    return dominant([r, g, b]);
+  } finally {
+    await video.evaluate((v: HTMLVideoElement) => {
+      v.controls = true;
+    });
+  }
+}
+
+/** 그 칸 색이 보일 때까지: 위치 옮김(seeked)보다 화면 그리기가 늦을 수 있다 (GPU 없는 CI) */
+async function expectFrameColor(page: Page, want: string): Promise<void> {
+  await expect.poll(() => frameColor(page), { timeout: 10_000 }).toBe(want);
 }
 
 test("test_compare_box_graph_env_time_screen", async () => {
@@ -326,7 +346,7 @@ test("test_video_tab_seeks_to_step_and_shows_gap_reason", async () => {
     // 멈춘 채 옮긴 마지막 칸은 다음 조각으로 넘어가지 않는다
     await page.waitForTimeout(1500);
     await expect(player).toHaveAttribute("data-segment", "seg-0001.mp4");
-    expect(await frameColor(page)).toBe(COLORS[Math.floor(slot / 5)]);
+    await expectFrameColor(page, COLORS[Math.floor(slot / 5)]);
   }
   // 클릭 스텝은 실패 스텝 바로 앞이라 늘 조각 1 안이다
   expect(checked).toBeGreaterThan(0);
@@ -438,7 +458,7 @@ test("test_video_failed_step_seeks_to_failure_moment_past_starting_gap", async (
   await expect(player).toHaveAttribute("data-seek-target", String(seconds));
   await expect(page.locator('[data-part="video-gap"]')).toHaveCount(0);
   await waitFrame(page, seconds, slot === 14);
-  expect(await frameColor(page)).toBe(COLORS[Math.floor(slot / 5)]);
+  await expectFrameColor(page, COLORS[Math.floor(slot / 5)]);
 
   // 통과한 반복 스텝: 시작은 starting 빈 구간 → 그 스텝 안 첫 영상(조각 1 처음, 빨강)
   const repeat = stepStart(STARTING_RUN, "n_repeat");
@@ -447,7 +467,7 @@ test("test_video_failed_step_seeks_to_failure_moment_past_starting_gap", async (
   await expect(player).toHaveAttribute("data-segment", "seg-0001.mp4");
   await expect(player).toHaveAttribute("data-seek-target", "0.1");
   await waitFrame(page, 0.1, false);
-  expect(await frameColor(page)).toBe("red");
+  await expectFrameColor(page, "red");
 
   // 스텝 구간 안에 영상이 없는 스텝(게임 띄우기, 조각 1보다 앞)은 시작의 빈 구간 이유를 그대로 보인다
   const launch = stepStart(STARTING_RUN, "n_launch");
