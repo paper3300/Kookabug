@@ -1,7 +1,7 @@
 // 시안 비교 스크린샷: 속성 편집기 (M2 계획 T10 "시안 대비"). 속성 편집기는 시안에 없는 화면이다(U1): 시안 Main의
 // 에이전트 패널 자리(오른쪽)에 사이드바와 같은 섹션 머리·입력 상자 모양으로 그렸는지 나란히 본다
 //   inspector-<테마>       1440×900  이미지 클릭 노드(대상 고르기·선택 상자·숫자 상자, 틀린 값 알림)
-//   inspector-link-<테마>  1440×900  변수 저장 노드(안쪽 연결이 든 값·한 줄 상자)
+//   inspector-link-<테마>  1440×900  변수 저장 노드(안쪽 연결이 든 값·한 줄 상자·아래 "마지막 실행 결과")
 // 결과 build/ui-shots/<id>-<테마>.png → node tools/design-ref/compare.mjs inspector inspector-link
 import fs from "node:fs";
 import path from "node:path";
@@ -73,7 +73,8 @@ for (const theme of ["dark", "light"] as const) {
     await selectOnly(page, "n_record");
     await expect(body()).toHaveAttribute("data-node", "n_record");
     await expect(body().locator('[data-part="linked-inside"]')).toBeVisible();
-    await page.getByRole("tab", { name: "노드 결과" }).click();
+    // 노드 결과는 UX6부터 하단 패널 탭이 아니라 속성 아래 "마지막 실행 결과" 묶음이다 — 연결 노드와 한 화면에 보인다
+    await expect(body().locator('[data-part="node-last-result"] [data-part="node-result"]')).toBeVisible();
     await page.mouse.move(1, 1);
     await shot("inspector-link", theme);
   });
