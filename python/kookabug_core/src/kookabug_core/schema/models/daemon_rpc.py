@@ -247,7 +247,11 @@ class ControlKeyParams(BaseModel):
         str, Field(description="키 하나나 조합 (ctrl+a). 누르고 바로 뗀다", min_length=1)
     ]
     window: Annotated[
-        str, Field(description="창 제목 (정확히 같은 제목의 창, 권한 인자)", min_length=1)
+        str,
+        Field(
+            description='창 제목 (정확히 같은 제목의 창, 권한 인자) 또는 "@game"(마지막으로 실행한 게임의 주 창 — 제목이 바뀌어도 같은 프로세스면 붙는다)',
+            min_length=1,
+        ),
     ]
 
 
@@ -411,6 +415,16 @@ class ExploreStartParams(BaseModel):
     max_steps: Annotated[int | None, Field(ge=1, le=1000)] = None
     title: Annotated[str, Field(min_length=1)]
     window: str | None = None
+
+
+class Move(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    card: str | None = None
+    from_: Annotated[str, Field(alias="from")]
+    status: Literal["recorded", "pending"]
+    to: str | None
 
 
 class AgentImage(BaseModel):
@@ -617,6 +631,29 @@ class ImageRef1(BaseModel):
     cache: Annotated[str, Field(pattern="^[A-Za-z0-9_-]+\\.png$")]
     height: Annotated[int, Field(ge=0, le=9007199254740991)]
     width: Annotated[int, Field(ge=0, le=9007199254740991)]
+
+
+class JobProgressParams(BaseModel):
+    """
+    job.progress (kb_job_progress, UX7): 작업 연결 전용. 지금 단계와 하는 일 한 줄 (글자 검사)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    doing: Annotated[str | None, Field(min_length=1)] = None
+    step: Annotated[int, Field(ge=1, le=99)]
+    title: Annotated[str, Field(min_length=1)]
+    total: Annotated[int, Field(ge=1, le=99)]
+
+
+class JobProgressResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    job: str
+    step: int
+    total: int
 
 
 class JsonRpcVersion(RootModel[Literal["2.0"]]):
@@ -1063,6 +1100,13 @@ class Kb8JobNoteParams(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    headline: Annotated[
+        str | None,
+        Field(
+            description="UX7: 보고함 목록 줄의 한 줄 결과 (60자). 없으면 요약 첫 줄을 자른다",
+            min_length=1,
+        ),
+    ] = None
     text: Annotated[str, Field(min_length=1)]
 
 
@@ -1114,19 +1158,74 @@ class Kb8JobsActivityParams(BaseModel):
     job: Annotated[str, Field(pattern="^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
 
 
+class LastScreen(BaseModel):
+    """
+    UX7: 이 작업의 탐색 세션이 마지막으로 저장한 후보 화면
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    image: Annotated[
+        str | None,
+        Field(
+            description="후보 화면 대표 스크린샷의 썸네일 (편집기 캐시 이름 — 지도 탭 thumb와 같은 것, 보호 화면이면 null)"
+        ),
+    ]
+    key: str
+    title: str | None
+
+
+class Progress(BaseModel):
+    """
+    UX7: kb_job_progress로 남긴 지금 단계
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    at: str
+    doing: str | None
+    step: int
+    title: str
+    total: int
+
+
+class Waiting(BaseModel):
+    """
+    UX7: 지금 기다리는 것 (계정 등록·질문 답·실행 끝)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    kind: Literal["credential", "question", "run"]
+    since: str
+
+
 class Kb8JobsActivityResult(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
     entries: list[Kb8JobsActivityEntry]
     job: str
+    last_screen: Annotated[
+        LastScreen | None,
+        Field(description="UX7: 이 작업의 탐색 세션이 마지막으로 저장한 후보 화면"),
+    ] = None
     log_tail: Annotated[
         list[str],
         Field(description="비밀값을 가린 agent.log의 마지막 줄들 (최대 200줄, 글자 그대로)"),
     ]
+    progress: Annotated[
+        Progress | None, Field(description="UX7: kb_job_progress로 남긴 지금 단계")
+    ] = None
     started_at: str | None
     state: str
     used: Kb8JobUsed | None
+    waiting: Annotated[
+        Waiting | None, Field(description="UX7: 지금 기다리는 것 (계정 등록·질문 답·실행 끝)")
+    ] = None
 
 
 class Kb8JobsListResult(BaseModel):
@@ -1824,6 +1923,16 @@ class JobNote(BaseModel):
     tool: Literal["kb_report_note"]
 
 
+class JobProgress(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: JobProgressParams
+    renderer: Literal[False]
+    result: JobProgressResult
+    tool: Literal["kb_job_progress"]
+
+
 class JobsActivity(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -2353,6 +2462,18 @@ class Principal(BaseModel):
     kind: Literal["agent", "user"]
 
 
+class QuestionWaitParams(BaseModel):
+    """
+    question.wait (kb_question_wait, UX7): 미지수가 answered가 되거나 기한까지 기다린다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: Annotated[str, Field(pattern="^u-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
+    wait_ms: Annotated[int | None, Field(ge=0, le=600000)] = None
+
+
 class RecorderBadge(BaseModel):
     """
     스텝 메모 (시안 '녹화된 스텝'의 메모 줄). severity review는 확인 필요(노랑·주황). 글자 원문을 담지 않는다
@@ -2804,6 +2925,7 @@ class RequestFailedCode(
             "setting_not_allowed",
             "question_limit",
             "secret_missing",
+            "basis_probe",
         ]
     ]
 ):
@@ -2928,9 +3050,10 @@ class RequestFailedCode(
             "setting_not_allowed",
             "question_limit",
             "secret_missing",
+            "basis_probe",
         ],
         Field(
-            description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 비밀값 — data.field), secret_unchecked(비밀값 검사 불가 — 키를 못 읽음·보호 기록 손상), screens_busy(화면 지도 잠금) M8 B4: job_token_invalid(작업 토큰이 틀림·만료·폐기 — 연결 거부), job_only(작업 토큰 연결 전용 메서드), forbidden_visible(금지 문구·target·화면이 보여 입력하지 않음 — data.kind·value), forbidden_unverifiable(화면·OCR·target 확인 실패로 입력하지 않음), stalled_repeat(같은 작업에서 같은 실패 3번 — 그 테스트를 다시 돌리지 않음), case_resolution_reserved(사건 resolved·closed는 Kookabug·사람만), case_closed(닫힌 사건), verification_active(자동 채택 검증 실행 중이라 게임 입력을 받지 않음), 지식 연산 거부(duplicate_id·basis_required·basis_unknown·basis_hash_mismatch·basis_derived·human_basis_reserved·adoption_reserved·answer_reserved·too_large·path_alias) UX2: source_unavailable(원본을 읽을 수 없음 — data.reason missing·unreadable·unchecked_url·duplicate_id), unsupported_format(텍스트·docx·xlsx·pptx가 아님·너무 큼·깨짐 — data.reason), setting_not_allowed(허용 목록 밖 설정 키 제안)",
+            description="-32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 비밀값 — data.field), secret_unchecked(비밀값 검사 불가 — 키를 못 읽음·보호 기록 손상), screens_busy(화면 지도 잠금) M8 B4: job_token_invalid(작업 토큰이 틀림·만료·폐기 — 연결 거부), job_only(작업 토큰 연결 전용 메서드), forbidden_visible(금지 문구·target·화면이 보여 입력하지 않음 — data.kind·value), forbidden_unverifiable(화면·OCR·target 확인 실패로 입력하지 않음), stalled_repeat(같은 작업에서 같은 실패 3번 — 그 테스트를 다시 돌리지 않음), case_resolution_reserved(사건 resolved·closed는 Kookabug·사람만), case_closed(닫힌 사건), verification_active(자동 채택 검증 실행 중이라 게임 입력을 받지 않음), 지식 연산 거부(duplicate_id·basis_required·basis_unknown·basis_hash_mismatch·basis_derived·human_basis_reserved·adoption_reserved·answer_reserved·too_large·path_alias) UX2: source_unavailable(원본을 읽을 수 없음 — data.reason missing·unreadable·unchecked_url·duplicate_id), unsupported_format(텍스트·docx·xlsx·pptx가 아님·너무 큼·깨짐 — data.reason), setting_not_allowed(허용 목록 밖 설정 키 제안) UX7: basis_probe(붙여 실행 agent_attach 기록은 사건·지식 근거로 쓰지 않는다)",
             title="RequestFailedCode",
         ),
     ]
@@ -3148,6 +3271,19 @@ class RunSearchResult(BaseModel):
     matches: list[Match1]
     skipped: list[str]
     truncated: bool
+
+
+class RunStatusParams(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    run_id: RunId
+    wait_ms: Annotated[
+        int | None,
+        Field(
+            description="UX7: 끝나기를 이만큼 기다린다 (daemon 안에서 — 호출 한 번)", ge=0, le=30000
+        ),
+    ] = None
 
 
 class RunStepResult(BaseModel):
@@ -3578,7 +3714,7 @@ class ScreensSaveVia1(BaseModel):
     click: Click
 
 
-class PointItem2(RootModel[int]):
+class PointItem3(RootModel[int]):
     root: Annotated[int, Field(ge=0, le=9007199254740991)]
 
 
@@ -3586,7 +3722,7 @@ class Click1(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    point: Annotated[list[PointItem2], Field(max_length=2, min_length=2)]
+    point: Annotated[list[PointItem3], Field(max_length=2, min_length=2)]
 
 
 class ScreensSaveVia2(BaseModel):
@@ -3784,6 +3920,7 @@ class ToolName(
             "kb_evidence_pin",
             "kb_explore_end",
             "kb_explore_start",
+            "kb_explore_step",
             "kb_graph_create",
             "kb_graph_get",
             "kb_graph_list",
@@ -3793,6 +3930,7 @@ class ToolName(
             "kb_input_click",
             "kb_input_key",
             "kb_input_type",
+            "kb_job_progress",
             "kb_knowledge_apply",
             "kb_knowledge_get",
             "kb_knowledge_search",
@@ -3800,6 +3938,7 @@ class ToolName(
             "kb_node_search",
             "kb_ocr_read",
             "kb_project_info",
+            "kb_question_wait",
             "kb_report_note",
             "kb_run_artifact_get",
             "kb_run_cancel",
@@ -3818,6 +3957,7 @@ class ToolName(
             "kb_target_create",
             "kb_toolset_enable",
             "kb_triage_signals",
+            "kb_wiki_read",
             "kb_wiki_write",
             "ui_only",
         ]
@@ -3834,6 +3974,7 @@ class ToolName(
             "kb_evidence_pin",
             "kb_explore_end",
             "kb_explore_start",
+            "kb_explore_step",
             "kb_graph_create",
             "kb_graph_get",
             "kb_graph_list",
@@ -3843,6 +3984,7 @@ class ToolName(
             "kb_input_click",
             "kb_input_key",
             "kb_input_type",
+            "kb_job_progress",
             "kb_knowledge_apply",
             "kb_knowledge_get",
             "kb_knowledge_search",
@@ -3850,6 +3992,7 @@ class ToolName(
             "kb_node_search",
             "kb_ocr_read",
             "kb_project_info",
+            "kb_question_wait",
             "kb_report_note",
             "kb_run_artifact_get",
             "kb_run_cancel",
@@ -3868,6 +4011,7 @@ class ToolName(
             "kb_target_create",
             "kb_toolset_enable",
             "kb_triage_signals",
+            "kb_wiki_read",
             "kb_wiki_write",
             "ui_only",
         ],
@@ -4193,6 +4337,26 @@ class Verdict(RootModel[Literal["error", "fail", "pass", "skipped"]]):
     root: Annotated[Literal["error", "fail", "pass", "skipped"], Field(title="Verdict")]
 
 
+class WikiReadParams(BaseModel):
+    """
+    wiki.read (kb_wiki_read, UX7): 위키 페이지 글과 sha256 (kb_wiki_write의 base_sha256)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    path: Annotated[str, Field(min_length=1)]
+
+
+class WikiReadResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    path: str
+    sha256: Annotated[str, Field(pattern="^[0-9a-f]{64}$")]
+    text: str
+
+
 class WindowInfo(BaseModel):
     """
     보이는 최상위 창 하나
@@ -4207,6 +4371,18 @@ class WindowInfo(BaseModel):
     pid: Annotated[int, Field(ge=0, le=9007199254740991)]
     process: str
     title: str
+
+
+class WindowsListParams(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    game: Annotated[
+        bool | None,
+        Field(
+            description="UX7: 마지막으로 kb_app_launch한 게임(또는 탐색·입력으로 정해진 게임 프로세스)의 창만"
+        ),
+    ] = None
 
 
 class WindowsListResult(BaseModel):
@@ -4480,7 +4656,11 @@ class ControlClickParams(BaseModel):
     ] = None
     target: WorkspacePath | None = None
     window: Annotated[
-        str, Field(description="창 제목 (정확히 같은 제목의 창, 권한 인자)", min_length=1)
+        str,
+        Field(
+            description='창 제목 (정확히 같은 제목의 창, 권한 인자) 또는 "@game"(마지막으로 실행한 게임의 주 창 — 제목이 바뀌어도 같은 프로세스면 붙는다)',
+            min_length=1,
+        ),
     ]
 
 
@@ -4508,7 +4688,11 @@ class ControlTypeParams(BaseModel):
     secret: SecretKey | None = None
     text: str | None = None
     window: Annotated[
-        str, Field(description="창 제목 (정확히 같은 제목의 창, 권한 인자)", min_length=1)
+        str,
+        Field(
+            description='창 제목 (정확히 같은 제목의 창, 권한 인자) 또는 "@game"(마지막으로 실행한 게임의 주 창 — 제목이 바뀌어도 같은 프로세스면 붙는다)',
+            min_length=1,
+        ),
     ]
 
 
@@ -4549,6 +4733,41 @@ class ExploreStartResult(BaseModel):
     folder: WorkspacePath
     max_steps: Annotated[int, Field(ge=1)]
     session: str
+
+
+class ExploreStepParams(BaseModel):
+    """
+    explore.step (kb_explore_step, UX7): 입력 하나(point·target 클릭, keys, text·secret, 또는 없음) → 화면이 바뀌고 멈추기를 기다림 → 캡처 → 화면 판별 → 탐색 세션이 있으면 이동 자동 기록
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    button: Literal["left", "middle", "right"] | None = None
+    count: Annotated[int | None, Field(ge=1, le=3)] = None
+    keys: Annotated[str | None, Field(min_length=1)] = None
+    point: Annotated[
+        list[PointItem] | None,
+        Field(description="[x, y] 클라이언트 영역 물리 픽셀", max_length=2, min_length=2),
+    ] = None
+    secret: SecretKey | None = None
+    target: WorkspacePath | None = None
+    text: str | None = None
+    wait_ms: Annotated[
+        int | None,
+        Field(
+            description="화면이 바뀐 뒤 멈추기를 기다리는 상한 (입력이 있으면 기본 10000, 없으면 0)",
+            ge=0,
+            le=60000,
+        ),
+    ] = None
+    window: Annotated[
+        str,
+        Field(
+            description='창 제목 (정확히 같은 제목의 창, 권한 인자) 또는 "@game"(마지막으로 실행한 게임의 주 창 — 제목이 바뀌어도 같은 프로세스면 붙는다)',
+            min_length=1,
+        ),
+    ]
 
 
 class GraphChangedParams(BaseModel):
@@ -5463,11 +5682,21 @@ class TargetReadText(BaseModel):
     tool: Literal["ui_only"]
 
 
+class WikiRead(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: WikiReadParams
+    renderer: Literal[False]
+    result: WikiReadResult
+    tool: Literal["kb_wiki_read"]
+
+
 class WindowsList(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    params: EmptyParams
+    params: WindowsListParams
     renderer: Literal[True]
     result: WindowsListResult
     tool: Literal["kb_screen_capture"]
@@ -5914,6 +6143,20 @@ class PreviewTemplate(RootModel[PreviewTemplate1 | PreviewTemplate2]):
     ]
 
 
+class QuestionWaitResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    answered: bool
+    id: str
+    kind: Literal["credential", "question"]
+    secret_keys: Annotated[
+        list[SecretKey], Field(description="credential: 등록된 키 이름 (값 아님)")
+    ]
+    state: Literal["answered", "dropped", "open"]
+    waited_ms: Annotated[int, Field(ge=0)]
+
+
 class RecorderChangedParams(BaseModel):
     """
     recorder.changed: 녹화 상태·스텝이 바뀜. 소유 연결에는 rev·counts·warnings도 (스텝 목록은 rev로 recorder.steps를 다시 부른다), 다른 연결에는 state만. 글자는 싣지 않는다. session은 그 알림의 녹화 세션(idle이면 없음) — 받는 쪽은 아는 지금 세션과 다른 알림으로 상태를 바꾸지 않는다 (M5 SECFIX)
@@ -6062,6 +6305,14 @@ class Request(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    call: Annotated[
+        int | None,
+        Field(
+            description="UX7: MCP 도구 호출 번호 (MCP shim). 같은 연결에서 같은 번호의 요청들은 작업 활동 목록·도구 호출 수에서 한 번으로 센다",
+            ge=1,
+            le=9007199254740991,
+        ),
+    ] = None
     id: RequestId
     jsonrpc: JsonRpcVersion
     method: MethodName
@@ -6309,6 +6560,12 @@ class RunStartParams(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    attach: Annotated[
+        bool | None,
+        Field(
+            description="UX7: 켜져 있는 게임에 붙여 돌린다 — 게임 실행 노드(core.app.launch·게임 실행 서브그래프 호출)를 새로 띄우지 않고 마지막으로 kb_app_launch한 게임 창을 내놓고, 게임 종료 노드도 건너뛴다(게임을 끄지 않는다). 기록은 source agent_attach — 채택 검증·사건 근거가 아니다"
+        ),
+    ] = None
     basis: Annotated[
         Literal["team", "working"] | None,
         Field(
@@ -6316,6 +6573,13 @@ class RunStartParams(BaseModel):
         ),
     ] = None
     deadline_ms: Annotated[int | None, Field(ge=1, le=9007199254740991)] = None
+    from_node: Annotated[
+        str | None,
+        Field(
+            description="UX7: 루트 그래프의 이 노드부터 시작한다 (attach와 함께. 그 앞 노드는 건너뛴다)",
+            min_length=1,
+        ),
+    ] = None
     idempotency_key: Annotated[str | None, Field(min_length=1)] = None
     path: WorkspacePath
     profile: str | None = None
@@ -6397,8 +6661,10 @@ class RunSummary(BaseModel):
     run_dir: str
     run_id: RunId
     source: Annotated[
-        Literal["agent_control"] | None,
-        Field(description='배지 "에이전트 제어": source agent_control 실행 (M5 3.9, run.json에서)'),
+        Literal["agent_attach", "agent_control"] | None,
+        Field(
+            description='배지 "에이전트 제어": source agent_control 실행 (M5 3.9, run.json에서) UX7: agent_attach = 켜져 있는 게임에 붙여 돌린 그래프 실행(kb_run_start attach — 채택 검증·사건 근거가 아니다)'
+        ),
     ] = None
     started_at: Timestamp | None
     state: Literal["ended", "running"]
@@ -6446,7 +6712,7 @@ class ScreensListResult(BaseModel):
     screens: list[Screen]
 
 
-class Move(BaseModel):
+class Move1(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
@@ -6470,7 +6736,7 @@ class ScreensSaveParams(BaseModel):
     frame_id: Annotated[str, Field(min_length=1)]
     key: Annotated[str, Field(pattern="^[a-z][a-z0-9_]{0,63}$")]
     kind: Literal["popup", "screen"] | None = None
-    moves: list[Move] | None = None
+    moves: list[Move1] | None = None
     of: str | None = None
     title: str | None = None
 
@@ -6829,6 +7095,16 @@ class PluginsSync(BaseModel):
     tool: Literal["ui_only"]
 
 
+class QuestionWait(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: QuestionWaitParams
+    renderer: Literal[False]
+    result: QuestionWaitResult
+    tool: Literal["kb_question_wait"]
+
+
 class RecorderCommitFinish(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -6953,7 +7229,7 @@ class RunStatus(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    params: RunIdParams
+    params: RunStatusParams
     renderer: Literal[True]
     result: RunStatusResult
     tool: Literal["kb_run_status"]
@@ -7327,6 +7603,30 @@ class DaemonErrorResponse(BaseModel):
     jsonrpc: JsonRpcVersion
 
 
+class ExploreStepResult(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    changed: bool
+    frame: Frame
+    identify: ScreensIdentifyResult
+    input: ControlResult | None
+    move: Move | None
+    new_screen: bool
+    waited_ms: Annotated[int, Field(ge=0)]
+    window: str
+
+
+class ExploreStep(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    params: ExploreStepParams
+    renderer: Literal[False]
+    result: ExploreStepResult
+    tool: Literal["kb_explore_step"]
+
+
 class PermissionsGet(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -7584,6 +7884,7 @@ class Methods(BaseModel):
     explore_end: Annotated[ExploreEnd, Field(alias="explore.end")]
     explore_list: Annotated[ExploreList, Field(alias="explore.list")]
     explore_start: Annotated[ExploreStart, Field(alias="explore.start")]
+    explore_step: Annotated[ExploreStep, Field(alias="explore.step")]
     graph_check: Annotated[GraphCheck, Field(alias="graph.check")]
     graph_close: Annotated[GraphClose, Field(alias="graph.close")]
     graph_create: Annotated[GraphCreate, Field(alias="graph.create")]
@@ -7597,6 +7898,7 @@ class Methods(BaseModel):
     job_finish: Annotated[JobFinish, Field(alias="job.finish")]
     job_heartbeat: Annotated[JobHeartbeat, Field(alias="job.heartbeat")]
     job_note: Annotated[JobNote, Field(alias="job.note")]
+    job_progress: Annotated[JobProgress, Field(alias="job.progress")]
     jobs_activity: Annotated[JobsActivity, Field(alias="jobs.activity")]
     jobs_list: Annotated[JobsList, Field(alias="jobs.list")]
     knowledge_apply: Annotated[KnowledgeApply, Field(alias="knowledge.apply")]
@@ -7619,6 +7921,7 @@ class Methods(BaseModel):
     project_qa_info: Annotated[ProjectQaInfo, Field(alias="project.qa_info")]
     project_setup_set: Annotated[ProjectSetupSet, Field(alias="project.setup.set")]
     project_sources_set: Annotated[ProjectSourcesSet, Field(alias="project.sources.set")]
+    question_wait: Annotated[QuestionWait, Field(alias="question.wait")]
     recorder_commit_abort: Annotated[RecorderCommitAbort, Field(alias="recorder.commit_abort")]
     recorder_commit_finish: Annotated[RecorderCommitFinish, Field(alias="recorder.commit_finish")]
     recorder_commit_prepare: Annotated[
@@ -7685,6 +7988,7 @@ class Methods(BaseModel):
     target_read_text: Annotated[TargetReadText, Field(alias="target.read_text")]
     target_save: Annotated[TargetSave, Field(alias="target.save")]
     unknowns_answer: Annotated[UnknownsAnswer, Field(alias="unknowns.answer")]
+    wiki_read: Annotated[WikiRead, Field(alias="wiki.read")]
     wiki_write: Annotated[WikiWrite, Field(alias="wiki.write")]
     windows_list: Annotated[WindowsList, Field(alias="windows.list")]
     wizard_get: Annotated[WizardGet, Field(alias="wizard.get")]

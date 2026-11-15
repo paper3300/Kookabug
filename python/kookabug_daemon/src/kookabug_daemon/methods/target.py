@@ -34,7 +34,7 @@ from kookabug_daemon.protocol import InvalidParams, RequestFailed
 from kookabug_daemon.screen_source import Grab
 from kookabug_daemon.targets import read_bytes, require_platform, target_path
 
-__all__ = ["IMAGE_SUFFIX", "METHODS", "image_path", "new_frame"]
+__all__ = ["IMAGE_SUFFIX", "METHODS", "frame_result", "image_path", "new_frame"]
 
 IMAGE_SUFFIX: Final = ".png"
 SCREEN_TARGETS: Final = "targets/screens/"
@@ -90,7 +90,12 @@ def new_frame(
 
 def _capture(call: Call) -> dict[str, Any]:
     grab = call.daemon.screen_source.capture(request_int(call.params["window"]))
-    frame = new_frame(call, grab.pixels, grab.client_size, grab.dpi, grab=grab)
+    return frame_result(call, new_frame(call, grab.pixels, grab.client_size, grab.dpi, grab=grab))
+
+
+def frame_result(call: Call, frame: EditorFrame) -> dict[str, Any]:
+    """정지 화면 결과 (`Frame`). 에이전트 연결이면 보호 판정을 통과한 것만 축소 이미지를 에이전트
+    캐시에 쓰고, 아니면 사유·안내만 (`kb_screen_capture`·`kb_explore_step` 공용)."""
     result = frame.to_json()
     if call.principal.kind == "agent":
         assert frame.guard is not None

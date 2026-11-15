@@ -59,6 +59,7 @@ from kookabug_daemon.explore import ExploreSessions
 from kookabug_daemon.frame_guard import FILE as GUARD_FILE
 from kookabug_daemon.frame_guard import FrameGuard
 from kookabug_daemon.frames import FrameCache
+from kookabug_daemon.game_window import GameMemory
 from kookabug_daemon.image_cache import EditorCache
 from kookabug_daemon.jobs import HEARTBEAT_S, Job, JobRegistry, JobSupervisor
 from kookabug_daemon.lease_watch import LeaseWatcher, lease_dir
@@ -286,6 +287,8 @@ class Daemon:
         self._targets = TargetStore(self.root, self._frames)
         self.screen_source: ScreenSource = make_source(config.platform_fake)
         """창 목록·캡처 원천 (실제 Windows 또는 장면 가짜 게임, M7 3.12)."""
+        self.game = GameMemory(self.screen_source)
+        """마지막으로 실행한 게임 (UX7 `@game`, 메모리에만)."""
         self.guard = FrameGuard(self.root, self._frames, self._targets, self.screen_source)
         """에이전트 정지 화면 보호 판정 (M7 3.5a)."""
         # 보호 기록 손상으로 처음 막았을 때 사람 연결에 알린다 (값 없음, M7 3라운드)
@@ -309,6 +312,8 @@ class Daemon:
         self._run_manager.job_busy = self.jobs.active_id
         self._run_manager.job_basis = self.jobs.basis_of
         self._run_manager.fake_launch = getattr(self.screen_source, "fake_launch", None)
+        # 붙여 실행(UX7 D)이 쓰는 켜져 있는 게임 창
+        self._run_manager.attach_window = self.game.resolve
         self._runs: RunsLike = runs or self._run_manager
         # 상태 폴더는 runner에 넘기는 환경으로 정한다 (판정만 하는 서비스 대역에는 감독자가 없다)
         supervisor = getattr(self.service, "supervisor", None)
@@ -582,6 +587,13 @@ class Daemon:
                 text_checker(self)([("notes", notes)])
             except Exception:
                 notes = None  # 확인하지 못한 글은 보고에 넣지 않는다
+        headline = job.headline
+        if headline is not None:
+            # 한 줄 결과도 같은 재검사 (UX7 E)
+            try:
+                text_checker(self)([("headline", headline)])
+            except Exception:
+                headline = None
         try:
             checker = text_checker(self)  # 설정 제안 이유의 쓰기 직전 재검사 (UX2 검수 1 H1)
         except Exception:
@@ -597,6 +609,7 @@ class Daemon:
                 stalled=sorted(job.stalled),
                 prep=prep,
                 check_secrets=checker,
+                headline=headline,
             )
             written = reports.write(self.root, built)
             self.post(lambda: self.notify_ui("reports.changed", {}))

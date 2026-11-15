@@ -215,6 +215,18 @@
       },
       "type": "array"
     },
+    "headline": {
+      "anyOf": [
+        {
+          "maxLength": 60,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "UX7: 보고함 목록 줄의 한 줄 결과 (kb_report_note headline, 없으면 요약 첫 줄)"
+    },
     "job": {
       "pattern": "^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$",
       "type": "string"

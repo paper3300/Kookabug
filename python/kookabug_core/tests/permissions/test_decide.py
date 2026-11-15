@@ -212,7 +212,7 @@ def test_default_preset_graph_author() -> None:
 # + M8 3.14 curator·qa_runner
 CORE = ["kb_project_info", "kb_toolset_enable", "kb_graph_list", "kb_graph_get",
         "kb_graph_validate", "kb_node_search", "kb_run_status", "kb_log_search",
-        "kb_source_list", "kb_source_read"]  # fmt: skip
+        "kb_source_list", "kb_source_read", "kb_job_progress"]  # fmt: skip
 PRESET_ORDER: tuple[Preset, ...] = (
     "read_only", "graph_author", "runner", "full", "explorer", "curator", "qa_runner"
 )  # fmt: skip
@@ -230,7 +230,7 @@ PRESET_TABLE: list[tuple[list[str], tuple[Verdict, ...]]] = [
     (["kb_run_events", "kb_run_artifact_get", "kb_run_compare"], ALLOW5),
     (["kb_screen_capture", "kb_image_find", "kb_ocr_read"], ALLOW5),
     (
-        ["kb_input_click", "kb_input_key", "kb_input_type", "kb_app_launch"],
+        ["kb_input_click", "kb_input_key", "kb_input_type", "kb_app_launch", "kb_explore_step"],
         ("deny", "deny", "ask", "allow", "ask", "ask", "deny"),
     ),
     (["kb_screen_list", "kb_screen_get"], ALLOW5),
@@ -239,7 +239,7 @@ PRESET_TABLE: list[tuple[list[str], tuple[Verdict, ...]]] = [
     (["kb_screen_identify", "kb_explore_end"], ALLOW5),
     (["kb_explore_start"], ("deny", "ask", "ask", "allow", "allow", "allow", "deny")),
     # M8 지식·사건 (3.14): 조회는 모두 allow, qa_runner는 채택 요청만 deny
-    (["kb_knowledge_search", "kb_knowledge_get"], ALLOW5),
+    (["kb_knowledge_search", "kb_knowledge_get", "kb_question_wait", "kb_wiki_read"], ALLOW5),
     (
         ["kb_knowledge_apply", "kb_wiki_write"],
         ("deny", "ask", "ask", "allow", "deny", "allow", "deny"),

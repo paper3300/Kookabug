@@ -59,6 +59,7 @@ runner의 저널 쓰기는 `run.end`가 마지막이다.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import importlib.metadata
 import math
 import os
@@ -88,7 +89,7 @@ from kookabug_core.engine import (
 )
 from kookabug_core.engine.context import OCR_NODE_TYPES, InputObserver, ObservationLimits
 from kookabug_core.engine.errors import EngineError
-from kookabug_core.engine.executor import run_record_policy
+from kookabug_core.engine.executor import AttachStart, run_record_policy
 from kookabug_core.engine.invoker import NodeInvoker, PluginRouter
 from kookabug_core.engine.scenario import FakeScenario, ScenarioError, ScenarioPlatform
 from kookabug_core.inputs import (
@@ -137,9 +138,11 @@ from kookabug_core.registry import Registry, RegistryError, default_registry
 from kookabug_core.runner.clock import ActiveClock
 from kookabug_core.runner.control import Controller, PauseGate, PollPoint
 from kookabug_core.runner.spec import (
+    GAME_LABEL,
     MIB,
     PROTOCOL,
     VIDEO_FINISH_MAX_MS,
+    AttachSpec,
     RunSpec,
     bind_find_window,
     ident_to_json,
@@ -437,6 +440,8 @@ class Runner:
         self._video_probe: EncoderProbe | None = None
         self._run_json: dict[str, Any] = {}
         self._sink: _JournalSink | None = None
+        self._attach: AttachStart | None = None
+        """붙여 실행의 게임 창 (UX7 D — 플랫폼을 연 뒤 사양의 바인딩으로 정한다)."""
 
     @property
     def worker(self) -> WorkerProcess | None:
@@ -706,6 +711,13 @@ class Runner:
         if spec.bound_window is not None:
             # 에이전트 제어 실행 (M7 R1): daemon이 정한 그 창에만 붙는다 (다시 찾지 않음)
             bind_find_window(self.platform, spec.bound_window)
+        if spec.attach is not None:
+            # 붙여 실행 (UX7 D): daemon이 기억한 게임 창 (PID·생성 시각이 같아야 — 제목은 보지 않음)
+            self._attach = self._attach_window(spec.attach)
+            if self._attach is None:
+                return _End.error(
+                    "window_not_found", "붙여 실행: 켜져 있는 게임 창이 없거나 다른 프로세스다"
+                )
         installed = (
             set()
             if self.plugins is None
@@ -1027,6 +1039,62 @@ class Runner:
 
         return guard
 
+    def _attach_window(self, attach: AttachSpec) -> AttachStart | None:
+        """사양의 게임 창 바인딩 → 실행 플랫폼의 창 참조 (닫혔거나 다른 프로세스면 None)."""
+        from kookabug_sdk.types import ProcessRef
+
+        ref = WindowRef(handle=attach.hwnd, pid=attach.pid, process_created=attach.created)
+        try:
+            info = self.platform.window_info(ref)
+        except Exception:
+            return None
+        window = info.window
+        if window.pid != attach.pid or str(window.process_created) != attach.created:
+            return None
+        # 기록(게임 실행 노드 대신 내놓는 창 출력)에는 실제 제목 대신 `@game` (UX7 C2)
+        window = dataclasses.replace(window, title=GAME_LABEL)
+        mask, scrub = self._attach_masks()
+        return AttachStart(
+            window,
+            ProcessRef(attach.pid),
+            attach.from_node,
+            mask_title=mask,
+            scrub_secrets=scrub,
+        )
+
+    def _attach_masks(
+        self,
+    ) -> tuple[Callable[[str], str] | None, Callable[[str], str] | None]:
+        """붙여 실행 기록의 가림 (UX7 검수 1·2): 워크스페이스 비밀값(환경 변수·자격 증명 관리자 —
+        `agent.log` 가림과 같은 공급자)으로 (게임 아닌 창 제목 가림 — 들어 있으면 `[가림]`, 기록되는
+        모든 글의 비밀값 원문 → `***`). 값을 모으지 못하면 (None, None) — 기록에서 다른 창 제목을
+        비운다(글 가림 단계는 없다)."""
+        import re
+
+        from kookabug_core.agent_job.runner import known_secrets
+        from kookabug_core.knowledge.formats import normalize
+
+        try:
+            raw = [x for x in known_secrets(self.spec.workspace_root, os.environ) if x]
+        except Exception:
+            return None, None
+        values = [v for v in (normalize(x) for x in raw) if v]
+
+        def mask(title: str) -> str:
+            plain = normalize(title)
+            return "[가림]" if any(v in plain for v in values) else title
+
+        if not raw:
+            return mask, None
+        pattern = re.compile(
+            "|".join(re.escape(x) for x in sorted(set(raw), key=len, reverse=True)), re.IGNORECASE
+        )
+
+        def scrub(text: str) -> str:
+            return pattern.sub("***", text)
+
+        return mask, scrub
+
     def _run_executor(self, executor: Executor, program: Program, remaining_ms: int) -> _End:
         try:
             result = executor.run(
@@ -1041,6 +1109,7 @@ class Runner:
                     record_override=self.spec.record_override,
                     unattended=self.spec.unattended,
                     input_guard=self._input_guard(),
+                    attach=self._attach,
                 ),
             )
             self._set_qa(program, trace=result.qa)

@@ -630,8 +630,10 @@ class CaptureService:
         if info.minimized:
             # 복원을 확인하면 세션을 다시 연다 (`_capture` 시작)
             self._minimized.add(binding.binding_id)
+            # 창 제목은 넣지 않는다 (UX7 검수 4 — 제목에 계정 ID가 들어가는 게임)
+            name = info.process_name or "?"
             raise PlatformError(
-                WINDOW_MINIMIZED, f"대상 창 {info.title!r}(hwnd {binding.hwnd:#x})이 최소화돼 있다"
+                WINDOW_MINIMIZED, f"대상 창 HWND {binding.hwnd:#x} ({name})이 최소화돼 있다"
             )
         return info
 

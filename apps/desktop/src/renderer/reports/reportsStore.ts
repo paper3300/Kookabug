@@ -7,6 +7,7 @@ import { create } from "zustand";
 import { client, toRpcError } from "../rpc/client";
 import type { JobCliResult, KookabugBridge } from "../../preload/bridge";
 import { useTabs } from "../store/tabs";
+import { progressText, type JobProgress } from "./activity";
 
 export interface ReportItem {
   kind: string;
@@ -83,6 +84,20 @@ export interface Row {
   undecided: number;
   hasReport: boolean;
   used: { runs?: number; minutes?: number } | null;
+  /** UX7 E: 한 줄 결과 (kb_report_note headline, 없으면 요약 첫 줄 — daemon이 정한다) */
+  headline: string | null;
+  /** UX7 E: 진행 중 작업의 지금 단계 (kb_job_progress) */
+  progress: JobProgress | null;
+}
+
+/**
+ * 목록 줄 둘째 줄 (UX7 E): 진행 중이면 "2/4 경로 걷기 — 하는 일", 끝났으면 한 줄 결과, 둘 다 없으면 지금처럼 "묶음 N"·"보고 전"
+ */
+export function rowSubText(row: Pick<Row, "state" | "groups" | "headline" | "progress">): string {
+  const live = row.state === "running" || row.state === "ending";
+  if (live && row.progress !== null) return progressText(row.progress);
+  if (!live && row.headline !== null && row.headline !== "") return row.headline;
+  return row.groups === null ? "보고 전" : `묶음 ${row.groups}`;
 }
 
 export interface Unknown {
@@ -197,6 +212,8 @@ export function mergeRows(jobs: readonly Record<string, unknown>[], reports: rea
       undecided: 0,
       hasReport: false,
       used: (j.used as Row["used"]) ?? null,
+      headline: typeof j.headline === "string" ? j.headline : null,
+      progress: (j.progress as JobProgress | null | undefined) ?? null,
     });
   }
   for (const r of reports) {
@@ -213,6 +230,8 @@ export function mergeRows(jobs: readonly Record<string, unknown>[], reports: rea
       undecided: typeof r.undecided === "number" ? r.undecided : 0,
       hasReport: true,
       used: cur?.used ?? null,
+      headline: typeof r.headline === "string" ? r.headline : (cur?.headline ?? null),
+      progress: cur?.progress ?? null,
     });
   }
   // 통과한 연결 시험(probe)은 보고함을 어지럽히기만 해서 뺀다 (실패한 시험은 남긴다)
@@ -309,6 +328,13 @@ export function revertable(item: ReportItem, reverted: ReadonlySet<string>): boo
   return item.kind === "auto_adopted" && typeof item.adoption === "string" && !reverted.has(item.adoption);
 }
 
+/**
+ * 진행 중 작업의 테스트 계정 질문 (UX7 B): 작업이 기다리는 동안 보고 없이도 "테스트 계정 등록"을 보인다. 열린 credential 질문만
+ */
+export function liveCredentials(unknowns: readonly Unknown[]): Unknown[] {
+  return unknowns.filter((u) => isCredential(u) && u.human_only === true && u.state === "open");
+}
+
 /** 보고에서 질문으로 올릴 미지수: "사람만 답할 수 있음"이고 아직 열린 것 */
 export function openQuestions(report: Report, unknowns: readonly Unknown[]): Unknown[] {
   const ids = new Set([...(report.unknowns ?? []), ...report.groups.flatMap((g) => g.items.flatMap((i) => i.unknowns ?? []))]);
@@ -398,21 +424,26 @@ export async function selectReport(job: string): Promise<void> {
   await loadDetail(job);
 }
 
+async function loadUnknowns(): Promise<Unknown[]> {
+  try {
+    const doc = (await client().call("knowledge.get", { file: "unknowns" })).doc as { unknowns?: Unknown[] } | undefined;
+    return doc?.unknowns ?? [];
+  } catch {
+    return []; // 미지수 파일이 없다
+  }
+}
+
 async function loadDetail(job: string): Promise<void> {
   const row = useReports.getState().rows.find((r) => r.job === job);
   if (row === undefined || !row.hasReport) {
-    if (useReports.getState().selected === job) useReports.setState({ detail: null });
+    // 진행 중 작업: 보고는 없어도 그 작업이 기다리는 테스트 계정 질문은 보인다 (UX7 B)
+    const unknowns = row !== undefined && (row.state === "running" || row.state === "ending") ? await loadUnknowns() : [];
+    if (useReports.getState().selected === job) useReports.setState({ detail: null, unknowns });
     return;
   }
   try {
     const { report } = await client().call("reports.get", { job });
-    let unknowns: Unknown[] = [];
-    try {
-      const doc = (await client().call("knowledge.get", { file: "unknowns" })).doc as { unknowns?: Unknown[] } | undefined;
-      unknowns = doc?.unknowns ?? [];
-    } catch {
-      // 미지수 파일이 없다
-    }
+    const unknowns = await loadUnknowns();
     if (useReports.getState().selected === job) useReports.setState({ detail: report as unknown as Report, unknowns });
   } catch (err) {
     if (useReports.getState().selected === job) useReports.setState({ detail: null, error: toRpcError(err).message });
@@ -560,7 +591,8 @@ export function initReports(): void {
   client().on("reports.changed", () => void reloadReports());
   client().on("job.budget", () => void reloadReports());
   client().on("knowledge.changed", (p) => {
-    if (p.files.some((f) => f.includes("unknowns") || f.includes("reports") || f.includes("adoptions"))) void reloadReports();
+    // "knowledge" = Agent 지식 연산 (UX7: 진행 중 작업이 남긴 테스트 계정 질문을 바로 보인다)
+    if (p.files.some((f) => f === "knowledge" || f.includes("unknowns") || f.includes("reports") || f.includes("adoptions"))) void reloadReports();
   });
   // globalThis: 순수 함수 검사(tsconfig.node, DOM 없음)도 이 파일을 타입 검사한다
   (globalThis as unknown as { kookabug: KookabugBridge }).kookabug.on("jobs.cli", (data: unknown) => {

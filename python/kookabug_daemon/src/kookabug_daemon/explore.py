@@ -177,6 +177,38 @@ class ExploreSession:
     """세션 파일 쓰기 잠금 (`write_lock` — 저장 게시 동안 오래 쥘 수 있다)."""
     budget: threading.Lock = field(default_factory=threading.Lock)
     """스텝·예약·감사 기록 메모리 값 잠금 (짧게만 쥔다 — 이벤트 루프에서도 부른다)."""
+    current: tuple[str, str] | None = None
+    """UX7 C: 지금 화면 (`explored`·`confirmed`, 후보 키·화면 ID) — 다음 걸음의 이동 출발점."""
+    pending: list[tuple[tuple[str, str], dict[str, Any]]] = field(
+        default_factory=list[tuple[tuple[str, str], dict[str, Any]]]
+    )
+    """UX7 C: 도착 화면을 아직 저장하지 않은 이동 (출발 화면, 정규화한 이동 — via·note, 붙이지
+    못한 것은 to까지). 다음에 새 후보를 저장하면 그 키로 `to`를 채워 출발 카드에 `tried`로
+    남긴다."""
+
+    def where(self) -> tuple[str, str] | None:
+        with self.budget:
+            return self.current
+
+    def move_to(self, ref: tuple[str, str] | None) -> None:
+        with self.budget:
+            self.current = ref
+
+    def wait_for(self, items: list[tuple[tuple[str, str], dict[str, Any]]]) -> None:
+        """대기 이동을 바꾼다 (새 걸음은 도착이 정해지지 않은 지난 대기를 지운다 — 도착까지 정해
+        두었는데 붙이지 못한 이동은 남긴다, 검수 1 Mid 4)."""
+        with self.budget:
+            kept = [p for p in self.pending if p[1].get("to") is not None]
+            self.pending = [*kept, *items]
+
+    def add_pending(self, items: list[tuple[tuple[str, str], dict[str, Any]]]) -> None:
+        with self.budget:
+            self.pending.extend(items)
+
+    def take_pending(self) -> list[tuple[tuple[str, str], dict[str, Any]]]:
+        with self.budget:
+            out, self.pending = self.pending, []
+            return out
 
     @property
     def rel(self) -> str:

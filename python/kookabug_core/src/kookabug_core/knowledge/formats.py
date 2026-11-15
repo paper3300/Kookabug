@@ -189,12 +189,54 @@ def empty_doc(kind: Kind, feature: str | None = None) -> dict[str, Any]:
 
 def shape_problem(data: Any, kind: str, *, ref: str | None = None) -> str | None:
     """형식 검사 첫 문제의 위치와 코드 (값은 넣지 않는다 — 요청자가 정한 키도 스키마 위치 기준으로
-    가린다). 문제없으면 None."""
+    가린다). 문제없으면 None.
+
+    UX7 F: 빠진 필드(`missing_field`)는 그 필드 이름(스키마가 정한 이름)을, 빠진·모르는 필드는 그
+    자리의 허용 필드 목록(스키마 이름)을 붙인다. 모르는 필드의 이름은 요청자가 정한 글이라 싣지
+    않는다 (비밀값이 키 이름일 수 있다 — 위치는 지금처럼 `<key#n>`)."""
     diags = check_shape(data, kind, ref=ref)  # type: ignore[arg-type]
     if not diags:
         return None
     d = diags[0]
-    return f"{mask_pointer(data, d.pointer or '', schema_cursor(kind, ref)) or '/'}: {d.code}"
+    cursor = schema_cursor(kind, ref)
+    pointer = d.pointer or ""
+    text = f"{mask_pointer(data, pointer, cursor) or '/'}: {d.code}"
+    if d.code not in ("missing_field", "unknown_field"):
+        return text
+    at = pointer if d.code == "missing_field" else pointer.rsplit("/", 1)[0]
+    allowed = fields_at(data, at, cursor)
+    if d.code == "missing_field":
+        found = re.search(r"'([^']+)'", d.message)
+        name = found.group(1) if found else None
+        # 빠진 필드는 스키마의 required 이름이다 (요청자 글이 아니다)
+        if name is not None and name in allowed:
+            text += f" '{name}'"
+    if allowed:
+        text += f" (허용: {', '.join(allowed)})"
+    return text
+
+
+def fields_at(data: Any, pointer: str, cursor: Cursor) -> list[str]:
+    """그 위치(객체)에서 스키마가 이름을 정한 필드 (후보 잎 모두의 합, 이름 순). 모르면 빈 목록."""
+    current: Any = data
+    for raw in pointer.lstrip("/").split("/") if pointer else []:
+        seg = raw.replace("~1", "/").replace("~0", "~")
+        if isinstance(current, list) and seg.isdigit():
+            items = cast(list[Any], current)
+            current = items[int(seg)] if int(seg) < len(items) else None
+            cursor = child_item(cursor, current)
+        else:
+            cursor, _ = child_key(cursor, seg, current)
+            current = cast(dict[str, Any], current).get(seg) if isinstance(current, dict) else None
+        if not cursor:
+            return []
+    if not cursor:
+        return []
+    names: set[str] = set()
+    for leaf in cursor:
+        if leaf.types is None or "object" in leaf.types:
+            names.update(leaf.props)
+    return sorted(names)
 
 
 # ---------------------------------------------------------------- 오류 위치 가리기

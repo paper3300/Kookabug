@@ -152,9 +152,9 @@ export interface Run {
    */
   secret_paths?: [string, ...string[]];
   /**
-   * 실행 출처 (M5 3.9). agent_control = 에이전트의 게임 조작(kb_input_*)을 daemon이 한 스텝짜리 실행으로 돌린 것. 없으면 일반 실행
+   * 실행 출처 (M5 3.9). agent_control = 에이전트의 게임 조작(kb_input_*)을 daemon이 한 스텝짜리 실행으로 돌린 것. 없으면 일반 실행 UX7: agent_attach = 켜져 있는 게임에 붙여 돌린 그래프 실행(kb_run_start attach — 채택 검증·사건 근거가 아니다)
    */
-  source?: "agent_control";
+  source?: "agent_attach" | "agent_control";
   started_at: Timestamp;
   status: "finished" | "running";
   verdict?: Verdict;

@@ -177,6 +177,8 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     "screens.save": "kb_screen_save",
     "explore.start": "kb_explore_start",
     "explore.end": "kb_explore_end",
+    # UX7 C: 입력 하나 → 기다림 → 캡처 → 판별 → 이동 기록 (판정은 입력 도구와 같은 control)
+    "explore.step": "kb_explore_step",
     "explore.list": UI_ONLY,
     # M7 사람 전용 화면 지도 메서드 (계획 3.7·3.8, B3 엄격): 승격·버리기·확인·카드 배치
     **dict.fromkeys(sorted(HUMAN_SCREEN_METHODS), UI_ONLY),
@@ -249,6 +251,10 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     "sources.list": "kb_source_list",
     "sources.read": "kb_source_read",
     "setting.propose": "kb_setting_propose",
+    # UX7: 질문 답 기다리기·작업 진행 단계·위키 읽기
+    "question.wait": "kb_question_wait",
+    "job.progress": "kb_job_progress",
+    "wiki.read": "kb_wiki_read",
 }
 
 AGENT_DENIED: Final = frozenset(
@@ -329,7 +335,14 @@ class Authorizer:
         self.jobs = jobs
         """작업 토큰 (M8 R7). 작업 연결의 요청마다 작업이 살아 있는지·허용 범위 안인지 본다."""
 
-    def gate(self, principal: Principal, method: str, toolsets: Collection[str]) -> None:
+    def gate(
+        self,
+        principal: Principal,
+        method: str,
+        toolsets: Collection[str],
+        *,
+        call: tuple[int, int] | None = None,
+    ) -> None:
         """판정 전 거부 (M5 계획 3.6 1~2단계): 작업 토큰 만료·폐기(`job_token_invalid`, M8) →
         `AGENT_DENIED` → 툴셋 꺼짐(`toolset_disabled`) → 작업 허용 범위 밖(`permission_denied`).
         사람(user) 연결은 툴셋과 무관하다. 전송이 모든 요청(스스로 판정하는 메서드 포함)에
@@ -345,8 +358,9 @@ class Authorizer:
             raise agent_use_safe_api(method)
         tool = METHOD_TOOLS[method]
         if job is not None and self.jobs is not None:
-            # 작업의 Kookabug 도구 호출 수 (3.9 예산 집계 — 거부된 호출도 센다)
-            self.jobs.count_call(job.id, tool)
+            # 작업의 Kookabug 도구 호출 수 (3.9 예산 집계 — 거부된 호출도 센다). 같은 MCP 도구
+            # 호출(`call` = 연결, 호출 번호)의 요청 여럿은 한 번으로 센다 (UX7 E)
+            self.jobs.count_call(job.id, tool, call)
         if tool == UI_ONLY:
             if method in AGENT_DENIED:
                 raise RequestFailed(

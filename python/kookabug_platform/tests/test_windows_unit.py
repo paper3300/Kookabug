@@ -44,7 +44,8 @@ def test_integrity_compare_elevated_target() -> None:
     with pytest.raises(PlatformError) as info:
         check_integrity(GAME, api)
     assert info.value.code == TARGET_ELEVATED
-    assert "'Game'" in info.value.message and "0x3000" in info.value.message
+    assert "HWND 0x100" in info.value.message and "0x3000" in info.value.message
+    assert "'Game'" not in info.value.message  # 제목은 넣지 않는다 (UX7 검수 4)
     api.integrity = {None: MEDIUM, 10: None}
     with pytest.raises(PlatformError) as info:
         check_integrity(GAME, api)

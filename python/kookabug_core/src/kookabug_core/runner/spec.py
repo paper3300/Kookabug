@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Final, Literal
 
@@ -19,8 +19,10 @@ from kookabug_core.win import ProcessId
 __all__ = [
     "DEFAULT_SELF_KILL_MARGIN_MS",
     "DEFAULT_SHUTDOWN_GRACE_MS",
+    "GAME_LABEL",
     "PROTOCOL",
     "VIDEO_FINISH_MAX_MS",
+    "AttachSpec",
     "BoundWindow",
     "ControlSpec",
     "PlatformSpec",
@@ -34,6 +36,8 @@ __all__ = [
 
 PROTOCOL: Final = 1
 """감독자 ↔ runner 제어 프로토콜 버전 (`runner.hello`, `run.start`)."""
+GAME_LABEL: Final = "@game"
+"""UX7: 실행한 게임 창 — 기록에 실제 제목 대신 남기는 이름."""
 
 DEFAULT_WORKER_CANCEL_GRACE_MS: Final = 2_000
 DEFAULT_WORKER_START_TIMEOUT_MS: Final = 30_000
@@ -129,19 +133,66 @@ class BoundWindow:
     """daemon이 정한 에이전트 제어 실행의 대상 창 (M7 R1). runner는 창을 다시 찾지 않고 이
     바인딩에만 붙는다 — 붙을 때 PID·프로세스 생성 시각·제목을 확인하고 다르면 붙지 않는다(입력
     없음).
-    `hwnd`가 0이면 daemon이 창을 하나로 정하지 못한 것이다(없음·여럿): 붙지 않는다."""
+    `hwnd`가 0이면 daemon이 창을 하나로 정하지 못한 것이다(없음·여럿): 붙지 않는다.
+    `match_title`이 False면(UX7 `@game`) 제목은 비교하지 않는다 — 로그인 뒤 제목이 바뀌는 게임도
+    같은 프로세스(PID·생성 시각)의 같은 창이면 붙는다. 그때 `title`은 빈 글이다(기록에 실제 제목을
+    남기지 않는다)."""
 
     hwnd: int
     pid: int
     created: str
     title: str
+    match_title: bool = True
 
     def to_json(self) -> dict[str, Any]:
-        return {"hwnd": self.hwnd, "pid": self.pid, "created": self.created, "title": self.title}
+        out: dict[str, Any] = {
+            "hwnd": self.hwnd,
+            "pid": self.pid,
+            "created": self.created,
+            "title": self.title,
+        }
+        if not self.match_title:
+            out["match_title"] = False
+        return out
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> BoundWindow:
-        return cls(int(data["hwnd"]), int(data["pid"]), str(data["created"]), str(data["title"]))
+        return cls(
+            int(data["hwnd"]),
+            int(data["pid"]),
+            str(data["created"]),
+            str(data["title"]),
+            bool(data.get("match_title", True)),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AttachSpec:
+    """붙여 실행 (UX7 D): daemon이 기억한 게임 창. runner는 이 창을 처음 대상 창으로 두고 게임
+    실행·종료 노드를 건너뛴다. `from_node`가 있으면 루트 그래프의 그 노드부터 시작한다."""
+
+    hwnd: int
+    pid: int
+    created: str
+    from_node: str | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "hwnd": self.hwnd,
+            "pid": self.pid,
+            "created": self.created,
+            "from_node": self.from_node,
+        }
+
+    @classmethod
+    def from_json(cls, data: Mapping[str, Any]) -> AttachSpec:
+        node = data.get("from_node")
+        return cls(
+            int(data["hwnd"]),
+            int(data["pid"]),
+            str(data["created"]),
+            None if node is None else str(node),
+        )
 
 
 def bind_find_window(platform: Any, bound: BoundWindow) -> None:
@@ -163,9 +214,13 @@ def bind_find_window(platform: Any, bound: BoundWindow) -> None:
             window.handle != bound.hwnd
             or window.pid != bound.pid
             or str(window.process_created) != bound.created
-            or not control_title_matches(str(info.title), bound.title)
+            or (bound.match_title and not control_title_matches(str(info.title), bound.title))
         ):
             return None
+        if not bound.match_title:
+            # `@game`(UX7): 창 제목에 계정 ID 같은 값이 들어가는 게임이 있다 — 실행 기록(창 붙기
+            # 출력)에는 실제 제목 대신 `@game`만 남긴다
+            return replace(window, title=GAME_LABEL)
         return window
 
     platform.find_window = find_window
@@ -224,6 +279,8 @@ class RunSpec:
     forbidden: tuple[Mapping[str, str], ...] | None = None
     """Agent 주체 실행의 금지 동작 (M8 3.7·R6, daemon이 시작 때 고정). 있으면 runner가 입력마다
     `forbidden.judge`를 부른다. 사람·검증 실행에는 없다."""
+    attach: AttachSpec | None = None
+    """붙여 실행 (UX7 D): 켜져 있는 게임 창·시작 노드. 있으면 `source`는 `agent_attach`다."""
 
     @classmethod
     def from_json(cls, data: Any) -> RunSpec:
@@ -286,6 +343,7 @@ class RunSpec:
             forbidden=(
                 None if spec.get("forbidden") is None else tuple(dict(i) for i in spec["forbidden"])
             ),
+            attach=None if spec.get("attach") is None else AttachSpec.from_json(spec["attach"]),
             **optional,
         )
 
@@ -337,4 +395,5 @@ class RunSpec:
             **({} if self.basis is None else {"basis": dict(self.basis)}),
             **({} if self.job is None else {"job": self.job}),
             **({} if self.forbidden is None else {"forbidden": [dict(i) for i in self.forbidden]}),
+            **({} if self.attach is None else {"attach": self.attach.to_json()}),
         }

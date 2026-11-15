@@ -540,6 +540,9 @@ class Transport:
         assert request_id is not None  # _envelope_problems가 확인했다
         method: str = message["method"]
         params: dict[str, Any] = message.get("params", {})
+        # UX7 E: MCP 도구 호출 번호 (같은 번호의 요청은 작업 활동·호출 수에서 한 번)
+        call_no = message.get("call")
+        call_key = (conn.number, call_no) if isinstance(call_no, int) else None
         if conn.mismatch and method != "daemon.shutdown":
             failed = RequestFailed(
                 "protocol_mismatch",
@@ -562,7 +565,7 @@ class Transport:
             # 처리기가 아직 없는 메서드도 에이전트의 사람 전용 호출은 판정 전 거부가 먼저다 (M7 B3)
             assert conn.principal is not None
             try:
-                self.host.authorizer.gate(conn.principal, method, conn.toolsets)
+                self.host.authorizer.gate(conn.principal, method, conn.toolsets, call=call_key)
             except RequestFailed as failed:
                 conn.send(error_message(request_id, **_fields(failed)))
                 return
@@ -583,7 +586,7 @@ class Transport:
                 client_kind=conn.client_kind,
             )
             # 판정 전 거부 (AGENT_DENIED·툴셋 꺼짐): 스스로 판정하는 메서드도 여기서 막는다
-            self.host.authorizer.gate(conn.principal, method, conn.toolsets)
+            self.host.authorizer.gate(conn.principal, method, conn.toolsets, call=call_key)
             arg = spec.arg(call)
             if not spec.self_authorized:
                 # ask면 사람 확인을 기다린다 (M5 3.6). 기다리는 동안 잠금을 쥐지 않는다
@@ -606,19 +609,28 @@ class Transport:
             fail(INTERNAL_ERROR, f"{method} 처리 중 daemon 내부 오류")
             return
         finally:
-            self._note_job_call(conn, method, params, arg, outcome)
+            self._note_job_call(conn, method, params, arg, outcome, call_key)
         self._respond(conn, request_id, method, result)
 
     def _note_job_call(
-        self, conn: Connection, method: str, params: Mapping[str, Any], arg: str, outcome: str
+        self,
+        conn: Connection,
+        method: str,
+        params: Mapping[str, Any],
+        arg: str,
+        outcome: str,
+        call_key: tuple[int, int] | None = None,
     ) -> None:
-        """작업 토큰 연결의 Kookabug 도구 호출을 작업 활동 목록에 남긴다 (UX1 U3, 사람 화면용)."""
+        """작업 토큰 연결의 Kookabug 도구 호출을 작업 활동 목록에 남긴다 (UX1 U3, 사람 화면용).
+        MCP 도구 호출 하나가 daemon 요청 여럿이면 첫 요청만 한 줄이다 (UX7 E)."""
         principal = conn.principal
         jobs = getattr(self.host.authorizer, "jobs", None)
         if principal is None or principal.job is None or jobs is None:
             return
         tool = METHOD_TOOLS.get(method, "")
         if not tool.startswith("kb_"):
+            return
+        if not jobs.first_of_call(principal.job, call_key, note=True):
             return
         target = activity.short_target(method, params, arg)
         job = principal.job

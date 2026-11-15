@@ -176,7 +176,18 @@ describe("RUN 스텝 상세 → 속성 탭", () => {
 });
 
 describe("보고함 작업 상세 → 속성 탭", () => {
-  const row: Row = { job: "j1", playbook: "init", state: "done", startedAt: "2026-11-13T01:00:00Z", groups: 1, undecided: 1, hasReport: true, used: null };
+  const row: Row = {
+    job: "j1",
+    playbook: "init",
+    state: "done",
+    startedAt: "2026-11-13T01:00:00Z",
+    groups: 1,
+    undecided: 1,
+    hasReport: true,
+    used: null,
+    headline: null,
+    progress: null,
+  };
   const report: Report = {
     job: "j1",
     playbook: "init",

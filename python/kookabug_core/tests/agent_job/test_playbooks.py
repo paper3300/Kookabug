@@ -62,6 +62,19 @@ def test_playbooks_mention_required_rules() -> None:
     for name in ("init", "followup", "entry"):
         assert "먼저 직접 알아본다" in every[name].body, name
     assert playbooks.versions()["init"] >= 5 and playbooks.versions()["followup"] >= 3
+    # UX7: entry는 지도 먼저(한 세션 걷기) → 서브그래프는 마지막(붙여 실행으로 고치고 보통 실행
+    # 1번), 계정은 게임을 켜기 전에도 묻고 작업이 살아 있는 채로 기다린다. 단계마다 진행을 남긴다
+    body = entry.body
+    words = (
+        "kb_explore_step", "kb_question_wait", "attach: true", "from_node", "@game",
+        "kb_job_progress", "headline", "보통 실행 1번", "그래프를 돌리지 않는다",
+    )  # fmt: skip
+    for word in words:
+        assert word in body, word
+    assert playbooks.versions()["entry"] >= 2 and playbooks.versions()["explore"] >= 3
+    assert "kb_explore_step" in every["explore"].body and "attach" in every["explore"].body
+    for name in ("init", "followup", "explore"):
+        assert "kb_job_progress" in every[name].body, name
     # 허용 목록 밖 이름 (경로 조각으로 다른 파일을 읽지 못한다)
     for bad in ("../README", "init.md", "wiki", ""):
         with pytest.raises(playbooks.PlaybookError):

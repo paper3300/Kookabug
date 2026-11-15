@@ -202,6 +202,15 @@ def test_reuse_conditions_table(rig: Rig, breaks: Callable[[Rig], str]) -> None:
         rig.fails(expect)
 
 
+def test_minimized_message_has_no_title(rig: Rig) -> None:
+    """최소화 오류는 창 제목 대신 HWND·프로세스 이름 (UX7 검수 4 — 제목에 계정이 든 게임)."""
+    rig.api.windows[HWND].title = "Game [Account : acct-r5-77]"
+    rig.screen.minimized = True
+    error = rig.fails(WINDOW_MINIMIZED)
+    assert "acct-r5-77" not in error.message and "Game [" not in error.message
+    assert f"HWND {HWND:#x}" in error.message
+
+
 def test_restore_after_minimize_reopens_session(rig: Rig) -> None:
     """최소화를 본 뒤 복원을 확인하면 세션을 다시 연다: 최소화 확인 뒤·복원 전에 옛 세션으로 온
     프레임(늦은 콜백·애니메이션)도 복원 뒤 화면으로 쓰지 않는다. 옛 세션은 복원 뒤 프레임을 주지

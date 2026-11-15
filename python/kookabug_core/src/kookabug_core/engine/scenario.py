@@ -961,6 +961,10 @@ class ScenarioPlatform:
     def window_info(self, window: WindowRef) -> WindowInfo:
         return self.scenario.info(window)
 
+    def window_title(self, window: WindowRef) -> str:
+        """그 창의 지금 제목만 (붙여 실행 기록 가림, UX7)."""
+        return self.scenario.game_of(window).window.title
+
     def set_client_size(self, window: WindowRef, width: int, height: int) -> bool:
         self.scenario.game_of(window)
         return (width, height) == self.scenario.client_size

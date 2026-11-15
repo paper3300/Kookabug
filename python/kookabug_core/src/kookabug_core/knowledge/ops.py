@@ -56,6 +56,7 @@ __all__ = [
     "decide_working_claims",
     "log_into",
     "refresh_wiki",
+    "wiki_read",
     "wiki_write",
 ]
 
@@ -265,11 +266,19 @@ class _Engine:
             return dict(entry)
         if kind == "run":
             runs = self.root / "runs"
-            ok = re.fullmatch(r"[a-z0-9]{8,64}", ref) is not None and any(
-                (p / "run.json").is_file() for p in runs.glob(f"*_{ref}") if p.is_dir()
+            found = (
+                [p for p in runs.glob(f"*_{ref}") if p.is_dir() and (p / "run.json").is_file()]
+                if re.fullmatch(r"[a-z0-9]{8,64}", ref) is not None
+                else []
             )
-            if not ok:
+            if not found:
                 raise KnowledgeError("basis_unknown", "없는 실행이다")
+            if any(run_source(p) == "agent_attach" for p in found):
+                raise KnowledgeError(
+                    "basis_probe",
+                    "붙여 실행(agent_attach) 기록은 근거로 쓰지 않는다 — "
+                    "처음부터 하는 보통 실행을 쓴다",
+                )
             return dict(entry)
         raise KnowledgeError("format", "모르는 근거 형식이다")
 
@@ -1292,15 +1301,26 @@ def _wiki_reserved(parts: list[str]) -> bool:
     return len(folded) > 2 and folded[1] == "reports"
 
 
-def check_wiki_path(root: Path, path: object) -> str:
+def check_wiki_path(root: Path, path: object, *, reading: bool = False) -> str:
     """Agent 위키 쓰기 경로 확인. `wiki/` 아래 `.md`만, `index.md`·`log.md`·`reports/` 제외, 링크·
-    정션·8.3 짧은 이름(`~`)·예약 장치 이름 없음, 실경로도 같은 규칙. 아니면 `policy_path`."""
+    정션·8.3 짧은 이름(`~`)·예약 장치 이름 없음, 실경로도 같은 규칙. 아니면 `policy_path`.
+    `reading`(UX7 `kb_wiki_read`)이면 `index.md`·`log.md`·`reports/`도 된다."""
 
     def refuse() -> KnowledgeError:
+        if reading:
+            return KnowledgeError(
+                "policy_path",
+                "위키 읽기는 wiki/ 아래 .md 파일만 된다 (예: wiki/environment.md, "
+                "wiki/features/<기능>.md)",
+            )
         return KnowledgeError(
             "policy_path",
-            "위키 쓰기는 wiki/ 아래 .md 파일만 된다 (index.md·log.md·reports/와 다른 경로 제외)",
+            "위키 쓰기는 wiki/ 아래 .md 파일만 된다 (index.md·log.md·reports/와 다른 경로 제외 — "
+            "예: wiki/environment.md, wiki/overview.md, wiki/features/<기능>.md)",
         )
+
+    def reserved(parts: list[str]) -> bool:
+        return False if reading else _wiki_reserved(parts)
 
     if not isinstance(path, str) or "\\" in path or path.startswith("/"):
         raise refuse()
@@ -1313,7 +1333,7 @@ def check_wiki_path(root: Path, path: object) -> str:
             or _RESERVED.fullmatch(part)
         ):
             raise refuse()
-    if len(parts) < 2 or not parts[-1].casefold().endswith(".md") or _wiki_reserved(parts):
+    if len(parts) < 2 or not parts[-1].casefold().endswith(".md") or reserved(parts):
         raise refuse()
     current = root
     for part in parts:
@@ -1326,9 +1346,35 @@ def check_wiki_path(root: Path, path: object) -> str:
         real_parts = list(real.relative_to(real_root).parts)
     except ValueError:
         raise refuse() from None
-    if _wiki_reserved(real_parts) or not real.is_relative_to(Path(os.path.realpath(root / "wiki"))):
+    if reserved(real_parts) or not real.is_relative_to(Path(os.path.realpath(root / "wiki"))):
         raise refuse()
     return path
+
+
+def run_source(folder: Path) -> str | None:
+    """실행 폴더 `run.json`의 `source` (UX7 D — `agent_attach`는 탐침이라 근거가 아니다)."""
+    try:
+        data = json.loads((folder / "run.json").read_text(encoding="utf-8"))
+    except OSError, ValueError, UnicodeDecodeError:
+        return None
+    source = data.get("source") if isinstance(data, dict) else None
+    return source if isinstance(source, str) else None
+
+
+def wiki_read(root: Path, path: str) -> dict[str, Any]:
+    """`kb_wiki_read` (UX7 F): 위키 페이지 글과 sha256 (`kb_wiki_write`의 `base_sha256`). 없으면
+    `not_found`(새 파일은 base_sha256 null로 쓴다)."""
+    rel = check_wiki_path(root, path, reading=True)
+    data = filetx.read(root, rel)
+    if data is None:
+        raise KnowledgeError(
+            "not_found", "없는 위키 페이지다 — 새로 쓸 때는 base_sha256을 null로 준다", id=rel
+        )
+    return {
+        "path": rel,
+        "text": data.decode("utf-8", errors="replace"),
+        "sha256": filetx.sha256_of(data),
+    }
 
 
 def wiki_write(
@@ -1354,7 +1400,10 @@ def wiki_write(
             current = None if old is None else filetx.sha256_of(old)
             if current != base_sha256:
                 raise KnowledgeError(
-                    "revision_conflict", "위키 페이지가 바뀌었다 — 다시 읽고 쓴다", sha256=current
+                    "revision_conflict",
+                    "위키 페이지가 바뀌었다 — kb_wiki_read로 다시 읽고(revision이 지금 sha256) "
+                    "그 값을 base_sha256으로 쓴다",
+                    sha256=current,
                 )
             features = _all_features(root)
             parts = rel.split("/")

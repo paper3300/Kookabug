@@ -24,7 +24,9 @@ import {
   isCredential,
   isSettingGroup,
   KIND_TEXT,
+  liveCredentials,
   openQuestions,
+  rowSubText,
   reloadReports,
   revertable,
   revertAdoption,
@@ -50,10 +52,17 @@ import {
   activityLive,
   activityTime,
   collapseActivity,
+  lastScreenText,
   mergeActivity,
+  progressText,
+  waitingText,
   type ActivityEntry,
   type ActivityUsed,
+  type JobProgress,
+  type JobWaiting,
+  type LastScreen,
 } from "./activity";
+import { thumbUrl } from "../screens/ScreenCard";
 import css from "./reports.module.css";
 
 function shortTime(iso: string): string {
@@ -393,12 +402,69 @@ function Detail({ report }: { report: Report }) {
  * 작업 활동 (UX1 U3): Kookabug가 아는 단계(Agent가 부른 kb_* 도구)·머리(쓴 시간·실행 수·도구 호출 수)·접힌 Agent 출력 꼬리.
  * 진행 중일 때만 1.5초마다 `jobs.activity`를 이어 읽는다. Agent 출력은 글로만 그린다(HTML 아님)
  */
+/**
+ * 진행 중 머리 (UX7 E): 지금 단계·하는 일, 기다림 이유, 마지막 저장 화면(그림 — 보호 화면이면 이름만). 값은 daemon이 글자 검사를 지난 것만 준다
+ */
+export function JobHead({
+  progress,
+  waiting,
+  lastScreen,
+}: {
+  progress: JobProgress | null;
+  waiting: JobWaiting | null;
+  lastScreen: LastScreen | null;
+}) {
+  if (progress === null && waiting === null && lastScreen === null) return null;
+  return (
+    <div className={css.jobHead} data-part="job-head">
+      {progress !== null && (
+        <span className={css.jobProgress} data-part="job-progress">
+          {progressText(progress)}
+        </span>
+      )}
+      {waiting !== null && (
+        <span className={css.jobWaiting} data-part="job-waiting" data-kind={waiting.kind}>
+          {waitingText(waiting)}
+        </span>
+      )}
+      {lastScreen !== null && (
+        <span className={css.jobScreen} data-part="job-last-screen" data-key={lastScreen.key}>
+          {lastScreen.image !== null && <img className={css.jobShot} src={thumbUrl(lastScreen.image)} alt={`${lastScreenText(lastScreen)} 스크린샷`} />}
+          <span className={css.muted}>마지막 저장 화면: {lastScreenText(lastScreen)}</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** 진행 중 작업이 기다리는 테스트 계정 질문 (UX7 B): 보고가 생기기 전에도 "테스트 계정 등록" */
+function LiveQuestions() {
+  const unknowns = useReports((s) => s.unknowns);
+  const asks = liveCredentials(unknowns);
+  if (asks.length === 0) return null;
+  return (
+    <section className={css.group} data-part="live-questions">
+      <div className={css.groupHead}>
+        <span className={css.groupTitle}>작업이 기다리는 테스트 계정 · 등록하면 바로 이어 가요</span>
+      </div>
+      <ul className={css.items}>
+        {asks.map((u) => (
+          <CredentialQuestion key={u.id} u={u} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function Activity({ job, state }: { job: string; state: string }) {
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [tail, setTail] = useState<string[]>([]);
   const [used, setUsed] = useState<ActivityUsed | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [progress, setProgress] = useState<JobProgress | null>(null);
+  const [waiting, setWaiting] = useState<JobWaiting | null>(null);
+  const [lastScreen, setLastScreen] = useState<LastScreen | null>(null);
   const live = activityLive(state);
 
   useEffect(() => {
@@ -410,6 +476,9 @@ export function Activity({ job, state }: { job: string; state: string }) {
     setUsed(null);
     setLoaded(false);
     setError(null);
+    setProgress(null);
+    setWaiting(null);
+    setLastScreen(null);
     const tick = async () => {
       try {
         const r = await client().call("jobs.activity", { job, after });
@@ -419,6 +488,9 @@ export function Activity({ job, state }: { job: string; state: string }) {
         setEntries((prev) => mergeActivity(prev, got));
         setTail(r.log_tail);
         setUsed((r.used as ActivityUsed | null) ?? null);
+        setProgress((r.progress as JobProgress | null | undefined) ?? null);
+        setWaiting((r.waiting as JobWaiting | null | undefined) ?? null);
+        setLastScreen((r.last_screen as LastScreen | null | undefined) ?? null);
         setError(null);
       } catch (err) {
         if (alive) setError(toRpcError(err).message);
@@ -445,6 +517,7 @@ export function Activity({ job, state }: { job: string; state: string }) {
           {activityHead(used)}
         </span>
       </div>
+      {live && <JobHead progress={progress} waiting={waiting} lastScreen={lastScreen} />}
       {error !== null && <p className={css.muted}>활동을 읽지 못했어요: {error}</p>}
       {loaded && entries.length === 0 && error === null && (
         <p className={css.muted}>{live ? "Agent가 아직 Kookabug 도구를 부르지 않았어요." : "남은 활동이 없어요."}</p>
@@ -532,8 +605,8 @@ export function ReportsTab() {
                     </span>
                     {r.undecided > 0 && <span className={css.badge}>결정 {r.undecided}</span>}
                   </span>
-                  <span className={css.muted}>
-                    {shortTime(r.startedAt)} · {r.groups === null ? "보고 전" : `묶음 ${r.groups}`}
+                  <span className={css.muted} data-part="row-sub">
+                    {shortTime(r.startedAt)} · {rowSubText(r)}
                   </span>
                 </button>
                 {(canCancel(r) || r.state === "ending") && (
@@ -575,6 +648,7 @@ export function ReportProps() {
   }
   return (
     <div className={css.props} data-part="report-props" data-job={selected}>
+      {activityLive(selectedRow.state) && <LiveQuestions />}
       {activityLive(selectedRow.state) && <Activity job={selectedRow.job} state={selectedRow.state} />}
       {detail !== null ? (
         <Detail report={detail} />

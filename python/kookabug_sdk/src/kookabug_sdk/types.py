@@ -132,7 +132,7 @@ class Point:
     y: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class WindowRef:
     """창 하나. `handle`은 HWND.
 
@@ -147,6 +147,10 @@ class WindowRef:
     pid: int = 0
     process_created: str = ""
     binding: str = ""
+
+    def __repr__(self) -> str:
+        # 메시지·로그로 문자열이 될 때 제목은 넣지 않는다 (제목에 계정 ID가 들어가는 게임이 있다)
+        return f"WindowRef(handle=0x{self.handle:x}, pid={self.pid}, binding={self.binding!r})"
 
 
 @dataclass(frozen=True, slots=True)

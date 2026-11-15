@@ -79,6 +79,7 @@ from kookabug_core.runner.spec import (
     DEFAULT_WORKER_START_TIMEOUT_MS,
     PROTOCOL,
     VIDEO_FINISH_MAX_MS,
+    AttachSpec,
     BoundWindow,
     ControlSpec,
     PlatformSpec,
@@ -202,6 +203,8 @@ class StartOptions:
     """이 실행을 낸 작업 ID (M8)."""
     forbidden: tuple[Mapping[str, str], ...] | None = None
     """Agent 주체 실행의 금지 동작 (M8 3.7·R6 — daemon이 시작 때 `kookabug.json`에서 고정)."""
+    attach: AttachSpec | None = None
+    """붙여 실행 (UX7 D — daemon이 기억한 게임 창·시작 노드)."""
 
 
 def _write_overlay(run_dir: Path, overlay: Mapping[str, bytes]) -> dict[str, dict[str, str]]:
@@ -328,6 +331,7 @@ class Supervisor:
             basis=opts.basis,
             job=opts.job,
             forbidden=opts.forbidden,
+            attach=opts.attach,
         )
         handle = RunHandle(self, spec, folder, job, started_at)
         handle._launch(listener, key)

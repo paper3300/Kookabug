@@ -47,7 +47,13 @@ def knowledge_failed(exc: KnowledgeError | filetx.TxError) -> RequestFailed:
     if code == "not_found":
         return RequestFailed("not_found", exc.message, path=str(fields.get("id", "")))
     if code == "revision_conflict":
-        return RequestFailed("revision_conflict", exc.message, revision=None)
+        # 위키는 지금 sha256을 준다 (UX7 F — 다시 읽지 않고도 base_sha256으로 다시 쓸 수 있게)
+        current = fields.get("sha256")
+        return RequestFailed(
+            "revision_conflict",
+            exc.message,
+            revision=current if isinstance(current, str) else None,
+        )
     if code in request_failed_codes():
         # 오류 data 계약(`RequestFailedData`)에 있는 필드만 — 없는 필드(예: R5 `hash`)를 실으면
         # 응답 검사가 internal_error로 바꾼다
@@ -227,6 +233,77 @@ async def _wiki(call: Call) -> dict[str, Any]:
     return await asyncio.to_thread(run_guarded, _wiki_sync, call)
 
 
+def _wiki_read_sync(call: Call) -> dict[str, Any]:
+    got = run_guarded(ops.wiki_read, call.daemon.root, str(call.params["path"]))
+    # 읽은 글도 쓰기와 같은 글자 검사를 지난다 (UX7 검수 1 High 2). 비밀값이 있거나 검사할 수 없으면
+    # 원문을 주지 않는다 — 가린 본문도 주지 않는다(그 글로 다시 써서 원문을 덮는 사고를 막는다).
+    # sha256은 파일 바이트의 해시라 값이 새지 않아 준다
+    try:
+        checker_of(call)([("text", str(got["text"]))])
+    except KnowledgeError as exc:
+        why = "비밀값이 들어 있어" if exc.code == "secret_in_text" else "비밀값을 확인할 수 없어"
+        raise RequestFailed(
+            exc.code if exc.code in ("secret_in_text", "secret_unchecked") else "secret_unchecked",
+            f"위키 페이지 {got['path']}에 {why} 원문을 돌려주지 않는다 — 사람이 그 페이지를 고쳐야 "
+            "한다 (이 페이지는 Agent가 다시 쓰지 않는다)",
+            field="text",
+            revision=str(got["sha256"]),
+        ) from exc
+    return got
+
+
+async def _wiki_read(call: Call) -> dict[str, Any]:
+    """`wiki.read` (`kb_wiki_read`, UX7 F): 글과 sha256 (`kb_wiki_write`의 base_sha256)."""
+    return await asyncio.to_thread(_wiki_read_sync, call)
+
+
+QUESTION_WAIT_MAX_MS: Final = 600_000
+QUESTION_POLL_S: Final = 1.0
+
+
+def _unknown_item(root: Any, unknown_id: str) -> dict[str, Any]:
+    doc = _load(root, "unknowns").doc
+    item = next((u for u in _items("unknowns", doc) if u.get("id") == unknown_id), None)
+    if item is None:
+        raise KnowledgeError("unknown_id", "없는 미지수다", id=unknown_id)
+    return item
+
+
+async def _question_wait(call: Call) -> dict[str, Any]:
+    """`question.wait` (`kb_question_wait`, UX7 B): 미지수가 답함(`answered`)이 되거나 기한까지
+    기다린다. 작업이 살아 있는 채로 — 작업 연결이면 기다리는 동안 작업 상태에 "계정 등록 대기"를
+    둔다. 답 글·비밀값 원문은 주지 않는다(키 이름만)."""
+    root = call.daemon.root
+    unknown_id = str(call.params["id"])
+    wait_ms = min(int(call.params.get("wait_ms") or 0), QUESTION_WAIT_MAX_MS)
+    item = await asyncio.to_thread(run_guarded, _unknown_item, root, unknown_id)
+    kind = "credential" if item.get("kind") == "credential" else "question"
+    loop = asyncio.get_running_loop()
+    start = loop.time()
+    job = call.principal.job
+    if job is not None and item.get("state") == "open" and wait_ms > 0:
+        call.daemon.jobs.set_waiting(job, kind)
+    try:
+        while item.get("state") == "open" and loop.time() - start < wait_ms / 1000:
+            await asyncio.sleep(min(QUESTION_POLL_S, max(0.05, wait_ms / 1000)))
+            if job is not None:
+                call.daemon.jobs.require_alive(call.principal)  # 작업이 끝났으면 그만 기다린다
+            item = await asyncio.to_thread(run_guarded, _unknown_item, root, unknown_id)
+    finally:
+        if job is not None:
+            call.daemon.jobs.set_waiting(job, None)
+    keys = [str(k) for k in item.get("secret_keys") or [] if isinstance(k, str)]
+    state = str(item.get("state", "open"))
+    return {
+        "id": unknown_id,
+        "state": state if state in ("open", "answered", "dropped") else "open",
+        "kind": kind,
+        "secret_keys": keys,
+        "answered": state == "answered",
+        "waited_ms": int((loop.time() - start) * 1000),
+    }
+
+
 # ---------------------------------------------------------------- 사람 전용
 
 
@@ -297,6 +374,8 @@ METHODS: Final[dict[str, MethodSpec]] = {
     "knowledge.get": MethodSpec(_get),
     "knowledge.apply": MethodSpec(_apply),
     "wiki.write": MethodSpec(_wiki),
+    "wiki.read": MethodSpec(_wiki_read),
+    "question.wait": MethodSpec(_question_wait),
     "unknowns.answer": MethodSpec(_answer),
     "project.automation.set": MethodSpec(_block("automation")),
     "project.sources.set": MethodSpec(_block("sources")),

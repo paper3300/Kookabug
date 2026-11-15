@@ -95,6 +95,8 @@ TOOLS: Final[Mapping[str, ToolInfo]] = {
         "kb_graph_validate", "kb_node_search", "kb_run_status", "kb_log_search",
         # UX2 A: 등록된 원본 읽기 (kb_project_info와 같은 기본 노출, 읽기 전용)
         "kb_source_list", "kb_source_read",
+        # UX7 E: 작업 진행 단계 (작업 연결 전용 — 작업 상태에만 남는다, 파일·게임은 바꾸지 않음)
+        "kb_job_progress",
     ),
     **_tools("graph_edit", True, "kb_graph_create", "kb_graph_patch", "kb_target_create"),
     **_tools("run", True, "kb_run_start", "kb_run_cancel"),
@@ -102,6 +104,8 @@ TOOLS: Final[Mapping[str, ToolInfo]] = {
     **_tools("run", False, "kb_run_events", "kb_run_artifact_get", "kb_run_compare"),
     **_tools("observe", False, "kb_screen_capture", "kb_image_find", "kb_ocr_read"),
     **_tools("control", True, "kb_input_click", "kb_input_key", "kb_input_type", "kb_app_launch"),
+    # UX7 C: 입력 하나 → 기다림 → 캡처 → 판별 → 이동 기록 (입력 도구와 같은 판정 — 창 제목 인자)
+    **_tools("control", True, "kb_explore_step"),
     **_tools("screens", False, "kb_screen_list", "kb_screen_get", "kb_screen_identify"),
     # M7 탐색 세션·화면 지도 저장 (계획 3.4·3.5). 세션 끝(`kb_explore_end`)은 조회로 분류해
     # 늘 허용한다 — screens 변경이 ask·deny인 프리셋에서도 에이전트가 세션을 끝낼 수 있게 (B3)
@@ -109,6 +113,8 @@ TOOLS: Final[Mapping[str, ToolInfo]] = {
     **_tools("screens", False, "kb_explore_end"),
     # M8 지식·사건 (계획 3.14). 사건 열기·증거 고정·채택 요청·보고 메모는 변경 도구
     **_tools("knowledge", False, "kb_knowledge_search", "kb_knowledge_get"),
+    # UX7 B·F: 질문 답 기다리기(값 없이 상태만)·위키 페이지 읽기(sha256)
+    **_tools("knowledge", False, "kb_question_wait", "kb_wiki_read"),
     **_tools("knowledge", True, "kb_knowledge_apply", "kb_wiki_write"),
     **_tools("cases", False, "kb_case_list", "kb_case_get", "kb_triage_signals"),
     **_tools(

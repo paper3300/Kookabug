@@ -184,6 +184,11 @@ TOOLS = {
     "sources.list": "kb_source_list",
     "sources.read": "kb_source_read",
     "setting.propose": "kb_setting_propose",
+    # UX7: 탐색 한 걸음·질문 기다리기·작업 진행·위키 읽기
+    "explore.step": "kb_explore_step",
+    "question.wait": "kb_question_wait",
+    "job.progress": "kb_job_progress",
+    "wiki.read": "kb_wiki_read",
 }
 M8_B3 = {
     "adopt.request",
@@ -276,6 +281,11 @@ def test_method_table_matches_permission_table() -> None:
         *(M8_B4 - M8_B7_RENDERER),
         # UX2: Agent 도구만 (sources.list·sources.read는 M8_B4의 sources 이름공간에 든다)
         "setting.propose",
+        # UX7: Agent 도구만
+        "explore.step",
+        "question.wait",
+        "job.progress",
+        "wiki.read",
     }
     for row in table.values():
         for part in ("params", "result"):

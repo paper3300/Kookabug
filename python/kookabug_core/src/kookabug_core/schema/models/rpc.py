@@ -282,6 +282,20 @@ class Agent(BaseModel):
     id: str
 
 
+class Attach(BaseModel):
+    """
+    UX7 붙여 실행: 이 창을 처음 대상 창으로 두고, 게임 실행·종료 노드를 건너뛰고, from_node가 있으면 그 노드부터
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    created: str
+    from_node: str | None
+    hwnd: Annotated[int, Field(ge=1, le=9007199254740991)]
+    pid: Annotated[int, Field(ge=1, le=9007199254740991)]
+
+
 class BoundWindow(BaseModel):
     """
     에이전트 제어 실행의 대상 창 (M7 R1): daemon이 정한 바인딩. runner는 다시 찾지 않고 이 창에만 붙는다(PID·생성 시각·제목이 정확히 같아야). hwnd 0은 daemon이 창을 하나로 정하지 못함 — 붙지 않는다
@@ -292,6 +306,12 @@ class BoundWindow(BaseModel):
     )
     created: str
     hwnd: Annotated[int, Field(ge=0, le=9007199254740991)]
+    match_title: Annotated[
+        bool | None,
+        Field(
+            description="UX7: false면 제목을 비교하지 않는다 (@game — 같은 프로세스·생성 시각의 창이면 붙는다)"
+        ),
+    ] = None
     pid: Annotated[int, Field(ge=0, le=9007199254740991)]
     title: str
 
@@ -886,6 +906,14 @@ class Request(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    call: Annotated[
+        int | None,
+        Field(
+            description="UX7: MCP 도구 호출 번호 (MCP shim). 같은 연결에서 같은 번호의 요청들은 작업 활동 목록·도구 호출 수에서 한 번으로 센다",
+            ge=1,
+            le=9007199254740991,
+        ),
+    ] = None
     id: RequestId
     jsonrpc: JsonRpcVersion
     method: MethodName
@@ -902,6 +930,12 @@ class RunSpec(BaseModel):
     )
     agent: Annotated[
         Agent | None, Field(description="그 실행을 낸 에이전트 (M5 에이전트 제어 실행)")
+    ] = None
+    attach: Annotated[
+        Attach | None,
+        Field(
+            description="UX7 붙여 실행: 이 창을 처음 대상 창으로 두고, 게임 실행·종료 노드를 건너뛰고, from_node가 있으면 그 노드부터"
+        ),
     ] = None
     basis: Annotated[
         dict[str, Any] | None,
@@ -993,8 +1027,10 @@ class RunSpec(BaseModel):
         Field(description="마무리 유예: 감독자 하드 종료·감독자 사망 뒤 자기 종료까지", ge=0),
     ] = None
     source: Annotated[
-        Literal["agent_control"] | None,
-        Field(description="실행 출처 (M5: agent_control = 에이전트 게임 조작). run.json에 남는다"),
+        Literal["agent_attach", "agent_control"] | None,
+        Field(
+            description="실행 출처 (M5: agent_control = 에이전트 게임 조작). run.json에 남는다 UX7: agent_attach = 켜져 있는 게임에 붙여 돌린 그래프 실행(kb_run_start attach — 채택 검증·사건 근거가 아니다)"
+        ),
     ] = None
     supervisor: ProcessIdent
     unattended: Annotated[

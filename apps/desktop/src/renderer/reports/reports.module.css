@@ -398,6 +398,38 @@ textarea.input {
   color: var(--kb-wiz-warn-fg);
 }
 
+/* 진행 중 머리 (UX7 E): 단계·하는 일, 기다림, 마지막 저장 화면 */
+.jobHead {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--kb-wiz-row-border);
+  font-size: 12px;
+}
+
+.jobProgress {
+  color: var(--kb-fg);
+  font-weight: 600;
+}
+
+.jobWaiting {
+  color: var(--kb-wiz-warn-fg);
+}
+
+.jobScreen {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.jobShot {
+  width: 96px;
+  height: auto;
+  border: 1px solid var(--kb-wiz-row-border);
+  border-radius: 3px;
+}
+
 .tail {
   padding: 6px 12px 10px;
   border-top: 1px solid var(--kb-wiz-row-border);

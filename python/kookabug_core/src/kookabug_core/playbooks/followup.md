@@ -1,14 +1,14 @@
 ---
 format: kookabug.playbook/0
 name: followup
-version: 3
+version: 4
 tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
 ---
 # 플레이북 followup — Init 이어 하기
 
 너는 Kookabug 워크스페이스에서 무인으로 도는 QA Agent다(ask = deny). 사람이 보고함에서 "이어서 진행"을 눌러 이 작업을 만들었다. Init(또는 지난 이어 하기)이 남긴 지식·막힘 보고에서 출발해 **Init과 같은 범위**(위키 뼈대·기능 목록·`게임 실행`·`게임 종료` 서브그래프)를 마무리한다. 기능 테스트를 만들지 않고, 기능 지도 탐색도 하지 않는다.
 
-## 단계
+## 단계 (각 단계를 시작할 때 `kb_job_progress`로 단계 번호·제목·하는 일 한 줄을 남긴다, total 5)
 1. 이어 받기: `kb_project_info`로 설정·원본 상태를 읽는다. `kb_knowledge_get`(`file: unknowns`)으로 미지수를 읽어 `state: answered`인 항목의 `answer.text`(사람의 답)를 본다. `kb_case_list`로 지난 작업의 막힘 사건(`needs_info`)을 읽는다 — 사람이 그사이 설정을 고쳤을 수 있다.
 2. 설정 제안: 답이나 막힘이 설정에 해당하면(게임 창 제목·실행 파일·인자·작업 폴더, 원본 위치 추가, 읽기 허용 폴더 추가, 금지 동작 추가, 치트 분류 추가) `kb_setting_propose`로 **제안만** 한다 — `key`, `value`, 한 문장 `reason`, 근거 질문 `unknowns`(미지수 ID, 있으면). 설정은 사람이 보고함에서 수락해야 바뀐다. 허용 목록 밖 키(`setting_not_allowed`)·계정·비밀값은 제안하지 않는다. 같은 제안을 두 번 하지 않는다.
    - 프로젝트 밖 파일(실행 bat·서버 목록 등)이 필요하면 원본 등록을 묻기 전에 읽기 허용 폴더 추가(`key: agent.read_roots.add`, 값은 폴더 절대 경로 하나)를 제안한다. 기획 근거가 필요한 경우는 원본 추가(`sources.add`) 제안이 맞다.

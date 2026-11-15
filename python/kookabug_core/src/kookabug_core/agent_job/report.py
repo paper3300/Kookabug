@@ -97,6 +97,21 @@ def read_report(root: Path, job: str) -> dict[str, Any] | None:
     return doc if isinstance(doc, dict) else None
 
 
+HEADLINE_MAX: Final = 60
+
+
+def headline_of(headline: str | None, notes: str | None) -> str | None:
+    """보고함 목록 줄의 한 줄 결과 (UX7 E): `kb_report_note`의 headline, 없으면 요약 첫 줄을
+    60자로 자른다(마크다운 머리 기호는 뗀다)."""
+    if headline and headline.strip():
+        return headline.strip()[:HEADLINE_MAX]
+    for line in (notes or "").splitlines():
+        text = line.strip().lstrip("#>*- ").strip()
+        if text:
+            return text if len(text) <= HEADLINE_MAX else text[: HEADLINE_MAX - 1] + "…"
+    return None
+
+
 def list_reports(root: Path) -> list[dict[str, Any]]:
     """보고 요약 (최근 시작 먼저)."""
     try:
@@ -131,6 +146,12 @@ def list_reports(root: Path) -> list[dict[str, Any]]:
                     )
                 ),
                 "rendered": doc.get("rendered"),
+                # UX7 E: 한 줄 결과 (옛 보고는 요약 첫 줄)
+                "headline": doc.get("headline")
+                if isinstance(doc.get("headline"), str)
+                else headline_of(
+                    None, doc.get("notes") if isinstance(doc.get("notes"), str) else None
+                ),
             }
         )
     return sorted(out, key=lambda r: (str(r["started_at"]), str(r["job"])), reverse=True)
@@ -299,6 +320,7 @@ def build(
     prep: str | None = None,
     ended_at: str | None = None,
     check_secrets: Callable[[Sequence[tuple[str, str]]], None] | None = None,
+    headline: str | None = None,
 ) -> dict[str, Any]:
     """`job`(`job.json` 값: id·playbook·trigger·agent·started_at·budget)과 기록으로 보고를 만든다.
     쓰지 않는다 (`write`). `check_secrets`는 설정 제안 이유의 쓰기 직전 재검사 (없으면 이유를
@@ -499,6 +521,7 @@ def build(
         "groups": [groups[k] for k in sorted(groups)],
         "unknowns": sorted(str(u["id"]) for u in questions),
         "notes": notes or None,
+        "headline": headline_of(headline, notes),
         "revisions": {"claims": _claim_revs(root, claim_ids)},
         "rendered": None,
     }

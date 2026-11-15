@@ -104,7 +104,18 @@ CASES: dict[str, list[dict[str, Any]]] = {
     "kb_source_read": [{"source": "design_doc"}, {"source": "design_doc", "path": "a.md",
                                                   "offset": 3}],
     "kb_setting_propose": [{"key": "game.title", "value": "Sample", "reason": "r"}],
+    # UX7: 탐색 한 걸음(control)·질문 기다리기·위키 읽기(knowledge)·작업 진행(core)
+    "kb_explore_step": [{"window": "SampleRPG", "keys": "enter"}, {"window": "SampleRPG"},
+                        {"window": "@game", "point": [10, 10], "wait_ms": 0}],
+    "kb_question_wait": [{"id": "u-20261115-000000-abcd", "wait_ms": 0}],
+    "kb_wiki_read": [{"path": "wiki/environment.md"}],
+    "kb_job_progress": [{"step": 1, "total": 4, "title": "이어 받기"},
+                        {"step": 2, "total": 4, "title": "걷기", "doing": "타이틀 터치"}],
 }  # fmt: skip
+CASES["kb_screen_capture"].append({"window": "@game"})
+CASES["kb_run_start"].append(
+    {"path": GRAPH, "idempotency_key": "k2", "attach": True, "from_node": "n_login"}
+)
 PROCESS_SKIP = {"kb_run_cancel"}
 """daemon이 판정 전에 대표 인자(실행의 그래프 경로)를 구하다 `run_not_found`가 되는 도구 — 정적
 검사(처리기 → 메서드 → 판정 도구)만 본다."""
@@ -195,6 +206,18 @@ class RecordingLink:
             "sources.read": {"ref": "sources:design_doc", "format": "text", "chars": 0,
                              "next_offset": None},
             "setting.propose": {"id": "s-20261111-000000-abcd", "job": "j", "key": "game.title"},
+            "explore.step": {
+                "frame": {"frame_id": "f_x", "width": 2, "height": 2, "dpi": 96,
+                          "client_size": [2, 2], "image": {"cache": "f_x.png"}},
+                "changed": True, "waited_ms": 0, "window": "SampleRPG",
+                "input": {"run_id": "abcd1234", "verdict": "pass"},
+                "identify": {"matches": [], "unknown": [], "checked": 0, "problems": []},
+                "new_screen": True, "move": None,
+            },
+            "question.wait": {"id": "u-20261115-000000-abcd", "state": "open", "kind": "credential",
+                              "secret_keys": [], "answered": False, "waited_ms": 0},
+            "wiki.read": {"path": "wiki/environment.md", "text": "x", "sha256": "0" * 64},
+            "job.progress": {"job": "j-20261109-000000-abcd", "step": 1, "total": 4},
         }[method]  # fmt: skip
 
     def enable(self, toolsets: list[str]) -> dict[str, Any]:

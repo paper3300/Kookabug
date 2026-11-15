@@ -116,6 +116,16 @@ class ReportGroup(BaseModel):
     title: Annotated[str, Field(max_length=200, min_length=1)]
 
 
+class Headline(RootModel[str]):
+    root: Annotated[
+        str,
+        Field(
+            description="UX7: 보고함 목록 줄의 한 줄 결과 (kb_report_note headline, 없으면 요약 첫 줄)",
+            max_length=60,
+        ),
+    ]
+
+
 class Notes(RootModel[str]):
     root: Annotated[str, Field(max_length=4096)]
 
@@ -151,6 +161,12 @@ class Report(BaseModel):
     ended_at: EndedAt | None = None
     format: Literal["kookabug.report/0"]
     groups: list[ReportGroup]
+    headline: Annotated[
+        Headline | None,
+        Field(
+            description="UX7: 보고함 목록 줄의 한 줄 결과 (kb_report_note headline, 없으면 요약 첫 줄)"
+        ),
+    ] = None
     job: Annotated[str, Field(pattern="^j-[0-9]{8}-[0-9]{6}-[0-9a-f]{4}$")]
     notes: Notes | None = None
     playbook: Annotated[str, Field(max_length=200, min_length=1)]

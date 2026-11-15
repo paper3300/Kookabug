@@ -1,0 +1,26 @@
+{
+  "description": "UX7 E2E: 접속 경로(entry)가 단계 진행(kb_job_progress)을 남기고, 게임을 켜기 전에 테스트 계정 질문을 남긴 뒤 작업이 살아 있는 채로 kb_question_wait로 기다린다. 사람이 진행 중에 보고함에서 계정을 등록하면 바로 이어 가서 한 줄 결과(headline)를 남기고 끝낸다. 연결 시험이면 설정 확인 뒤 끝낸다",
+  "steps": [
+    {"label": "info", "tool": "kb_project_info", "expect": "ok"},
+    {"exit": 0, "if_playbook": "probe"},
+    {"toolsets": ["knowledge", "cases"]},
+    {"label": "progress_read", "tool": "kb_job_progress",
+     "args": {"step": 2, "total": 5, "title": "원본 훑기", "doing": "로그인이 보여 계정을 먼저 묻는다"}},
+    {"label": "unknowns", "tool": "kb_knowledge_get", "args": {"file": "unknowns"}, "save": {"rev": "revision"}},
+    {"label": "credential", "tool": "kb_knowledge_apply",
+     "args": {"request_id": "ux7-entry-credential", "ops": [
+       {"op": "add", "file": "unknowns", "base_revision": "${rev}", "item": {
+         "kind": "credential", "question": "원본에 로그인 팝업이 있어요. 게임을 켜기 전에 테스트 계정을 등록해 주세요",
+         "human_only": true, "blocks": [], "how": "사람이 테스트 계정을 등록한다",
+         "secret_keys": ["login.id", "login.password"]}}]},
+     "check": {"applied": true}},
+    {"label": "find", "tool": "kb_knowledge_get", "args": {"file": "unknowns"},
+     "save": {"uid": "doc.unknowns.[kind=credential].id"}},
+    {"label": "progress_walk", "tool": "kb_job_progress",
+     "args": {"step": 3, "total": 5, "title": "한 세션으로 걷기", "doing": "로그인 팝업 — 계정 기다리는 중"}},
+    {"label": "wait", "tool": "kb_question_wait", "args": {"id": "${uid}", "wait_ms": 300000}, "timeout": 420,
+     "check": {"answered": true, "kind": "credential"}},
+    {"label": "note", "tool": "kb_report_note",
+     "args": {"text": "접속 경로: 계정 등록을 기다렸다가 이어 갔다. 다음: 기능 테스트 만들기", "headline": "로그인 팝업까지 — 계정 등록됨"}}
+  ]
+}

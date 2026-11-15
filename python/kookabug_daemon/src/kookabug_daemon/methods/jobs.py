@@ -108,20 +108,68 @@ async def _heartbeat(call: Call) -> dict[str, Any]:
     return {"job": job.id, "state": "running"}
 
 
+HEADLINE_MAX: Final = 60
+TITLE_MAX: Final = 60
+DOING_MAX: Final = 120
+
+
+def _one_line(name: str, value: Any, limit: int) -> str:
+    """한 줄 글 (줄바꿈·제어 문자 없음, `limit`자). 아니면 `validation_failed`(필드 이름만)."""
+    text = str(value)
+    if not text.strip() or len(text) > limit or not text.isprintable():
+        raise RequestFailed(
+            "validation_failed",
+            f"'{name}'은(는) 줄바꿈 없는 1~{limit}자 글이다",
+            diagnostics=[],
+        )
+    return text
+
+
 def _note_sync(call: Call) -> dict[str, Any]:
     job = call.principal.job
     if job is None:
         raise RequestFailed("job_only", "보고 메모는 작업 토큰 연결만 쓴다")
     text = str(call.params["text"])
+    headline = call.params.get("headline")
+    head = None if headline is None else _one_line("headline", headline, HEADLINE_MAX)
     try:
-        checker_of(call)([("text", text)])
+        checker_of(call)([("text", text), *([("headline", head)] if head else [])])
     except KnowledgeError as exc:
         raise RequestFailed(exc.code, exc.message) from exc
-    return {"job": job, "bytes": call.daemon.jobs.note(job, text)}
+    return {"job": job, "bytes": call.daemon.jobs.note(job, text, head)}
 
 
 async def _note(call: Call) -> dict[str, Any]:
     return await asyncio.to_thread(_note_sync, call)
+
+
+def _progress_sync(call: Call) -> dict[str, Any]:
+    """`job.progress` (`kb_job_progress`, UX7 E): 작업 연결 전용. 지금 단계·하는 일 한 줄을 작업
+    상태에 둔다 (보고함 진행 중 머리). 글은 비밀값 검사를 지난다."""
+    job = call.principal.job
+    if job is None:
+        raise RequestFailed("job_only", "작업 진행은 작업 토큰 연결만 남긴다")
+    p = call.params
+    step, total = int(p["step"]), int(p["total"])
+    if step > total:
+        raise RequestFailed(
+            "validation_failed",
+            "'step'은 'total'보다 클 수 없다 (허용: step ≤ total)",
+            diagnostics=[],
+        )
+    title = _one_line("title", p["title"], TITLE_MAX)
+    doing = None if p.get("doing") is None else _one_line("doing", p["doing"], DOING_MAX)
+    try:
+        checker_of(call)([("title", title), *([("doing", doing)] if doing else [])])
+    except KnowledgeError as exc:
+        raise RequestFailed(exc.code, exc.message) from exc
+    done = call.daemon.jobs.set_progress(job, step, total, title, doing)
+    call.daemon.job_changed(done)
+    return {"job": job, "step": step, "total": total}
+
+
+async def _progress(call: Call) -> dict[str, Any]:
+    return await asyncio.to_thread(_progress_sync, call)
 
 
 def _list_sync(call: Call) -> dict[str, Any]:
@@ -164,9 +212,14 @@ def _activity_sync(call: Call) -> dict[str, Any]:
         "started_at": None if doc is None else doc.get("started_at"),
         "used": None if doc is None else doc.get("used"),
     }
+    extra: dict[str, Any] = {"progress": None, "waiting": None, "last_screen": None}
     if live is not None:
         described = call.daemon.jobs.describe(live)
         head = {k: described.get(k, head[k]) for k in head}
+        # UX7 E: 진행 단계·기다림·마지막 저장 화면 (진행 중 머리)
+        extra["progress"] = described.get("progress")
+        extra["waiting"] = described.get("waiting")
+        extra["last_screen"] = _last_screen(call, live.last_screen)
     after = int(call.params.get("after") or 0)
     used = head["used"]
     return {
@@ -178,6 +231,25 @@ def _activity_sync(call: Call) -> dict[str, Any]:
         else None,
         "entries": activity.read(root, job_id, after),
         "log_tail": activity.log_tail(root, job_id),
+        **extra,
+    }
+
+
+def _last_screen(call: Call, screen: dict[str, Any] | None) -> dict[str, Any] | None:
+    """마지막 저장 화면 → {key, title, image(편집기 캐시 썸네일 이름 — 지도 탭과 같은 것)}. 보호
+    화면이라 스크린샷이 없으면 image null (이름만)."""
+    if not screen:
+        return None
+    from kookabug_daemon.methods.screens import _thumb  # pyright: ignore[reportPrivateUsage]
+
+    shot = screen.get("shot")
+    make = _thumb(call)
+    image = make(shot) if make is not None and isinstance(shot, str) else None
+    title = screen.get("title")
+    return {
+        "key": str(screen.get("key", "")),
+        "title": title if isinstance(title, str) else None,
+        "image": image,
     }
 
 
@@ -289,6 +361,7 @@ METHODS: Final[dict[str, MethodSpec]] = {
     "job.finish": MethodSpec(_finish),
     "job.heartbeat": MethodSpec(_heartbeat),
     "job.note": MethodSpec(_note),
+    "job.progress": MethodSpec(_progress),
     "jobs.list": MethodSpec(_list),
     "jobs.activity": MethodSpec(_activity),
     "reports.list": MethodSpec(_reports_list),

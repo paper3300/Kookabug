@@ -64,6 +64,9 @@ async def _start(call: Call) -> dict[str, Any]:
         ui=call.client_kind == "ui",
         approved=approved,
         basis=None if params.get("basis") is None else str(params["basis"]),
+        # UX7 D: 켜져 있는 게임에 붙여 실행 (source agent_attach)
+        attach=params.get("attach") is True,
+        from_node=None if params.get("from_node") is None else str(params["from_node"]),
     )
     return await asyncio.to_thread(call.daemon.run_manager.start, request)
 
@@ -73,8 +76,33 @@ async def _cancel(call: Call) -> dict[str, Any]:
     return {}
 
 
+WAIT_STEP_S: Final = 0.2
+MAX_WAIT_MS: Final = 30_000
+
+
 async def _status(call: Call) -> dict[str, Any]:
-    return await asyncio.to_thread(call.daemon.run_manager.status, _run_id(call))
+    """`wait_ms`(UX7 E)면 끝나기를 daemon 안에서 기다린다 — MCP 호출 한 번이 요청 한 번이다(작업
+    활동 목록·도구 호출 수가 안쪽 폴링을 세지 않는다). 작업 연결이면 기다리는 동안 작업 상태에
+    "실행 끝나기 기다림"을 둔다."""
+    manager = call.daemon.run_manager
+    status = await asyncio.to_thread(manager.status, _run_id(call))
+    wait_ms = min(int(call.params.get("wait_ms") or 0), MAX_WAIT_MS)
+    if wait_ms <= 0 or status.get("state") == "ended":
+        return status
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + wait_ms / 1000
+    job = call.principal.job
+    jobs = call.daemon.jobs if job is not None else None
+    if jobs is not None and job is not None:
+        jobs.set_waiting(job, "run")
+    try:
+        while status.get("state") != "ended" and loop.time() < deadline:
+            await asyncio.sleep(WAIT_STEP_S)
+            status = await asyncio.to_thread(manager.status, _run_id(call))
+    finally:
+        if jobs is not None and job is not None:
+            jobs.set_waiting(job, None)
+    return status
 
 
 def _list_sync(call: Call) -> dict[str, Any]:

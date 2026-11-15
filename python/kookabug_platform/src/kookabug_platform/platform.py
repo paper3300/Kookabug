@@ -290,6 +290,13 @@ class WindowsPlatform:
             fullscreen=info.fullscreen,
         )
 
+    def window_title(self, window: WindowRef) -> str:
+        """그 창의 지금 제목만 (`window_info`보다 가볍다 — 붙여 실행 기록 가림이 자주 읽는다,
+        UX7)."""
+        from kookabug_platform.win32.api import DEFAULT_API
+
+        return DEFAULT_API.window_title(self.resolve(window).hwnd)
+
     def set_client_size(self, window: WindowRef, width: int, height: int) -> bool:
         return wins.set_client_size(self.resolve(window).hwnd, width, height)
 

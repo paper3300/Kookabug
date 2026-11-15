@@ -66,6 +66,13 @@ type Scope = tuple[int, str, str, str]
 
 AUDIT_ARG_MAX: Final = 200
 """`explore.json` `approvals[].arg` 최대 길이 (explore 형식)."""
+GAME_WINDOW: Final = "@game"
+
+
+def shown_arg(params: Mapping[str, Any], arg: str) -> str:
+    """로그·감사 기록에 남길 인자. `@game` 입력의 판정 인자는 daemon이 찾은 실제 창 제목이라(계정
+    ID가 들어가는 게임이 있다) 요청자가 쓴 `@game`을 대신 남긴다. 판정·범위는 실제 제목 그대로다."""
+    return GAME_WINDOW if params.get("window") == GAME_WINDOW else arg
 
 
 SESSION_EXCLUDED: Final = frozenset({"kb_app_launch"})
@@ -173,6 +180,19 @@ def _summary(method: str, arg: str, params: Mapping[str, Any]) -> list[str]:
         return [f"창 '{arg}'에 글자 {len(str(params.get('text', '')))}자 입력"]
     if method == "app.launch":
         return [f"게임 실행 (프로필 {params.get('profile') or '기본'})"]
+    if method == "explore.step":
+        # UX7 C: 입력 하나 → 기다림 → 캡처 (값은 보이지 않는다 — 글자 수·키 이름만)
+        if "secret" in params:
+            what = f"비밀값 {params['secret']} 입력 (값은 보이지 않음)"
+        elif "text" in params:
+            what = f"글자 {len(str(params.get('text', '')))}자 입력"
+        elif "keys" in params:
+            what = f"키 {params.get('keys')}"
+        elif "point" in params or "target" in params:
+            what = f"클릭 {params.get('target') or params.get('point')}"
+        else:
+            what = "입력 없이 화면 기다리기·캡처"
+        return [f"창 '{arg}' 탐색 한 걸음", what]
     return [f"{METHOD_TOOLS.get(method, method)}({arg})"]
 
 
@@ -205,7 +225,12 @@ class ApprovalBroker:
             if failed.code != "approval_required":
                 raise
             if self._in_scope(call, arg):
-                log.info("이 탐색 동안 허용: %s(%s) — %s", call.method, arg, call.principal.id)
+                log.info(
+                    "이 탐색 동안 허용: %s(%s) — %s",
+                    call.method,
+                    shown_arg(call.params, arg),
+                    call.principal.id,
+                )
                 scoped = True
             else:
                 scoped = await self._ask(call, arg, failed) == "allow_session"
@@ -270,7 +295,13 @@ class ApprovalBroker:
             session=session,
         )
         self._pending[pending.id] = pending
-        log.info("확인 요청 %s: %s(%s) — %s", pending.id, tool, arg, principal.id)
+        log.info(
+            "확인 요청 %s: %s(%s) — %s",
+            pending.id,
+            tool,
+            shown_arg(call.params, arg),
+            principal.id,
+        )
         self.daemon.notify_ui("approval.requested", pending.to_json())
         try:
             try:
@@ -403,7 +434,9 @@ class ApprovalBroker:
                 "탐색 스텝 예산을 다 써 '이 탐색 동안 허용'을 쓸 수 없다 (한 번 허용·거부만)",
             )
         # 감사 기록 한 줄 (창 제목은 글자 검사를 지날 때만 — 비밀값 제공자를 읽으므로 루프 밖에서)
-        entry = await asyncio.to_thread(self._audit_entry, pending.tool, found)
+        entry = await asyncio.to_thread(
+            self._audit_entry, pending.tool, shown_arg(pending.params, found)
+        )
         # 기다리는 사이 세션이 끝났거나 요청이 끝났으면(시간 초과·끊김) 아무것도 허락하지 않는다
         session = self._session_of(pending)
         if pending.state != "waiting":
@@ -415,7 +448,12 @@ class ApprovalBroker:
             )
         self.daemon.explore.note_approval(session, entry)
         self._scopes.add((pending.connection, session.id, pending.tool, found))
-        log.info("이 탐색 동안 허용: %s(%s) — 세션 %s", pending.tool, found, session.id)
+        log.info(
+            "이 탐색 동안 허용: %s(%s) — 세션 %s",
+            pending.tool,
+            shown_arg(pending.params, found),
+            session.id,
+        )
         pending.future.set_result("allow_session")
         self._resolve(pending, "allow_session", by)
         await asyncio.to_thread(self.daemon.explore.flush, session)

@@ -107,7 +107,7 @@ from kookabug_core.record.runfolder import (
 from kookabug_core.registry import Registry
 from kookabug_core.runner.control import ControlState
 from kookabug_core.runner.run import unix_micros
-from kookabug_core.runner.spec import BoundWindow, PlatformSpec
+from kookabug_core.runner.spec import AttachSpec, BoundWindow, PlatformSpec
 from kookabug_core.schema import check_shape
 from kookabug_core.service import (
     DevModulesRefused,
@@ -229,6 +229,10 @@ class StartRequest:
     넘긴다 — 그 사이 정책이 deny로 바뀌었으면 그대로 거부된다."""
     basis: str | None = None
     """M8 3.6 실행 기준 `team`|`working` (None이면 작업 연결은 working, 그 밖은 team)."""
+    attach: bool = False
+    """UX7 D 붙여 실행: 켜져 있는 게임 창을 쓰고 게임 실행·종료 노드를 건너뛴다 (`agent_attach`)."""
+    from_node: str | None = None
+    """UX7 D: 루트 그래프의 이 노드부터 (붙여 실행)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -413,6 +417,9 @@ class RunManager:
         self.fake_launch: Callable[[list[str], str | None], int] | None = None
         """검사 전용 (숨은 가짜 플랫폼의 `launch_fake`): `app.launch`가 프로세스 대신 장면 가짜
         게임을 띄운다 (UX1 T2 E2E — 실제 게임 없이 띄우기 → 창 잡기)."""
+        self.attach_window: Callable[[Principal], tuple[Any, str]] | None = None
+        """붙여 실행(UX7 D)의 게임 창: **요청 주체가** 기억한 게임 (`GameMemory.resolve` —
+        (바인딩, 지금 제목), 없으면 `window_not_found`. 다른 주체의 기억은 쓰지 않는다)."""
 
     # ---------------------------------------------------------------- 검증 세션 (M8 R7)
 
@@ -493,8 +500,8 @@ class RunManager:
         (요청·`local.json`)·기한이 바뀌었으면 돌린다. 재료를
         계산하지 못하면 거부하지 않는다(편의 기능)."""
         principal = request.principal
-        if principal.job is None:
-            return
+        if principal.job is None or request.attach:
+            return  # 붙여 실행은 탐침이라 정체 판정에 넣지 않는다 (UX7 D)
         from kookabug_daemon.case_facts import failed_facts, planned_unchanged, settings_digest
 
         with self._lock:
@@ -504,6 +511,7 @@ class RunManager:
                     for r in self._runs.values()
                     if r.request is not None
                     and r.request.principal.job == principal.job
+                    and not r.request.attach
                     and path_key(r.graph) == path_key(rel)
                     and r.done.is_set()
                 ),
@@ -705,8 +713,16 @@ class RunManager:
                 "settings": settings,
                 "deadline_ms": request.deadline_ms,
                 "basis": request.basis,
+                "attach": request.attach,
+                "from_node": request.from_node,
             }
         )
+        if request.from_node is not None and not request.attach:
+            raise RequestFailed(
+                "validation_failed",
+                "from_node는 붙여 실행(attach: true)에서만 쓴다",
+                diagnostics=[],
+            )
         principal = request.principal
         with self._start_lock:
             # ① 중복 방지 키
@@ -1129,6 +1145,17 @@ class RunManager:
             plugin_modules=self.plugin_modules,
             platform=self.platform,
         )
+        attach: AttachSpec | None = None
+        if request.attach:
+            # 붙여 실행 (UX7 D): 켜져 있는 게임 창 — 새로 띄우지 않고 끄지 않는다. 그래프 파일은
+            # 바꾸지 않고 실행기가 실행·종료 노드를 대신한다
+            if self.attach_window is None:
+                raise RequestFailed("window_not_found", "붙여 실행: 기억한 게임이 없다")
+            binding, _ = self.attach_window(request.principal)
+            attach = AttachSpec(binding.hwnd, binding.pid, binding.created, request.from_node)
+            start = replace(start, source="agent_attach", attach=attach)
+            if request.principal.kind == "agent":
+                start = replace(start, agent={"id": request.principal.id})
         breakpoints, version = self.breakpoints.snapshot() if request.ui else ((), -1)
         # 정체 감지 재료: 이 실행을 시작하는 순간의 실효 설정 (작업 연결 실행만 비교에 쓴다)
         digest = (
@@ -1838,8 +1865,9 @@ def _badges(
         profile: Any = conditions["profile"]
         if profile is None or isinstance(profile, str):
             out["profile"] = profile
-    if data.get("source") == "agent_control":
-        out["source"] = "agent_control"  # 배지 "에이전트 제어" (M5 U4)
+    if data.get("source") in ("agent_control", "agent_attach"):
+        # 배지 "에이전트 제어" (M5 U4)·"붙여 실행" (UX7 D — 채택·사건 근거가 아니다)
+        out["source"] = data["source"]
     return out
 
 

@@ -1,7 +1,7 @@
 ---
 format: kookabug.playbook/0
 name: explore
-version: 2
+version: 3
 tools: [core, observe, control, screens, knowledge, cases]
 ---
 # 플레이북 explore — 화면 탐색
@@ -10,11 +10,12 @@ tools: [core, observe, control, screens, knowledge, cases]
 후보를 쌓는다. 후보는 `screens/_explored/`에 쌓이고 사람이 확인해 옮긴다.
 
 ## 순서
-1. `kb_project_info`로 금지 동작·예산을 본다. 금지 동작은 Kookabug가 막는다 — 막히면 다른 길로 간다.
-2. `kb_explore_start` → 캡처 → `kb_screen_identify` → 처음 보는 화면이면 `kb_screen_save` → 입력 → 반복 → `kb_explore_end`.
+1. `kb_project_info`로 금지 동작·예산을 본다. 금지 동작은 Kookabug가 막는다 — 막히면 다른 길로 간다. 작업이면 단계마다 `kb_job_progress`로 지금 단계·하는 일 한 줄을 남긴다.
+2. `kb_explore_start` → `kb_explore_step`(입력 없이)으로 첫 화면 → 처음 보는 화면이면 `kb_screen_save` → `kb_explore_step`(입력 하나)으로 한 걸음 → 반복 → `kb_explore_end`. `kb_explore_step`은 기다림·캡처·판별·이동 기록을 한 번에 한다(새 화면은 `new_screen: true` — 저장하면 이동의 `to`가 채워진다). 게임 창은 `window: "@game"`으로 부른다.
 3. 되돌릴 수 없는 동작은 누르지 말고 `untried`로 남긴다.
-4. 기능과 화면의 연결은 `kb_wiki_write`로 쓰되 확인하지 못한 연결은 그대로 둔다.
-5. 끝내기 전에 `kb_report_note`로 요약을 쓴다.
+4. 그래프를 고치며 확인할 때는 켜져 있는 게임에 붙여 실행한다(`kb_run_start`의 `attach: true`·`from_node`). 붙여 실행은 탐침이라 근거가 아니다.
+5. 기능과 화면의 연결은 `kb_wiki_write`로 쓰되(`base_sha256`은 `kb_wiki_read`의 값) 확인하지 못한 연결은 그대로 둔다.
+6. 끝내기 전에 `kb_report_note`로 요약과 한 줄 결과(`headline`)를 쓴다.
 
 ## 직접 입력
 `kb_input_*`(직접 입력)는 탐침용이다. 그 입력과 그때의 화면·실행으로 사건을 닫거나 채택 근거로 쓸 수 없다. 채택 검증은 Kookabug가 고른 실행만 쓴다. 금지 동작·입력 임대권·예산은 Kookabug가 먼저 막는다.

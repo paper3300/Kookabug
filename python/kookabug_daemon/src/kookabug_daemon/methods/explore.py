@@ -76,6 +76,12 @@ def _start(call: Call) -> dict[str, Any]:
         window,
         max_steps,
     )
+    if window is not None and window != "@game":
+        # 탐색 세션의 창 = 게임 (UX7 C2 `@game`): 판정을 지나 세션을 연 뒤에만, 제목으로 하나로
+        # 정해지면 그 프로세스를 이 주체의 게임으로 기억한다
+        found = call.daemon.screen_source.find(window)
+        if len(found) == 1:
+            call.daemon.game.remember(call.principal, found[0])
     return {"session": session.id, "folder": session.rel, "max_steps": session.max_steps}
 
 

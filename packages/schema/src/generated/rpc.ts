@@ -547,6 +547,10 @@ export interface RecordOverride {
  * via the `definition` "Request".
  */
 export interface Request {
+  /**
+   * UX7: MCP 도구 호출 번호 (MCP shim). 같은 연결에서 같은 번호의 요청들은 작업 활동 목록·도구 호출 수에서 한 번으로 센다
+   */
+  call?: number;
   id: RequestId;
   jsonrpc: JsonRpcVersion;
   method: MethodName;
@@ -594,6 +598,15 @@ export interface RunSpec {
     id: string;
   };
   /**
+   * UX7 붙여 실행: 이 창을 처음 대상 창으로 두고, 게임 실행·종료 노드를 건너뛰고, from_node가 있으면 그 노드부터
+   */
+  attach?: {
+    created: string;
+    from_node: null | string;
+    hwnd: number;
+    pid: number;
+  };
+  /**
    * M8 3.6: run.json basis에 그대로 남길 실행 기준 기록 (형식은 run.schema.json basis)
    */
   basis?: {
@@ -605,6 +618,10 @@ export interface RunSpec {
   bound_window?: {
     created: string;
     hwnd: number;
+    /**
+     * UX7: false면 제목을 비교하지 않는다 (@game — 같은 프로세스·생성 시각의 창이면 붙는다)
+     */
+    match_title?: boolean;
     pid: number;
     title: string;
   };
@@ -701,9 +718,9 @@ export interface RunSpec {
    */
   shutdown_grace_ms?: number;
   /**
-   * 실행 출처 (M5: agent_control = 에이전트 게임 조작). run.json에 남는다
+   * 실행 출처 (M5: agent_control = 에이전트 게임 조작). run.json에 남는다 UX7: agent_attach = 켜져 있는 게임에 붙여 돌린 그래프 실행(kb_run_start attach — 채택 검증·사건 근거가 아니다)
    */
-  source?: "agent_control";
+  source?: "agent_attach" | "agent_control";
   supervisor: ProcessIdent;
   /**
    * M8: 사람 없는 Agent 연결이 시작한 실행. 치트 노드는 분류가 무인 허용인 채택 치트만 통과한다. 없으면 false

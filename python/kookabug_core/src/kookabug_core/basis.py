@@ -95,7 +95,9 @@ def working_rel(rel: str) -> str:
         or parts[0] not in WORKING_ROOTS
     ):
         raise KnowledgeError(
-            "policy_path", "작업 기준은 tests/·subgraphs/·targets/ 아래 파일만 담는다"
+            "policy_path",
+            "작업 기준은 tests/·subgraphs/·targets/ 아래 파일만 담는다 "
+            "(예: subgraphs/common/game_enter.graph.json, targets/login/ok.target.json)",
         )
     return rel
 

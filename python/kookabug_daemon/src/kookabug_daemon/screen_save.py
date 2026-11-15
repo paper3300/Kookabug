@@ -54,7 +54,7 @@ if TYPE_CHECKING:
     from kookabug_daemon.frames import EditorFrame
     from kookabug_sdk.types import Target
 
-__all__ = ["SHOT_SIDE", "identify", "save"]
+__all__ = ["SHOT_SIDE", "add_moves", "identify", "save"]
 
 SHOT_SIDE: Final = 1280
 """대표 스크린샷 긴 변 (U7)."""
@@ -300,6 +300,23 @@ def _merge_moves(old: Sequence[Any], new: Sequence[dict[str, Any]]) -> list[dict
     return merged
 
 
+def _split_pending(
+    moves: list[dict[str, Any]], key: str
+) -> tuple[list[dict[str, Any]], list[tuple[tuple[str, str], dict[str, Any]]]]:
+    """`to` 없는 `tried` 이동은 카드에 쓰지 않고 대기 이동으로 돌린다 (UX7 C): 다음에 새 후보를
+    저장하면 그 키로 `to`를 채운다 — "가 본 이동에는 to가 있어야 한다"를 에이전트가 맞추지 않게.
+    `moves`는 `_moves()`가 프레임 기준으로 검증·정규화(픽셀→비율)한 것이다 — note 등 속성도 그대로
+    (UX7 검수 1 Mid 4)."""
+    kept: list[dict[str, Any]] = []
+    pending: list[tuple[tuple[str, str], dict[str, Any]]] = []
+    for move in moves:
+        if move.get("status") == "tried" and move.get("to") is None:
+            pending.append((("explored", key), {k: v for k, v in move.items() if k != "to"}))
+        else:
+            kept.append(move)
+    return kept, pending
+
+
 def save(call: Any, frame: EditorFrame, session: ExploreSession) -> dict[str, Any]:
     """`screens.save` 본체 (막히는 호출). 판정·세션 확인은 처리기가 했다."""
     daemon = call.daemon
@@ -329,7 +346,7 @@ def save(call: Any, frame: EditorFrame, session: ExploreSession) -> dict[str, An
         raise RequestFailed("screen_exists", f"확정 화면 '{key}'이(가) 이미 있다 (다른 키를 쓴다)")
     of = params.get("of")
     if of is not None and (not isinstance(of, str) or of not in confirmed):
-        raise _bad(f"of {of!r}은(는) 확정 화면 ID가 아니다")
+        raise _bad(_of_message(of))
     conditions = _conditions(params, frame)
     guard: FrameGuard = daemon.guard
     verdict = guard.effective(frame)
@@ -351,7 +368,7 @@ def save(call: Any, frame: EditorFrame, session: ExploreSession) -> dict[str, An
         }
         for e in elements_in
     ]
-    moves = _moves(params, frame, confirmed)
+    moves, pending = _split_pending(_moves(params, frame, confirmed), key)
 
     # 1) 준비 (잠금 밖): crop 확인·OCR·스크린샷은 스테이징 폴더에 만든다 — 느린 판정이 화면 지도
     #    잠금을 쥐지 않게 (B4 승격·CLI가 기다리지 않게)
@@ -397,7 +414,109 @@ def save(call: Any, frame: EditorFrame, session: ExploreSession) -> dict[str, An
         result["reason"] = verdict.to_json()["reason"]
     if parsed.incomplete:
         result["incomplete"] = True
+    if pending:
+        session.add_pending(pending)
     return result
+
+
+def _of_message(of: object) -> str:
+    """`of` 오류 (UX7 F): 고칠 방법을 쓴다."""
+    return (
+        f"of {of!r}은(는) 확정 화면 ID가 아니다 — 이 세션 후보면 그 키를 key로(같은 키로 "
+        "다시 저장해 고친다), 확정 화면이면 kb_screen_list의 id를 쓴다. 같은 화면 표시가 아니면 "
+        "of를 뺀다"
+    )
+
+
+def _of_key(screen_id: str) -> str | None:
+    """확정 화면에서 나가는 이동을 담을 후보 키 (`of` 카드). 규칙에 맞게 못 만들면 None."""
+    import re
+
+    base = re.sub(r"[^a-z0-9_]+", "_", screen_id.casefold()).strip("_")
+    key = f"of_{base}"[:64]
+    return key if is_screen_key(key) else None
+
+
+def add_moves(
+    daemon: Any,
+    session: ExploreSession,
+    source: tuple[str, str],
+    moves: Sequence[Mapping[str, Any]],
+) -> str | None:
+    """출발 화면 카드에 이동을 더한다 (UX7 C 자동 기록). 출발이 이 세션 후보면 그 카드, 확정
+    화면이면 그 화면을 가리키는 `of` 후보 카드(`of_<id>`). 쓴 카드 키, 쓸 수 없으면(후보가
+    없어졌거나 형식이 맞지 않음) None. 글자는 3.5b 검사를 지난다."""
+    root: Path = daemon.root
+    state, name = source
+    of: str | None = None
+    if state == "explored":
+        key: str | None = name
+    else:
+        key, of = _of_key(name), name
+    if key is None:
+        return None
+    shaped: list[dict[str, Any]] = []
+    for m in moves:
+        entry: dict[str, Any] = {
+            "via": dict(cast(Mapping[str, Any], m["via"])),
+            "to": m.get("to"),
+            "status": m.get("status", "tried"),
+        }
+        if m.get("note") is not None:
+            entry["note"] = m["note"]  # 이동 속성 보존 (UX7 검수 1 Mid 4)
+        shaped.append(entry)
+    texts: list[tuple[str, str]] = []
+    for i, m in enumerate(shaped):
+        if isinstance(m["to"], str):
+            texts.append((f"moves[{i}].to", m["to"]))
+        if isinstance(m["via"].get("key"), str):
+            texts.append((f"moves[{i}].via.key", m["via"]["key"]))
+        if isinstance(m.get("note"), str):
+            texts.append((f"moves[{i}].note", m["note"]))
+    check_texts(texts, daemon.guard, root, job_secrets(daemon))
+    rel = f"{session.rel}/{key}{SUFFIX}"
+    session_parts = (SCREENS_DIR, EXPLORED_DIR, session.id)
+    from kookabug_core.screen_promote import PromoteError, ensure_clear
+
+    with write_lock(root, session):
+        try:
+            ensure_clear(root)
+        except PromoteError:
+            return None
+        folder = plain_path(root, session_parts)
+        path = plain_path(root, (*session_parts, f"{key}{SUFFIX}"), within=folder)
+        if path.is_file():
+            try:
+                loaded = loads_strict(path.read_text(encoding="utf-8"))
+            except OSError, ValueError:
+                return None
+            doc = dict(cast(dict[str, Any], loaded)) if isinstance(loaded, dict) else {}
+        elif of is None:
+            return None  # 출발 후보 카드가 없어졌다
+        else:
+            if of not in screen_index(Workspace.open(root)):
+                return None
+            doc = {
+                "format": "kookabug.screen/1",
+                "of": of,
+                "origin": {
+                    "kind": "explored",
+                    "session": session.id,
+                    "agent": session.agent_id,
+                    "at": _stamp(),
+                },
+            }
+        doc["moves"] = _merge_moves(cast(list[Any], doc.get("moves") or []), shaped)
+        try:
+            parse_screen(doc, rel)
+        except ScreenFileError:
+            return None
+        try:
+            write_atomic(path, json.dumps(doc, ensure_ascii=False, indent=1).encode("utf-8"))
+        except DocumentError:
+            return None
+    daemon.explore.changed()
+    return key
 
 
 def _commit(
@@ -431,7 +550,7 @@ def _commit(
         raise RequestFailed("screen_exists", f"확정 화면 '{key}'이(가) 이미 있다 (다른 키를 쓴다)")
     of = params.get("of")
     if of is not None and of not in confirmed:
-        raise _bad(f"of {of!r}은(는) 확정 화면 ID가 아니다")
+        raise _bad(_of_message(of))
     old: dict[str, Any] = {}
     if path.is_file():
         try:

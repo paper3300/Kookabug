@@ -188,14 +188,18 @@ def window_info(hwnd: int, api: WindowApi = DEFAULT_API) -> WindowInfo:
 
 
 def describe(hwnd: int, api: WindowApi = DEFAULT_API) -> str:
-    """메시지용 창 설명: `'제목' (game.exe pid 123, hwnd 0x1a2b)`."""
+    """메시지용 창 설명: `HWND 0x1a2b (game.exe pid 123)`. **창 제목은 넣지 않는다** — 로그인 뒤
+    제목에 계정 ID가 들어가는 게임이 있다 (UX7 검수 4). 프로세스 이름을 못 읽으면 `?`."""
     if not hwnd:
         return "(창 없음)"
     if not api.is_window(hwnd):
-        return f"(닫힌 창 hwnd {hwnd:#x})"
+        return f"(닫힌 창 HWND {hwnd:#x})"
     pid = api.window_pid(hwnd)
-    name = api.process_name(pid) or "?"
-    return f"{api.window_title(hwnd)!r} ({name} pid {pid}, hwnd {hwnd:#x})"
+    try:
+        name = api.process_name(pid) or "?"
+    except Exception:
+        name = "?"
+    return f"HWND {hwnd:#x} ({name} pid {pid})"
 
 
 # ---------------------------------------------------------------- 찾기

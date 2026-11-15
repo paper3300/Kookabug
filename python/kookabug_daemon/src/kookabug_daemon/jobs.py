@@ -39,6 +39,7 @@ import secrets
 import threading
 import time
 import unicodedata
+from collections import deque
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -157,6 +158,14 @@ class Job:
     ended: threading.Event = field(default_factory=threading.Event)
     """복구를 확인하고 보고를 쓴 뒤에만 선다 — 작업 슬롯이 풀린다."""
     result: dict[str, Any] | None = None
+    progress: dict[str, Any] | None = None
+    """UX7 E `kb_job_progress`: {step, total, title, doing, at} (글자 검사를 지난 글만)."""
+    waiting: dict[str, Any] | None = None
+    """UX7 E 지금 기다리는 것: {kind: credential·question·run, since}."""
+    headline: str | None = None
+    """UX7 E 보고함 목록 줄의 한 줄 결과 (`kb_report_note` headline, 글자 검사)."""
+    last_screen: dict[str, Any] | None = None
+    """UX7 E 이 작업 연결의 탐색 세션이 마지막으로 저장한 후보 화면 {key, title, shot}."""
 
     def alive(self, now: float) -> bool:
         return self.revoked is None and now < self.expires
@@ -180,6 +189,10 @@ class JobRegistry:
         """작업 → 토큰 원문 (글자 검사 대상, R9). 보고를 쓴 뒤 `forget_token`이 지운다."""
         self.on_budget: Callable[[Job], None] | None = None
         """실행 예산에 처음 막혔을 때 (`job.budget` 알림)."""
+        self._counted: dict[str, deque[tuple[int, int]]] = {}
+        self._noted: dict[str, deque[tuple[int, int]]] = {}
+        """UX7 E: 작업별로 이미 센·남긴 MCP 도구 호출 (연결, 호출 번호) — MCP 호출 하나가 daemon
+        요청 여럿이어도 한 번으로 센다."""
 
     def now(self) -> float:
         return self._clock()
@@ -292,8 +305,8 @@ class JobRegistry:
                 job.revoked = reason
             return job
 
-    def note(self, job_id: str, text: str) -> int:
-        """보고 요약 글 (마지막 글이 이긴다). 바이트 수."""
+    def note(self, job_id: str, text: str, headline: str | None = None) -> int:
+        """보고 요약 글 (마지막 글이 이긴다). 바이트 수. `headline`은 보고함 목록 줄 (UX7)."""
         data = text.encode("utf-8")
         if len(data) > JOB_NOTE_MAX:
             raise RequestFailed("too_large", "보고 메모는 4 KB까지다")
@@ -302,7 +315,54 @@ class JobRegistry:
             if job is None:
                 raise _invalid("모르는 작업이다")
             job.notes = [text]
+            job.headline = headline
         return len(data)
+
+    def set_progress(
+        self, job_id: str, step: int, total: int, title: str, doing: str | None
+    ) -> Job:
+        """지금 단계와 하는 일 한 줄 (UX7 E `kb_job_progress`). 글자 검사는 호출자가 했다."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise _invalid("모르는 작업이다")
+            job.progress = {
+                "step": step,
+                "total": total,
+                "title": title,
+                "doing": doing,
+                "at": _iso(datetime.now(UTC)),
+            }
+            return job
+
+    def set_waiting(self, job_id: str, kind: str | None) -> None:
+        """기다림 이유 (UX7 E: `credential`·`question`·`run`, None이면 끝)."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is not None:
+                job.waiting = (
+                    None if kind is None else {"kind": kind, "since": _iso(datetime.now(UTC))}
+                )
+
+    def set_last_screen(self, job_id: str, screen: Mapping[str, Any]) -> None:
+        """작업의 탐색 세션이 저장한 마지막 후보 화면 (UX7 E)."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is not None:
+                job.last_screen = dict(screen)
+
+    def first_of_call(self, job_id: str, key: tuple[int, int] | None, *, note: bool) -> bool:
+        """이 MCP 도구 호출(연결, 호출 번호)의 첫 요청인가 (UX7 E). `note`면 활동 목록 표, 아니면
+        도구 호출 수 표. 번호가 없으면(옛 shim·직접 연결) 늘 True."""
+        if key is None:
+            return True
+        with self._lock:
+            table = self._noted if note else self._counted
+            seen = table.setdefault(job_id, deque(maxlen=64))
+            if key in seen:
+                return False
+            seen.append(key)
+            return True
 
     # ------------------------------------------------------------ 감독 (R8)
 
@@ -402,11 +462,14 @@ class JobRegistry:
             self.on_budget(notify)
         raise error
 
-    def count_call(self, job_id: str, tool: str) -> None:
+    def count_call(self, job_id: str, tool: str, call: tuple[int, int] | None = None) -> None:
+        """도구 호출 수. `call`(연결, MCP 호출 번호)이 같은 요청은 한 번만 센다 (UX7 E)."""
+        first = self.first_of_call(job_id, call, note=False)
         with self._lock:
             job = self._jobs.get(job_id)
             if job is not None:
-                job.tool_calls += 1
+                if first:
+                    job.tool_calls += 1
                 job.tools_seen.add(tool)
 
     def record_activity(self, job_id: str, tool: str, result: str, target: str) -> None:
@@ -455,6 +518,10 @@ class JobRegistry:
             "used": job.used(now),
             # 보고를 쓰지 못하고 끝났으면 null (끝나기 전에도 null)
             "report": None if job.result is None else job.result.get("report"),
+            # UX7 E: 진행 단계·기다림·한 줄 결과 (사람 화면)
+            "progress": None if job.progress is None else dict(job.progress),
+            "waiting": None if job.waiting is None else dict(job.waiting),
+            "headline": job.headline,
         }
 
 

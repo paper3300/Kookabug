@@ -44,6 +44,8 @@ test("test_method_table_tools_and_internal_methods", () => {
     // M7 탐색 세션·화면 지도 저장·식별 (에이전트만)
     "explore.end",
     "explore.start",
+    // UX7: 탐색 한 걸음 (에이전트만)
+    "explore.step",
     "graph.check",
     "graph.list",
     "graph.patch",
@@ -52,7 +54,11 @@ test("test_method_table_tools_and_internal_methods", () => {
     "job.finish",
     "job.heartbeat",
     "job.note",
+    // UX7: 작업 진행 (작업 연결만)
+    "job.progress",
     "knowledge.apply",
+    // UX7: 질문 답 기다리기 (에이전트만)
+    "question.wait",
     "run.artifact",
     "run.diff",
     "run.events",
@@ -69,6 +75,8 @@ test("test_method_table_tools_and_internal_methods", () => {
     "setting.propose",
     "sources.list",
     "sources.read",
+    // UX7: 위키 읽기 (에이전트만 — sha256을 쓰기 기준으로)
+    "wiki.read",
     "wiki.write",
     // M8 B3: 묶음 수락·거절은 보고함 report.decide로 (사람 전용)
     "working.accept",

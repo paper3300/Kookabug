@@ -224,8 +224,9 @@ class InputService:
             if not same_window(observed, request):
                 raise EngineError(
                     WINDOW_MISMATCH,
-                    f"찾은 창(hwnd {observed.handle:#x} {observed.title!r}, {observed.binding})과 "
-                    f"입력할 창(hwnd {request.handle:#x} {request.title!r}, {request.binding})이 "
+                    # 창 제목은 넣지 않는다 (UX7 검수 4) — HWND·바인딩만
+                    f"찾은 창(HWND {observed.handle:#x}, {observed.binding})과 "
+                    f"입력할 창(HWND {request.handle:#x}, {request.binding})이 "
                     "다르다 — in.window로 맞추거나 그 창으로 대상 창을 바꾼다",
                 )
         stale = observer.observation_stale(match)

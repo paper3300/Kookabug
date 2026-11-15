@@ -877,13 +877,19 @@ class StepContext:
         except Exception:
             acquired = False  # 창 문제는 다음 관측·입력이 알린다
         if acquired is False:
+            # 창 제목은 쓰지 않는다 — 제목에 계정 ID가 들어가는 게임이 있다 (UX7 검수 2). HWND와
+            # 프로세스 이름만
+            try:
+                process = str(platform.window_info(window).process_name) or "?"
+            except Exception:
+                process = "?"
             runtime.emit(
                 {
                     "event": "log",
                     "level": "warn",
                     "message": (
                         f"{FOREGROUND_NOT_ACQUIRED}: 실행 첫 대상 창 "
-                        f"{window.title!r} (HWND {window.handle:#x})을(를) 앞으로 가져오지 "
+                        f"(HWND {window.handle:#x}, 프로세스 {process})을(를) 앞으로 가져오지 "
                         "못했다 (다른 프로그램이 포그라운드를 쥐고 있을 수 있다). "
                         "키보드 입력 노드는 창이 앞에 올 때까지 window_not_foreground로 끝난다"
                     ),

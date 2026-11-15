@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import itertools
 import logging
 import queue
 import threading
@@ -69,6 +70,10 @@ class DaemonLink:
             # 작업 토큰 (M8 R7): hello에만 싣는다. 로그·오류에는 넣지 않는다
             self.client_info["job_token"] = job_token
         self.attacher = attacher
+        self._calls = itertools.count(1)
+        self._current = threading.local()
+        """지금 스레드의 MCP 도구 호출 번호 (UX7 E — daemon이 활동·호출 수를 MCP 호출 단위로
+        센다)."""
         self.principal: dict[str, Any] | None = None
         self.toolsets: frozenset[str] = frozenset({"core"})
         """켜진 툴셋 (daemon이 마지막으로 알려 준 것). 다시 붙을 때 이것으로 켠다."""
@@ -139,6 +144,14 @@ class DaemonLink:
 
     # ---------------------------------------------------------------- 부르기
 
+    def begin_tool(self) -> None:
+        """이 스레드에서 MCP 도구 호출 하나를 시작한다 — 그 동안의 daemon 요청에 같은 번호를
+        단다."""
+        self._current.call = next(self._calls)
+
+    def end_tool(self) -> None:
+        self._current.call = None
+
     def call(
         self,
         method: str,
@@ -149,7 +162,10 @@ class DaemonLink:
         """daemon 메서드 하나. 오류 응답은 `DaemonError`, 연결이 끊기면 `ToolError`."""
         client = self._live()
         try:
-            return client.call(method, params, timeout=timeout)
+            number = getattr(self._current, "call", None)
+            if number is None:
+                return client.call(method, params, timeout=timeout)
+            return client.call(method, params, timeout=timeout, call=number)
         except ConnectionLost as exc:
             raise ToolError(
                 "daemon_disconnected", "daemon 연결이 끊겼다. 다시 시도하면 다시 붙는다"

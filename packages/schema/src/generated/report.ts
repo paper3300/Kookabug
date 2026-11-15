@@ -20,6 +20,10 @@ export interface Report {
   ended_at?: string | null;
   format: "kookabug.report/0";
   groups: ReportGroup[];
+  /**
+   * UX7: 보고함 목록 줄의 한 줄 결과 (kb_report_note headline, 없으면 요약 첫 줄)
+   */
+  headline?: string | null;
   job: string;
   notes?: string | null;
   playbook: string;

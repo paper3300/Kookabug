@@ -14,7 +14,6 @@ from __future__ import annotations
 import contextlib
 import copy
 import re
-import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import cache
@@ -37,8 +36,10 @@ FOLDERS: Final = {
     "screens/": "화면 지도 (*.screen.json, screens 툴셋)",
     "runs/": "실행 기록 (읽기 전용, run 툴셋)",
 }
-WAIT_STEP_S: Final = 0.2
 MAX_WAIT_MS: Final = 30_000
+QUESTION_WAIT_MAX_MS: Final = 600_000
+STEP_WAIT_MAX_MS: Final = 60_000
+GAME: Final = "@game"
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,7 +116,12 @@ RECT: Final = {
     "maxItems": 4,
     "description": "[x, y, w, h] 클라이언트 영역 물리 픽셀",
 }
-WINDOW: Final = {"type": "string", "minLength": 1, "description": "창 제목 (정확히 같은 제목)"}
+WINDOW: Final = {
+    "type": "string",
+    "minLength": 1,
+    "description": '창 제목 (정확히 같은 제목) 또는 "@game"(마지막으로 kb_app_launch한 게임의 '
+    "주 창 — 로그인 뒤 제목이 바뀌어도 같은 게임이면 붙는다)",
+}
 POINT: Final = {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2}
 
 
@@ -308,12 +314,11 @@ def _run_status(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
         runs = _daemon(link, "run.list", {"limit": 10})
         return ok_result(f"최근 실행 {len(runs['runs'])}개", runs)
     wait_ms = min(int(args.get("wait_ms", 0)), MAX_WAIT_MS)
-    deadline = time.monotonic() + wait_ms / 1000
-    while True:
-        status = _daemon(link, "run.status", {"run_id": str(run)})
-        if status["state"] == "ended" or time.monotonic() >= deadline:
-            break
-        time.sleep(WAIT_STEP_S)
+    # 기다림은 daemon 안에서 (UX7 E — 요청 한 번, 작업 상태에 "실행 끝나기 기다림")
+    params: dict[str, Any] = {"run_id": str(run)}
+    if wait_ms > 0:
+        params["wait_ms"] = wait_ms
+    status = link.call("run.status", params, timeout=wait_ms / 1000 + 60)
     outcome = status.get("outcome") or {}
     verdict = outcome.get("verdict", "진행 중") if isinstance(outcome, dict) else "진행 중"
     data = dict(status)
@@ -417,13 +422,15 @@ def _source_read(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
 
 def _run_start(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     params: dict[str, Any] = {"path": args["path"], "idempotency_key": args["idempotency_key"]}
-    for key in ("profile", "deadline_ms", "settings", "basis"):
+    for key in ("profile", "deadline_ms", "settings", "basis", "attach", "from_node"):
         if key in args:
             params[key] = args[key]
     started = _daemon(link, "run.start", params)
     data = {"run": started["run_id"], **started}
+    how = " — 붙여 실행(근거 아님)" if args.get("attach") else ""
     return ok_result(
-        f"실행 {started['run_id']} 시작 ({started['graph']}). kb_run_status의 wait_ms로 기다린다",
+        f"실행 {started['run_id']} 시작 ({started['graph']}){how}. kb_run_status의 wait_ms로 "
+        "기다린다",
         data,
     )
 
@@ -481,7 +488,17 @@ def _run_compare(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _window(link: DaemonLink, title: str) -> dict[str, Any]:
-    """창 제목 → 창 하나 (정확히 같은 제목, 없으면 제목에 포함 — 둘 이상이면 오류)."""
+    """창 제목 → 창 하나 (정확히 같은 제목, 없으면 제목에 포함 — 둘 이상이면 오류). `@game`은
+    마지막으로 실행한 게임 프로세스의 주 창 (UX7 C2 — 결과에는 `@game`만 남긴다)."""
+    if title == GAME:
+        games = _daemon(link, "windows.list", {"game": True})["windows"]
+        if not games:
+            raise ToolError(
+                "window_not_found",
+                "@game: 기억한 게임의 창이 없다 — kb_app_launch로 띄우거나 창 제목으로 한 번 "
+                "입력한다",
+            )
+        return {**games[0], "title": GAME}
     windows = _daemon(link, "windows.list")["windows"]
     exact = [w for w in windows if w["title"] == title]
     found = exact or [w for w in windows if title.casefold() in str(w["title"]).casefold()]
@@ -602,6 +619,44 @@ def _explore_end(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     )
 
 
+def _explore_step(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    keys = (
+        "window", "point", "target", "button", "count", "keys", "text", "secret", "wait_ms",
+    )  # fmt: skip
+    params = {k: args[k] for k in keys if k in args}
+    wait_ms = int(args.get("wait_ms", 10_000))
+    got = link.call("explore.step", params, timeout=wait_ms / 1000 + 240)
+    done = got.get("input")
+    if isinstance(done, dict) and done.get("verdict") != "pass":
+        _control_done(f"'{args['window']}' 탐색 입력", done)  # 입력 실패는 isError로
+    frame = got["frame"]
+    data = {k: v for k, v in got.items() if k != "frame"}
+    data.update({k: frame[k] for k in ("frame_id", "width", "height", "dpi", "client_size")})
+    found = got["identify"]
+    names = ", ".join(str(m.get("id") or m.get("key")) for m in found["matches"]) or "없음"
+    moved = got.get("move")
+    move_text = ""
+    if isinstance(moved, dict):
+        move_text = (
+            f" · 이동 기록 {moved['from']} → {moved['to']}"
+            if moved["status"] == "recorded"
+            else f" · 이동 대기 {moved['from']} → (새 화면 저장 때 채움)"
+        )
+    new = " · 처음 보는 화면 — kb_screen_save(key)로 저장한다" if got["new_screen"] else ""
+    head = (
+        f"{got['window']} 한 걸음 (frame_id {frame['frame_id']}, "
+        f"{'바뀜' if got['changed'] else '안 바뀜'} {got['waited_ms']}ms) · 맞는 화면: {names}"
+        f"{move_text}{new}"
+    )
+    protected = frame.get("protected")
+    if isinstance(protected, dict):
+        data["protected"] = protected
+        return ok_result(f"{head} — 이미지 없음: {protected.get('hint', '')}", data)
+    shown = frame.get("agent_image")
+    images = [] if shown is None else [(_cache_file(link, str(shown["cache"])), "image/png")]
+    return ok_result(head, data, images)
+
+
 def _screen_save(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     keys = ("key", "title", "description", "kind", "frame_id", "of", "detect", "elements", "moves")
     got = _daemon(link, "screens.save", {k: args[k] for k in keys if k in args})
@@ -680,6 +735,29 @@ def _knowledge_apply(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any
     return ok_result(f"지식 연산 {len(args['ops'])}개를 적용했다{note}", done)
 
 
+def _wiki_read(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    got = _daemon(link, "wiki.read", {"path": args["path"]})
+    return ok_result(f"{got['path']} (sha256 {got['sha256']})", got)
+
+
+def _question_wait(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    wait_ms = min(int(args.get("wait_ms", 0)), QUESTION_WAIT_MAX_MS)
+    params = {"id": args["id"], "wait_ms": wait_ms}
+    got = link.call("question.wait", params, timeout=wait_ms / 1000 + 60)
+    if got["answered"]:
+        keys = ", ".join(got["secret_keys"]) or "없음"
+        head = f"미지수 {got['id']} 답함 ({got['kind']}, 키: {keys}) — 이어서 진행한다"
+    else:
+        head = f"미지수 {got['id']} 아직 {got['state']} ({got['waited_ms']}ms 기다림)"
+    return ok_result(head, got)
+
+
+def _job_progress(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    params = {k: args[k] for k in ("step", "total", "title", "doing") if k in args}
+    done = _daemon(link, "job.progress", params)
+    return ok_result(f"작업 {done['job']} {done['step']}/{done['total']} {args['title']}", done)
+
+
 def _wiki_write(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     params = {"path": args["path"], "text": args["text"], "base_sha256": args.get("base_sha256")}
     done = _daemon(link, "wiki.write", params)
@@ -748,7 +826,8 @@ def _adopt_request(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _report_note(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
-    done = _daemon(link, "job.note", {"text": args["text"]})
+    params = {k: args[k] for k in ("text", "headline") if k in args}
+    done = _daemon(link, "job.note", params)
     return ok_result(f"작업 {done['job']} 보고 메모를 남겼다 ({done['bytes']}바이트)", done)
 
 
@@ -863,6 +942,24 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         daemon_def("Ux2SourcesReadParams"),
         _source_read,
     ),
+    # UX7 E: 작업 진행 (작업 연결 전용)
+    ToolDef(
+        "kb_job_progress",
+        "작업 진행",
+        "작업 연결 전용. 플레이북 단계를 시작할 때 부른다: 지금 단계(step/total·title, 60자)와 "
+        "하는 일 한 줄(doing, 120자). 사람의 보고함에 '2/4 경로 걷기 — 로그인 팝업 기다리는 "
+        "중'처럼 보인다. 비밀값은 쓰지 않는다",
+        _schema(
+            {
+                "step": {"type": "integer", "minimum": 1, "maximum": 99},
+                "total": {"type": "integer", "minimum": 1, "maximum": 99},
+                "title": {"type": "string", "minLength": 1, "maxLength": 60},
+                "doing": {"type": "string", "minLength": 1, "maxLength": 120},
+            },
+            ("step", "total", "title"),
+        ),
+        _job_progress,
+    ),
     # graph_edit
     ToolDef(
         "kb_graph_create",
@@ -923,7 +1020,10 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "실행 시작",
         "그래프를 실행한다. idempotency_key가 같으면 다시 보내도 실행 하나. basis는 실행 기준"
         "(team = 팀 파일만, working = 작업 기준 덧씌움 — 생략하면 작업 연결은 working, 그 밖은 "
-        "team. qa_runner는 team만)",
+        "team. qa_runner는 team만). attach: true면 켜져 있는 게임(@game)에 붙여 돌린다 — 게임 "
+        "실행 노드·게임 실행 서브그래프는 새로 띄우지 않고, 게임 종료도 하지 않는다. from_node면 "
+        "그 노드부터(고친 노드부터 다시 확인). 붙여 실행은 탐침(source agent_attach)이라 사건·채택 "
+        "근거가 아니다 — 마지막 확인은 처음부터 하는 보통 실행 1번",
         _schema(
             {
                 "path": PATH,
@@ -932,6 +1032,8 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
                 "deadline_ms": {"type": "integer", "minimum": 1},
                 "settings": {"type": "object"},
                 "basis": {"enum": ["team", "working"]},
+                "attach": {"type": "boolean"},
+                "from_node": {"type": "string", "minLength": 1, "maxLength": 200},
             },
             ("path", "idempotency_key"),
         ),
@@ -1052,9 +1154,36 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_app_launch",
         "게임 실행",
-        "프로필의 게임을 띄운다 (설정 game.executable·game.args. 실행·녹화 중이면 거부)",
+        "프로필의 게임을 띄운다 (설정 game.executable·game.args. 실행·녹화 중이면 거부). 띄운 "
+        '게임은 window "@game"으로 부른다',
         _schema({"profile": {"type": "string"}}),
         _app_launch,
+    ),
+    # UX7 C: 탐색 한 걸음
+    ToolDef(
+        "kb_explore_step",
+        "탐색 한 걸음",
+        "입력 하나(point·target 클릭, keys, text·secret — kb_input_*와 같은 인자, 또는 입력 "
+        "없음) → 화면이 바뀌고 멈추기를 기다림(wait_ms, 입력이 있으면 기본 10초·최대 60초) → "
+        "캡처(이미지) → 화면 판별(kb_screen_identify와 같음) → 탐색 세션이 열려 있으면 "
+        "'직전 화면 --입력--> 이번 화면' 이동을 직전 화면 카드에 tried로 자동 기록. 처음 보는 "
+        "화면이면 new_screen: true — kb_screen_save(key)로 저장하면 그 키로 이동의 to를 "
+        "채운다. 권한·금지 동작·입력 임대권·비밀값 가림·탐색 스텝 예산은 kb_input_*와 같다",
+        _schema(
+            {
+                "window": WINDOW,
+                "point": POINT,
+                "target": PATH,
+                "button": {"enum": ["left", "right", "middle"]},
+                "count": {"type": "integer", "minimum": 1, "maximum": 3},
+                "keys": {"type": "string", "minLength": 1},
+                "text": {"type": "string"},
+                "secret": daemon_def("SecretKey"),
+                "wait_ms": {"type": "integer", "minimum": 0, "maximum": STEP_WAIT_MAX_MS},
+            },
+            ("window",),
+        ),
+        _explore_step,
     ),
     # screens
     ToolDef(
@@ -1083,9 +1212,10 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "kb_explore_start",
         "탐색 시작",
         "게임 화면 탐색 세션을 연다 (결과는 screens/_explored/<세션>/, 사람이 확인해 옮긴다). "
-        "순서: 캡처 → kb_screen_identify → 처음이면 kb_screen_save → 입력 → 반복 → "
-        "kb_explore_end. 되돌릴 수 없는 동작(구매·삭제)은 누르지 말고 moves에 untried로 남긴다. "
-        "비밀값 칸은 kb_input_click(point)으로 누른 뒤 입력한다",
+        "순서: kb_explore_step(입력 없이)로 첫 화면 → 처음이면 kb_screen_save → "
+        "kb_explore_step(입력)으로 한 걸음씩(이동은 자동 기록) → 반복 → kb_explore_end. 되돌릴 수 "
+        "없는 동작(구매·삭제)은 누르지 말고 moves에 untried로 남긴다. 비밀값 칸은 클릭한 뒤 "
+        "secret으로 입력한다",
         _schema(
             {
                 "title": {"type": "string", "minLength": 1},
@@ -1109,8 +1239,10 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "화면 저장",
         "탐색 세션의 후보 화면 카드를 저장·갱신한다 (key = 새 화면 ID 후보, 좌표는 프레임 픽셀). "
         "detect는 image(영역을 잘라 조건) 또는 ocr(영역 + 글자), moves는 via(click element·point "
-        "또는 key)·to(화면 키)·status(tried·untried). 보호 중인 화면은 조건·스크린샷 없이만 "
-        "저장된다",
+        "또는 key)·to(화면 키)·status(tried·untried). kb_explore_step이 이동을 자동 기록하므로 "
+        "보통 moves는 untried만 직접 쓴다. to 없는 tried 이동은 대기로 두었다가 다음 새 화면 "
+        "저장 때 그 키로 채운다. of는 확정 화면 ID(kb_screen_list의 id)만. 보호 중인 화면은 "
+        "조건·스크린샷 없이만 저장된다",
         daemon_def("ScreensSaveParams"),
         _screen_save,
     ),
@@ -1142,10 +1274,28 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_wiki_write",
         "위키 쓰기",
-        "산문 위키 페이지(wiki/**/*.md, index·log·reports 제외)를 쓴다. 새 파일은 base_sha256 "
-        "null. 판정 근거로 쓰이지 않는다",
+        "산문 위키 페이지(wiki/**/*.md, index·log·reports 제외)를 쓴다. base_sha256은 "
+        "kb_wiki_read의 sha256 값(새 파일은 null). revision_conflict면 오류의 revision이 지금 "
+        "sha256이다 — 조각 페이지를 새로 만들지 말고 그 값으로 다시 쓴다. 판정 근거로 쓰이지 "
+        "않는다",
         daemon_def("Kb8WikiWriteParams"),
         _wiki_write,
+    ),
+    ToolDef(
+        "kb_wiki_read",
+        "위키 읽기",
+        "위키 페이지(wiki/**/*.md) 글과 sha256 (kb_wiki_write의 base_sha256). 없으면 not_found",
+        daemon_def("WikiReadParams"),
+        _wiki_read,
+    ),
+    ToolDef(
+        "kb_question_wait",
+        "질문 답 기다리기",
+        "미지수(질문, 예: 테스트 계정 kind credential)가 답함(answered)이 되거나 wait_ms(최대 "
+        "600000)까지 기다린다. 작업은 살아 있는 채로 기다린다 — 사람이 보고함에서 계정을 등록하면 "
+        "바로 이어 간다. 답 글·비밀값은 주지 않는다(secret_keys 키 이름만)",
+        daemon_def("QuestionWaitParams"),
+        _question_wait,
     ),
     # cases (M8 3.2·3.8·3.14)
     ToolDef(
@@ -1212,7 +1362,8 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_report_note",
         "보고 메모",
-        "이 작업 보고의 요약 글 (4 KB, 작업 연결 전용). 보고 항목은 Kookabug가 기록에서 만든다",
+        "이 작업 보고의 요약 글 (4 KB, 작업 연결 전용)과 보고함 목록 줄에 보일 한 줄 결과 headline "
+        "(60자, 예: '로그인 팝업까지 — 계정 필요'). 보고 항목은 Kookabug가 기록에서 만든다",
         daemon_def("Kb8JobNoteParams"),
         _report_note,
     ),
@@ -1243,7 +1394,15 @@ def call_tool(link: DaemonLink, tool: ToolDef, args: Mapping[str, Any]) -> dict[
     daemon이 메서드마다 판정한다 — shim은 판정하지 않는다."""
     if tool.handler is None:
         raise ToolError("not_available", f"{tool.name}은(는) 이 판에 아직 없다")
+    # 이 도구 호출의 daemon 요청들에 같은 번호 (UX7 E — 활동 목록·도구 호출 수가 MCP 호출 단위)
+    begin = getattr(link, "begin_tool", None)
+    if begin is not None:
+        begin()
     try:
         return tool.handler(link, args)
     except DaemonError as exc:
         return from_daemon_error(exc)
+    finally:
+        end = getattr(link, "end_tool", None)
+        if end is not None:
+            end()

@@ -73,6 +73,14 @@ class ScreenSource(Protocol):
         제어 실행은 이것이 정확히 하나일 때만 그 바인딩에 입력한다."""
         ...
 
+    def process_created(self, pid: int) -> str | None:
+        """그 프로세스의 생성 시각 (바인딩 `created`와 같은 표기). 모르면 None (UX7 `@game`)."""
+        ...
+
+    def windows_of(self, pid: int, created: str) -> list[tuple[WindowBinding, str]]:
+        """창 붙기 범위의 창 중 그 프로세스(PID·생성 시각)의 창들과 지금 제목 (UX7 `@game`)."""
+        ...
+
 
 class RealSource:
     """실제 Windows."""
@@ -118,6 +126,18 @@ class RealSource:
 
     def find(self, title: str) -> list[WindowBinding]:
         return [b for b, t in self._all() if control_title_matches(t, title)]
+
+    def process_created(self, pid: int) -> str | None:
+        try:
+            from kookabug_platform.win32.api import DEFAULT_API
+
+            created = DEFAULT_API.process_created(pid)
+        except Exception:
+            return None
+        return None if not created else str(created)
+
+    def windows_of(self, pid: int, created: str) -> list[tuple[WindowBinding, str]]:
+        return [(b, t) for b, t in self._all() if b.pid == pid and b.created == created]
 
     @staticmethod
     def _all() -> list[tuple[WindowBinding, str]]:
@@ -224,6 +244,22 @@ class FakeSource:
             WindowBinding(g.window.handle, g.window.pid, str(g.window.process_created))
             for g in scenario.games()
             if control_title_matches(g.window.title, title)
+        ]
+
+    def process_created(self, pid: int) -> str | None:
+        scenario = self._load()
+        game = next((g for g in scenario.games() if g.window.pid == pid), None)
+        return None if game is None else str(game.window.process_created)
+
+    def windows_of(self, pid: int, created: str) -> list[tuple[WindowBinding, str]]:
+        scenario = self._load()
+        return [
+            (
+                WindowBinding(g.window.handle, g.window.pid, str(g.window.process_created)),
+                g.window.title,
+            )
+            for g in scenario.games()
+            if g.window.pid == pid and str(g.window.process_created) == created
         ]
 
 

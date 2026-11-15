@@ -59,7 +59,9 @@ def refuse_policy_path(call: Call, *rels: str) -> None:
     for key in (*keys, *real):
         if key.split("/", 1)[0] in _POLICY_ROOTS:
             raise RequestFailed(
-                "policy_path", "그래프·target 도구로 knowledge/·wiki/ 아래를 쓰지 않는다"
+                "policy_path",
+                "그래프·target 도구로 knowledge/·wiki/ 아래를 쓰지 않는다 (지식은 "
+                "kb_knowledge_apply, 위키는 kb_wiki_write — 그래프는 tests/·subgraphs/ 아래)",
             )
     try:
         protected = forbidden.protected_paths(root, forbidden.load_items(root))

@@ -71,6 +71,16 @@ def _open_sync(call: Call) -> dict[str, Any]:
         raise RequestFailed(
             "run_active", "끝나지 않은 실행으로는 사건을 열지 않는다", run_id=run_id
         )
+    from kookabug_core.knowledge.ops import run_source
+
+    if run_source(where.folder) == "agent_attach":
+        # 붙여 실행은 탐침이다 (UX7 D): 사건은 처음부터 하는 보통 실행으로 연다
+        raise RequestFailed(
+            "basis_probe",
+            "붙여 실행(agent_attach) 기록으로는 사건을 열지 않는다 — "
+            "처음부터 하는 보통 실행으로 연다",
+            run_id=run_id,
+        )
     root = call.daemon.root
     facts = run_facts(root, where.run_id, where.folder)
     if facts.verdict not in ("fail", "error"):

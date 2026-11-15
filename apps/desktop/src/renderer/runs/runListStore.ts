@@ -32,7 +32,7 @@ export const VERDICT_LABEL: Record<Tone, string> = {
 };
 
 export interface Badge {
-  kind: "debug" | "flaky" | "no_assertion" | "agent_control";
+  kind: "debug" | "flaky" | "no_assertion" | "agent_control" | "agent_attach";
   text: string;
 }
 
@@ -43,6 +43,8 @@ export function badgesOf(run: RunSummary): Badge[] {
   if (run.code === "no_assertion") out.push({ kind: "no_assertion", text: "검증 없음" });
   // 에이전트의 게임 조작(한 스텝 제어 실행, M5 3.9·U4) — 감사 기록으로 남긴다
   if (run.source === "agent_control") out.push({ kind: "agent_control", text: "에이전트 제어" });
+  // 켜져 있는 게임에 붙여 돌린 실행 (UX7 D) — 탐침이라 채택·사건 근거가 아니다
+  if (run.source === "agent_attach") out.push({ kind: "agent_attach", text: "붙여 실행" });
   return out;
 }
 

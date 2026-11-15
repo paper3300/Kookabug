@@ -9,6 +9,7 @@ screens를 막은 정책을 그 길로 돌아가지 않게. `screens/_explored/`
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final
 
@@ -127,21 +128,83 @@ def _frame(call: Call) -> EditorFrame:
 
 
 def _save(call: Call) -> dict[str, Any]:
-    from kookabug_daemon.screen_save import save
+    from kookabug_daemon.screen_save import add_moves, save
 
     if call.principal.kind != "agent":
         raise RequestFailed("agent_only", "화면 지도 저장은 에이전트 탐색 세션만 한다")
     session = call.daemon.explore.require(call.connection)
-    result = save(call, _frame(call), session)
+    key = str(call.params.get("key", ""))
+    card = call.daemon.root / session.rel / f"{key}{SUFFIX}"
+    existed = card.is_file()
+    waiting = session.take_pending()  # 이 저장 전에 쌓인 대기 이동 (이 저장이 만든 것은 다음 몫)
+    try:
+        result = save(call, _frame(call), session)
+    except BaseException:
+        session.add_pending(waiting)
+        raise
+    # UX7 C: 새 후보를 저장했다 — 대기 이동의 도착 화면이다 (출발 카드에 tried로). 붙이지 못한
+    # 이동은 버리지 않고(도착은 이 키로 정해 둔 채) 남기고 오류로 알린다 (검수 1 Mid 4)
+    failed: list[tuple[tuple[str, str], dict[str, Any]]] = []
+    later: list[tuple[tuple[str, str], dict[str, Any]]] = []
+    for source, move in waiting:
+        to = move.get("to")
+        if to is None and existed:
+            later.append((source, move))  # 아직 도착 화면이 정해지지 않았다
+            continue
+        target = key if to is None else str(to)
+        if source == ("explored", target):
+            continue
+        fixed = {**move, "to": target, "status": "tried"}
+        try:
+            card = add_moves(call.daemon, session, source, [fixed])
+        except RequestFailed:
+            card = None
+        if card is None:
+            failed.append((source, fixed))
+    session.add_pending([*later, *failed])
+    session.move_to(("explored", key))
+    _note_job_screen(call, session, key, result)
     call.daemon.explore.changed()
+    if failed:
+        sources = ", ".join(sorted({s[1] for s, _ in failed}))
+        raise RequestFailed(
+            "validation_failed",
+            f"후보 '{key}'는 저장했지만 대기 이동 {len(failed)}개를 출발 카드({sources})에 붙이지 "
+            "못했다 — 대기 이동은 남겼다(다음 저장 때 다시 붙인다). 출발 카드가 없어졌거나 이동 "
+            "형식(요소 이름 등)이 그 카드에 맞지 않는다",
+            diagnostics=[],
+        )
     return result
+
+
+def _note_job_screen(call: Call, session: Any, key: str, result: Mapping[str, Any]) -> None:
+    """작업 연결이면 마지막 저장 화면을 작업 상태에 둔다 (UX7 E 보고함 머리). 스크린샷은 보호
+    통과로 저장됐을 때만 경로를 둔다."""
+    job = call.principal.job
+    if job is None:
+        return
+    title = call.params.get("title")
+    shot = f"{session.rel}/{key}.shot.png" if result.get("shot") == "saved" else None
+    if shot is None:
+        # 이번에 스크린샷을 만들지 않았어도 앞서 저장한 대표 스크린샷이 있으면 그것
+        existing = call.daemon.root / session.rel / f"{key}.shot.png"
+        shot = f"{session.rel}/{key}.shot.png" if existing.is_file() else None
+    call.daemon.jobs.set_last_screen(
+        job, {"key": key, "title": title if isinstance(title, str) else None, "shot": shot}
+    )
 
 
 def _identify(call: Call) -> dict[str, Any]:
     from kookabug_daemon.screen_save import identify
 
     session = call.daemon.explore.get(call.connection)
-    return identify(call.daemon, _frame(call), session)
+    found = identify(call.daemon, _frame(call), session)
+    if session is not None and found["matches"]:
+        # UX7 C: 지금 화면 (다음 kb_explore_step 이동의 출발점)
+        first = found["matches"][0]
+        state = "confirmed" if first["state"] == "confirmed" else "explored"
+        session.move_to((state, str(first.get("id") or first.get("key"))))
+    return found
 
 
 async def _save_handler(call: Call) -> dict[str, Any]:

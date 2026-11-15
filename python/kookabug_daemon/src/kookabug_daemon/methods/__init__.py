@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from kookabug_daemon.explore import ExploreSessions
     from kookabug_daemon.frame_guard import FrameGuard
     from kookabug_daemon.frames import FrameCache
+    from kookabug_daemon.game_window import GameMemory
     from kookabug_daemon.image_cache import EditorCache
     from kookabug_daemon.jobs import Job, JobRegistry, JobSupervisor
     from kookabug_daemon.permission_files import PermissionFiles
@@ -110,6 +111,11 @@ class DaemonContext(Protocol):
     @property
     def explore(self) -> ExploreSessions:
         """에이전트 탐색 세션 (M7 3.4)."""
+        ...
+
+    @property
+    def game(self) -> GameMemory:
+        """마지막으로 실행한 게임 (UX7 `@game`)."""
         ...
 
     def screens_changed(self) -> None:
@@ -239,6 +245,7 @@ def registry() -> dict[str, MethodSpec]:
         conversations,
         debug,
         explore,
+        explore_step,
         graph,
         jobs,
         knowledge,
@@ -279,6 +286,7 @@ def registry() -> dict[str, MethodSpec]:
         **plugins.METHODS,
         **debug.METHODS,
         **explore.METHODS,
+        **explore_step.METHODS,
         **recorder.METHODS,
         **secrets.METHODS,
         **session.METHODS,

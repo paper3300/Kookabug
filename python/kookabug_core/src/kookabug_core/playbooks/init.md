@@ -1,7 +1,7 @@
 ---
 format: kookabug.playbook/0
 name: init
-version: 5
+version: 6
 tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
 ---
 # 플레이북 init — 시작할 수 있을 만큼만
@@ -10,7 +10,7 @@ tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
 **이후 작업을 시작할 수 있을 만큼만** 정리하면 끝난다: 위키 기본 뼈대, 기능 목록, `게임 실행`·`게임 종료` 서브그래프.
 게임 안으로 들어가는 경로(로그인·서버 선택·캐릭터 선택)와 기능별 화면 탐색은 하지 않는다 — 다음 단계(접속 경로 만들기)와 이후 탐색의 몫이다.
 
-## 단계
+## 단계 (각 단계를 시작할 때 `kb_job_progress`로 단계 번호·제목·하는 일 한 줄을 남긴다, total 5)
 1. 설정 확인: `kb_project_info`로 원본 상태(sources)·자동화 정책·치트·게임 설정을 읽는다. 빈 칸과 `missing`·`unreadable` 원본은 위키 `environment.md`의 "모르는 것"에 적는다.
 2. 원본 러프 수집: 원본은 **`kb_source_list`·`kb_source_read`로만** 읽는다(워크스페이스 밖 폴더도 등록된 원본이면 읽힌다. 셸·파일 도구로 직접 읽지 않는다). 길면 `next_offset`을 `offset`으로 이어 읽되 훑어보기만 한다.
    - `kb_wiki_write`로 `wiki/overview.md`·`glossary.md`·`environment.md`를 쓰고, 기능마다 한 줄 설명인 `wiki/features/<기능>.md`를 쓴다. 원본이 없으면 화면을 보고 추측해 쓰고 추측이라고 적는다.

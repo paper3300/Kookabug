@@ -59,7 +59,13 @@ def _windows() -> list[dict[str, Any]]:
 
 async def _list(call: Call) -> dict[str, Any]:
     # 원천: 실제 Windows(`_windows`) 또는 장면 가짜 게임(숨은 --platform-fake, M7 3.12)
-    return {"windows": await asyncio.to_thread(call.daemon.screen_source.windows)}
+    found = await asyncio.to_thread(call.daemon.screen_source.windows)
+    if call.params.get("game") is True:
+        # UX7 `@game`: 이 주체가 기억한 게임 프로세스의 창만 (없으면·사람이면 빈 목록)
+        windows = await asyncio.to_thread(call.daemon.game.windows, call.principal)
+        mine = {b.hwnd for b, _ in windows}
+        found = [w for w in found if w.get("handle") in mine]
+    return {"windows": found}
 
 
 def capture_window(hwnd: int) -> CapturedFrame:

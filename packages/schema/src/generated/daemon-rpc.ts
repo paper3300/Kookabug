@@ -59,6 +59,7 @@ export type ToolName =
   | "kb_evidence_pin"
   | "kb_explore_end"
   | "kb_explore_start"
+  | "kb_explore_step"
   | "kb_graph_create"
   | "kb_graph_get"
   | "kb_graph_list"
@@ -68,6 +69,7 @@ export type ToolName =
   | "kb_input_click"
   | "kb_input_key"
   | "kb_input_type"
+  | "kb_job_progress"
   | "kb_knowledge_apply"
   | "kb_knowledge_get"
   | "kb_knowledge_search"
@@ -75,6 +77,7 @@ export type ToolName =
   | "kb_node_search"
   | "kb_ocr_read"
   | "kb_project_info"
+  | "kb_question_wait"
   | "kb_report_note"
   | "kb_run_artifact_get"
   | "kb_run_cancel"
@@ -93,6 +96,7 @@ export type ToolName =
   | "kb_target_create"
   | "kb_toolset_enable"
   | "kb_triage_signals"
+  | "kb_wiki_read"
   | "kb_wiki_write"
   | "ui_only";
 /**
@@ -158,7 +162,7 @@ export type DaemonErrorCode = -32700 | -32600 | -32601 | -32602 | -32603 | -3210
  */
 export type DaemonErrorObject = DaemonStandardError | DaemonRequestFailedError;
 /**
- * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 비밀값 — data.field), secret_unchecked(비밀값 검사 불가 — 키를 못 읽음·보호 기록 손상), screens_busy(화면 지도 잠금) M8 B4: job_token_invalid(작업 토큰이 틀림·만료·폐기 — 연결 거부), job_only(작업 토큰 연결 전용 메서드), forbidden_visible(금지 문구·target·화면이 보여 입력하지 않음 — data.kind·value), forbidden_unverifiable(화면·OCR·target 확인 실패로 입력하지 않음), stalled_repeat(같은 작업에서 같은 실패 3번 — 그 테스트를 다시 돌리지 않음), case_resolution_reserved(사건 resolved·closed는 Kookabug·사람만), case_closed(닫힌 사건), verification_active(자동 채택 검증 실행 중이라 게임 입력을 받지 않음), 지식 연산 거부(duplicate_id·basis_required·basis_unknown·basis_hash_mismatch·basis_derived·human_basis_reserved·adoption_reserved·answer_reserved·too_large·path_alias) UX2: source_unavailable(원본을 읽을 수 없음 — data.reason missing·unreadable·unchecked_url·duplicate_id), unsupported_format(텍스트·docx·xlsx·pptx가 아님·너무 큼·깨짐 — data.reason), setting_not_allowed(허용 목록 밖 설정 키 제안)
+ * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 비밀값 — data.field), secret_unchecked(비밀값 검사 불가 — 키를 못 읽음·보호 기록 손상), screens_busy(화면 지도 잠금) M8 B4: job_token_invalid(작업 토큰이 틀림·만료·폐기 — 연결 거부), job_only(작업 토큰 연결 전용 메서드), forbidden_visible(금지 문구·target·화면이 보여 입력하지 않음 — data.kind·value), forbidden_unverifiable(화면·OCR·target 확인 실패로 입력하지 않음), stalled_repeat(같은 작업에서 같은 실패 3번 — 그 테스트를 다시 돌리지 않음), case_resolution_reserved(사건 resolved·closed는 Kookabug·사람만), case_closed(닫힌 사건), verification_active(자동 채택 검증 실행 중이라 게임 입력을 받지 않음), 지식 연산 거부(duplicate_id·basis_required·basis_unknown·basis_hash_mismatch·basis_derived·human_basis_reserved·adoption_reserved·answer_reserved·too_large·path_alias) UX2: source_unavailable(원본을 읽을 수 없음 — data.reason missing·unreadable·unchecked_url·duplicate_id), unsupported_format(텍스트·docx·xlsx·pptx가 아님·너무 큼·깨짐 — data.reason), setting_not_allowed(허용 목록 밖 설정 키 제안) UX7: basis_probe(붙여 실행 agent_attach 기록은 사건·지식 근거로 쓰지 않는다)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RequestFailedCode".
@@ -282,7 +286,8 @@ export type RequestFailedCode =
   | "unsupported_format"
   | "setting_not_allowed"
   | "question_limit"
-  | "secret_missing";
+  | "secret_missing"
+  | "basis_probe";
 /**
  * 플러그인 작업 ID (= 설치 거래 ID, 작업 로그 이름)
  *
@@ -945,7 +950,7 @@ export interface ControlClickParams {
   point?: [number, number];
   target?: WorkspacePath;
   /**
-   * 창 제목 (정확히 같은 제목의 창, 권한 인자)
+   * 창 제목 (정확히 같은 제목의 창, 권한 인자) 또는 "@game"(마지막으로 실행한 게임의 주 창 — 제목이 바뀌어도 같은 프로세스면 붙는다)
    */
   window: string;
 }
@@ -959,7 +964,7 @@ export interface ControlKeyParams {
    */
   keys: string;
   /**
-   * 창 제목 (정확히 같은 제목의 창, 권한 인자)
+   * 창 제목 (정확히 같은 제목의 창, 권한 인자) 또는 "@game"(마지막으로 실행한 게임의 주 창 — 제목이 바뀌어도 같은 프로세스면 붙는다)
    */
   window: string;
 }
@@ -988,7 +993,7 @@ export interface ControlTypeParams {
   secret?: SecretKey;
   text?: string;
   /**
-   * 창 제목 (정확히 같은 제목의 창, 권한 인자)
+   * 창 제목 (정확히 같은 제목의 창, 권한 인자) 또는 "@game"(마지막으로 실행한 게임의 주 창 — 제목이 바뀌어도 같은 프로세스면 붙는다)
    */
   window: string;
 }
@@ -1275,6 +1280,54 @@ export interface ExploreStartResult {
   session: string;
 }
 /**
+ * explore.step (kb_explore_step, UX7): 입력 하나(point·target 클릭, keys, text·secret, 또는 없음) → 화면이 바뀌고 멈추기를 기다림 → 캡처 → 화면 판별 → 탐색 세션이 있으면 이동 자동 기록
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ExploreStepParams".
+ */
+export interface ExploreStepParams {
+  button?: "left" | "middle" | "right";
+  count?: number;
+  keys?: string;
+  /**
+   * [x, y] 클라이언트 영역 물리 픽셀
+   *
+   * @minItems 2
+   * @maxItems 2
+   */
+  point?: [number, number];
+  secret?: SecretKey;
+  target?: WorkspacePath;
+  text?: string;
+  /**
+   * 화면이 바뀐 뒤 멈추기를 기다리는 상한 (입력이 있으면 기본 10000, 없으면 0)
+   */
+  wait_ms?: number;
+  /**
+   * 창 제목 (정확히 같은 제목의 창, 권한 인자) 또는 "@game"(마지막으로 실행한 게임의 주 창 — 제목이 바뀌어도 같은 프로세스면 붙는다)
+   */
+  window: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ExploreStepResult".
+ */
+export interface ExploreStepResult {
+  changed: boolean;
+  frame: Frame;
+  identify: ScreensIdentifyResult;
+  input: ControlResult | null;
+  move: {
+    card?: string;
+    from: string;
+    status: "recorded" | "pending";
+    to: null | string;
+  } | null;
+  new_screen: boolean;
+  waited_ms: number;
+  window: string;
+}
+/**
  * 편집기 정지 화면 (daemon 프레임 캐시, 최대 16장. 사라지면 frame_expired)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -1309,6 +1362,32 @@ export interface Frame {
       | "window_unknown";
   };
   width: number;
+}
+/**
+ * matches 맞는 화면, unknown 확인하지 못한 조건이 남은 화면(보호 프레임의 OCR 조건 등). 읽은 글자는 넣지 않는다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensIdentifyResult".
+ */
+export interface ScreensIdentifyResult {
+  checked: number;
+  matches: ScreensIdentifyMatch[];
+  problems: {
+    node: string;
+    problem: string;
+  }[];
+  unknown: ScreensIdentifyMatch[];
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensIdentifyMatch".
+ */
+export interface ScreensIdentifyMatch {
+  id?: string;
+  key?: string;
+  node: string;
+  state: "confirmed" | "explored";
+  title: string | null;
 }
 /**
  * 열린 문서의 디스크 revision이 바뀜 (파일이 없어졌으면 null)
@@ -1693,6 +1772,27 @@ export interface GraphValidateResult {
   diagnostics: Diagnostic[];
   seq: RequestSeq;
   shapes: NodeShapes;
+}
+/**
+ * job.progress (kb_job_progress, UX7): 작업 연결 전용. 지금 단계와 하는 일 한 줄 (글자 검사)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "JobProgressParams".
+ */
+export interface JobProgressParams {
+  doing?: string;
+  step: number;
+  title: string;
+  total: number;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "JobProgressResult".
+ */
+export interface JobProgressResult {
+  job: string;
+  step: number;
+  total: number;
 }
 /**
  * adopt.request: 사건의 작업 기준 변경 하나를 자동 채택 조건 1~8로 검사해 팀에 게시 (M8 3.8·R1). 검증 실행은 Kookabug가 고른다
@@ -2745,6 +2845,10 @@ export interface Kb8JobIdParams {
  * via the `definition` "Kb8JobNoteParams".
  */
 export interface Kb8JobNoteParams {
+  /**
+   * UX7: 보고함 목록 줄의 한 줄 결과 (60자). 없으면 요약 첫 줄을 자른다
+   */
+  headline?: string;
   text: string;
 }
 /**
@@ -2789,12 +2893,40 @@ export interface Kb8JobsActivityResult {
   entries: Kb8JobsActivityEntry[];
   job: string;
   /**
+   * UX7: 이 작업의 탐색 세션이 마지막으로 저장한 후보 화면
+   */
+  last_screen?: {
+    /**
+     * 후보 화면 대표 스크린샷의 썸네일 (편집기 캐시 이름 — 지도 탭 thumb와 같은 것, 보호 화면이면 null)
+     */
+    image: null | string;
+    key: string;
+    title: null | string;
+  } | null;
+  /**
    * 비밀값을 가린 agent.log의 마지막 줄들 (최대 200줄, 글자 그대로)
    */
   log_tail: string[];
+  /**
+   * UX7: kb_job_progress로 남긴 지금 단계
+   */
+  progress?: {
+    at: string;
+    doing: null | string;
+    step: number;
+    title: string;
+    total: number;
+  } | null;
   started_at: null | string;
   state: string;
   used: Kb8JobUsed | null;
+  /**
+   * UX7: 지금 기다리는 것 (계정 등록·질문 답·실행 끝)
+   */
+  waiting?: {
+    kind: "credential" | "question" | "run";
+    since: string;
+  } | null;
 }
 /**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -3654,6 +3786,12 @@ export interface Methods {
     result: ExploreStartResult;
     tool: "kb_explore_start";
   };
+  "explore.step": {
+    params: ExploreStepParams;
+    renderer: false;
+    result: ExploreStepResult;
+    tool: "kb_explore_step";
+  };
   "graph.check": {
     params: GraphCheckParams;
     renderer: false;
@@ -3731,6 +3869,12 @@ export interface Methods {
     renderer: false;
     result: Kb8JobNoteResult;
     tool: "kb_report_note";
+  };
+  "job.progress": {
+    params: JobProgressParams;
+    renderer: false;
+    result: JobProgressResult;
+    tool: "kb_job_progress";
   };
   "jobs.activity": {
     params: Kb8JobsActivityParams;
@@ -3863,6 +4007,12 @@ export interface Methods {
     renderer: true;
     result: Kb8ConfigBlockResult;
     tool: "ui_only";
+  };
+  "question.wait": {
+    params: QuestionWaitParams;
+    renderer: false;
+    result: QuestionWaitResult;
+    tool: "kb_question_wait";
   };
   "recorder.commit_abort": {
     params: RecorderCommitTokenParams;
@@ -4063,7 +4213,7 @@ export interface Methods {
     tool: "kb_run_start";
   };
   "run.status": {
-    params: RunIdParams;
+    params: RunStatusParams;
     renderer: true;
     result: RunStatusResult;
     tool: "kb_run_status";
@@ -4236,6 +4386,12 @@ export interface Methods {
     result: Kb8UnknownsAnswerResult;
     tool: "ui_only";
   };
+  "wiki.read": {
+    params: WikiReadParams;
+    renderer: false;
+    result: WikiReadResult;
+    tool: "kb_wiki_read";
+  };
   "wiki.write": {
     params: Kb8WikiWriteParams;
     renderer: false;
@@ -4243,7 +4399,7 @@ export interface Methods {
     tool: "kb_wiki_write";
   };
   "windows.list": {
-    params: EmptyParams;
+    params: WindowsListParams;
     renderer: true;
     result: WindowsListResult;
     tool: "kb_screen_capture";
@@ -4786,6 +4942,31 @@ export interface PluginsUpgradeParams {
   isolation?: PluginIsolation;
   ref?: string;
   sha256?: string;
+}
+/**
+ * question.wait (kb_question_wait, UX7): 미지수가 answered가 되거나 기한까지 기다린다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "QuestionWaitParams".
+ */
+export interface QuestionWaitParams {
+  id: string;
+  wait_ms?: number;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "QuestionWaitResult".
+ */
+export interface QuestionWaitResult {
+  answered: boolean;
+  id: string;
+  kind: "credential" | "question";
+  /**
+   * credential: 등록된 키 이름 (값 아님)
+   */
+  secret_keys: SecretKey[];
+  state: "answered" | "dropped" | "open";
+  waited_ms: number;
 }
 /**
  * recorder.commit_abort: 그래프 단계가 실패 → stopped로 돌아가 다른 이름·위치로 다시 commit_prepare (써진 target 재사용)
@@ -5448,9 +5629,9 @@ export interface RunSummary {
   run_dir: string;
   run_id: RunId;
   /**
-   * 배지 "에이전트 제어": source agent_control 실행 (M5 3.9, run.json에서)
+   * 배지 "에이전트 제어": source agent_control 실행 (M5 3.9, run.json에서) UX7: agent_attach = 켜져 있는 게임에 붙여 돌린 그래프 실행(kb_run_start attach — 채택 검증·사건 근거가 아니다)
    */
-  source?: "agent_control";
+  source?: "agent_attach" | "agent_control";
   started_at: Timestamp | null;
   state: "ended" | "running";
 }
@@ -5527,10 +5708,18 @@ export interface RunSearchResult {
  */
 export interface RunStartParams {
   /**
+   * UX7: 켜져 있는 게임에 붙여 돌린다 — 게임 실행 노드(core.app.launch·게임 실행 서브그래프 호출)를 새로 띄우지 않고 마지막으로 kb_app_launch한 게임 창을 내놓고, 게임 종료 노드도 건너뛴다(게임을 끄지 않는다). 기록은 source agent_attach — 채택 검증·사건 근거가 아니다
+   */
+  attach?: boolean;
+  /**
    * M8 3.6 실행 기준: team(팀 파일만) | working(시작 때 작업 기준 덧씌움 고정). 생략하면 작업 연결은 working, 그 밖은 team
    */
   basis?: "team" | "working";
   deadline_ms?: number;
+  /**
+   * UX7: 루트 그래프의 이 노드부터 시작한다 (attach와 함께. 그 앞 노드는 건너뛴다)
+   */
+  from_node?: string;
   idempotency_key?: string;
   path: WorkspacePath;
   profile?: string | null;
@@ -5540,6 +5729,17 @@ export interface RunStartParams {
   settings?: {
     [k: string]: unknown | undefined;
   };
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "RunStatusParams".
+ */
+export interface RunStatusParams {
+  run_id: RunId;
+  /**
+   * UX7: 끝나기를 이만큼 기다린다 (daemon 안에서 — 호출 한 번)
+   */
+  wait_ms?: number;
 }
 /**
  * 실행 요약 + 실행 스냅샷의 호출 관계 (화면이 실행 중 강조를 실행한 그래프 파일에 붙인다. 편집 버퍼가 아니라 스냅샷 기준)
@@ -5734,32 +5934,6 @@ export interface ScreensGetResult {
  */
 export interface ScreensIdentifyParams {
   frame_id: string;
-}
-/**
- * matches 맞는 화면, unknown 확인하지 못한 조건이 남은 화면(보호 프레임의 OCR 조건 등). 읽은 글자는 넣지 않는다
- *
- * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
- * via the `definition` "ScreensIdentifyResult".
- */
-export interface ScreensIdentifyResult {
-  checked: number;
-  matches: ScreensIdentifyMatch[];
-  problems: {
-    node: string;
-    problem: string;
-  }[];
-  unknown: ScreensIdentifyMatch[];
-}
-/**
- * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
- * via the `definition` "ScreensIdentifyMatch".
- */
-export interface ScreensIdentifyMatch {
-  id?: string;
-  key?: string;
-  node: string;
-  state: "confirmed" | "explored";
-  title: string | null;
 }
 /**
  * screens.layout_get/set (사람만, M7 3.8): 화면 지도 카드 배치 .kookabug/screen-map.json. 처리기는 B5
@@ -6404,6 +6578,34 @@ export interface TargetSaveResult {
   warnings: string[];
 }
 /**
+ * wiki.read (kb_wiki_read, UX7): 위키 페이지 글과 sha256 (kb_wiki_write의 base_sha256)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "WikiReadParams".
+ */
+export interface WikiReadParams {
+  path: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "WikiReadResult".
+ */
+export interface WikiReadResult {
+  path: string;
+  sha256: string;
+  text: string;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "WindowsListParams".
+ */
+export interface WindowsListParams {
+  /**
+   * UX7: 마지막으로 kb_app_launch한 게임(또는 탐색·입력으로 정해진 게임 프로세스)의 창만
+   */
+  game?: boolean;
+}
+/**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "WindowsListResult".
  */
@@ -6722,6 +6924,10 @@ export interface WorkspaceChangedParams {
  * via the `definition` "Request".
  */
 export interface Request {
+  /**
+   * UX7: MCP 도구 호출 번호 (MCP shim). 같은 연결에서 같은 번호의 요청들은 작업 활동 목록·도구 호출 수에서 한 번으로 센다
+   */
+  call?: number;
   id: RequestId;
   jsonrpc: JsonRpcVersion;
   method: MethodName;

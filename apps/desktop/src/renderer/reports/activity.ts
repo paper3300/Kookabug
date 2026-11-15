@@ -60,7 +60,17 @@ const TOOL_TEXT: Record<string, string> = {
   kb_input_key: "키 입력",
   kb_input_type: "글자 입력",
   kb_app_launch: "게임 실행",
+  // UX7
+  kb_explore_step: "탐색 한 걸음",
+  kb_question_wait: "질문 답 기다리기",
+  kb_job_progress: "단계 시작",
+  kb_wiki_read: "위키 읽기",
 };
+
+/** 도구 이름 → 한국어 (모르는 도구는 이름 그대로) */
+export function toolText(tool: string): string {
+  return TOOL_TEXT[tool] ?? tool;
+}
 
 /** 도구 한 번 → "위키 쓰기: wiki/overview.md" (실패면 뒤에 "· 실패 (코드)") */
 export function activityText(e: Pick<ActivityEntry, "tool" | "result" | "target">): string {
@@ -105,22 +115,70 @@ export interface ActivityRow {
 }
 
 /**
- * 화면 줄: 연달아 같은 도구·대상·결과는 한 줄로 묶는다. MCP 도구 하나가 daemon 메서드 여럿을 부른다
- * (예: kb_project_info → workspace.info·permissions.get·plugins.list·project.qa_info)
+ * 화면 줄: 연달아 같은 도구·결과는 한 줄로 묶는다 ("화면 캡처 ×12", UX7). 대상이 모두 같으면 대상까지, 다르면 도구 이름만 보인다.
+ * daemon은 MCP 도구 호출 하나를 한 줄로 남긴다(UX7 — 안쪽 요청·기다림 폴링은 세지 않는다)
  */
 export function collapseActivity(entries: readonly ActivityEntry[]): ActivityRow[] {
-  const out: ActivityRow[] = [];
+  const out: (ActivityRow & { target: string })[] = [];
   for (const e of entries) {
     const last = out[out.length - 1];
-    const text = activityText(e);
-    if (last !== undefined && last.text === text && last.tool === e.tool) {
+    if (last !== undefined && last.tool === e.tool && last.result === e.result) {
       last.count += 1;
       last.seq = e.seq;
+      if (last.target !== e.target) {
+        last.target = "";
+        last.text = activityText({ tool: e.tool, result: e.result, target: "" });
+      }
       continue;
     }
-    out.push({ seq: e.seq, at: e.at, tool: e.tool, result: e.result, text, count: 1 });
+    out.push({ seq: e.seq, at: e.at, tool: e.tool, result: e.result, text: activityText(e), count: 1, target: e.target });
   }
-  return out;
+  return out.map(({ target: _target, ...row }) => row);
+}
+
+// ── 진행 중 머리 (UX7 E) ─────────────────────────────────────────
+
+export interface JobProgress {
+  step: number;
+  total: number;
+  title: string;
+  doing: string | null;
+  at: string;
+}
+
+export interface JobWaiting {
+  kind: "credential" | "question" | "run";
+  since: string;
+}
+
+export interface LastScreen {
+  key: string;
+  title: string | null;
+  /** 편집기 캐시 썸네일 이름 (보호 화면이면 null — 이름만 보인다) */
+  image: string | null;
+}
+
+/** "2/4 경로 걷기 — 타이틀 터치 → 로그인 팝업 기다리는 중" (없으면 빈 글) */
+export function progressText(p: JobProgress | null | undefined): string {
+  if (p == null) return "";
+  const head = `${p.step}/${p.total} ${p.title}`;
+  return p.doing != null && p.doing !== "" ? `${head} — ${p.doing}` : head;
+}
+
+/** 기다림 이유 한 줄 (실행은 n초째). 없으면 빈 글 */
+export function waitingText(w: JobWaiting | null | undefined, nowMs: number = Date.now()): string {
+  if (w == null) return "";
+  if (w.kind === "credential") return "테스트 계정 등록을 기다리는 중";
+  if (w.kind === "question") return "사람 답을 기다리는 중";
+  const since = new Date(w.since).getTime();
+  const secs = Number.isNaN(since) ? 0 : Math.max(0, Math.floor((nowMs - since) / 1000));
+  return `실행 끝나기 기다림 ${secs}초째`;
+}
+
+/** 마지막 저장 화면 이름: 제목 (키), 제목이 없으면 키 */
+export function lastScreenText(s: LastScreen | null | undefined): string {
+  if (s == null) return "";
+  return s.title != null && s.title !== "" ? `${s.title} (${s.key})` : s.key;
 }
 
 /** 진행 중 작업이면 폴링한다 */

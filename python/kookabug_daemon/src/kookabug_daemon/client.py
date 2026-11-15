@@ -171,7 +171,10 @@ class DaemonClient:
 
     # ---------------------------------------------------------------- 보내기
 
-    def request(self, method: str, params: Mapping[str, Any] | None = None) -> Future[Any]:
+    def request(
+        self, method: str, params: Mapping[str, Any] | None = None, *, call: int | None = None
+    ) -> Future[Any]:
+        """`call`은 MCP 도구 호출 번호 (UX7 — 같은 번호의 요청은 작업 활동·호출 수에서 한 번)."""
         values = {} if params is None else dict(params)
         # 계약에 없는 메서드는 그대로 보낸다 (daemon이 method_not_found로 답한다)
         known = method in methods()
@@ -183,9 +186,15 @@ class DaemonClient:
                 raise ConnectionLost(self.close_code, self.close_reason)
             request_id = next(self._ids)
             self._pending[request_id] = future
-        self.send_text(
-            encode({"jsonrpc": "2.0", "id": request_id, "method": method, "params": values})
-        )
+        message: dict[str, Any] = {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": method,
+            "params": values,
+        }
+        if call is not None:
+            message["call"] = call
+        self.send_text(encode(message))
         return future
 
     def call(
@@ -194,8 +203,9 @@ class DaemonClient:
         params: Mapping[str, Any] | None = None,
         *,
         timeout: float = DEFAULT_TIMEOUT,
+        call: int | None = None,
     ) -> Any:
-        return self.request(method, params).result(timeout)
+        return self.request(method, params, call=call).result(timeout)
 
     def send_text(self, text: str) -> None:
         try:

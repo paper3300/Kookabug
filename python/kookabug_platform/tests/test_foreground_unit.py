@@ -66,7 +66,9 @@ def test_independent_window_same_pid_refused(api: FakeWindowApi) -> None:
     api.foreground = S
     err = refused(WINDOW_NOT_FOREGROUND, check_foreground, A, api)
     # 메시지에 대상과 지금 포그라운드 창
-    assert "'Game'" in err.message and "'Game Chat'" in err.message and "game.exe" in err.message
+    # 창은 HWND·프로세스로 (제목은 넣지 않는다 — UX7 검수 4)
+    assert "HWND 0x100" in err.message and "HWND 0x400" in err.message and "game.exe" in err.message
+    assert "'Game" not in err.message
     api.foreground = X
     refused(WINDOW_NOT_FOREGROUND, check_foreground, A, api)
     api.foreground = 0  # 포그라운드 없음 (잠금 직후 등)
@@ -76,7 +78,8 @@ def test_independent_window_same_pid_refused(api: FakeWindowApi) -> None:
 def test_point_under_other_window_obscured(api: FakeWindowApi) -> None:
     api.under_point[PT] = X
     err = refused(POINT_OBSCURED, check_point, A, PT, api)
-    assert "'Editor'" in err.message and "other.exe" in err.message
+    assert "HWND 0x500" in err.message and "other.exe" in err.message
+    assert "Editor" not in err.message  # 제목은 넣지 않는다 (UX7 검수 4)
     api.under_point[PT] = S  # 같은 프로세스의 독립 창도 거부
     refused(POINT_OBSCURED, check_point, A, PT, api)
     del api.under_point[PT]  # 화면 밖·아무 창 없음
