@@ -173,7 +173,8 @@ def test_minimized_detected(game: SampleGame) -> None:
     try:
         wait_until(lambda: window_info(game.hwnd).minimized, timeout=5)
         err = refused(WINDOW_MINIMIZED, check_not_minimized, game.hwnd)
-        assert game.ready["title"] in err.message
+        # 제목은 메시지에 넣지 않는다 (계정 ID 가 들어가는 게임이 있다). HWND 로 가리킨다
+        assert game.ready["title"] not in err.message and f"0x{game.hwnd:x}" in err.message
     finally:
         user32.ShowWindow(game.hwnd, SW_RESTORE)
     wait_until(lambda: not window_info(game.hwnd).minimized, timeout=5)
@@ -214,7 +215,7 @@ def test_foreground_independent_second_window_refused(tmp_path: Path, title: str
         bring_front(second)
         # 같은 프로세스의 독립 최상위 창이 포그라운드: 메인 창 대상 키보드 입력은 거부
         err = refused(WINDOW_NOT_FOREGROUND, check_foreground, game.hwnd)
-        assert f"{title} Chat" in err.message
+        assert title not in err.message and f"0x{second:x}" in err.message
         check_foreground(second)
         bring_front(game.hwnd)
         check_foreground(game.hwnd)
@@ -232,7 +233,7 @@ def test_foreground_owned_popup_allowed(tmp_path: Path, title: str) -> None:
         x, y, _, _ = client_rect(game.hwnd)
         under_popup = (x + 40 + 100, y + 40 + 80)
         err = refused(POINT_OBSCURED, check_point, game.hwnd, under_popup)
-        assert f"{title} Notice" in err.message
+        assert title not in err.message and f"0x{popup:x}" in err.message
         check_point(popup, under_popup)
         # 팝업 밖의 메인 클라이언트 점은 통과
         check_point(game.hwnd, uncovered_client_point(game.hwnd, popup))
