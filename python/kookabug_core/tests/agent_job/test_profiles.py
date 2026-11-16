@@ -132,6 +132,30 @@ def test_child_env_allowlist(tmp_path: Path) -> None:
     assert profiles.auth_values("custom", parent) == []
 
 
+def test_credential_values_exclude_job_variables(tmp_path: Path) -> None:
+    """공용 출구 가림(masks)은 프로필 인증·`--pass-env` 값만 — 작업 ID·작업 폴더·MCP 설정 경로가
+    들어가면 글자 검사가 작업 ID·경로가 든 위키 쓰기를 거부한다 (실측)."""
+    parent = {
+        "PATH": r"C:\Windows",
+        "ANTHROPIC_API_KEY": "sk-ant-abcdef",
+        "MY_TOOL_TOKEN": "tool-token-123",
+        "CLAUDE_CONFIG_DIR": r"C:\Users\u\.claude",
+    }
+    env = profiles.child_env(
+        "claude",
+        parent,
+        token=TOKEN,
+        job_id=JOB,
+        job_dir=tmp_path / "jobs" / JOB,
+        mcp_path=tmp_path / "mcp.json",
+        pass_env=["MY_TOOL_TOKEN", "PATH"],
+    )
+    masks = profiles.credential_values("claude", env, ["MY_TOOL_TOKEN", "PATH"])
+    assert sorted(masks) == ["sk-ant-abcdef", "tool-token-123"]
+    # agent.log 가림(passed_values)은 그대로 넓다 — 작업 변수도 가린다
+    assert JOB in profiles.passed_values(env)
+
+
 def test_prompt_has_header_and_playbook_only(tmp_path: Path) -> None:
     prompt = profiles.build_prompt(
         "본문\n",

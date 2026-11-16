@@ -274,6 +274,20 @@ def child_env(
     return env
 
 
+def credential_values(
+    profile: str, child: Mapping[str, str], pass_env: Iterable[str] = ()
+) -> list[str]:
+    """공용 출구 가림 목록(`job.heartbeat` masks): 넘긴 프로필 인증 변수와 `--pass-env` 값만.
+    작업 변수(작업 ID·작업 폴더·MCP 설정 경로)와 설정 위치는 넣지 않는다 — 글자 검사가
+    작업 ID·경로가 든 위키·보고를 거부하게 된다 (실측). 6자 미만은 뺀다."""
+    names = set(AUTH_ENV.get(profile, ())) | {
+        name.upper() for name in pass_env if name.upper() not in BASE_ENV
+    }
+    return [
+        value for name, value in child.items() if name.upper() in names and len(value) >= REDACT_MIN
+    ]
+
+
 def auth_values(profile: str, parent: Mapping[str, str]) -> list[str]:
     """그 프로필 인증 변수의 값들."""
     upper = {k.upper(): v for k, v in parent.items()}

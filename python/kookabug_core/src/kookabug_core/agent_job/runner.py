@@ -567,16 +567,17 @@ def _supervise(
     # 무관하게 가리지 않는다 (UX11 B). `secrets`는 더 넣을 값. 못 모으면 원문을 남기지 않는다
     try:
         values: list[str] | None = [] if secrets is None else list(secrets())
-        passed = profiles.passed_values(child)
-        values += passed
+        values += profiles.passed_values(child)
         values.append(token)
+        masks = profiles.credential_values(options.agent, child, options.pass_env)
     except Exception:
         values = None
-        passed = []
-    # 넣은 인증·환경 값을 daemon 작업 기록(메모리)에 둔다 — 공용 출구(원본 읽기·대화 저장·작업
-    # 활동·글자 검사)가 작업 토큰과 함께 가린다 (UX11). 못 보내면 띄우지 않는다
+        masks = []
+    # 넣은 인증 값(프로필 인증·`--pass-env`)을 daemon 작업 기록(메모리)에 둔다 — 공용 출구(원본
+    # 읽기·대화 저장·작업 활동·글자 검사)가 작업 토큰과 함께 가린다 (UX11). 작업 변수(작업 ID·작업
+    # 폴더 경로)는 넣지 않는다 — 글자 검사가 그것이 든 위키·보고를 거부한다. 못 보내면 띄우지 않는다
     try:
-        daemon.call("job.heartbeat", {"job": job_id, "masks": list(passed)}, timeout=10)
+        daemon.call("job.heartbeat", {"job": job_id, "masks": masks}, timeout=10)
     except Exception:
         return _prep_failed(daemon, root, doc, "spawn_failed", out)
     log = AgentLog(log_path, values)
