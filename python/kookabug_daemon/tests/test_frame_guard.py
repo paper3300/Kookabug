@@ -251,7 +251,9 @@ def test_unknown_field_protected_until_window_gone(game: FakeGame, daemon: Threa
         control(agent, "control.type", secret="acc.pw")  # 칸을 누르지 않고 입력
         kept = capture(agent)
         assert_withheld(game, kept, "secret_field_unknown")
-        assert "kb_input_click" in kept["protected"]["hint"]
+        # 풀리는 방법(다시 띄우기)과 다음에 할 일(클릭+secret 한 번에) — UX8 C
+        hint = kept["protected"]["hint"]
+        assert "kb_app_launch" in hint and "point" in hint and "secret" in hint
         control(agent, "control.key", keys="enter")
         assert game.state()["scene"] == "lobby"
         assert capture(agent)["protected"]["reason"] == "secret_field_unknown"  # 창 수명 동안

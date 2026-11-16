@@ -63,8 +63,10 @@ async def _list(call: Call) -> dict[str, Any]:
     if call.params.get("game") is True:
         # UX7 `@game`: 이 주체가 기억한 게임 프로세스의 창만 (없으면·사람이면 빈 목록)
         windows = await asyncio.to_thread(call.daemon.game.windows, call.principal)
-        mine = {b.hwnd for b, _ in windows}
-        found = [w for w in found if w.get("handle") in mine]
+        order = {b.hwnd: i for i, (b, _) in enumerate(windows)}  # 주 창이 맨 앞 (UX8 A)
+        found = sorted(
+            (w for w in found if w.get("handle") in order), key=lambda w: order[w["handle"]]
+        )
     return {"windows": found}
 
 

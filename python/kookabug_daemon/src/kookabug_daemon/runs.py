@@ -129,6 +129,8 @@ from kookabug_core.win import identify, is_alive
 from kookabug_core.workspace import RunOptions, Workspace, WorkspaceError
 from kookabug_daemon.breakpoints import BreakpointStore
 from kookabug_daemon.documents import WsPath, recheck_path, resolve_path
+from kookabug_daemon.game_window import game_key
+from kookabug_daemon.launched import GameStopFailed, Launched, LaunchedGames, spawn_game
 from kookabug_daemon.methods.tools import Authorizer
 from kookabug_daemon.protocol import InvalidParams, RequestFailed
 from kookabug_daemon.run_index import Located, RunRecords
@@ -417,6 +419,9 @@ class RunManager:
         self.fake_launch: Callable[[list[str], str | None], int] | None = None
         """검사 전용 (숨은 가짜 플랫폼의 `launch_fake`): `app.launch`가 프로세스 대신 장면 가짜
         게임을 띄운다 (UX1 T2 E2E — 실제 게임 없이 띄우기 → 창 잡기)."""
+        self.launched = LaunchedGames()
+        """주체별로 `app.launch`가 띄운 게임 (UX8 B — 같은 주체가 다시 띄우거나 작업이 끝나면
+        끈다)."""
         self.attach_window: Callable[[Principal], tuple[Any, str]] | None = None
         """붙여 실행(UX7 D)의 게임 창: **요청 주체가** 기억한 게임 (`GameMemory.resolve` —
         (바인딩, 지금 제목), 없으면 `window_not_found`. 다른 주체의 기억은 쓰지 않는다)."""
@@ -909,7 +914,9 @@ class RunManager:
             return False
         return again.finalize.input_recovery != "lease_busy"
 
-    def launch_app(self, profile: str | None, *, principal: Principal | None = None) -> int:
+    def launch_app(
+        self, profile: str | None, *, principal: Principal | None = None
+    ) -> tuple[int, int | None]:
         """`app.launch` (M5 C5): 프로필 계층까지 본 설정 `game.executable`·`game.args`·`game.cwd`로
         게임을 띄운다. 실행 Job 밖이다(실행이 끝나도 게임은 남는다). 시작 예약과 같은 잠금 안에서
         실행 중·예약·녹화 중이면 거부한다 (막히는 호출). PID를 돌려준다. Agent 연결이면 검증 세션
@@ -918,8 +925,12 @@ class RunManager:
 
         새로 띄우기는 사람 연결도 막는다 (UX1 검수 M2 — 마법사 2단계 띄우기): 무인 작업이
         `running`·`ending`이면 `job_active`, 검증 세션 중이면 `verification_active`. 사람의 입력·
-        개별 실행 개입 정책은 그대로다."""
+        개별 실행 개입 정책은 그대로다.
+
+        (PID, 끝낸 이전 게임 PID) — 같은 Agent 주체가 전에 띄운 게임이 살아 있으면 새로 띄우기
+        직전에 끝낸다 (UX8 B, `launched`)."""
         human = principal is None or (principal.kind != "agent" and principal.job is None)
+        key = None if principal is None else game_key(principal)
         with self._start_lock:
             if principal is not None:
                 self.refuse_job_bypass(principal)
@@ -929,9 +940,13 @@ class RunManager:
                     raise RequestFailed(
                         "job_active", f"작업 {busy}이(가) 도는 중이라 게임을 새로 띄우지 않는다"
                     )
-            return self._launch_locked(profile)
+            return self._launch_locked(profile, key)
 
-    def _launch_locked(self, profile: str | None) -> int:
+    def stop_launched(self, key: str) -> int | None:
+        """그 주체(`job:<작업>`·`agent:<id>`)가 `app.launch`로 띄운 게임을 끝낸다 (UX8 B)."""
+        return self.launched.stop(key)
+
+    def _launch_locked(self, profile: str | None, key: str | None) -> tuple[int, int | None]:
         with self._lock:
             if self._verify_holds > 0:
                 raise RequestFailed(
@@ -951,35 +966,38 @@ class RunManager:
             if problems:
                 raise RequestFailed("launch_failed", problems[0].message)
             command = _launch_command(workspace, options)
+            # 같은 주체가 전에 띄운 게임: 새로 띄우기 전에 끝낸다 (UX8 B — 같은 게임 여럿 방지)
+            try:
+                replaced = None if key is None else self.launched.stop(key)
+            except GameStopFailed as exc:
+                # 이전 게임을 남긴 채 새로 띄우지 않는다 (같은 게임 여럿 방지 — 기록은 남김)
+                raise RequestFailed(
+                    "launch_failed", f"{exc} — 새 게임을 띄우지 않았다 (사람이 끈 뒤 다시 시도)"
+                ) from exc
             if self.fake_launch is not None:
                 pid = self.fake_launch(command.argv, command.cwd)
                 log.info("가짜 게임을 띄웠다: PID %d", pid)
                 self._input_epoch += 1
-                return pid
-
-            def spawn(flags: int) -> subprocess.Popen[bytes]:
-                return subprocess.Popen(
-                    command.argv,
-                    cwd=command.cwd,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    creationflags=flags,
-                    close_fds=True,
-                )
+                if key is not None:
+                    self.launched.put(key, Launched(pid, None, fake=True))
+                return pid, replaced
 
             try:
                 try:
-                    proc = spawn(_DETACHED_FLAGS | _BREAKAWAY)
+                    launched = spawn_game(command.argv, command.cwd, _DETACHED_FLAGS | _BREAKAWAY)
                 except PermissionError:
                     # daemon을 띄운 쪽의 Job이 빠져나가기를 허용하지 않는다: 그 Job 안에서 띄운다
                     # (실행 Job은 아니다 — 실행이 끝나도 게임은 남는다)
-                    proc = spawn(_DETACHED_FLAGS)
+                    launched = spawn_game(command.argv, command.cwd, _DETACHED_FLAGS)
             except OSError as exc:
                 raise RequestFailed("launch_failed", f"게임을 띄우지 못했다: {exc}") from exc
-            log.info("게임을 띄웠다: PID %d (%s)", proc.pid, command.argv[0])
+            log.info("게임을 띄웠다: PID %d (%s)", launched.pid, command.argv[0])
             self._input_epoch += 1  # 게임 상태가 바뀌었다 (M8 R7: 그 사이 검증은 무효)
-            return proc.pid
+            if key is not None:
+                self.launched.put(key, launched)
+            elif launched.job is not None:
+                launched.job.close()  # 사람이 띄운 게임은 기억하지 않는다 (끄지 않음)
+            return launched.pid, replaced
 
     def _register(
         self,

@@ -80,8 +80,9 @@ HINTS: Final[Mapping[str, str]] = {
     "sensitive_unchecked": "민감 대상을 확인하지 못해 이미지를 보내지 않아요",
     "secret_field": "비밀값을 입력한 칸이 아직 보여요 — 다른 화면으로 넘어가면 다시 보여요",
     "secret_field_unknown": (
-        "비밀값을 넣은 칸 위치를 몰라 이 창 이미지를 보내지 않아요 — 다음부터는 칸을 "
-        "kb_input_click으로 누른 뒤 입력하세요"
+        "비밀값을 넣은 칸 위치를 몰라 이 창이 살아 있는 동안 이미지가 막힌다 — kb_app_launch로 "
+        "다시 띄우면(이전 게임은 자동으로 끝남) 풀린다. 다음에는 칸 클릭(point)과 secret을 한 번에 "
+        "보낸다 (kb_explore_step 또는 kb_input_type에 point·secret 함께)"
     ),
     "protect_state_unknown": (
         "보호 기록 파일이 손상돼 사람 확인 전까지 이미지를 보내지 않아요 "

@@ -9,6 +9,9 @@
 | 5 | 검증 노드 또는 `core.test.pass`가 하나 이상 성공 | `pass` |
 | 6 | 그 외 | `fail` ("검증 없음") |
 
+서브그래프(`kind: subgraph`)를 직접 실행해 공개 출구에 닿으면 5 앞에서 ok 계열이면 `pass`("출구
+'<이름>'에 닿았다"), fail 계열이면 `fail` (UX8 E).
+
 `judge()`는 실행이 모은 사실(`Facts`)만 보고 정하는 순수 함수다.
 """
 
@@ -47,6 +50,8 @@ class Facts:
     terminal: Terminal | None = None
     terminal_cause: Cause | None = None
     assertions_passed: int = 0
+    graph_exit: tuple[str, str] | None = None
+    """`kind: subgraph`를 직접 실행해 닿은 공개 출구 (이름, `ok`|`fail`) — UX8 E."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +85,11 @@ def judge(facts: Facts) -> Judgement:
         cause = facts.terminal_cause
         reason = cause.message if cause is not None else "core.test.pass에 도달했다"
         return Judgement("pass", "test_pass", reason, secret=cause is not None and cause.secret)
+    if facts.graph_exit is not None:
+        name, kind = facts.graph_exit
+        if kind == "ok":
+            return Judgement("pass", "subgraph_exit", f"출구 '{name}'에 닿았다")
+        return Judgement("fail", "subgraph_exit", f"fail 출구 '{name}'에 닿았다")
     if facts.assertions_passed > 0:
         return Judgement("pass", "assertion_passed", f"검증 {facts.assertions_passed}개 성공")
     return Judgement(

@@ -13,6 +13,12 @@
   `new_screen: true` — 에이전트가 `kb_screen_save`(key)로 저장하면 그 키로 `to`를 채운다
 - 창은 정확히 하나로 정해져야 한다(제목 또는 `@game`). 결과의 `window`는 준 이름(`@game`이면
   `@game`만 — 실제 제목은 권한 판정에만 쓴다)
+- `@game` (UX8 A): 창이 아직 없으면 `wait_ms` 안에서 생기기를 기다린다(0.5초마다). 기다리는 중
+  잡은 창이 사라지면 같은 프로세스에서 주 창을 다시 골라 남은 시간 동안 이어 기다린다 — 프로세스가
+  끝났을 때만 실패. 쓴 창이 바뀌었으면 `window_changed: true`
+- 클릭+입력 한 걸음 (UX8 C): `point`·`target` 클릭과 `text`·`secret`을 함께 주면 클릭 → (선택
+  `select_all`이면 ctrl+a) → 입력을 한 요청에서 한다(사람 확인 한 번). 클릭 위치가 칸 상자 근거다
+  (비밀값은 point 클릭만)
 """
 
 from __future__ import annotations
@@ -21,16 +27,21 @@ import asyncio
 from collections.abc import Mapping
 from typing import Any, Final
 
+from kookabug_daemon.game_window import GAME, is_game
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.methods.control import (
+    InputTarget,
+    click_then_type,
+    game_target,
     graph_for,
     refuse_if_denied,
     remember_target,
     resolve_target,
     send_input,
+    split_click_type,
 )
 from kookabug_daemon.protocol import InvalidParams, RequestFailed
-from kookabug_daemon.screen_source import Grab
+from kookabug_daemon.screen_source import Grab, WindowBinding
 from kookabug_daemon.targets import require_platform
 
 __all__ = ["METHODS", "frame_change"]
@@ -46,6 +57,8 @@ CHANGED: Final = 0.002
 STILL: Final = 0.003
 """연달은 두 프레임의 다른 픽셀 비율이 이보다 작으면 멈췄다."""
 PIXEL_DELTA: Final = 24
+WINDOW_POLL_S: Final = 0.5
+"""`@game` 창이 없을 때 다시 찾는 간격 (UX8 A)."""
 
 
 def frame_change(a: Any, b: Any) -> float:
@@ -62,7 +75,10 @@ def frame_change(a: Any, b: Any) -> float:
 
 
 def _input_of(params: Mapping[str, Any]) -> tuple[str | None, dict[str, Any]]:
-    """입력 종류(`control.*`)와 그 인자. 둘 이상이면 `invalid_params`."""
+    """입력 종류(`control.*`)와 그 인자. 둘 이상이면 `invalid_params` — 클릭+입력(UX8 C)은
+    `split_click_type`이 먼저 본다."""
+    if params.get("select_all") is True and "text" not in params and "secret" not in params:
+        raise InvalidParams("select_all은 text·secret과 함께 준다")
     kinds: list[tuple[str, dict[str, Any]]] = []
     if "point" in params or "target" in params:
         kinds.append(
@@ -76,7 +92,10 @@ def _input_of(params: Mapping[str, Any]) -> tuple[str | None, dict[str, Any]]:
     if "text" in params or "secret" in params:
         kinds.append(("control.type", {k: params[k] for k in ("text", "secret") if k in params}))
     if len(kinds) > 1:
-        raise InvalidParams("입력은 하나만 준다 (point·target 클릭, keys, text·secret 중 하나)")
+        raise InvalidParams(
+            "입력은 하나만 준다 (point·target 클릭, keys, text·secret 중 하나 — 클릭과 "
+            "text·secret을 함께 주는 클릭+입력 한 걸음만 예외)"
+        )
     if not kinds:
         if "button" in params or "count" in params:
             raise InvalidParams("button·count는 point·target 클릭과 함께 준다")
@@ -99,31 +118,143 @@ def _via(
     return None
 
 
-async def _wait(call: Call, hwnd: int, before: Grab, wait_ms: int) -> tuple[Grab, bool, int]:
-    """바뀌고 멈출 때까지 (또는 기한). (마지막 프레임, 바뀌었나, 기다린 ms)."""
-    source = call.daemon.screen_source
+GAME_GONE: Final = "@game: 게임 프로세스가 끝났다 — kb_app_launch로 다시 띄운다"
+NO_GAME_WINDOW: Final = "@game: 실행한 게임의 창이 없다 (닫혔거나 아직 뜨지 않았다)"
+
+
+class _Watch:
+    """기다리며 캡처할 창. `@game`이면 잡은 창이 사라졌을 때 같은 프로세스에서 주 창을 다시
+    고른다 (UX8 A — 로딩 중 시작 화면 창을 닫고 본 창을 새로 만드는 게임). 프로세스까지 끝났을 때만
+    실패한다. 제목으로 준 창은 지금 그대로(사라지면 캡처 오류)."""
+
+    def __init__(self, call: Call, binding: WindowBinding, game: bool) -> None:
+        self.call = call
+        self.binding = binding
+        self.title = ""
+        """바뀐 창의 지금 제목 (판정 인자로만 — 결과·기록에는 `@game`)."""
+        self.game = game
+        self.changed = False
+
+    async def capture_as(self, binding: WindowBinding) -> Grab | None:
+        """그 바인딩의 창 한 장 — 캡처한 창의 바인딩(HWND·PID·프로세스 생성 시각)이 기대와 같을
+        때만 (UX8 검수 1 High 1: 그 사이 HWND가 다른 프로세스에 재사용됐거나 식별할 수 없으면 그
+        픽셀은 버린다 — 비교·판별·캐시·결과에 넘기지 않는다). 창이 없으면 캡처 오류 그대로."""
+        grab = await asyncio.to_thread(self.call.daemon.screen_source.capture, binding.hwnd)
+        return grab if grab.binding == binding else None
+
+    async def grab(self) -> Grab | None:
+        """지금 창 한 장. `@game`에서 창이 사라졌거나(또는 다른 프로세스의 창이 됐거나) 새 창이
+        아직 없으면 None."""
+        source = self.call.daemon.screen_source
+        if not self.game:
+            return await asyncio.to_thread(source.capture, self.binding.hwnd)
+        try:
+            found = await self.capture_as(self.binding)
+        except RequestFailed:
+            if await asyncio.to_thread(source.alive, self.binding):
+                raise
+            found = None
+        return found if found is not None else await self.follow()
+
+    async def follow(self) -> Grab | None:
+        """같은 게임 프로세스에서 주 창을 다시 골라 한 장. 바인딩이 맞는 프레임을 얻은 뒤에만 그
+        창으로 바꾼다. 프로세스가 끝났으면 `window_not_found`."""
+        game = self.call.daemon.game
+        found = await asyncio.to_thread(game.find, self.call.principal)
+        if found is None:
+            if not await asyncio.to_thread(game.alive, self.call.principal):
+                raise RequestFailed("window_not_found", GAME_GONE)
+            return None
+        binding, title = found
+        if binding != self.binding:
+            # 새 창의 제목으로도 거부 정책이면 보지 않는다 (사람에게 묻지는 않는다)
+            await refuse_if_denied(self.call, title)
+        try:
+            grab = await self.capture_as(binding)
+        except RequestFailed:
+            return None  # 막 사라진 창 — 다음 회차에 다시 고른다
+        if grab is None:
+            return None  # 다른 프로세스·식별 불능 프레임은 버린다
+        if binding != self.binding:
+            self.binding, self.title, self.changed = binding, title, True
+        return grab
+
+
+async def _first_frame(watch: _Watch, deadline: float) -> Grab:
+    """첫 유효 프레임 (UX8 검수 1 Mid 3): 고른 창이 첫 캡처 전에 닫혀도 같은 재탐색을 기한까지
+    한다. 프로세스가 끝나면(`follow`) 또는 기한이 지나면 `window_not_found`."""
     loop = asyncio.get_running_loop()
-    start = loop.time()
-    deadline = start + wait_ms / 1000
+    while True:
+        found = await watch.grab()
+        if found is not None:
+            return found
+        left = deadline - loop.time()
+        if left <= 0:
+            raise RequestFailed("window_not_found", NO_GAME_WINDOW)
+        await asyncio.sleep(min(WINDOW_POLL_S, left))
+
+
+async def _game_target(call: Call, deadline: float) -> InputTarget:
+    """`@game` 창 (UX8 A): 아직 창이 없으면 기한까지 0.5초마다 다시 찾는다. 기억이 없으면 바로,
+    프로세스가 끝났으면 `window_not_found`. 실패는 판정을 먼저 본다(거부 정책이면
+    `permission_denied`)."""
+    game = call.daemon.game
+    loop = asyncio.get_running_loop()
+    while True:
+        try:
+            found = await asyncio.to_thread(game.find, call.principal)
+        except RequestFailed:
+            await refuse_if_denied(call, GAME)
+            raise
+        if found is not None:
+            return game_target(*found)
+        text = None
+        if not await asyncio.to_thread(game.alive, call.principal):
+            text = GAME_GONE
+        elif loop.time() >= deadline:
+            text = NO_GAME_WINDOW
+        if text is not None:
+            await refuse_if_denied(call, GAME)
+            raise RequestFailed("window_not_found", text)
+        await asyncio.sleep(min(WINDOW_POLL_S, max(0.0, deadline - loop.time())))
+
+
+async def _wait(watch: _Watch, before: Grab, deadline: float) -> tuple[Grab, bool]:
+    """바뀌고 멈출 때까지 (또는 기한). (마지막 프레임, 바뀌었나). `@game` 창이 바뀌면 바뀐 것으로
+    보고 새 창에서 이어 기다린다. 기한까지 지금 창의 유효 프레임(바인딩 일치)을 못 얻으면
+    `window_not_found` — 옛 프레임은 판별·이동·저장·결과에 넘기지 않는다 (UX8 검수 2 High: 닫힌 창의
+    보호 기록은 지워지므로 옛 픽셀을 나중에 프레임으로 만들면 보호 없이 나간다)."""
+    loop = asyncio.get_running_loop()
     last = before
     changed = False
     changed_at = 0.0
     still_since = 0.0
+    missing = False
     while True:
         if loop.time() >= deadline:
+            if missing:
+                raise RequestFailed("window_not_found", NO_GAME_WINDOW)
             break
         await asyncio.sleep(POLL_S)
-        grab = await asyncio.to_thread(source.capture, hwnd)
+        found = await watch.grab()
+        if found is None:
+            # 잡은 창이 닫혔거나 다른 프로세스 창이 됐고 새 창이 아직 없다: 남은 시간 동안 다시
+            # 찾는다
+            missing = True
+            await asyncio.sleep(max(0.0, min(WINDOW_POLL_S - POLL_S, deadline - loop.time())))
+            continue
+        missing = False
+        grab = found
         now = loop.time()
         if not changed:
-            if frame_change(before.pixels, grab.pixels) > CHANGED:
+            if watch.changed or frame_change(before.pixels, grab.pixels) > CHANGED:
                 changed, changed_at, still_since = True, now, now
         elif frame_change(last.pixels, grab.pixels) > STILL:
             still_since = now
         last = grab
         if changed and (now - still_since >= STABLE_S or now - changed_at >= SETTLE_CAP_S):
             break
-    return last, changed, int((loop.time() - start) * 1000)
+    return last, changed
 
 
 async def _step(call: Call) -> dict[str, Any]:
@@ -135,11 +266,27 @@ async def _step(call: Call) -> dict[str, Any]:
     require_platform()
     params = call.params
     window = str(params["window"])
-    method, given = _input_of(params)
+    root = call.daemon.root
     # 인자가 틀리면 판정 전에 거부 (아무것도 묻지 않음)
-    value = None if method is None else graph_for(call.daemon.root, method, given, window)
+    both = split_click_type(params)
+    typed: tuple[dict[str, Any], dict[str, Any]] | None = None
+    if both is not None:
+        # 클릭+입력 한 걸음 (UX8 C): 클릭 위치가 곧 칸 상자 근거
+        method, given = "control.click", both[0]
+        typed = (both[1], graph_for(root, "control.type", both[1], window))
+    else:
+        method, given = _input_of(params)
+    value = None if method is None else graph_for(root, method, given, window)
     wait_ms = min(int(params.get("wait_ms", DEFAULT_WAIT_MS if method else 0)), MAX_WAIT_MS)
-    target = await resolve_target(call, window)
+    loop = asyncio.get_running_loop()
+    started = loop.time()
+    game = is_game(window)
+    # `@game`은 창이 아직 없으면 wait_ms 안에서 생기기를 기다린다 (UX8 A)
+    target = (
+        await _game_target(call, started + wait_ms / 1000)
+        if game
+        else await resolve_target(call, window)
+    )
     bindings = target.bindings or []
     if len(bindings) != 1:
         # 판정이 먼저다 (거부 정책이면 창 유무와 관계없이 permission_denied)
@@ -148,11 +295,17 @@ async def _step(call: Call) -> dict[str, Any]:
             "window_not_found",
             f"창 {window!r}이(가) 없거나 여럿이다 (정확히 같은 제목의 창 하나, 또는 @game)",
         )
-    hwnd = bindings[0].hwnd
-    source = call.daemon.screen_source
-    before = await asyncio.to_thread(source.capture, hwnd)
+    watch = _Watch(call, bindings[0], game)
+    # 고른 창이 첫 캡처 전에 닫혀도 같은 재탐색을 요청 기한까지 (UX8 검수 1 Mid 3)
+    before = await _first_frame(watch, started + wait_ms / 1000)
+    if watch.changed:
+        target = game_target(watch.binding, watch.title)
+    # 창을 기다리고 남은 기다림 (입력 뒤 바뀌고 멈추기를 기다리는 상한)
+    left_s = max(0.0, wait_ms / 1000 - (loop.time() - started)) if game else wait_ms / 1000
     done: dict[str, Any] | None = None
-    if method is not None and value is not None:
+    if typed is not None and value is not None:
+        done = await click_then_type(call, target, (given, value), typed)
+    elif method is not None and value is not None:
         done = await send_input(call, method, given, target, value)
     else:
         # 입력 없이 기다림·캡처만도 이 도구의 판정을 지난다 (거부 정책이면 화면도 보지 않는다).
@@ -160,14 +313,20 @@ async def _step(call: Call) -> dict[str, Any]:
         await call.daemon.approvals.authorize(call, target.title)
         remember_target(call, target)
     session = call.daemon.explore.get(call.connection)
+    waited_s = wait_ms / 1000 - left_s  # 창을 기다린 시간
+    settle_from = loop.time()
     if done is not None and done.get("verdict") != "pass":
-        # 입력이 들어가지 않았다: 화면은 지금 그대로, 이동은 기록하지 않는다
-        last, changed, waited = before, False, 0
-    elif wait_ms > 0:
-        last, changed, waited = await _wait(call, hwnd, before, wait_ms)
+        # 입력이 들어가지 않았다: 이동은 기록하지 않는다. 화면은 지금 한 장(옛 프레임을 쓰지
+        # 않는다 — 그 사이 창이 닫혔으면 window_not_found)
+        last, changed = await _first_frame(watch, loop.time()), False
+    elif left_s > 0:
+        last, changed = await _wait(watch, before, settle_from + left_s)
+        waited_s += loop.time() - settle_from
     else:
-        last = await asyncio.to_thread(source.capture, hwnd)
-        changed, waited = frame_change(before.pixels, last.pixels) > CHANGED, 0
+        # 지금 창의 유효 프레임이 없으면(창이 막 닫힘·다른 프로세스 창) window_not_found
+        last = await _first_frame(watch, loop.time())
+        changed = watch.changed or frame_change(before.pixels, last.pixels) > CHANGED
+    waited = int(waited_s * 1000)
     frame = await asyncio.to_thread(
         new_frame, call, last.pixels, last.client_size, last.dpi, grab=last
     )
@@ -177,7 +336,8 @@ async def _step(call: Call) -> dict[str, Any]:
     new_screen = not matches and not found["unknown"]
     move: dict[str, Any] | None = None
     if session is not None and (done is None or done.get("verdict") == "pass"):
-        via = _via(method, given, (frame.width, frame.height))
+        # 클릭+입력 한 걸음은 화면 카드 via 형식이 없다 (글자 입력과 같다)
+        via = None if typed is not None else _via(method, given, (frame.width, frame.height))
         origin = session.where()
         arrived: tuple[str, str] | None = None
         if matches:
@@ -200,7 +360,7 @@ async def _step(call: Call) -> dict[str, Any]:
             session.move_to(arrived)
         elif changed or new_screen:
             session.move_to(None)  # 처음 보는(또는 확인 못 한) 화면 — 저장하면 그 키가 된다
-    return {
+    out: dict[str, Any] = {
         "frame": shown,
         "changed": changed,
         "waited_ms": waited,
@@ -210,6 +370,9 @@ async def _step(call: Call) -> dict[str, Any]:
         "new_screen": new_screen,
         "move": move,
     }
+    if watch.changed:
+        out["window_changed"] = True  # 실제로 쓴 창이 바뀌었다 (`@game` 시작 화면 → 본 창)
+    return out
 
 
 def _window_arg(call: Call) -> str:

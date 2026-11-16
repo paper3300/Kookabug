@@ -72,6 +72,11 @@ def test_playbooks_mention_required_rules() -> None:
     for word in words:
         assert word in body, word
     assert playbooks.versions()["entry"] >= 2 and playbooks.versions()["explore"] >= 3
+    # UX8: 게임은 한 번만 띄우고 @game 기다림으로 따라간다, 로그인 칸은 클릭+secret 한 걸음,
+    # 붙여 실행 먼저, 실행은 kb_run_status{wait_ms}로 기다린다
+    assert playbooks.versions()["entry"] >= 3
+    for word in ("다시 띄우지 않는다", "select_all", "클릭+입력 한 걸음", "wait_ms` 60000"):
+        assert word in body, word
     assert "kb_explore_step" in every["explore"].body and "attach" in every["explore"].body
     for name in ("init", "followup", "explore"):
         assert "kb_job_progress" in every[name].body, name

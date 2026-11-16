@@ -77,7 +77,7 @@ async def _cancel(call: Call) -> dict[str, Any]:
 
 
 WAIT_STEP_S: Final = 0.2
-MAX_WAIT_MS: Final = 30_000
+MAX_WAIT_MS: Final = 60_000
 
 
 async def _status(call: Call) -> dict[str, Any]:

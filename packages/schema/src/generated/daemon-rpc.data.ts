@@ -452,6 +452,12 @@ export const daemonRpcSchema: unknown = {
           "maximum": 9007199254740991,
           "minimum": 1,
           "type": "integer"
+        },
+        "replaced_pid": {
+          "description": "UX8: 같은 주체가 전에 kb_app_launch로 띄워 아직 살아 있던 게임을 먼저 끝냈다 (그 PID)",
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
         }
       },
       "required": [
@@ -823,10 +829,28 @@ export const daemonRpcSchema: unknown = {
     },
     "ControlTypeParams": {
       "additionalProperties": false,
-      "description": "글자 입력 (text와 secret 중 하나). secret은 비밀값 키 — 값은 runner가 찾고 결과·기록·오류에 원문이 없다",
+      "description": "글자 입력 (text와 secret 중 하나). secret은 비밀값 키 — 값은 runner가 찾고 결과·기록·오류에 원문이 없다. UX8: point(또는 text면 target)를 함께 주면 그 칸을 클릭한 뒤 입력한다(한 요청 — 클릭 위치가 비밀값 칸 상자 근거)",
       "properties": {
+        "point": {
+          "description": "[x, y] 클라이언트 영역 물리 픽셀",
+          "items": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
         "secret": {
           "$ref": "#/$defs/SecretKey"
+        },
+        "select_all": {
+          "description": "클릭 뒤 ctrl+a로 칸 글자를 전부 고르고 입력",
+          "type": "boolean"
+        },
+        "target": {
+          "$ref": "#/$defs/WorkspacePath"
         },
         "text": {
           "type": "string"
@@ -1250,7 +1274,7 @@ export const daemonRpcSchema: unknown = {
     },
     "ExploreStepParams": {
       "additionalProperties": false,
-      "description": "explore.step (kb_explore_step, UX7): 입력 하나(point·target 클릭, keys, text·secret, 또는 없음) → 화면이 바뀌고 멈추기를 기다림 → 캡처 → 화면 판별 → 탐색 세션이 있으면 이동 자동 기록",
+      "description": "explore.step (kb_explore_step, UX7): 입력 하나(point·target 클릭, keys, text·secret, 또는 없음 — UX8: 클릭과 text·secret을 함께 주면 클릭+입력 한 걸음) → 화면이 바뀌고 멈추기를 기다림 → 캡처 → 화면 판별 → 탐색 세션이 있으면 이동 자동 기록. @game은 창이 없으면 wait_ms 안에서 기다리고 창이 바뀌면 같은 프로세스의 주 창을 따라간다",
       "properties": {
         "button": {
           "enum": [
@@ -1281,6 +1305,10 @@ export const daemonRpcSchema: unknown = {
         },
         "secret": {
           "$ref": "#/$defs/SecretKey"
+        },
+        "select_all": {
+          "description": "UX8 클릭+입력: 클릭 뒤 ctrl+a로 칸 글자를 전부 고르고 입력 (text·secret과 함께)",
+          "type": "boolean"
         },
         "target": {
           "$ref": "#/$defs/WorkspacePath"
@@ -1373,6 +1401,10 @@ export const daemonRpcSchema: unknown = {
         },
         "window": {
           "type": "string"
+        },
+        "window_changed": {
+          "const": true,
+          "description": "UX8: @game에서 실제로 쓴 창이 바뀌었다 (시작 화면 창이 닫히고 같은 프로세스의 본 창으로). 바뀌지 않았으면 없다"
         }
       },
       "required": [
@@ -12606,8 +12638,8 @@ export const daemonRpcSchema: unknown = {
           "$ref": "#/$defs/RunId"
         },
         "wait_ms": {
-          "description": "UX7: 끝나기를 이만큼 기다린다 (daemon 안에서 — 호출 한 번)",
-          "maximum": 30000,
+          "description": "UX7: 끝나기를 이만큼 기다린다 (daemon 안에서 — 호출 한 번, UX8: 최대 60000)",
+          "maximum": 60000,
           "minimum": 0,
           "type": "integer"
         }

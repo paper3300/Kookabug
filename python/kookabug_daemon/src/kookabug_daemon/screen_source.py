@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -81,6 +81,28 @@ class ScreenSource(Protocol):
         """창 붙기 범위의 창 중 그 프로세스(PID·생성 시각)의 창들과 지금 제목 (UX7 `@game`)."""
         ...
 
+    def main_window_of(self, pid: int, created: str) -> tuple[WindowBinding, str] | None:
+        """그 프로세스의 주 창 (UX8 A): 보이고·최소화 아님·cloaked 아님인 창 중 클라이언트 넓이가
+        가장 큰 창. 없으면 None."""
+        ...
+
+    def process_alive(self, pid: int, created: str) -> bool:
+        """그 프로세스(PID·생성 시각)가 아직 살아 있는가 (UX8 A). 모르면 True."""
+        ...
+
+
+def pick_main(
+    candidates: Iterable[tuple[WindowBinding, str, bool, int]],
+) -> tuple[WindowBinding, str] | None:
+    """(바인딩, 제목, 쓸 수 있음, 클라이언트 넓이) 중 쓸 수 있는 창에서 넓이가 가장 큰 창. 같으면
+    앞(Z 순서) 창. 시작 화면(splash) 창이 먼저 떠 있어도 본 창을 고른다 (UX8 A)."""
+    best: tuple[WindowBinding, str] | None = None
+    best_area = 0
+    for binding, title, usable, area in candidates:
+        if usable and area > best_area:
+            best, best_area = (binding, title), area
+    return best
+
 
 class RealSource:
     """실제 Windows."""
@@ -139,6 +161,40 @@ class RealSource:
     def windows_of(self, pid: int, created: str) -> list[tuple[WindowBinding, str]]:
         return [(b, t) for b, t in self._all() if b.pid == pid and b.created == created]
 
+    def main_window_of(self, pid: int, created: str) -> tuple[WindowBinding, str] | None:
+        try:
+            from kookabug_platform.windows import find_windows, window_info
+        except ImportError:
+            return None
+        try:
+            handles = find_windows(pids=[pid])
+        except Exception:
+            return None
+        candidates: list[tuple[WindowBinding, str, bool, int]] = []
+        for hwnd in handles:
+            try:
+                info = window_info(hwnd)
+            except Exception:
+                continue  # 그 사이 닫힌 창 (시작 화면 창 등)
+            if info.pid != pid or str(info.process_created) != created:
+                continue
+            usable = info.visible and not info.minimized and not info.cloaked
+            width, height = info.client_size
+            candidates.append(
+                (WindowBinding(hwnd, info.pid, created), info.title, usable, width * height)
+            )
+        return pick_main(candidates)
+
+    def process_alive(self, pid: int, created: str) -> bool:
+        try:
+            from kookabug_core.win import ProcessId, is_alive
+
+            # 열 수 있고 생성 시각이 같고 아직 끝나지 않았다 (끝난 프로세스도 핸들이 남아 있으면
+            # 열리므로 종료 코드까지 본다)
+            return is_alive(ProcessId(pid, int(created)))
+        except Exception:
+            return True  # 확인 못 함 = 살아 있다고 본다 (기다림을 이어 간다)
+
     @staticmethod
     def _all() -> list[tuple[WindowBinding, str]]:
         try:
@@ -180,14 +236,24 @@ class FakeSource:
         )
         """검사 전용 (사양 `launch_fake: true`): `app.launch`가 이 원천에 가짜 게임을 띄운다
         (UX1 T2)."""
+        self._stopped: set[int] = set()
+        self.fake_stop: Callable[[int], bool] | None = self._stop if launches else None
+        """검사 전용: daemon이 띄운 가짜 게임을 닫는다 (UX8 B)."""
 
     def _load(self) -> Any:
         from kookabug_core.engine.scenario import FakeScenario
 
         scenario = FakeScenario.load(self.scenario, state_file=self.state_file)
         for path, args in self._launched:
-            scenario.launch_game(path, args)
+            game = scenario.launch_game(path, args)
+            if game.window.pid in self._stopped:
+                game.open = False
         return scenario
+
+    def _stop(self, pid: int) -> bool:
+        alive = any(g.window.pid == pid for g in self._load().games())
+        self._stopped.add(pid)
+        return alive
 
     def _launch(self, argv: list[str], cwd: str | None) -> int:
         del cwd
@@ -261,6 +327,17 @@ class FakeSource:
             for g in scenario.games()
             if g.window.pid == pid and str(g.window.process_created) == created
         ]
+
+    def main_window_of(self, pid: int, created: str) -> tuple[WindowBinding, str] | None:
+        # 가짜 게임은 프로세스마다 창 하나 (모두 같은 크기·보임)
+        found = self.windows_of(pid, created)
+        return found[0] if found else None
+
+    def process_alive(self, pid: int, created: str) -> bool:
+        try:
+            return bool(self.windows_of(pid, created))
+        except Exception:
+            return True
 
 
 def _draw(

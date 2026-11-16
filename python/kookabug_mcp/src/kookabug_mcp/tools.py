@@ -36,7 +36,7 @@ FOLDERS: Final = {
     "screens/": "화면 지도 (*.screen.json, screens 툴셋)",
     "runs/": "실행 기록 (읽기 전용, run 툴셋)",
 }
-MAX_WAIT_MS: Final = 30_000
+MAX_WAIT_MS: Final = 60_000
 QUESTION_WAIT_MAX_MS: Final = 600_000
 STEP_WAIT_MAX_MS: Final = 60_000
 GAME: Final = "@game"
@@ -621,7 +621,8 @@ def _explore_end(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
 
 def _explore_step(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     keys = (
-        "window", "point", "target", "button", "count", "keys", "text", "secret", "wait_ms",
+        "window", "point", "target", "button", "count", "keys", "text", "secret", "select_all",
+        "wait_ms",
     )  # fmt: skip
     params = {k: args[k] for k in keys if k in args}
     wait_ms = int(args.get("wait_ms", 10_000))
@@ -643,10 +644,11 @@ def _explore_step(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
             else f" · 이동 대기 {moved['from']} → (새 화면 저장 때 채움)"
         )
     new = " · 처음 보는 화면 — kb_screen_save(key)로 저장한다" if got["new_screen"] else ""
+    swapped = " · 같은 게임의 다른 창으로 바뀜" if got.get("window_changed") else ""
     head = (
         f"{got['window']} 한 걸음 (frame_id {frame['frame_id']}, "
         f"{'바뀜' if got['changed'] else '안 바뀜'} {got['waited_ms']}ms) · 맞는 화면: {names}"
-        f"{move_text}{new}"
+        f"{move_text}{new}{swapped}"
     )
     protected = frame.get("protected")
     if isinstance(protected, dict):
@@ -699,17 +701,21 @@ def _input_key(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
 
 def _input_type(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     params: dict[str, Any] = {"window": args["window"]}
-    for key in ("text", "secret"):
+    for key in ("text", "secret", "point", "target", "select_all"):
         if key in args:
             params[key] = args[key]
     what = "비밀값 입력" if "secret" in args else "글자 입력"
+    if "point" in args or "target" in args:
+        what = f"칸 클릭 + {what}"
     return _control_done(f"'{args['window']}'에 {what}", _daemon(link, "control.type", params))
 
 
 def _app_launch(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     params = {"profile": args["profile"]} if "profile" in args else {}
     launched = _daemon(link, "app.launch", params)
-    return ok_result(f"게임을 띄웠다 (PID {launched['pid']})", launched)
+    replaced = launched.get("replaced_pid")
+    note = f" — 이전에 띄운 게임 PID {replaced}는 끝냈다" if replaced else ""
+    return ok_result(f"게임을 띄웠다 (PID {launched['pid']}){note}", launched)
 
 
 # ---------------------------------------------------------------- 처리기 (knowledge·cases, M8)
@@ -904,8 +910,9 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_run_status",
         "실행 상태",
-        "run을 주면 그 실행의 상태(wait_ms 동안 끝나기를 기다림)와, 실패했으면 실패 요약(실패 "
-        "노드·오류·증거 파일·지난 성공). 없으면 최근 실행 목록. 실패 분석은 여기서 시작한다",
+        "run을 주면 그 실행의 상태(wait_ms 동안 끝나기를 기다림 — 최대 60초, 끝나면 바로 "
+        "돌아온다. 짧은 간격으로 여러 번 묻지 말고 wait_ms를 크게 준다)와, 실패했으면 실패 요약"
+        "(실패 노드·오류·증거 파일·지난 성공). 없으면 최근 실행 목록. 실패 분석은 여기서 시작한다",
         _schema({"run": RUN, "wait_ms": {"type": "integer", "minimum": 0, "maximum": MAX_WAIT_MS}}),
         _run_status,
     ),
@@ -1139,13 +1146,16 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "kb_input_type",
         "글자 입력",
         "글자를 입력한다. secret을 주면 그 비밀값(키 이름)을 입력하고 값은 돌려주지 않는다. "
-        "비밀값 칸은 kb_input_click(point)으로 누른 뒤 10초 안에 입력한다 — 아니면 그 창이 닫힐 "
-        "때까지 kb_screen_capture 이미지가 오지 않는다",
+        "비밀값 칸은 point(칸 위치)를 함께 줘 클릭+입력을 한 번에 보낸다(select_all이면 클릭 뒤 "
+        "ctrl+a) — 따로 보내 칸 위치 근거가 없으면 그 창이 닫힐 때까지 이미지가 오지 않는다",
         _schema(
             {
                 "window": WINDOW,
                 "text": {"type": "string"},
                 "secret": daemon_def("SecretKey"),
+                "point": POINT,
+                "target": PATH,
+                "select_all": {"type": "boolean"},
             },
             ("window",),
         ),
@@ -1155,7 +1165,9 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "kb_app_launch",
         "게임 실행",
         "프로필의 게임을 띄운다 (설정 game.executable·game.args. 실행·녹화 중이면 거부). 띄운 "
-        '게임은 window "@game"으로 부른다',
+        '게임은 window "@game"으로 부른다. 이 연결이 전에 띄운 게임이 살아 있으면 먼저 끝낸다'
+        "(replaced_pid). 창이 안 보이거나 로딩 중이면 다시 띄우지 말고 kb_explore_step(window "
+        '"@game", wait_ms)로 기다린다',
         _schema({"profile": {"type": "string"}}),
         _app_launch,
     ),
@@ -1168,7 +1180,11 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "캡처(이미지) → 화면 판별(kb_screen_identify와 같음) → 탐색 세션이 열려 있으면 "
         "'직전 화면 --입력--> 이번 화면' 이동을 직전 화면 카드에 tried로 자동 기록. 처음 보는 "
         "화면이면 new_screen: true — kb_screen_save(key)로 저장하면 그 키로 이동의 to를 "
-        "채운다. 권한·금지 동작·입력 임대권·비밀값 가림·탐색 스텝 예산은 kb_input_*와 같다",
+        "채운다. 권한·금지 동작·입력 임대권·비밀값 가림·탐색 스텝 예산은 kb_input_*와 같다. "
+        "클릭(point)과 text·secret을 함께 주면 클릭+입력 한 걸음(로그인 칸은 이렇게 — "
+        'select_all이면 ctrl+a 뒤 입력). window "@game"은 창이 아직 없거나 시작 화면 창이 '
+        "닫히면 wait_ms 안에서 같은 게임의 본 창을 기다려 따라간다(window_changed) — 게임을 "
+        "다시 띄우지 않는다",
         _schema(
             {
                 "window": WINDOW,
@@ -1179,6 +1195,7 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
                 "keys": {"type": "string", "minLength": 1},
                 "text": {"type": "string"},
                 "secret": daemon_def("SecretKey"),
+                "select_all": {"type": "boolean"},
                 "wait_ms": {"type": "integer", "minimum": 0, "maximum": STEP_WAIT_MAX_MS},
             },
             ("window",),

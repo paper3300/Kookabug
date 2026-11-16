@@ -43,7 +43,17 @@ from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.protocol import RequestFailed
 from kookabug_daemon.screen_source import WindowBinding
 
-__all__ = ["METHODS", "InputTarget", "control_graph", "graph_for", "resolve_target", "send_input"]
+__all__ = [
+    "METHODS",
+    "InputTarget",
+    "click_then_type",
+    "control_graph",
+    "game_target",
+    "graph_for",
+    "resolve_target",
+    "send_input",
+    "split_click_type",
+]
 
 WAIT_S: Final = 90.0
 """제어 실행 마무리를 기다리는 한도 (실행 기한 30초 + 하드 종료·감독자 복구 여유)."""
@@ -74,6 +84,7 @@ def graph_for(root: Any, method: str, params: Mapping[str, Any], window: str) ->
     """입력 종류(`control.click/key/type`)와 그 인자 → 한 스텝짜리 그래프 값. `window`는 기록에
     남을 창 이름(준 제목 또는 `@game`) — runner는 daemon이 정한 바인딩에만 붙으므로 이 글로 다시
     찾지 않는다."""
+    pre: dict[str, Any] | None = None
     if method == "control.click":
         point, target = params.get("point"), params.get("target")
         if (point is None) == (target is None):
@@ -105,6 +116,11 @@ def graph_for(root: Any, method: str, params: Mapping[str, Any], window: str) ->
         value: Any = {"$secret": str(secret)} if secret is not None else str(text)
         node = _node("core.input.type_text", "글자 입력", {"text": value}, "done")
         title = "글자 입력"
+        if params.get("select_all") is True:
+            # 클릭+입력 한 걸음 (UX8 C): 칸 글자를 전부 고른 뒤 입력 — 같은 제어 실행 안에서
+            # (따로 보낸 키 입력이 칸 상자 근거인 클릭을 끊지 않게)
+            pre = _node("core.input.key", "전부 고르기", {"keys": "ctrl+a"}, "done")
+            pre["next"] = {"done": "n_input"}
     value = template("test", f"에이전트 제어: {title}")  # 형식·플러그인 판은 새 그래프 틀 그대로
     value.pop("layout", None)
     value["record"] = {"video": "off"}
@@ -121,11 +137,13 @@ def graph_for(root: Any, method: str, params: Mapping[str, Any], window: str) ->
             "title": "창에 붙기",
             # 제목이 정확히 같은 창 (부분 일치면 다른 창을 누를 수 있다)
             "in": {"title": f"/^{re.escape(window)}$/"},
-            "next": {"found": "n_input"},
+            "next": {"found": "n_input" if pre is None else "n_select"},
         },
         "n_input": node,
         "n_pass": {"type": "core.test.pass", "version": 1, "title": "통과"},
     }
+    if pre is not None:
+        value["nodes"]["n_select"] = pre
     return value
 
 
@@ -221,9 +239,14 @@ async def resolve_target(call: Call, window: str) -> InputTarget:
         except RequestFailed:
             await refuse_if_denied(call, GAME)
             raise
-        bound = BoundWindow(binding.hwnd, binding.pid, binding.created, "", match_title=False)
-        return InputTarget(GAME, title, [binding], bound)
+        return game_target(binding, title)
     return await find_titled(call, window)
+
+
+def game_target(binding: WindowBinding, title: str) -> InputTarget:
+    """`@game`으로 정한 창 (제목 비교 없이 PID·생성 시각으로 붙는다)."""
+    bound = BoundWindow(binding.hwnd, binding.pid, binding.created, "", match_title=False)
+    return InputTarget(GAME, title, [binding], bound)
 
 
 def remember_target(call: Call, target: InputTarget) -> None:
@@ -234,21 +257,69 @@ def remember_target(call: Call, target: InputTarget) -> None:
         call.daemon.game.remember(call.principal, target.bindings[0])
 
 
-async def refuse_if_denied(call: Call, arg: str) -> None:
+async def refuse_if_denied(call: Call, arg: str, *, method: str | None = None) -> None:
     """창을 정하지 못했을 때도 거부 정책이면 `permission_denied`가 먼저다 (사람에게 묻지는 않는다 —
-    입력하지 않을 요청이므로)."""
+    입력하지 않을 요청이므로). `method`를 주면 그 메서드의 도구로 본다."""
     authorizer = call.daemon.approvals.authorizer
-    peek = await asyncio.to_thread(authorizer.peek, call.principal, call.method, arg)
+    method = method or call.method
+    peek = await asyncio.to_thread(authorizer.peek, call.principal, method, arg)
     if peek is not None and peek.final == "deny":
-        await asyncio.to_thread(authorizer.require, call.principal, call.method, arg)
+        await asyncio.to_thread(authorizer.require, call.principal, method, arg)
 
 
 async def _control(call: Call) -> dict[str, Any]:
-    value = control_graph(call)  # 인자가 틀리면 판정 전에 거부 (아무것도 묻지 않음)
     window = _window_arg(call)
+    both = split_click_type(call.params) if call.method == "control.type" else None
+    if both is not None:
+        # 클릭+입력 한 걸음 (UX8 C, kb_input_type{point|target}). 인자는 판정 전에 검사한다
+        root = call.daemon.root
+        click = (both[0], graph_for(root, "control.click", both[0], window))
+        typed = (both[1], graph_for(root, "control.type", both[1], window))
+        target = await resolve_target(call, window) if is_game(window) else later(window)
+        # 판정은 kb_input_type 하나로 하지만, kb_input_click을 명시적으로 막아 둔 정책이면 클릭도
+        # 보내지 않는다
+        await refuse_if_denied(call, target.title, method="control.click")
+        return await click_then_type(call, target, click, typed)
+    value = control_graph(call)  # 인자가 틀리면 판정 전에 거부 (아무것도 묻지 않음)
     # `@game`은 판정 인자(지금 제목)가 필요해 먼저 정하고, 제목은 판정 뒤에 찾는다
     target = await resolve_target(call, window) if is_game(window) else later(window)
     return await send_input(call, call.method, call.params, target, value)
+
+
+async def click_then_type(
+    call: Call,
+    target: InputTarget,
+    click: tuple[Mapping[str, Any], dict[str, Any]],
+    typed: tuple[Mapping[str, Any], dict[str, Any]],
+) -> dict[str, Any]:
+    """클릭+입력 한 걸음 (UX8 C): 클릭 제어 실행 → (같은 판정으로) 입력 제어 실행. 클릭이 pass가
+    아니면 입력하지 않는다. 클릭 위치가 곧 칸 상자 근거다 — 두 실행 사이에 다른 입력이 끼지 않고
+    (전부 고르기는 입력 실행 안), 클릭 뒤 바로 입력하므로 `CLICK_FRESH_S` 안이다. 돌려주는 것은
+    마지막 제어 실행 결과."""
+    grant: list[Any] = []
+    clicked = await send_input(call, "control.click", click[0], target, click[1], grant=grant)
+    if clicked["verdict"] != "pass":
+        return clicked
+    return await send_input(call, "control.type", typed[0], target, typed[1], grant=grant)
+
+
+def split_click_type(params: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """`point`·`target` 클릭과 `text`·`secret`을 함께 줬으면 (클릭 인자, 입력 인자), 아니면 None.
+    비밀값 칸은 point로만 누른다 (target 클릭은 칸 위치 근거가 없어 그 창 이미지가 막힌다)."""
+    if not ("point" in params or "target" in params) or not (
+        "text" in params or "secret" in params
+    ):
+        if params.get("select_all") is True and "text" not in params and "secret" not in params:
+            raise RequestFailed("target_invalid", "select_all은 text·secret과 함께 준다")
+        return None
+    if "secret" in params and "point" not in params:
+        raise RequestFailed(
+            "target_invalid",
+            "비밀값 칸은 point로 누른다 (target 클릭은 칸 위치 근거가 없어 그 창 이미지가 막힌다)",
+        )
+    click = {k: params[k] for k in ("point", "target", "button", "count") if k in params}
+    typed = {k: params[k] for k in ("text", "secret", "select_all") if k in params}
+    return click, typed
 
 
 async def send_input(
@@ -257,8 +328,12 @@ async def send_input(
     params: Mapping[str, Any],
     target: InputTarget,
     value: dict[str, Any],
+    *,
+    grant: list[Any] | None = None,
 ) -> dict[str, Any]:
-    """제어 실행 하나 (`kb_input_*`·`kb_explore_step` 공용). 판정은 `call.method`의 도구로 한다."""
+    """제어 실행 하나 (`kb_input_*`·`kb_explore_step` 공용). 판정은 `call.method`의 도구로 한다.
+    `grant`(클릭+입력 한 걸음): 비어 있으면 판정 결과를 넣고, 있으면 그 판정을 다시 쓴다(한 요청에
+    사람 확인 한 번)."""
     # 개발 모듈 daemon의 에이전트 제어 실행은 사람 확인을 묻기 전에 거부 (M6 3.7)
     call.daemon.run_manager.refuse_dev_modules(call.principal)
     # 작업 판정(M8 R8)도 사람 확인을 묻기 전에 한 번 본다 (시작 잠금 안에서 다시 본다)
@@ -268,7 +343,7 @@ async def send_input(
     # (세션 잠금은 저장 게시 동안 쥐어질 수 있어 이벤트 루프 밖에서)
     step = await asyncio.to_thread(call.daemon.explore.reserve, call.connection)
     try:
-        return await _reserved(call, method, params, target, value, step)
+        return await _reserved(call, method, params, target, value, step, grant)
     finally:
         if step is not None:
             # 확정했으면 아무 일도 하지 않는다. 취소(연결 끊김) 중에도 되돌려야 하므로 바로 부른다
@@ -282,8 +357,14 @@ async def _reserved(
     target: InputTarget,
     value: dict[str, Any],
     step: StepReservation | None,
+    grant: list[Any] | None = None,
 ) -> dict[str, Any]:
-    authorized = await call.daemon.approvals.authorize(call, target.title)
+    if grant:
+        authorized = grant[0]
+    else:
+        authorized = await call.daemon.approvals.authorize(call, target.title)
+        if grant is not None:
+            grant.append(authorized)
     decision = authorized.decision
     assert isinstance(decision, Decision)  # control.*·explore.step은 ui_only가 아니다
     manager = call.daemon.run_manager
@@ -350,7 +431,7 @@ async def _launch(call: Call) -> dict[str, Any]:
     call.daemon.run_manager.refuse_job_bypass(call.principal)  # 사람 확인 전 (잠금 안에서 다시)
     await call.daemon.approvals.authorize(call, "")
     profile = call.params.get("profile")
-    pid = await asyncio.to_thread(
+    pid, replaced = await asyncio.to_thread(
         functools.partial(
             call.daemon.run_manager.launch_app,
             None if profile is None else str(profile),
@@ -359,7 +440,10 @@ async def _launch(call: Call) -> dict[str, Any]:
     )
     # `@game`의 대상 (UX7 C2): 띄운 주체의 기억에 PID·프로세스 생성 시각으로 (사람이면 쓰지 않음)
     await asyncio.to_thread(call.daemon.game.remember_pid, call.principal, pid)
-    return {"pid": pid}
+    out: dict[str, Any] = {"pid": pid}
+    if replaced is not None:
+        out["replaced_pid"] = replaced  # 같은 주체가 전에 띄운 게임을 끝냈다 (UX8 B)
+    return out
 
 
 METHODS: Final = {

@@ -30,7 +30,7 @@ from kookabug_core.record import FinalizeResult, InputKey, InputRecoveryOutcome,
 from kookabug_core.win import Job, Process, ProcessId
 from kookabug_sdk import _faults
 
-__all__ = ["RecoverResult", "RunnerStillAlive", "recover", "supervisor_backend"]
+__all__ = ["RecoverResult", "RunnerStillAlive", "clean_job", "recover", "supervisor_backend"]
 
 JOB_EXIT_WAIT_S: Final = 5.0
 """Job을 끝낸 뒤 안의 프로세스가 실제로 끝나기를 기다리는 시간."""
@@ -103,6 +103,11 @@ def recover(
     finally:
         terminated = _clean_job(job)
     return RecoverResult(result, exit_code, terminated)
+
+
+def clean_job(job: Job | None) -> bool:
+    """실행 Job 정리와 같은 방법으로 Job 안 프로세스를 끝낸다 (daemon이 띄운 게임 정리, UX8 B)."""
+    return _clean_job(job)
 
 
 def _clean_job(job: Job | None) -> bool:

@@ -312,6 +312,7 @@ class Daemon:
         self._run_manager.job_busy = self.jobs.active_id
         self._run_manager.job_basis = self.jobs.basis_of
         self._run_manager.fake_launch = getattr(self.screen_source, "fake_launch", None)
+        self._run_manager.launched.fake_stop = getattr(self.screen_source, "fake_stop", None)
         # 붙여 실행(UX7 D)이 쓰는 켜져 있는 게임 창
         self._run_manager.attach_window = self.game.resolve
         self._runs: RunsLike = runs or self._run_manager
@@ -566,6 +567,19 @@ class Daemon:
             if not self._run_manager.run_settled(run_id, timeout, force=True):
                 settled = False
         return settled
+
+    def stop_job_games(self, job: str) -> None:
+        """작업 끝(정상·취소·실패 모두): 그 작업이 `app.launch`로 띄운 게임을 끝낸다 (UX8 B)."""
+        from kookabug_daemon.launched import GameStopFailed
+
+        try:
+            stopped = self._run_manager.stop_launched(f"job:{job}")
+        except GameStopFailed:
+            # 기록은 남는다 (작업 종료는 계속 — 보고·슬롯 해제를 막지 않는다)
+            log.warning("작업 %s: 띄운 게임을 끝내지 못했다", job, exc_info=True)
+            return
+        if stopped is not None:
+            log.info("작업 %s: 띄운 게임 PID %d를 끝냈다", job, stopped)
 
     def write_report(self, job: Job, state: str, prep: str | None) -> str | None:
         from kookabug_core.agent_job import report as reports

@@ -137,6 +137,14 @@ class AppLaunchResult(BaseModel):
         extra="forbid",
     )
     pid: Annotated[int, Field(ge=1, le=9007199254740991)]
+    replaced_pid: Annotated[
+        int | None,
+        Field(
+            description="UX8: 같은 주체가 전에 kb_app_launch로 띄워 아직 살아 있던 게임을 먼저 끝냈다 (그 PID)",
+            ge=1,
+            le=9007199254740991,
+        ),
+    ] = None
 
 
 class ApprovalAnswer(RootModel[Literal["allow_always", "allow_once", "allow_session", "deny"]]):
@@ -3281,7 +3289,9 @@ class RunStatusParams(BaseModel):
     wait_ms: Annotated[
         int | None,
         Field(
-            description="UX7: 끝나기를 이만큼 기다린다 (daemon 안에서 — 호출 한 번)", ge=0, le=30000
+            description="UX7: 끝나기를 이만큼 기다린다 (daemon 안에서 — 호출 한 번, UX8: 최대 60000)",
+            ge=0,
+            le=60000,
         ),
     ] = None
 
@@ -3714,7 +3724,7 @@ class ScreensSaveVia1(BaseModel):
     click: Click
 
 
-class PointItem3(RootModel[int]):
+class PointItem4(RootModel[int]):
     root: Annotated[int, Field(ge=0, le=9007199254740991)]
 
 
@@ -3722,7 +3732,7 @@ class Click1(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    point: Annotated[list[PointItem3], Field(max_length=2, min_length=2)]
+    point: Annotated[list[PointItem4], Field(max_length=2, min_length=2)]
 
 
 class ScreensSaveVia2(BaseModel):
@@ -4679,13 +4689,21 @@ class ControlResult(BaseModel):
 
 class ControlTypeParams(BaseModel):
     """
-    글자 입력 (text와 secret 중 하나). secret은 비밀값 키 — 값은 runner가 찾고 결과·기록·오류에 원문이 없다
+    글자 입력 (text와 secret 중 하나). secret은 비밀값 키 — 값은 runner가 찾고 결과·기록·오류에 원문이 없다. UX8: point(또는 text면 target)를 함께 주면 그 칸을 클릭한 뒤 입력한다(한 요청 — 클릭 위치가 비밀값 칸 상자 근거)
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
+    point: Annotated[
+        list[PointItem] | None,
+        Field(description="[x, y] 클라이언트 영역 물리 픽셀", max_length=2, min_length=2),
+    ] = None
     secret: SecretKey | None = None
+    select_all: Annotated[
+        bool | None, Field(description="클릭 뒤 ctrl+a로 칸 글자를 전부 고르고 입력")
+    ] = None
+    target: WorkspacePath | None = None
     text: str | None = None
     window: Annotated[
         str,
@@ -4737,7 +4755,7 @@ class ExploreStartResult(BaseModel):
 
 class ExploreStepParams(BaseModel):
     """
-    explore.step (kb_explore_step, UX7): 입력 하나(point·target 클릭, keys, text·secret, 또는 없음) → 화면이 바뀌고 멈추기를 기다림 → 캡처 → 화면 판별 → 탐색 세션이 있으면 이동 자동 기록
+    explore.step (kb_explore_step, UX7): 입력 하나(point·target 클릭, keys, text·secret, 또는 없음 — UX8: 클릭과 text·secret을 함께 주면 클릭+입력 한 걸음) → 화면이 바뀌고 멈추기를 기다림 → 캡처 → 화면 판별 → 탐색 세션이 있으면 이동 자동 기록. @game은 창이 없으면 wait_ms 안에서 기다리고 창이 바뀌면 같은 프로세스의 주 창을 따라간다
     """
 
     model_config = ConfigDict(
@@ -4751,6 +4769,12 @@ class ExploreStepParams(BaseModel):
         Field(description="[x, y] 클라이언트 영역 물리 픽셀", max_length=2, min_length=2),
     ] = None
     secret: SecretKey | None = None
+    select_all: Annotated[
+        bool | None,
+        Field(
+            description="UX8 클릭+입력: 클릭 뒤 ctrl+a로 칸 글자를 전부 고르고 입력 (text·secret과 함께)"
+        ),
+    ] = None
     target: WorkspacePath | None = None
     text: str | None = None
     wait_ms: Annotated[
@@ -7615,6 +7639,12 @@ class ExploreStepResult(BaseModel):
     new_screen: bool
     waited_ms: Annotated[int, Field(ge=0)]
     window: str
+    window_changed: Annotated[
+        Literal[True] | None,
+        Field(
+            description="UX8: @game에서 실제로 쓴 창이 바뀌었다 (시작 화면 창이 닫히고 같은 프로세스의 본 창으로). 바뀌지 않았으면 없다"
+        ),
+    ] = None
 
 
 class ExploreStep(BaseModel):

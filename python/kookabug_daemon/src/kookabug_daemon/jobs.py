@@ -546,6 +546,8 @@ class JobHost(Protocol):
         """보고를 쓰고 렌더 경로를 돌려준다 (못 쓰면 None — 종료는 계속한다)."""
         ...
 
+    # 선택: `stop_job_games(job)` — 그 작업이 `app.launch`로 띄운 게임을 끝낸다 (UX8 B)
+
     def job_changed(self, job: Job) -> None: ...
 
 
@@ -635,6 +637,13 @@ class JobSupervisor:
                 job.last_try = self.jobs.now()
                 return
             state = job.target or "interrupted"
+            # 입력 복구를 확인한 뒤: 그 작업이 띄운 게임을 끝낸다 (UX8 B — 대역에는 없을 수 있다)
+            stop_games = getattr(self.host, "stop_job_games", None)
+            if stop_games is not None:
+                try:
+                    stop_games(job.id)
+                except Exception:
+                    log.warning("작업 %s: 띄운 게임을 끝내지 못했다", job.id, exc_info=True)
             rendered: str | None = None
             try:
                 rendered = self.host.write_report(job, state, job.prep)

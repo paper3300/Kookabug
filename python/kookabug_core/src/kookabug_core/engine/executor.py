@@ -10,7 +10,10 @@
   더하고 분기한다. 종료 노드·공개 exit에 닿으면 해소, 경로 끝에서 남아 있으면 처리되지 않은 fail
   (원인은 목록의 첫 스텝). 대기 목록은 다른 스텝이 성공해도 지우지 않는다 (G14)
 - error·취소·전체 기한 초과는 호출 스택을 따라 바로 위로 전파한다
-- 서브그래프 호출은 새 프레임 (변수는 이어받지 않고, 현재 대상 창은 이어받는다)
+- 서브그래프 호출은 새 프레임 (변수는 이어받지 않고, 현재 대상 창은 이어받는다). ok 계열 출구로
+  돌아오면 서브그래프 안에서 마지막으로 정해진 현재 대상 창이 부른 쪽의 현재 창이 된다(UX8 D —
+  바꾸지 않았으면 그대로, fail 출구면 넘기지 않음)
+- `kind: subgraph`를 직접 실행하면 ok 계열 출구에 닿으면 pass, fail 계열 출구면 fail (UX8 E)
 - 반복(`loops`): 반복 노드에 도착할 때마다 스텝 하나, 경로 끝은 가장 안쪽 반복 노드로 돌아간다
   (그 범위의 출력을 지운다). 반복 안 스텝의 이벤트에 `iteration`
 - 재시도(`retry`): 노드 함수가 재시도 출구로 나오면 출구를 확정하기 전에 다시 부른다. 중간 시도는
@@ -669,8 +672,14 @@ class _Run:
 
     def execute(self, frame: Frame) -> Judgement:
         try:
-            self._run_frame(frame)
-            facts = Facts(assertions_passed=self.assertions)
+            done = self._run_frame(frame)
+            # 서브그래프를 직접 실행해 공개 출구에 닿았다 (UX8 E — test 그래프는 그대로)
+            reached = (
+                (done.exit, done.kind)
+                if done is not None and frame.depth == 0 and frame.graph.kind == "subgraph"
+                else None
+            )
+            facts = Facts(assertions_passed=self.assertions, graph_exit=reached)
         except _Terminal as halt:
             facts = Facts(
                 terminal=halt.kind, terminal_cause=halt.cause, assertions_passed=self.assertions
@@ -1334,6 +1343,7 @@ class _Run:
             chain=(*frame.chain, callee.path),
             in_cheat=frame.in_cheat or cheat,
         )
+        start_window = inner.current_window
         done = self._run_frame(inner)
         if done is None:
             raise EngineError(
@@ -1341,6 +1351,11 @@ class _Run:
                 f"서브그래프 '{callee.path}'이(가) 공개 exit 없이 끝났다 "
                 "(어느 출구로 나갈지 모른다)",
             )
+        if not cheat and done.kind == "ok" and inner.current_window != start_window:
+            # 서브그래프가 정한 현재 대상 창을 부른 쪽이 이어받는다 (UX8 D — 예: `게임 실행`
+            # 서브그래프 안 core.app.launch). fail 출구면 넘기지 않는다. 띄운 게임은 실행 Job
+            # 안이라 실행 전체가 끝날 때만 정리된다
+            frame.current_window = inner.current_window
         return done
 
     def _graph_exit(

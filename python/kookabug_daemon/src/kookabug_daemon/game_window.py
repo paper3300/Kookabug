@@ -9,6 +9,8 @@ agent ID다.
 기억은 daemon 메모리에만 있다(파일 없음).
 
 `@game`은 그 프로세스의 주 창이다 — 로그인 뒤 창 제목이 바뀌어도 같은 프로세스의 창이면 붙는다.
+주 창은 보이고·최소화 아님·cloaked 아님인 창 중 클라이언트 넓이가 가장 큰 창이다(UX8 A — 로딩 중
+시작 화면 창을 띄웠다 닫고 본 창을 새로 만드는 게임).
 창 제목은 계정 ID 같은 가려야 할 값이 들어 있을 수 있는 글로 본다: `@game`으로 붙은 결과·활동
 목록·실행 기록에는 `@game`만 남기고 실제 제목은 권한 판정 인자로만 쓴다.
 """
@@ -85,25 +87,55 @@ class GameMemory:
             self._refs[key] = GameRef(binding.pid, binding.created)
 
     def windows(self, principal: Principal) -> list[tuple[WindowBinding, str]]:
-        """그 주체가 기억한 프로세스의 창들 (바인딩, 지금 제목). 기억이 없으면 빈 목록."""
+        """그 주체가 기억한 프로세스의 창들 (바인딩, 지금 제목) — 주 창이 맨 앞. 기억이 없으면 빈
+        목록."""
         ref = self.get(principal)
         if ref is None:
             return []
         finder = getattr(self._source, "windows_of", None)
-        return [] if finder is None else list(finder(ref.pid, ref.created))
+        found = [] if finder is None else list(finder(ref.pid, ref.created))
+        main = self._main(ref)
+        if main is not None:
+            found = [main, *(w for w in found if w[0] != main[0])]
+        return found
 
-    def resolve(self, principal: Principal) -> tuple[WindowBinding, str]:
-        """`@game` → (주 창 바인딩, 지금 제목). 그 주체의 기억이 없거나 창이 없으면
-        `window_not_found` (제목은 메시지에 넣지 않는다)."""
-        if self.get(principal) is None:
+    def _main(self, ref: GameRef) -> tuple[WindowBinding, str] | None:
+        finder = getattr(self._source, "main_window_of", None)
+        if finder is not None:
+            return finder(ref.pid, ref.created)
+        others = getattr(self._source, "windows_of", None)
+        found = [] if others is None else list(others(ref.pid, ref.created))
+        return found[0] if found else None
+
+    def _require(self, principal: Principal) -> GameRef:
+        ref = self.get(principal)
+        if ref is None:
             raise RequestFailed(
                 "window_not_found",
                 "@game: 이 연결이 기억한 게임이 없다 — kb_app_launch로 띄우거나 창 제목으로 한 번 "
                 "입력한다",
             )
-        found = self.windows(principal)
-        if not found:
+        return ref
+
+    def find(self, principal: Principal) -> tuple[WindowBinding, str] | None:
+        """`@game`의 지금 주 창 (UX8 A — 보이고·최소화·cloaked 아님 중 클라이언트 넓이가 가장 큰
+        창). 창이 아직 없으면 None, 기억이 없으면 `window_not_found`."""
+        return self._main(self._require(principal))
+
+    def alive(self, principal: Principal) -> bool:
+        """기억한 게임 프로세스가 아직 살아 있는가 (모르면 True). 기억이 없으면 False."""
+        ref = self.get(principal)
+        if ref is None:
+            return False
+        check = getattr(self._source, "process_alive", None)
+        return True if check is None else bool(check(ref.pid, ref.created))
+
+    def resolve(self, principal: Principal) -> tuple[WindowBinding, str]:
+        """`@game` → (주 창 바인딩, 지금 제목). 그 주체의 기억이 없거나 창이 없으면
+        `window_not_found` (제목은 메시지에 넣지 않는다)."""
+        found = self.find(principal)
+        if found is None:
             raise RequestFailed(
                 "window_not_found", "@game: 실행한 게임의 창이 없다 (닫혔거나 아직 뜨지 않았다)"
             )
-        return found[0]
+        return found

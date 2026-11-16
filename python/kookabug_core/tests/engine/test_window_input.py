@@ -151,7 +151,9 @@ def test_set_window_frame_scoped_and_inherited_by_subgraph(tmp_path: Path) -> No
     assert [e["outputs"]["handle"] for e in inner] == [b, a]  # 이어받음, in.window = 시작 창
 
 
-def test_subgraph_window_change_not_leaked(tmp_path: Path) -> None:
+def test_subgraph_window_change_passed_on_ok_exit(tmp_path: Path) -> None:
+    """UX8 D: ok 출구로 돌아오면 서브그래프가 정한 현재 창을 부른 쪽이 이어받는다 (공통 window
+    출력은 여전히 새지 않는다). fail 출구·바꾸지 않음은 `test_ux8_subgraph.py`."""
     ws = make_workspace(tmp_path)
     platform = ScenePlatform.sample()
     (
@@ -174,7 +176,7 @@ def test_subgraph_window_change_not_leaked(tmp_path: Path) -> None:
     a = ran.end("n_a")["outputs"]["handle"]
     inner = ran.end("n_launch")["outputs"]["handle"]
     assert inner != a
-    assert ran.end("n_w")["outputs"]["handle"] == a  # 안에서 띄운 창은 밖의 현재 창이 아니다
+    assert ran.end("n_w")["outputs"]["handle"] == inner  # 안에서 띄운 창이 밖의 현재 창이 된다
     # exit 노드의 공통 window는 서브그래프 출력으로 새지 않는다
     assert ran.end("n_call")["outputs"] == {}
 
