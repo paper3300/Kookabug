@@ -1616,6 +1616,12 @@ export const daemonRpcSchema: unknown = {
     "GraphListEntry": {
       "additionalProperties": false,
       "properties": {
+        "basis": {
+          "description": "UX9: 작업 연결의 작업 기준 사본에만 있는 그래프면 working",
+          "enum": [
+            "working"
+          ]
+        },
         "kind": {
           "enum": [
             "subgraph",

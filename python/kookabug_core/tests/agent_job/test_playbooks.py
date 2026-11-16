@@ -77,6 +77,12 @@ def test_playbooks_mention_required_rules() -> None:
     assert playbooks.versions()["entry"] >= 3
     for word in ("다시 띄우지 않는다", "select_all", "클릭+입력 한 걸음", "wait_ms` 60000"):
         assert word in body, word
+    # UX9: 처음부터 확인 실행이 실패하면 처음부터 다시 돌리며 고치지 않는다 — 다시 켠 게임에
+    # 붙여 실행으로 실패 지점까지 보내고 실패한 노드부터 고친다, 처음부터는 마지막 한 번
+    assert playbooks.versions()["entry"] >= 4 and playbooks.versions()["init"] >= 7
+    for word in ("처음부터 다시 돌리며 고치지 않는다", "실패한 노드부터", "마지막 확인 한 번만"):
+        assert word in body, word
+    assert "처음부터 다시 돌리며 고치지 않고" in every["init"].body
     assert "kb_explore_step" in every["explore"].body and "attach" in every["explore"].body
     for name in ("init", "followup", "explore"):
         assert "kb_job_progress" in every[name].body, name

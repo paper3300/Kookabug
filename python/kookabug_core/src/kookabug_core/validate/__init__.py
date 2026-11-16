@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -85,10 +86,14 @@ def check_graph_value(
     registry: Registry | None = None,
     options: RunOptions | None = None,
     secrets: SecretProvider | None = None,
+    graphs: Mapping[str, Any] | None = None,
 ) -> tuple[Program, list[Diagnostic]]:
     """편집 버퍼 검증 (M2 계획 2.7): 루트 그래프만 `value`로 바꾸고 서브그래프·target·화면은 디스크.
+    `graphs`(경로 → 그래프 값)를 주면 그 서브그래프는 디스크 대신 그 값이다 (작업 사본, UX9 C).
 
     같은 바이트의 파일이면 `check_graph`와 진단이 같다. 비밀값이 없으면 실행과 같이 오류다.
     """
-    program = load_program(workspace, graph, options=options, secrets=secrets, root_value=value)
+    program = load_program(
+        workspace, graph, options=options, secrets=secrets, root_value=value, graphs=graphs
+    )
     return program, validate(program, registry)

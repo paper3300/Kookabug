@@ -41,6 +41,9 @@ class Options:
     press_feedback: bool = False
     """검사용: 왼쪽 버튼 down에서 그 단추를 눌린 색으로 그리고 up에서 되돌린다 (녹화의 "클릭
     이전 프레임" 검사). 끄면 그림은 그대로다."""
+    splash: int | None = None
+    """MS 동안 작은 시작 화면(splash) 창(같은 제목)을 먼저 띄웠다 닫은 뒤 본 창을 만든다 (UX9 —
+    시작 화면 창을 닫고 본 창을 새로 만드는 게임 흉내)."""
 
 
 def _size(text: str) -> tuple[int, int]:
@@ -104,6 +107,12 @@ def parser() -> argparse.ArgumentParser:
         metavar="MS",
         help="MS 뒤 메인 창을 닫고 같은 제목으로 다시 만든다 (한 번)",
     )
+    p.add_argument(
+        "--splash",
+        type=_ms,
+        metavar="MS",
+        help="MS 동안 작은 시작 화면 창(같은 제목)을 띄웠다 닫은 뒤 본 창을 만든다",
+    )
     # 테스트·화면 PNG용 (도움말에 숨김)
     p.add_argument("--start-scene", choices=[s.value for s in Scene], help=argparse.SUPPRESS)
     p.add_argument("--font", default=DEFAULT_FONT, help=argparse.SUPPRESS)
@@ -135,4 +144,5 @@ def parse_args(argv: Sequence[str] | None = None) -> Options:
         font=ns.font,
         signal_file=ns.signal_file,
         press_feedback=ns.press_feedback,
+        splash=ns.splash,
     )

@@ -991,3 +991,19 @@ class ScenarioPlatform:
             # 가짜 창은 기다려도 뜨지 않는다: 노드 기한까지 기다린 것으로 본다
             raise ObservationTimeout(f"프로세스 {process.pid}의 창이 기한 안에 뜨지 않았다")
         return None
+
+    def process_running(self, process: ProcessRef, created: str) -> bool:
+        """그 가짜 게임이 아직 열려 있나 (창 따라가기, UX9 A)."""
+        game = self.scenario.game_of_process(process)
+        return game is not None and game.open
+
+    def follow_window(self, process: ProcessRef, created: str) -> WindowRef | None:
+        """그 가짜 게임의 지금 창 (가짜 게임은 프로세스 하나 = 창 하나, 자손 없음)."""
+        return self.process_window(process, None, None)
+
+    def window_alive(self, window: WindowRef) -> bool:
+        try:
+            self.scenario.game_of(window)
+        except EngineError:
+            return False
+        return True

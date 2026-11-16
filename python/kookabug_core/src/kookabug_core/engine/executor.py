@@ -49,7 +49,7 @@ import contextlib
 import copy
 import dataclasses
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Final, Literal, cast
 
@@ -162,14 +162,22 @@ class AttachStart:
 ATTACH_GAME_TITLE: Final = "@game"
 
 
-def attach_record(value: Any, attach: AttachStart, seen: dict[str, str] | None = None) -> Any:
+def attach_record(
+    value: Any,
+    attach: AttachStart,
+    seen: dict[str, str] | None = None,
+    games: Collection[tuple[int, str]] = (),
+) -> Any:
     """붙여 실행에서 기록(이벤트 출력)에 남길 값 (UX7 검수 1 High 1). 어느 노드 출력이든 창 참조의
     제목을: 기억한 게임 프로세스(PID·생성 시각)의 창이면 `@game`, 그 밖의 창이면 비밀값 가림을
     거친 글로 바꾼다. 실행이 쓰는 값은 그대로다 (기록만 바꾼다). `seen`에는 바꾼 실제 제목 →
-    바꾼 글을 모은다 (저널 경계가 그 뒤 모든 글에서 같은 제목을 바꾼다 — `AttachScrub`)."""
+    바꾼 글을 모은다 (저널 경계가 그 뒤 모든 글에서 같은 제목을 바꾼다 — `AttachScrub`). `games`는
+    실행기가 따라간 같은 게임의 창들의 (PID, 생성 시각) — 그 창도 `@game` (UX9 2)."""
     game = attach.window
 
     def title_of(window: WindowRef) -> str:
+        if (window.pid, str(window.process_created)) in games:
+            return ATTACH_GAME_TITLE
         if window.pid == game.pid and (
             not window.process_created
             or not game.process_created
@@ -266,6 +274,16 @@ class AttachScrub:
         if title:
             self._title = title  # 못 읽으면 지난 제목을 계속 쓴다 (가리는 쪽)
         return self._title
+
+    def follow(self, new: WindowRef, old: WindowRef | None = None) -> None:
+        """게임 창이 바뀌었다(실행기가 검증한 창 따라가기, UX9 2): 제목을 읽을 대상을 새 창으로 하고
+        곧바로 다시 읽는다. 옛 창 제목과 새 참조의 제목은 계속 가린다 (`seen`)."""
+        for title in (self._title, None if old is None else old.title, new.title):
+            if title:
+                self.seen[title] = ATTACH_GAME_TITLE
+        self.attach = replace(self.attach, window=new)
+        self._read_at = None  # 캐시를 버리고 새 창 제목을 바로 읽는다
+        self._game_title()
 
     def pairs(self) -> list[tuple[str, str]]:
         found = dict(self.seen)
@@ -511,8 +529,10 @@ class Executor:
         recorder.redact_secrets = policy.redact_secrets
         top = Frame(root, (), None, 0, {}, record_policy=policy, chain=(root.path,))
         if options.attach is not None:
-            # 붙여 실행: 처음 대상 창은 켜져 있는 게임 창이다
+            # 붙여 실행: 처음 대상 창은 켜져 있는 게임 창이다. 그 창이 닫히면 같은 게임 프로세스의
+            # 새 주 창으로 따라간다 (UX9 A)
             top.current_window = options.attach.window
+            runtime.own(options.attach.window, options.attach.process)
         if self.video is not None:
             self.video.set_base(policy.video)
         gate = CheatGate(
@@ -521,6 +541,7 @@ class Executor:
         run = _Run(runtime, options.graph_prefix, self.before_step, self.video, gate)
         run.attach = options.attach
         run.scrub = scrub
+        runtime.on_window_changed = run.window_changed
         judgement = run.execute(top)
         cause = judgement.cause if judgement.verdict != "pass" else None
         reason = judgement.reason
@@ -645,6 +666,18 @@ class _Run:
         self.scopes = LoopScopes(runtime.program, runtime.registry)
         self.attach: AttachStart | None = None
         self.scrub: AttachScrub | None = None
+        self.games: set[tuple[int, str]] = set()
+        """붙여 실행에서 따라간 같은 게임 창들의 (PID, 생성 시각) (UX9 2)."""
+
+    def window_changed(self, old: WindowRef, new: WindowRef) -> None:
+        """실행기가 검증한 창 전환 (UX9 2 — `Runtime.on_window_changed`): 녹화 대상을 새 창으로,
+        붙여 실행이면 기록 가림의 게임 창도 새 창으로 (옛 제목 가림은 그대로)."""
+        if self.video is not None:
+            self.video.retarget(old, new)
+        if self.attach is not None:
+            self.games.add((new.pid, str(new.process_created)))
+            if self.scrub is not None:
+                self.scrub.follow(new, old)
 
     def _value(self, value: Any, event: dict[str, Any], field: str) -> Any:
         """이벤트 `event`의 `field`(pointer)에 남길 값 (비밀값은 `record.redact_secrets`가 켜진
@@ -652,7 +685,7 @@ class _Run:
         창 참조 제목을 `@game`·가린 글로 (UX7)."""
         if self.attach is not None:
             seen = None if self.scrub is None else self.scrub.seen
-            value = attach_record(value, self.attach, seen)
+            value = attach_record(value, self.attach, seen, self.games)
         value, paths = classified_value(
             value, redact=self.rt.recorder.redact_secrets, pointer=field
         )
@@ -1136,7 +1169,8 @@ class _Run:
         rt = self.rt
         policy = retry_policy(nodedef, node)
         config = nodedef.effective_config(node.config)
-        step_window = window if window is not None else frame.current_window
+        # 닫혀서 따라간 창이면 새 창 (UX9 A)
+        step_window = rt.current(window if window is not None else frame.current_window)
         attempt = 1
         while True:
             end["attempt"] = attempt

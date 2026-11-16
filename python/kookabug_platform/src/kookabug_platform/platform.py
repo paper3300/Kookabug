@@ -22,7 +22,7 @@ import contextlib
 import threading
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -38,7 +38,7 @@ from kookabug_core.record.artifacts import (
     find_with_report,
 )
 from kookabug_core.record.video import VideoFrame
-from kookabug_core.win import Job, Process
+from kookabug_core.win import Job, Process, ProcessId, is_alive
 from kookabug_platform import process as processes
 from kookabug_platform import windows as wins
 from kookabug_platform.capture import BACKEND, CaptureService
@@ -63,6 +63,8 @@ from kookabug_sdk.types import (
 __all__ = ["WindowsPlatform"]
 
 _POLL_S = 0.05
+FAMILY_REFRESH_S = 0.5
+"""대상 창 캡처 때 게임 가족 기록을 다시 확인하는 최소 간격 (UX9 3)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +105,9 @@ class WindowsPlatform:
         self._capture = capture
         self._lock = threading.Lock()
         self._processes: dict[int, Process] = {}
+        self._families: dict[int, processes.GameFamily] = {}
+        """따라가기 대상 게임 PID → 그 게임의 가족 기록 (UX9 3)."""
+        self._refreshed: dict[int, float] = {}
         # 입력 액터는 runner가 임대권을 얻은 뒤 붙인다 (`attach_input`)
         self.service = InputService(cast(InputSink, _NoSink()), self)
         self._actor: InputActor | None = None
@@ -205,6 +210,8 @@ class WindowsPlatform:
         self, window: WindowRef | None, region: Rect | None, limits: ObservationLimits
     ) -> tuple[Image, StagedFrame]:
         binding = self._binding_for_capture(window)
+        if self._families:
+            self._touch_family(binding.pid)
         deadline = deadline_of(limits)
         assert deadline is not None
         frame = self.capture_service.capture(binding, region, deadline=deadline)
@@ -217,8 +224,10 @@ class WindowsPlatform:
             origin=origin,
             backend=info.backend,
             # 캡처한 실제 바인딩으로 (호출자가 넘긴 참조는 바인딩·PID가 비어 있을 수 있다 — 그
-            # 관측의 `Match`가 같은 HWND에 새로 뜬 창의 입력으로 통과하지 않게)
-            window=_ref_of(info.window, window.title),
+            # 관측의 `Match`가 같은 HWND에 새로 뜬 창의 입력으로 통과하지 않게). 호출자 참조가
+            # 바로 그 바인딩으로 풀렸으면 바인딩 이름은 호출자의 것(다른 실행이 만든 참조도
+            # 같은 창이면 실행기 프레임 확인을 지난다 — UX9 2)
+            window=_captured_ref(info.window, binding, window),
             observed_at=info.observed_at,
             frame=info.frame_seq,
         )
@@ -362,13 +371,30 @@ class WindowsPlatform:
     def close_process(self, process: ProcessRef, force_after_ms: int) -> bool:
         return processes.close(self._process(process), force_after_ms)
 
+    def _launched(self, process: ProcessRef) -> bool:
+        with self._lock:
+            return process.pid in self._processes
+
     def _pids(self, process: ProcessRef) -> list[int]:
+        """그 프로세스의 창을 찾을 PID들: 이 실행이 띄운 프로세스면 실행 Job 안 전부(런처가 띄운
+        아래 프로세스), 아니면(붙여 실행의 게임) 그 프로세스 하나."""
+        if not self._launched(process):
+            return [process.pid]
         return processes.candidate_pids(process.pid, self.job)
+
+    def _main_window(self, process: ProcessRef, title: str | None) -> int | None:
+        """주 창(보이고·최소화·cloaked 아님 중 클라이언트 넓이가 가장 큰 창, UX9 A). 쓸 수 있는 창이
+        없으면 지금처럼 첫 창."""
+        pids = self._pids(process)
+        found = wins.main_window(title=title, pids=pids)
+        return found if found is not None else wins.find_window(title=title, pids=pids)
 
     def process_window(
         self, process: ProcessRef, title: str | None, limits: ObservationLimits | None
     ) -> WindowRef | None:
-        hwnd = wins.find_window(title=title, pids=self._pids(process))
+        if self._launched(process):
+            self.refresh_family(process)  # 가족 기록을 미리 (UX9 3)
+        hwnd = self._main_window(process, title)
         if hwnd is not None or limits is None:
             return None if hwnd is None else self._ref(hwnd)
         # 창이 뜨기를 노드 기한까지 기다린다 (설정 기한은 걸지 않는다: 게임 시작은 캡처보다 길다)
@@ -378,10 +404,111 @@ class WindowsPlatform:
         )
         while True:
             deadline.ensure(_window_timeout)
-            hwnd = wins.find_window(title=title, pids=self._pids(process))
+            if self._launched(process):
+                self.refresh_family(process)
+            hwnd = self._main_window(process, title)
             if hwnd is not None:
                 return self._ref(hwnd)
             time.sleep(min(_POLL_S, deadline.remaining_s()))
+
+    # ------------------------------------------------------------ 창 따라가기 (UX9 A)
+
+    def _family(self, process: ProcessRef, created: str) -> list[ProcessId]:
+        """따라가기 소유 범위 (UX9 3): 그 게임의 **기록해 둔 가족**(처음 정체 + 확인된 자손) 중 지금
+        살아 있는 것. 부를 때마다 가족 기록을 한 번 확인·갱신한다(`process.family` 규칙 — 살아 있는
+        가족 밑 새 자손만, 사후 추정 없음). 실행 Job 전체가 아니다. 처음 정체는 띄운 프로세스면 그
+        핸들의 생성 시각, 아니면(붙여 실행) 처음 붙은 창의 생성 시각(`created`, 같은 PID). 정체를
+        모르면 빈 목록 (식별 불능 = 따라가지 않음)."""
+        with self._lock:
+            proc = self._processes.get(process.pid)
+            record = self._families.get(process.pid)
+        alive: bool
+        if proc is not None:
+            raw = getattr(proc, "created", None)
+            made = raw if isinstance(raw, int) and raw > 0 else None
+            try:
+                alive = bool(proc.alive())
+            except Exception:
+                alive = False
+        else:
+            made = record.root.created if record is not None else None
+            if made is None and created.isdigit():
+                made = int(created)
+            alive = made is not None and is_alive(ProcessId(process.pid, made))
+        if made is None:
+            return []
+        if record is None or record.root.created != made:
+            record = processes.GameFamily(ProcessId(process.pid, made))
+            with self._lock:
+                self._families[process.pid] = record
+        try:
+            return processes.family(record, alive)
+        except Exception:
+            return [record.root] if alive else []
+
+    def refresh_family(self, process: ProcessRef) -> None:
+        """띄운 게임의 가족 기록을 미리 갱신한다 (창을 기다리는 동안 — 런처가 본 게임을 띄우고
+        끝나기 전에 자손을 기록해 두게, UX9 3). 실패는 무시한다."""
+        with contextlib.suppress(Exception):
+            self._family(process, "")
+
+    def _touch_family(self, pid: int) -> None:
+        """그 PID가 가족 기록(처음 정체·자손)에 든 게임이면 그 기록을 갱신한다 (대상 창 캡처 때,
+        `FAMILY_REFRESH_S`에 한 번 — 본 창이 뜨기 전에 런처의 새 자손을 기록해 두게, UX9 3)."""
+        now = time.monotonic()
+        with self._lock:
+            due = [
+                root
+                for root, record in self._families.items()
+                if (pid == root or pid in record.members)
+                and now - self._refreshed.get(root, 0.0) >= FAMILY_REFRESH_S
+            ]
+            for root in due:
+                self._refreshed[root] = now
+        for root in due:
+            self.refresh_family(ProcessRef(root))
+
+    def process_running(self, process: ProcessRef, created: str) -> bool:
+        """그 게임 프로세스(PID+생성 시각)나 그 자손이 아직 살아 있나 (UX9 2). 실행 Job 안의 다른
+        프로세스는 보지 않는다. 정체를 모르면 False."""
+        return bool(self._family(process, created))
+
+    def follow_window(self, process: ProcessRef, created: str) -> WindowRef | None:
+        """그 게임 프로세스와 그 자손의 지금 주 창 (UX9 2). 열거 때 그 HWND의 PID·생성 시각과
+        바인딩(`_ref`)의 PID·생성 시각이 같고 허용 집합 안일 때만 돌려준다 — 열거와 바인딩 사이에
+        다른 프로세스가 HWND를 다시 쓰면 버린다(부른 쪽이 기한 안에서 다시 찾는다). 식별 불능도
+        버린다."""
+        allowed = {(p.pid, p.created) for p in self._family(process, created)}
+        if not allowed:
+            return None
+        from kookabug_platform.win32.api import DEFAULT_API
+
+        hwnd = wins.main_window(title=None, pids=sorted({pid for pid, _ in allowed}))
+        if hwnd is None:
+            return None
+        try:
+            pid = DEFAULT_API.window_pid(hwnd)
+            made = DEFAULT_API.process_created(pid) if pid else None
+        except Exception:
+            return None
+        if made is None or (pid, made) not in allowed:
+            return None
+        try:
+            ref = self._ref(hwnd)
+        except PlatformError:
+            return None
+        bound = int(ref.process_created) if ref.process_created.isdigit() else None
+        if ref.handle != hwnd or ref.pid != pid or bound != made or not ref.binding:
+            return None
+        return ref
+
+    def window_alive(self, window: WindowRef) -> bool:
+        """그 창 참조가 이 실행에서 아직 쓸 수 있나 (바인딩 확인 — 닫혔거나 다른 창이면 False)."""
+        try:
+            self.resolve(window)
+        except PlatformError:
+            return False
+        return True
 
 
 def _ref_of(binding: WindowBinding, title: str) -> WindowRef:
@@ -393,6 +520,15 @@ def _ref_of(binding: WindowBinding, title: str) -> WindowRef:
         process_created=str(binding.process_created),
         binding=binding.binding_id,
     )
+
+
+def _captured_ref(captured: WindowBinding, asked: WindowBinding, window: WindowRef) -> WindowRef:
+    """캡처한 프레임의 창 참조. 캡처가 요청 참조를 푼 바인딩 그대로였으면 요청 참조의 바인딩 이름을
+    쓰고, 아니면 실제 바인딩 (실행기가 다르다고 보고 버린다)."""
+    ref = _ref_of(captured, window.title)
+    if captured.binding_id == asked.binding_id and window.binding:
+        return replace(ref, binding=window.binding)
+    return ref
 
 
 def _window_timeout() -> BaseException:

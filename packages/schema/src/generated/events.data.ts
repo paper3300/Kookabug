@@ -1249,6 +1249,58 @@ export const eventsSchema: unknown = {
       "title": "Verdict",
       "type": "string"
     },
+    "WindowChangedEvent": {
+      "additionalProperties": false,
+      "description": "UX9: 이 실행이 띄운(붙은) 게임의 대상 창이 닫혀 같은 게임 프로세스의 새 주 창으로 바꿨다 (시작 화면 창 → 본 창). 창 제목은 남기지 않는다",
+      "properties": {
+        "event": {
+          "const": "window.changed"
+        },
+        "from_hwnd": {
+          "description": "닫힌 대상 창 HWND",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "hwnd": {
+          "description": "새 대상 창 HWND",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "node": {
+          "type": "string"
+        },
+        "pid": {
+          "description": "새 대상 창의 프로세스",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "run": {
+          "$ref": "#/$defs/RunId"
+        },
+        "seq": {
+          "$ref": "#/$defs/Seq"
+        },
+        "step": {
+          "$ref": "#/$defs/StepId"
+        },
+        "t": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "event",
+        "from_hwnd",
+        "hwnd",
+        "node",
+        "pid",
+        "run",
+        "seq",
+        "step",
+        "t"
+      ],
+      "title": "WindowChangedEvent",
+      "type": "object"
+    },
     "WorkerExitEvent": {
       "additionalProperties": false,
       "description": "워커 프로세스 종료",
@@ -1374,6 +1426,9 @@ export const eventsSchema: unknown = {
     },
     {
       "$ref": "#/$defs/CheatCallEvent"
+    },
+    {
+      "$ref": "#/$defs/WindowChangedEvent"
     },
     {
       "$ref": "#/$defs/RunEndEvent"

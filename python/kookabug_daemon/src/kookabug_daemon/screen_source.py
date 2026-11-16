@@ -95,13 +95,11 @@ def pick_main(
     candidates: Iterable[tuple[WindowBinding, str, bool, int]],
 ) -> tuple[WindowBinding, str] | None:
     """(바인딩, 제목, 쓸 수 있음, 클라이언트 넓이) 중 쓸 수 있는 창에서 넓이가 가장 큰 창. 같으면
-    앞(Z 순서) 창. 시작 화면(splash) 창이 먼저 떠 있어도 본 창을 고른다 (UX8 A)."""
-    best: tuple[WindowBinding, str] | None = None
-    best_area = 0
-    for binding, title, usable, area in candidates:
-        if usable and area > best_area:
-            best, best_area = (binding, title), area
-    return best
+    앞(Z 순서) 창. 시작 화면(splash) 창이 먼저 떠 있어도 본 창을 고른다 (UX8 A). 규칙은 runner
+    `core.app.launch`와 같은 `kookabug_core.win.main_window.pick_main` (UX9 A)."""
+    from kookabug_core.win.main_window import pick_main as pick
+
+    return pick(((binding, title), usable, area) for binding, title, usable, area in candidates)
 
 
 class RealSource:

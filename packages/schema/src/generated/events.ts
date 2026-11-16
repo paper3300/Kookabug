@@ -19,6 +19,7 @@ export type Event =
   | WorkerStartEvent
   | WorkerExitEvent
   | CheatCallEvent
+  | WindowChangedEvent
   | RunEndEvent;
 /**
  * 실행 ID: 소문자·숫자 8자
@@ -423,6 +424,29 @@ export interface CheatCallEvent {
   event: "cheat.call";
   node: string;
   rev: number;
+  run: RunId;
+  seq: Seq;
+  step: StepId;
+  t: Timestamp;
+}
+/**
+ * UX9: 이 실행이 띄운(붙은) 게임의 대상 창이 닫혀 같은 게임 프로세스의 새 주 창으로 바꿨다 (시작 화면 창 → 본 창). 창 제목은 남기지 않는다
+ */
+export interface WindowChangedEvent {
+  event: "window.changed";
+  /**
+   * 닫힌 대상 창 HWND
+   */
+  from_hwnd: number;
+  /**
+   * 새 대상 창 HWND
+   */
+  hwnd: number;
+  node: string;
+  /**
+   * 새 대상 창의 프로세스
+   */
+  pid: number;
   run: RunId;
   seq: Seq;
   step: StepId;

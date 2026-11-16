@@ -1578,6 +1578,10 @@ export interface GraphPatchOpSetMeta {
  * via the `definition` "GraphListEntry".
  */
 export interface GraphListEntry {
+  /**
+   * UX9: 작업 연결의 작업 기준 사본에만 있는 그래프면 working
+   */
+  basis?: "working";
   kind?: "subgraph" | "test";
   path: WorkspacePath;
   problem?: string;

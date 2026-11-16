@@ -7,15 +7,15 @@
     "font_smoothing": "cleartype"
   },
   "scenes": {
-    "inventory": "b3032a6c223e5c3fd3c5265912c8d03c3c2a344c279dae4075c8f273bb8e9edf",
-    "loading": "b3032a6c223e5c3fd3c5265912c8d03c3c2a344c279dae4075c8f273bb8e9edf",
-    "lobby": "b3032a6c223e5c3fd3c5265912c8d03c3c2a344c279dae4075c8f273bb8e9edf",
-    "lobby_server1": "b3032a6c223e5c3fd3c5265912c8d03c3c2a344c279dae4075c8f273bb8e9edf",
-    "lobby_server2": "b3032a6c223e5c3fd3c5265912c8d03c3c2a344c279dae4075c8f273bb8e9edf",
-    "login": "b3032a6c223e5c3fd3c5265912c8d03c3c2a344c279dae4075c8f273bb8e9edf",
-    "login_error": "b3032a6c223e5c3fd3c5265912c8d03c3c2a344c279dae4075c8f273bb8e9edf",
-    "maintenance": "b3032a6c223e5c3fd3c5265912c8d03c3c2a344c279dae4075c8f273bb8e9edf",
-    "title": "b3032a6c223e5c3fd3c5265912c8d03c3c2a344c279dae4075c8f273bb8e9edf",
-    "world": "b3032a6c223e5c3fd3c5265912c8d03c3c2a344c279dae4075c8f273bb8e9edf"
+    "inventory": "edd628aa84d3edb2d2fd373cc7ab24a7ec5f5fd474f92fcd4c0f75cc50acbebf",
+    "loading": "edd628aa84d3edb2d2fd373cc7ab24a7ec5f5fd474f92fcd4c0f75cc50acbebf",
+    "lobby": "edd628aa84d3edb2d2fd373cc7ab24a7ec5f5fd474f92fcd4c0f75cc50acbebf",
+    "lobby_server1": "edd628aa84d3edb2d2fd373cc7ab24a7ec5f5fd474f92fcd4c0f75cc50acbebf",
+    "lobby_server2": "edd628aa84d3edb2d2fd373cc7ab24a7ec5f5fd474f92fcd4c0f75cc50acbebf",
+    "login": "edd628aa84d3edb2d2fd373cc7ab24a7ec5f5fd474f92fcd4c0f75cc50acbebf",
+    "login_error": "edd628aa84d3edb2d2fd373cc7ab24a7ec5f5fd474f92fcd4c0f75cc50acbebf",
+    "maintenance": "edd628aa84d3edb2d2fd373cc7ab24a7ec5f5fd474f92fcd4c0f75cc50acbebf",
+    "title": "edd628aa84d3edb2d2fd373cc7ab24a7ec5f5fd474f92fcd4c0f75cc50acbebf",
+    "world": "edd628aa84d3edb2d2fd373cc7ab24a7ec5f5fd474f92fcd4c0f75cc50acbebf"
   }
 }

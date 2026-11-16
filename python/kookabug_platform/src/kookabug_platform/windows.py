@@ -26,6 +26,7 @@ from ctypes import wintypes
 from dataclasses import dataclass
 from typing import Any, Final, Protocol
 
+from kookabug_core.win.main_window import pick_main
 from kookabug_platform.dpi import per_monitor_v2_thread, scale_length, window_dpi_thread
 from kookabug_platform.errors import (
     INPUT_DESKTOP_UNAVAILABLE,
@@ -52,6 +53,7 @@ __all__ = [
     "check_integrity",
     "check_not_minimized",
     "check_point",
+    "client_area",
     "describe",
     "find_window",
     "find_windows",
@@ -59,6 +61,7 @@ __all__ = [
     "integrity_exceeds",
     "is_fullscreen",
     "is_owned_by",
+    "main_window",
     "set_client_size",
     "title_matches",
     "window_info",
@@ -261,6 +264,29 @@ def find_window(
     """`find_windows`의 첫 창 (없으면 None)."""
     found = find_windows(title=title, process_name=process_name, pids=pids, owned=owned, api=api)
     return found[0] if found else None
+
+
+def client_area(hwnd: int) -> int:
+    """클라이언트 영역 넓이(물리 픽셀). 읽을 수 없으면(닫힌 창) 0."""
+    rect = wintypes.RECT()
+    with per_monitor_v2_thread():
+        if not user32.GetClientRect(hwnd, ctypes.byref(rect)):
+            return 0
+    return max(0, rect.right - rect.left) * max(0, rect.bottom - rect.top)
+
+
+def main_window(
+    *,
+    title: str | None = None,
+    pids: Collection[int] | None = None,
+    api: WindowApi = DEFAULT_API,
+    area: Callable[[int], int] = client_area,
+) -> int | None:
+    """`find_windows`(보이고·cloaked 아님) 중 주 창: 최소화 아님 중 클라이언트 넓이가 가장 큰 창
+    (UX9 A — daemon `@game`의 UX8 `pick_main`과 같은 규칙, `kookabug_core.win.main_window`). 시작
+    화면(splash) 창이 떠 있어도 본 창이 뜨면 본 창이다. 쓸 수 있는 창이 없으면 None."""
+    found = find_windows(title=title, pids=pids, api=api)
+    return pick_main((hwnd, not api.is_minimized(hwnd), area(hwnd)) for hwnd in found)
 
 
 # ---------------------------------------------------------------- 판정

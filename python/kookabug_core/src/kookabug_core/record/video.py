@@ -478,6 +478,23 @@ class VideoGate:
             self._window = window
             self._update()
 
+    def retarget(self, old: WindowRef, new: WindowRef) -> None:
+        """실행기가 대상 창을 따라갔다(닫힌 시작 화면 창 → 같은 게임의 본 창, UX9 2): 지금 녹화
+        대상이 그 옛 창이면 새 창으로 바꾸고 세대를 올린다(옛 창에서 가져오는 중이던 프레임은
+        버려진다). 정책(비밀값·off·보류)은 그대로다."""
+        with self._cond:
+            current = self._window
+            if current is None or (current.handle, current.pid, current.binding) != (
+                old.handle,
+                old.pid,
+                old.binding,
+            ):
+                return
+            self._window = new
+            self._gen += 1
+            self._update()
+            self._cond.notify_all()
+
     def restrict(self, step: str, mode: VideoMode) -> None:
         """호출 스텝: 서브그래프의 `record`까지 더한 정책이 더 세면 그 호출 스텝 구간 전체에 쓴다
         (자식 스텝 사이에도 다시 켜지지 않게)."""

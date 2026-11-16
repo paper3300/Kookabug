@@ -31,7 +31,7 @@ import copy
 import os
 import secrets
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -512,8 +512,13 @@ class GraphChecker:
             self._registry = None
 
     def check_sync(
-        self, rel: str, value: Any, guard: Callable[[], object] | None = None
+        self,
+        rel: str,
+        value: Any,
+        guard: Callable[[], object] | None = None,
+        graphs: Mapping[str, Any] | None = None,
     ) -> Checked:
+        """`graphs`(경로 → 그래프 값)는 디스크 대신 볼 서브그래프 (작업 사본, UX9 C)."""
         if guard is not None:
             guard()  # 풀에서 차례를 기다린 뒤, 검증 직전의 경로 재검사
         try:
@@ -521,7 +526,9 @@ class GraphChecker:
         except WorkspaceError as exc:
             raise RequestFailed("io_error", str(exc), message=str(exc)) from exc
         registry = self.registry
-        program, diagnostics = check_graph_value(workspace, rel, value, registry=registry)
+        program, diagnostics = check_graph_value(
+            workspace, rel, value, registry=registry, graphs=graphs
+        )
         if self._plugin_check is not None:
             diagnostics = [*diagnostics, *self._plugin_check(program, registry)]
         shapes = value_shapes(program, rel, value, registry)
@@ -531,10 +538,15 @@ class GraphChecker:
         )
 
     async def check(
-        self, rel: str, value: Any, *, guard: Callable[[], object] | None = None
+        self,
+        rel: str,
+        value: Any,
+        *,
+        guard: Callable[[], object] | None = None,
+        graphs: Mapping[str, Any] | None = None,
     ) -> Checked:
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self._pool, self.check_sync, rel, value, guard)
+        return await loop.run_in_executor(self._pool, self.check_sync, rel, value, guard, graphs)
 
     def close(self) -> None:
         self._pool.shutdown(wait=False, cancel_futures=True)

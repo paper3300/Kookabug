@@ -55,6 +55,7 @@ import {
   lastScreenText,
   mergeActivity,
   progressText,
+  shortTime,
   waitingText,
   type ActivityEntry,
   type ActivityUsed,
@@ -64,11 +65,6 @@ import {
 } from "./activity";
 import { thumbUrl } from "../screens/ScreenCard";
 import css from "./reports.module.css";
-
-function shortTime(iso: string): string {
-  const m = /T(\d\d:\d\d)/.exec(iso);
-  return m === null ? iso : `${iso.slice(5, 10)} ${m[1]}`;
-}
 
 const SUMMARY_LABEL: Record<string, string> = {
   features: "기능",

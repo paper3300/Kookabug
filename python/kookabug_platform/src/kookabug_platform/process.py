@@ -18,17 +18,29 @@ import ctypes
 import subprocess
 import time
 from collections.abc import Callable, Mapping, Sequence
+from ctypes import wintypes
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
-from kookabug_core.win import Job, Process
+from kookabug_core.win import Job, Process, ProcessId
 from kookabug_platform.errors import LAUNCH_FAILED, PlatformError
 from kookabug_platform.win32 import kernel32, user32
 from kookabug_platform.win32._ffi import last_error_text
 from kookabug_platform.win32.api import DEFAULT_API, WindowApi
 from kookabug_platform.windows import find_window
 
-__all__ = ["candidate_pids", "close", "launch", "process_windows", "wait_window"]
+__all__ = [
+    "GameFamily",
+    "candidate_pids",
+    "close",
+    "family",
+    "launch",
+    "live_created",
+    "parent_pids",
+    "process_windows",
+    "wait_window",
+]
 
 _POLL_S: Final = 0.05
 FORCE_EXIT_CODE: Final = 1
@@ -116,6 +128,141 @@ def wait_window(
         if time.monotonic() >= deadline or (should_stop is not None and should_stop()):
             return None
         time.sleep(min(_POLL_S, max(0.0, deadline - time.monotonic())))
+
+
+class _ProcessEntry(ctypes.Structure):
+    _fields_ = (
+        ("dwSize", wintypes.DWORD),
+        ("cntUsage", wintypes.DWORD),
+        ("th32ProcessID", wintypes.DWORD),
+        ("th32DefaultHeapID", ctypes.c_size_t),
+        ("th32ModuleID", wintypes.DWORD),
+        ("cntThreads", wintypes.DWORD),
+        ("th32ParentProcessID", wintypes.DWORD),
+        ("pcPriClassBase", wintypes.LONG),
+        ("dwFlags", wintypes.DWORD),
+        ("szExeFile", wintypes.WCHAR * 260),
+    )
+
+
+_TH32CS_SNAPPROCESS: Final = 0x00000002
+_k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+_k32.CreateToolhelp32Snapshot.argtypes = (wintypes.DWORD, wintypes.DWORD)
+_k32.Process32FirstW.restype = wintypes.BOOL
+_k32.Process32FirstW.argtypes = (wintypes.HANDLE, ctypes.POINTER(_ProcessEntry))
+_k32.Process32NextW.restype = wintypes.BOOL
+_k32.Process32NextW.argtypes = (wintypes.HANDLE, ctypes.POINTER(_ProcessEntry))
+_k32.CloseHandle.restype = wintypes.BOOL
+_k32.CloseHandle.argtypes = (wintypes.HANDLE,)
+_INVALID_HANDLE: Final = wintypes.HANDLE(-1).value
+
+
+def parent_pids() -> dict[int, int]:
+    """지금 모든 프로세스의 PID → 부모 PID (Toolhelp 스냅샷). 못 읽으면 빈 표."""
+    snap = _k32.CreateToolhelp32Snapshot(_TH32CS_SNAPPROCESS, 0)
+    if not snap or snap == _INVALID_HANDLE:
+        return {}
+    out: dict[int, int] = {}
+    try:
+        entry = _ProcessEntry()
+        entry.dwSize = ctypes.sizeof(entry)
+        ok = _k32.Process32FirstW(snap, ctypes.byref(entry))
+        while ok:
+            out[int(entry.th32ProcessID)] = int(entry.th32ParentProcessID)
+            ok = _k32.Process32NextW(snap, ctypes.byref(entry))
+    finally:
+        _k32.CloseHandle(snap)
+    return out
+
+
+def live_created(pid: int) -> int | None:
+    """그 PID를 지금 쥔 **살아 있는** 프로세스의 생성 시각. 없거나 끝났거나 열 수 없으면 None."""
+    try:
+        with Process.open(pid) as proc:
+            return proc.created if proc.alive() else None
+    except Exception:
+        return None
+
+
+@dataclass
+class GameFamily:
+    """게임 하나의 가족 기록 (UX9 3 — 따라가기 소유 범위). 처음 정체(`root`)와 확인된 자손들
+    (각각 PID+생성 시각)만이 그 게임이다. 사후 추정으로 넓히지 않는다.
+
+    - `pending`: 직전 확인에서 한 번 본 자손 후보 (다음 확인에서 같은 정체로 다시 보면 기록)
+    - `refused`: 정체가 바뀐 것을 본 PID (기록한 자손이 끝났거나 후보의 생성 시각이 달라짐 — PID
+      재사용). 다시 더하지 않는다
+    """
+
+    root: ProcessId
+    members: dict[int, ProcessId] = field(default_factory=dict[int, ProcessId])
+    pending: dict[int, ProcessId] = field(default_factory=dict[int, ProcessId])
+    refused: set[int] = field(default_factory=set[int])
+
+
+def family(
+    root: ProcessId | GameFamily,
+    root_alive: bool,
+    *,
+    parents: Callable[[], Mapping[int, int]] = parent_pids,
+    created: Callable[[int], int | None] = live_created,
+) -> list[ProcessId]:
+    """그 게임의 가족 기록을 한 번 확인·갱신하고, 지금 살아 있는 가족(원래 프로세스가 먼저)을
+    돌려준다 (UX9 3). `root`가 `GameFamily`면 그 기록을 고쳐 쓴다(`ProcessId`면 이번만 쓰는
+    새 기록).
+
+    새 자손은 이 확인 안에서 다음을 모두 만족할 때만 기록에 더한다 — 하나라도 못 하면 이번에는
+    더하지 않는다:
+    1. 부모(이미 가족이고 살아 있는 프로세스)의 정체가 스냅샷 **전과 후** 모두 같은 생성 시각
+    2. 자식의 생성 시각을 스냅샷 뒤 두 번 읽어 같고, 부모 생성 시각 이상
+    3. 직전 확인에서 같은 부모 밑 같은 정체로 이미 본 후보 (연속 두 번 — 스냅샷과 생성 시각 읽기
+       사이에 PID가 재사용됐으면 다음 스냅샷에서 부모가 달라지거나 생성 시각이 달라 걸린다)
+
+    부모가 끝났거나 정체를 모르면 그 밑으로는 더하지 않는다. 이미 기록한 가족은 각자 정체가 맞으면
+    계속 유효하고, 끝난 가족의 PID는 다시 받지 않는다. 실행 Job 전체가 아니다. `created`는 그
+    PID를 쥔 살아 있는 프로세스의 생성 시각(없으면 None)."""
+    record = root if isinstance(root, GameFamily) else GameFamily(root)
+    origin = record.root
+
+    def live(ident: ProcessId) -> bool:
+        return created(ident.pid) == ident.created
+
+    root_ok = root_alive and live(origin)
+    # 1. 스냅샷 전: 부모가 될 수 있는 가족 (살아 있는 것만)
+    before = ([origin] if root_ok else []) + [m for m in record.members.values() if live(m)]
+    table = parents()
+    children: dict[int, list[int]] = {}
+    for pid, ppid in table.items():
+        if pid != ppid:
+            children.setdefault(ppid, []).append(pid)
+    pending: dict[int, ProcessId] = {}
+    for parent in before:
+        if not live(parent):  # 스냅샷 뒤에도 같은 정체로 살아 있어야 그 밑 자식을 믿는다
+            continue
+        for pid in children.get(parent.pid, ()):
+            if pid == origin.pid or pid in record.members or pid in record.refused:
+                continue
+            first, second = created(pid), created(pid)
+            if first is None or first != second or first < parent.created:
+                continue
+            seen = record.pending.get(pid)
+            if seen is None:
+                pending[pid] = ProcessId(pid, first)
+            elif seen.created != first:
+                record.refused.add(pid)  # 같은 PID의 정체가 바뀌었다 (재사용)
+            else:
+                record.members[pid] = seen
+    record.pending = pending
+    alive = [origin] if root_ok else []
+    for pid, member in list(record.members.items()):
+        if live(member):
+            alive.append(member)
+        else:
+            # 끝난 자손: 기록에서 빼고 그 PID는 다시 받지 않는다 (재사용된 PID가 끼지 않게)
+            del record.members[pid]
+            record.refused.add(pid)
+    return alive
 
 
 def process_windows(pid: int, api: WindowApi = DEFAULT_API) -> list[int]:

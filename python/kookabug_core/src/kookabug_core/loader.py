@@ -174,11 +174,13 @@ def load_program(
     options: RunOptions | None = None,
     secrets: SecretProvider | None = None,
     root_value: Any = _NO_VALUE,
+    graphs: Mapping[str, Any] | None = None,
 ) -> Program:
     """`graph`(워크스페이스 기준 경로 또는 절대 경로)와 그 서브그래프를 읽는다.
 
     `root_value`를 주면 루트 그래프 파일 대신 그 값(편집 버퍼, JSON 트리)을 쓴다. 서브그래프·target·
-    화면은 디스크에서 읽는다 (루트가 자기 자신을 부르면 그 호출도 버퍼다).
+    화면은 디스크에서 읽는다 (루트가 자기 자신을 부르면 그 호출도 버퍼다). `graphs`(경로 → 그래프
+    값)를 주면 그 경로의 그래프는 디스크 대신 그 값이다 (작업 사본을 보는 읽기 도구, UX9 C).
     """
     if isinstance(graph, Path):
         rel = workspace.relative(graph)
@@ -187,6 +189,9 @@ def load_program(
     else:
         rel = graph
     loader = _Loader(workspace, options or RunOptions(), secrets or default_secrets(workspace))
+    for path, data in (graphs or {}).items():
+        # 같은 파일(철자·대소문자만 다른 경로)은 같은 덧씌움 — 루트·호출 서브그래프 모두 (UX9 2)
+        loader.overlay[_path_key(path)] = copy.deepcopy(data)
     if root_value is not _NO_VALUE:
         loader.buffers[rel] = copy.deepcopy(root_value)
     program = loader.program
@@ -205,6 +210,11 @@ def load_program(
     loader.load_qa()
     loader.load_screens()
     return program
+
+
+def _path_key(rel: str) -> str:
+    """경로 비교 키 — `kookabug_core.adopt.path_key`와 같다 (구분자 `/`·빈 조각 제거·`casefold`)."""
+    return "/".join(p for p in rel.replace("\\", "/").split("/") if p).casefold()
 
 
 def exit_screens(graph: Graph) -> list[tuple[str, str]]:
@@ -256,6 +266,15 @@ class _Loader:
         self._targets: dict[str, Target | tuple[str, str]] = {}
         self.buffers: dict[str, Any] = {}
         """경로 → 파일 대신 쓸 값 (편집 버퍼)."""
+        self.overlay: dict[str, Any] = {}
+        """정규화 경로 키(`_path_key`) → 파일 대신 쓸 그래프 값 (작업 사본, UX9 2). 진단·참조의
+        경로는 그래프가 부른 철자 그대로다."""
+
+    def _buffered(self, rel: str) -> Any:
+        """그 경로의 덧씌움 값 (편집 버퍼 먼저, 다음 작업 사본). 없으면 `_NO_VALUE`."""
+        if rel in self.buffers:
+            return self.buffers[rel]
+        return self.overlay.get(_path_key(rel), _NO_VALUE)
 
     def load_all(self, root: str) -> CallStatus:
         """루트에서 호출을 따라 너비 우선으로 읽는다 (재귀 없음).
@@ -353,7 +372,8 @@ class _Loader:
         path = self.ws.resolve(rel)
         assert path is not None
         self.program.references.discovered.add(rel)
-        buffered = rel in self.buffers
+        value = self._buffered(rel)
+        buffered = value is not _NO_VALUE
         if not buffered and not path.is_file():
             self._status[rel] = "missing"
             return "missing"
@@ -361,7 +381,7 @@ class _Loader:
         self.program.references.graphs.add(rel)
         diags = self.program.diagnostics
         if buffered:
-            data = self.buffers[rel]
+            data = value
         else:
             try:
                 data = loads_strict(path.read_text(encoding="utf-8"))

@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from kookabug_core import basis
+from kookabug_core.adopt import path_key
 from kookabug_core.canonical import loads_strict, save_text
 from kookabug_core.documents import DocumentError, revision_of
 from kookabug_core.documents import template as documents_template
@@ -73,8 +74,34 @@ def _doc_arg(call: Call) -> str:
     return table.path_for(entry, call.connection).rel
 
 
-async def _opened_result(call: Call, opened: Opened) -> dict[str, Any]:
-    checked = await call.daemon.checker.check(opened.entry.rel, opened.value)
+def _working_graphs(call: Call) -> dict[str, Any] | None:
+    """작업 기준 연결이면 이 주체의 작업 사본 그래프들(경로 → 값), 아니면 None. 검증이 서브그래프를
+    디스크 대신 이것으로 본다 — `kb_run_start`(작업 기준 덧씌움)와 같은 그래프를 검증하게 (UX9 C).
+    읽을 수 없는 사본은 빼고 팀 파일을 본다."""
+    actor = working_actor(call)
+    if actor is None:
+        return None
+    files = basis.owned_files(call.daemon.root, job=actor.job, agent=actor.id)
+    graphs: dict[str, Any] = {}
+    for rel, data in files.items():
+        if not rel.endswith(".graph.json"):
+            continue
+        try:
+            value = loads_strict(data.decode("utf-8"))
+        except UnicodeDecodeError, ValueError:
+            continue
+        if isinstance(value, dict):
+            graphs[rel] = value
+    return graphs
+
+
+async def _opened_result(
+    call: Call, opened: Opened, *, rel: str | None = None, graphs: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
+    """`rel`을 주면 그 경로로 검증한다 (작업 사본을 연 것이면 팀 경로 — 진단의 파일이 같게)."""
+    checked = await call.daemon.checker.check(
+        opened.entry.rel if rel is None else rel, opened.value, graphs=graphs
+    )
     result: dict[str, Any] = {
         "doc_id": opened.entry.doc_id,
         "revision": opened.revision,
@@ -92,11 +119,13 @@ async def _opened_result(call: Call, opened: Opened) -> dict[str, Any]:
 async def _open(call: Call) -> dict[str, Any]:
     where = graph_path(call)
     actor = working_actor(call)
+    graphs = None
     if actor is not None:
         # 작업 기준 연결은 자기 작업 기준 사본을 본다 (M8 3.6). 사본이 없으면 팀 파일
         _, change = await asyncio.to_thread(
             basis.view, call.daemon.root, where.rel, job=actor.job, agent=actor.id
         )
+        graphs = await asyncio.to_thread(_working_graphs, call)
         if change is not None:
             copy_where = resolve_path(
                 call.daemon.root, basis.copy_rel(change.id, where.rel), graph=True
@@ -104,11 +133,11 @@ async def _open(call: Call) -> dict[str, Any]:
             opened = await asyncio.to_thread(
                 call.daemon.documents.open, copy_where, call.connection
             )
-            result = await _opened_result(call, opened)
+            result = await _opened_result(call, opened, rel=where.rel, graphs=graphs)
             result.update(basis="working", change=change.id)
             return result
     opened = await asyncio.to_thread(call.daemon.documents.open, where, call.connection)
-    return await _opened_result(call, opened)
+    return await _opened_result(call, opened, graphs=graphs)
 
 
 async def _validate(call: Call) -> dict[str, Any]:
@@ -257,7 +286,8 @@ async def _patch(call: Call) -> dict[str, Any]:
         revision, wrote, value, change_id = await asyncio.to_thread(
             _write_working, call, where, actor, str(params["base_revision"]), change
         )
-        checked = await call.daemon.checker.check(where.rel, value)
+        graphs = await asyncio.to_thread(_working_graphs, call)
+        checked = await call.daemon.checker.check(where.rel, value, graphs=graphs)
         assert change.applied is not None
         result: dict[str, Any] = {
             "revision": revision,
@@ -307,7 +337,8 @@ async def _create(call: Call) -> dict[str, Any]:
             call.daemon.root, basis.copy_rel(change_id, where.rel), graph=True
         )
         opened = await asyncio.to_thread(call.daemon.documents.open, copy_where, call.connection)
-        result = await _opened_result(call, opened)
+        graphs = await asyncio.to_thread(_working_graphs, call)
+        result = await _opened_result(call, opened, rel=where.rel, graphs=graphs)
         result.update(basis="working", change=change_id)
         if change is not None and change.applied is not None:
             result["created"] = change.applied.created
@@ -358,24 +389,59 @@ def _list_sync(root: Path, under: str) -> list[dict[str, Any]]:
     return found
 
 
+def _working_summary(rel: str, value: Any) -> dict[str, Any]:
+    """작업 사본에만 있는 그래프의 목록 줄 (`basis: working`)."""
+    out: dict[str, Any] = {"path": rel, "basis": "working"}
+    if isinstance(value, dict):
+        kind = value.get("kind")
+        if kind in ("subgraph", "test"):
+            out["kind"] = kind
+        meta = value.get("meta")
+        title = meta.get("title") if isinstance(meta, dict) else None
+        if isinstance(title, str):
+            out["title"] = title
+    return out
+
+
 async def _list(call: Call) -> dict[str, Any]:
-    """그래프 목록 (`kb_graph_list`로 판정, M5 B1 검수 H1). 범위는 `workspace.tree`와 같다."""
-    graphs = await asyncio.to_thread(_list_sync, call.daemon.root, _list_arg(call))
+    """그래프 목록 (`kb_graph_list`로 판정, M5 B1 검수 H1). 범위는 `workspace.tree`와 같다. 작업
+    기준 연결은 자기 작업 사본에만 있는 그래프도 본다 (`basis: working`, UX9 C)."""
+    under = _list_arg(call)
+    graphs = await asyncio.to_thread(_list_sync, call.daemon.root, under)
+    working = await asyncio.to_thread(_working_graphs, call)
+    if working:
+        prefix = f"{under.casefold()}/" if under else ""
+        seen = {path_key(g["path"]) for g in graphs}
+        for rel, value in working.items():
+            if path_key(rel) in seen or not rel.casefold().startswith(prefix):
+                continue
+            graphs.append(_working_summary(rel, value))
+        graphs.sort(key=lambda g: g["path"])
     return {"graphs": graphs}
 
 
 async def _check(call: Call) -> dict[str, Any]:
-    """경로로 검증 (`kb_graph_validate`로 판정, M5 B1 검수 H2). value가 없으면 디스크 값."""
+    """경로로 검증 (`kb_graph_validate`로 판정, M5 B1 검수 H2). value가 없으면 디스크 값 — 작업
+    기준 연결은 `kb_graph_get`·`kb_run_start`처럼 자기 작업 사본이 있으면 그것 (UX9 C)."""
     where = graph_path(call)
+    graphs = await asyncio.to_thread(_working_graphs, call)
     if "value" in call.params:
         value = call.params["value"]
+    elif graphs is not None and _find(graphs, where.rel) is not None:
+        value = _find(graphs, where.rel)
     else:
         try:
             value = (await asyncio.to_thread(read_graph, where.path)).value
         except DocumentError as exc:
             raise document_failed(exc, where.given) from exc
-    checked = await call.daemon.checker.check(where.rel, value)
+    checked = await call.daemon.checker.check(where.rel, value, graphs=graphs)
     return {"diagnostics": checked.diagnostics}
+
+
+def _find(graphs: Mapping[str, Any], rel: str) -> Any:
+    """같은 파일(철자만 다른 경로 포함)의 작업 사본 값. 없으면 None."""
+    key = path_key(rel)
+    return next((v for r, v in graphs.items() if path_key(r) == key), None)
 
 
 async def _close(call: Call) -> dict[str, Any]:

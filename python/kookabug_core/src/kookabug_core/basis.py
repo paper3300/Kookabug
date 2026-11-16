@@ -52,6 +52,7 @@ __all__ = [
     "knowledge_revisions",
     "load_change",
     "load_changes",
+    "owned_files",
     "put_state",
     "team_sha",
     "view",
@@ -339,6 +340,21 @@ def view(
     if found is not None:
         return found
     return filetx.read(root, rel), None
+
+
+def owned_files(root: Path, *, job: str | None, agent: str | None) -> dict[str, bytes]:
+    """이 작업(없으면 이 Agent)의 실효 active 변경이 담은 사본 전부 (경로 → 바이트, `view`와 같은
+    규칙 — 같은 파일은 나중 변경이 이긴다). 읽기 도구가 작업 사본을 보게 할 때 쓴다 (UX9 C)."""
+    chosen: dict[str, tuple[str, bytes]] = {}
+    for change in load_changes(root):
+        if not _owned(change, job, agent) or effective_state(root, change) != "active":
+            continue
+        for entry in change.files:
+            data = copy_bytes(root, change, entry)
+            if data is not None:
+                rel = str(entry["path"])
+                chosen[_key(rel)] = (rel, data)
+    return dict(chosen.values())
 
 
 def put_state(tx: filetx.Tx, change: Change, state: str) -> None:

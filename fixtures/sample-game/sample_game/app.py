@@ -15,6 +15,7 @@
 | `focus` | `window`, `focused` |
 | `resize` | `client_size` |
 | `recreate` | `old_hwnd` |
+| `splash` | `hwnd`, `client_size` — `--splash` 시작 화면 창 (닫히면 `window_closed` `splash`) |
 | `window_closed` | `window` |
 | `signal` | `command` — 검사용 신호 파일(`--signal-file`)의 명령을 처리한 뒤 |
 | `fatal` | `reason`, `detail` |
@@ -195,6 +196,8 @@ class App:
     # ------------------------------------------------------------ 수명
 
     def run(self) -> int:
+        if self.o.splash is not None:
+            self._splash(self.o.splash)
         while True:
             code = self._build()
             if code is not None:
@@ -206,6 +209,21 @@ class App:
                 return 0
             self._recreate_pending = False
             self.recreated = True
+
+    def _splash(self, ms: int) -> None:
+        """시작 화면 창 (UX9): 본 창보다 작은 같은 제목 창을 `ms` 동안 보였다가 닫는다(파괴). 본
+        창은 그 뒤 새 창으로 만든다 — 같은 프로세스, 다른 HWND."""
+        root = tk.Tk()
+        root.title(self.o.title)
+        root.geometry("360x180")
+        root.configure(bg=PANEL)
+        tk.Label(root, text="Loading...", bg=PANEL, fg=TEXT).pack(expand=True)
+        root.update()
+        hwnd = frame_hwnd(root)
+        self.log.write("splash", hwnd=hwnd, client_size=client_size(hwnd))
+        root.after(ms, root.destroy)
+        root.mainloop()
+        self.log.write("window_closed", window="splash")
 
     def _build(self) -> int | None:
         root = tk.Tk()

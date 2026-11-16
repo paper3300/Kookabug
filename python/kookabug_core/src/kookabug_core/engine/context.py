@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Mapping, Sequence
@@ -259,6 +260,34 @@ class InputFocusPlatform(Protocol):
     def focus_before_input(self, window: WindowRef, step: str | None) -> bool | None: ...
 
 
+WINDOW_GONE: Final = "window_gone"
+FOLLOW_WAIT_MS: Final = 15000
+"""띄운 게임의 대상 창이 닫혔을 때 같은 프로세스의 새 주 창을 기다리는 최대 시간 (UX9 A)."""
+FOLLOW_POLL_MS: Final = 500
+WINDOW_CHANGED: Final = "window.changed"
+
+
+@runtime_checkable
+class FollowPlatform(Protocol):
+    """띄운 게임의 대상 창이 닫혔을 때 같은 프로세스의 새 주 창으로 따라가는 플랫폼 (UX9 A —
+    시작 화면 창을 닫고 본 창을 새로 만드는 게임). 소유 범위는 그 게임 프로세스(PID+생성 시각)와
+    그 자손뿐이다 (실행 Job 전체가 아니다, UX9 2). `created`는 그 PID의 처음 생성 시각(모르면 빈
+    값). `follow_window`는 주 창 규칙(보이고·최소화·cloaked 아님 중 클라이언트 넓이 최대)으로
+    고르고, 열거 때의 PID·생성 시각과 바인딩이 같고 소유 범위 안인 창만 준다(아니면 None)."""
+
+    def process_running(self, process: ProcessRef, created: str) -> bool: ...
+    def window_alive(self, window: WindowRef) -> bool: ...
+    def follow_window(self, process: ProcessRef, created: str) -> WindowRef | None: ...
+
+
+type WindowKey = tuple[int, int, str, str]
+
+
+def window_key(window: WindowRef) -> WindowKey:
+    """창 하나의 식별 (제목 빼고: HWND·PID·생성 시각·바인딩)."""
+    return (window.handle, window.pid, window.process_created, window.binding)
+
+
 @runtime_checkable
 class _StatePlatform(Protocol):
     """지금 창의 캡처 방식·클라이언트 크기·DPI를 주는 플랫폼 (공용 입력 서비스의 `state`와 같다)."""
@@ -323,6 +352,102 @@ class Runtime:
     `ctx.input`의 모든 입력(코어·워커 노드)이 그 직전에 부른다. 거부면 `EngineError`
     (`forbidden_visible`·`forbidden_unverifiable`) — 입력은 나가지 않는다. 떼기·복구는 부르지
     않는다."""
+    launched: set[int] = field(default_factory=set[int])
+    """이 실행이 띄운 프로세스 PID (`ctx.process.launch`, UX9 A)."""
+    owners: dict[WindowKey, ProcessRef] = field(default_factory=dict[WindowKey, ProcessRef])
+    """이 실행이 띄운(또는 붙여 실행이 붙은) 게임 프로세스의 창 → 그 프로세스 (UX9 A). 여기 있는
+    창이 닫히면 같은 프로세스의 새 주 창으로 따라간다. 제목으로 붙은 창은 없다(지금 동작 그대로)."""
+    follows: dict[WindowKey, WindowRef] = field(default_factory=dict[WindowKey, WindowRef])
+    """닫힌 창 → 따라간 새 창 (UX9 A). 옛 참조(출력·`in.window`·호출 프레임 현재 창)는 쓸 때 이것을
+    따라 새 창이 된다."""
+    on_window_changed: Callable[[WindowRef, WindowRef], None] | None = None
+    """검증된 창 전환(옛 창, 새 창)을 실행기 쪽(붙여 실행 기록 가림·녹화 대상)에 알린다 (UX9 2).
+    새 창을 노드에 돌려주기 전에 부른다."""
+
+    def own(self, window: WindowRef, process: ProcessRef) -> None:
+        """그 창은 이 실행이 띄운(붙은) 게임 프로세스의 창이다 (따라가기 대상)."""
+        self.owners[window_key(window)] = process
+
+    def current(self, window: WindowRef | None) -> WindowRef | None:
+        """따라간 창이 있으면 그 끝 창 (없으면 그대로)."""
+        for _ in range(64):  # 사슬 길이 안전판
+            if window is None:
+                return None
+            nxt = self.follows.get(window_key(window))
+            if nxt is None:
+                return window
+            window = nxt
+        return window
+
+    def follow(
+        self, window: WindowRef, deadline: Deadline | None, step: str, node: str
+    ) -> tuple[WindowRef | None, bool]:
+        """닫힌 대상 창 → 같은 게임 프로세스의 새 주 창 (UX9 A). 이 실행이 띄운(붙은) 게임의 창이
+        아니면 바로 (None, False). 프로세스가 살아 있는 동안 `FOLLOW_WAIT_MS`(노드 기한·전체 기한이
+        먼저면 거기까지) 0.5초마다 다시 찾는다. 새 창이면 표에 남기고 `window.changed`(HWND·PID,
+        제목 없음)를 낸다. 못 찾으면 (None, 노드 기한 때문에 멈췄나)."""
+        key = window_key(window)
+        owner = self.owners.get(key)
+        platform = self.platform
+        if owner is None or not isinstance(platform, FollowPlatform):
+            return None, False
+        created = window.process_created if window.pid == owner.pid else ""
+        node_left = None if deadline is None else deadline.remaining_ms
+        budget = min(FOLLOW_WAIT_MS, self.deadline.remaining_ms)
+        by_node = node_left is not None and node_left < budget
+        end = self.clock.now_ms() + (min(budget, node_left) if node_left is not None else budget)
+        while True:
+            self.check()
+            if not platform.process_running(owner, created):
+                return None, False
+            found = platform.follow_window(owner, created)
+            if (
+                found is not None
+                # 식별 불능(PID·생성 시각·바인딩 없음)은 거부 — 다시 찾는다 (UX9 2)
+                and found.pid > 0
+                and found.process_created
+                and found.binding
+                and window_key(found) != key
+                and window_key(found) not in self.follows
+                and platform.window_alive(found)
+            ):
+                self.follows[key] = found
+                self.owners[window_key(found)] = owner
+                self._changed(window, found, step, node)
+                return found, False
+            left = end - self.clock.now_ms()
+            if left <= 0:
+                return None, by_node
+            self.clock.sleep(min(FOLLOW_POLL_MS, left))
+
+    def _changed(self, old: WindowRef, new: WindowRef, step: str, node: str) -> None:
+        # 창 제목은 남기지 않는다 — 제목에 계정 ID가 들어가는 게임이 있다 (UX7 검수 2)
+        self.emit(
+            {
+                "event": WINDOW_CHANGED,
+                "from_hwnd": old.handle,
+                "hwnd": new.handle,
+                "node": node,
+                "pid": new.pid,
+                "step": step,
+            }
+        )
+        self.emit(
+            {
+                "event": "log",
+                "level": "info",
+                "message": (
+                    f"대상 창(HWND {old.handle:#x})이 닫혀 같은 게임 프로세스(pid {new.pid})의 "
+                    f"새 주 창(HWND {new.handle:#x})으로 바꿨다"
+                ),
+                "node": node,
+                "step": step,
+            }
+        )
+        platform = self.platform
+        if isinstance(platform, WindowPlatform):
+            with contextlib.suppress(Exception):
+                platform.activate(new)  # 최선 노력 (입력 노드는 그 직전에 다시 앞으로)
 
     @property
     def epoch(self) -> int:
@@ -692,6 +817,7 @@ class _StepProcess:
     def launch(self, path: str, args: Sequence[str] = (), cwd: str | None = None) -> ProcessRef:
         self._ctx.runtime.check()
         process = self._platform.launch(path, list(args), cwd)
+        self._ctx.runtime.launched.add(process.pid)
         self._ctx.runtime.check()
         return process
 
@@ -707,6 +833,9 @@ class _StepProcess:
         if limits is None:
             runtime.check()
         found = self._platform.process_window(process, title, limits)
+        if found is not None and process.pid in runtime.launched:
+            # 이 실행이 띄운 게임의 창: 닫혀도 같은 프로세스의 새 주 창으로 따라간다 (UX9 A)
+            runtime.own(found, process)
         runtime.check()
         return found
 
@@ -772,7 +901,10 @@ class StepContext:
         self._node = node
         self._step = step
         self._config = config
-        self._window = frame.current_window if isinstance(window, EllipsisType) else window
+        # 닫혀서 따라간 창이면 새 창 (UX9 A — 옛 참조가 출력·`in.window`로 와도)
+        self._window = runtime.current(
+            frame.current_window if isinstance(window, EllipsisType) else window
+        )
         self.trace: StepTrace = trace if trace is not None else StepTrace(node.type)
         """이 스텝(순수 노드면 그 계산 한 번)의 관측 출처 (M3 2.4)."""
         self._pure = pure
@@ -824,7 +956,38 @@ class StepContext:
 
     @property
     def input(self) -> InputApi:
+        self._follow_if_gone()
         return _RecordedInput(self, CheckedInput(self._runtime, self))
+
+    def _follow_if_gone(self) -> None:
+        """입력 전: 띄운 게임의 대상 창이 닫혔으면 같은 프로세스의 새 주 창으로 (UX9 A). 못 찾으면
+        그대로 — 입력이 지금처럼 `window_gone`으로 끝난다."""
+        runtime = self._runtime
+        window = self._window
+        platform = runtime.platform
+        if (
+            window is None
+            or window_key(window) not in runtime.owners
+            or not isinstance(platform, FollowPlatform)
+            or platform.window_alive(window)
+        ):
+            return
+        self._switch(runtime.follow(window, None, self._step, self._node.id)[0])
+
+    def _switch(self, new: WindowRef | None) -> bool:
+        """따라간 새 창을 이 스텝과 호출 프레임의 현재 창으로 (옛 창이 현재 창이었으면)."""
+        old = self._window
+        if new is None or old is None:
+            return False
+        # 새 창을 노드에 돌려주기 전에: 붙여 실행 제목 가림·녹화 대상을 새 창으로 (UX9 2)
+        hook = self._runtime.on_window_changed
+        if hook is not None and window_key(old) != window_key(new):
+            hook(old, new)
+        self._window = new
+        current = self._frame.current_window
+        if current is not None and self._runtime.current(current) == new:
+            self._frame.current_window = new
+        return True
 
     @property
     def vision(self) -> VisionApi:
@@ -899,12 +1062,33 @@ class StepContext:
             )
 
     def capture(self, region: Rect | None = None, *, deadline: Deadline | None = None) -> Image:
+        """대상 창 캡처. 이 실행이 띄운(붙은) 게임의 창이 닫혔으면(`window_gone`) 같은 프로세스의
+        새 주 창으로 바꿔 다시 찍는다 (UX9 A — 시작 화면 창 → 본 창, 노드의 남은 기한 안에서). 못
+        찾으면 지금처럼 `window_gone`, 노드 기한이 먼저 끝나면 `ObservationTimeout`."""
+        while True:
+            try:
+                return self._capture(region, deadline)
+            except EngineError as exc:
+                if exc.code != WINDOW_GONE or self._window is None:
+                    raise
+                found, by_node = self._runtime.follow(
+                    self._window, deadline, self._step, self._node.id
+                )
+                if not self._switch(found):
+                    if by_node:
+                        raise ObservationTimeout(
+                            "대상 창이 닫힌 뒤 같은 게임의 새 창이 노드 기한 안에 뜨지 않았다"
+                        ) from exc
+                    raise
+
+    def _capture(self, region: Rect | None, deadline: Deadline | None) -> Image:
         runtime = self._runtime
         limits = runtime.limits(deadline)
         platform = runtime.platform
         recorder = runtime.recorder
         if recorder.frames is not None and isinstance(platform, PixelPlatform):
             raw, staged = platform.capture_staged(self._window, region, limits)
+            _check_binding(self._window, staged.meta)
             image = recorder.captured(self._step, raw, staged)
             meta = staged.meta
             if meta is not None and image.capture_id is not None:
@@ -1071,6 +1255,36 @@ class StepContext:
         if path is None:
             raise ValueError(f"'{rel}'은(는) 워크스페이스 기준 경로가 아니다")
         return path
+
+
+def _check_binding(window: WindowRef | None, meta: Any) -> None:
+    """캡처한 프레임의 창이 요청한 창(HWND·PID·생성 시각 — 아는 것만)과 같아야 쓴다 (UX9 A). 같은
+    HWND를 다른 프로세스가 다시 쓴 창의 프레임은 저장소에 넣지 않고 `window_gone`."""
+    if window is None:
+        return
+    seen = getattr(meta, "window", None)
+    if not isinstance(seen, WindowRef):
+        # 식별 불능: 플랫폼이 준 완전한 참조(PID·생성 시각·바인딩)인데 프레임의 창을 모르면 버린다
+        if window.pid and window.process_created and window.binding:
+            raise EngineError(
+                WINDOW_GONE,
+                f"캡처한 프레임의 창을 알 수 없다 (대상 HWND {window.handle:#x}) — 프레임을 버린다",
+            )
+        return
+    # 대상 참조가 아는 식별은 프레임 쪽에도 같은 값이 있어야 한다 (비어 있으면 식별 불능 = 거부)
+    same = seen.handle == window.handle
+    if same and window.pid:
+        same = seen.pid == window.pid
+    if same and window.process_created:
+        same = seen.process_created == window.process_created
+    if same and window.binding:
+        same = seen.binding == window.binding
+    if not same:
+        raise EngineError(
+            WINDOW_GONE,
+            f"캡처한 창(HWND {seen.handle:#x}, pid {seen.pid})이 대상 창"
+            f"(HWND {window.handle:#x}, pid {window.pid})이 아니다 — 프레임을 버린다",
+        )
 
 
 def _holds(value: Any, at: Point | Rect) -> bool:

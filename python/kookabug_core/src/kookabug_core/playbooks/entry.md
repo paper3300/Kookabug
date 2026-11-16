@@ -1,7 +1,7 @@
 ---
 format: kookabug.playbook/0
 name: entry
-version: 3
+version: 4
 tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
 ---
 # 플레이북 entry — 게임 접속 경로 만들기
@@ -26,7 +26,8 @@ tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
    - `게임 실행` 서브그래프 호출은 지우지 않는다: 서브그래프가 ok 출구로 돌아오면 그 안에서 잡은 게임 창이 부른 쪽의 현재 창이 된다(다음 클릭 노드가 그 창에 입력한다).
    - 고치며 확인할 때는 **붙여 실행을 먼저** 쓴다: `kb_run_start`(`attach: true`, 고친 노드부터면 `from_node`) — 켜져 있는 게임에서 돌고, 게임 실행·종료 노드는 건너뛴다. 붙여 실행은 탐침이라 사건·채택 근거가 아니다. 서브그래프를 직접 실행하면 출구(ok)에 닿을 때 pass다.
    - 실행 결과는 `kb_run_status`(`run`, `wait_ms` 60000)로 기다린다 — 끝나면 바로 돌아온다. 짧은 간격으로 여러 번 묻지 않는다.
-   - **마지막 확인은 처음부터 하는 보통 실행 1번**이다(`kb_run_start`, attach 없이 — 끝나면 `게임 종료`로 끈다). 실패하면 그 실행으로 사건을 연다(`kb_case_open`).
+   - **마지막 확인은 처음부터 하는 보통 실행 1번**이다(`kb_run_start`, attach 없이 — 끝나면 `게임 종료`로 끈다).
+   - **처음부터 실행이 실패하면 처음부터 다시 돌리며 고치지 않는다.** 그 실행의 게임은 실행이 끝나며 꺼지므로, `kb_app_launch`로 다시 켜고 **붙여 실행**(`attach: true`, `from_node` 없이)으로 실패 지점까지 보낸다 — 붙여 실행은 실패한 노드에서 멈추고 게임은 그 화면에 남는다(짧으면 `kb_explore_step`으로 그 화면까지 걸어도 된다). 그다음 그래프를 고치고 **실패한 노드부터** `attach`+`from_node`로 확인한다. 통과하면 처음부터 실행은 **마지막 확인 한 번만** 다시 한다. 처음부터 실행이 끝까지 실패로 남으면 그 실행으로 사건을 연다(`kb_case_open`).
 5. 보고: 끝내기 전에 `kb_report_note`로 지난 화면·만든 서브그래프·확인 결과·남은 막힘을 요약하고, `headline`에 한 줄 결과(60자, 예: "로비까지 — 서브그래프 확인됨", "로그인 팝업까지 — 계정 필요")를 쓴다. 요약 마지막 줄에 "다음: 기능 테스트 만들기"를 적는다.
 
 ## 먼저 직접 알아본다 (묻지 않는다)

@@ -102,6 +102,10 @@ Init이 하지 않는 것 (다음 단계로)
   - 비밀값 칸은 클릭+입력 한 걸음(`kb_explore_step`·`kb_input_type`에 `point`와 `secret`, 선택 `select_all`)으로 보낸다 — 클릭 위치가 칸 상자 근거다. 보호 규칙(10초 근거 등)은 그대로.
   - `core.graph.call`이 ok 계열 출구로 돌아오면 서브그래프 안에서 마지막으로 정한 현재 대상 창이 부른 쪽 현재 창이 된다(fail 출구면 넘기지 않음, 보통·붙여 실행 같음). `kind: subgraph`를 직접 실행하면 ok 출구에 닿을 때 pass, fail 출구면 fail.
   - `kb_run_status{wait_ms}` 최대 60초. entry 플레이북 판 3: 게임은 한 번만 띄우고 `@game` 기다림으로 따라감, 로그인은 클릭+secret 한 걸음, "화면을 터치" 류는 같은 걸음 2~3번, 확인은 붙여 실행 먼저.
+- UX9 바뀐 결정 (2026-11-16, Init·entry 3차 실측)
+  - 그래프 실행기도 `@game`과 같은 주 창 규칙(`kookabug_core.win.main_window.pick_main`)으로 `core.app.launch` 창을 고르고, 이 실행이 띄운(붙여 실행이면 붙은) 게임 프로세스의 대상 창이 닫히면 프로세스가 살아 있는 동안 최대 15초(노드 기한 안) 같은 프로세스의 새 주 창을 찾아 바꾼다(이벤트 `window.changed`, 제목 없음). 띄우지 않은 창은 지금처럼 `window_gone`. 캡처한 프레임의 창(HWND·PID·생성 시각)이 대상 창과 다르면 그 프레임은 쓰지 않는다.
+  - 처음부터 확인 실행이 실패하면 처음부터 다시 돌리며 고치지 않는다: `kb_app_launch`로 다시 켠 게임에 붙여 실행으로 실패 지점까지 보낸 뒤 실패한 노드부터(`attach`+`from_node`) 고치고, 처음부터 실행은 마지막 한 번 (entry 판 4, init 판 7). 실행이 끝난 뒤 게임을 남기는 옵션(`keep_game_on_fail`)은 만들지 않았다.
+  - 그래프 읽기 도구(`kb_graph_validate`·`kb_graph_get`·`kb_graph_list`)는 작업 기준 연결이면 그 주체의 작업 사본을 본다(`kb_run_start`와 같게) — 서브그래프 호출 검증도 작업 사본의 서브그래프로.
 
 ## 7. 정해진 것
 

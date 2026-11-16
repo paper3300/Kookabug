@@ -113,6 +113,10 @@ SAMPLES: dict[str, dict[str, Any]] = {
         rev=1,
         step="s3",
     ),
+    # UX9 A: 띄운 게임의 대상 창이 닫혀 같은 프로세스의 새 주 창으로 (제목 없음)
+    "window.changed": ev(
+        "window.changed", from_hwnd=0x10010, hwnd=0x10020, node="n_wait", pid=4001, step="s2"
+    ),
     "run.end": ev(
         "run.end",
         code="assertion_passed",
@@ -161,7 +165,7 @@ def test_samples_cover_every_event_kind() -> None:
         if "event" in d.get("properties", {})
     )
     assert defined == KINDS
-    assert len(defined) == 16
+    assert len(defined) == 17  # UX9: window.changed
 
 
 def test_unknown_event_kind_rejected() -> None:

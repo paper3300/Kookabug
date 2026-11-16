@@ -93,6 +93,14 @@ export function activityTime(iso: string): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+/** 목록 줄 시각 "MM-DD HH:MM" (UTC 표기를 이 PC 시각으로, UX9). 읽을 수 없으면 원문 */
+export function shortTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 /** 화면이 들고 있는 최대 줄 수 (오래된 것부터 버린다) */
 export const ACTIVITY_KEEP = 500;
 

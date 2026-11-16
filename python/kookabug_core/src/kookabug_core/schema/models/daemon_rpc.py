@@ -4822,6 +4822,10 @@ class GraphListEntry(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    basis: Annotated[
+        Literal["working"] | None,
+        Field(description="UX9: 작업 연결의 작업 기준 사본에만 있는 그래프면 working"),
+    ] = None
     kind: Literal["subgraph", "test"] | None = None
     path: WorkspacePath
     problem: str | None = None

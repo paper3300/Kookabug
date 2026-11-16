@@ -233,6 +233,25 @@ class Verdict(RootModel[Literal["error", "fail", "pass", "skipped"]]):
     root: Annotated[Literal["error", "fail", "pass", "skipped"], Field(title="Verdict")]
 
 
+class WindowChangedEvent(BaseModel):
+    """
+    UX9: 이 실행이 띄운(붙은) 게임의 대상 창이 닫혀 같은 게임 프로세스의 새 주 창으로 바꿨다 (시작 화면 창 → 본 창). 창 제목은 남기지 않는다
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    event: Literal["window.changed"]
+    from_hwnd: Annotated[int, Field(description="닫힌 대상 창 HWND", ge=0)]
+    hwnd: Annotated[int, Field(description="새 대상 창 HWND", ge=0)]
+    node: str
+    pid: Annotated[int, Field(description="새 대상 창의 프로세스", ge=0)]
+    run: RunId
+    seq: Seq
+    step: StepId
+    t: Timestamp
+
+
 class WorkerExitEvent(BaseModel):
     """
     워커 프로세스 종료
@@ -637,6 +656,7 @@ class Event(
         | WorkerStartEvent
         | WorkerExitEvent
         | CheatCallEvent
+        | WindowChangedEvent
         | RunEndEvent
     ]
 ):
@@ -656,6 +676,7 @@ class Event(
         | WorkerStartEvent
         | WorkerExitEvent
         | CheatCallEvent
+        | WindowChangedEvent
         | RunEndEvent,
         Field(
             description="events.jsonl 한 줄 (실행 이벤트 하나). event 값으로 종류를 고른다",
