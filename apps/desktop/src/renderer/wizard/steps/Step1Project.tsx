@@ -47,6 +47,18 @@ export function waitConnected(folder: string, timeoutMs = 60_000): Promise<boole
   });
 }
 
+/** 위치 칸에 붙여 넣은 글 → 경로 (UX10 D): 앞뒤 공백과 탐색기 "경로로 복사"의 따옴표를 뗀다. 있는 폴더인지·쓸 수
+ * 있는지는 만들기 때 주 프로세스 검사(`checkCreateRequest`)가 찾아보기와 똑같이 본다 */
+export function parentPath(text: string): string {
+  const trimmed = text.trim();
+  return /^".*"$/.test(trimmed) ? trimmed.slice(1, -1).trim() : trimmed;
+}
+
+/** "만들기" 단추를 켤 수 있는가 (이름과 위치가 비어 있지 않다) */
+export function canCreate(name: string, parent: string): boolean {
+  return name.trim() !== "" && parentPath(parent) !== "";
+}
+
 export function Step1Project() {
   const [name, setName] = useState("my-game");
   const [parent, setParent] = useState("");
@@ -60,7 +72,7 @@ export function Step1Project() {
     try {
       let target = created;
       if (target === null) {
-        const opened = await window.kookabug.app.workspaceCreate({ parent, name, git });
+        const opened = await window.kookabug.app.workspaceCreate({ parent: parentPath(parent), name, git });
         if (!opened.ok) {
           setError("만든 폴더를 열지 못했어요");
           return false;
@@ -85,7 +97,7 @@ export function Step1Project() {
     <StepShell
       title="프로젝트를 만들어요"
       lead="게임 하나에 프로젝트 하나예요. 테스트, 찾기 대상, 실행 기록, 지식과 위키가 이 폴더에 모여요."
-      primary={{ label: "만들기", enabled: name.trim() !== "" && parent !== "", run: create, busyLabel: "만드는 중…" }}
+      primary={{ label: "만들기", enabled: canCreate(name, parent), run: create, busyLabel: "만드는 중…" }}
       right={
         <div className={css.card}>
           <div className={css.cardHead}>만들어질 폴더</div>
@@ -113,7 +125,14 @@ export function Step1Project() {
       <div className={css.field}>
         <span className={css.fieldLabel}>위치</span>
         <div className={css.inputRow}>
-          <input className={`${css.input} ${css.mono}`} value={parent} readOnly aria-label="위치" placeholder="폴더를 고르세요" />
+          <input
+            className={`${css.input} ${css.mono}`}
+            value={parent}
+            aria-label="위치"
+            placeholder="경로를 붙여 넣거나 폴더를 고르세요"
+            spellCheck={false}
+            onChange={(e) => setParent(e.target.value)}
+          />
           <button
             type="button"
             className={css.small}

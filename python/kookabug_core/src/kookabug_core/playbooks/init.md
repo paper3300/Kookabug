@@ -1,7 +1,7 @@
 ---
 format: kookabug.playbook/0
 name: init
-version: 7
+version: 8
 tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
 ---
 # 플레이북 init — 시작할 수 있을 만큼만
@@ -18,8 +18,18 @@ tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
    - **실행·환경 확인용 파일은 읽기 허용 폴더에서 읽고, 기획 근거는 원본에서 찾는다.** `kb_source_list` 목록의 `kind: read_root`(`read:<…>`, 게임 실행 파일 폴더는 `read:game`)가 읽기 허용 폴더다 — 실행 bat·서버 목록·설정 파일을 같은 도구로 읽어 `environment.md`에 쓴다. 읽기 허용 폴더의 파일(ref `read:…`)은 `source` 근거가 아니다.
    - 프로젝트 밖 파일이 필요하면 읽기 허용 폴더 추가를 `kb_setting_propose`(`key: agent.read_roots.add`, 값은 폴더 절대 경로 하나)로 제안한다. 기획 근거가 필요하면 원본 추가(`sources.add`) 제안이 맞다.
 3. 게임 실행·종료: 게임을 띄우고(`kb_app_launch`) → 게임 창을 잡고 → 첫 화면을 캡처해 화면 지도에 올리고(`kb_explore_start`·`kb_screen_save`·`kb_explore_end`) → 게임을 끈다.
-4. 서브그래프: 3에서 된 방법으로 `subgraphs/common/game_launch.graph.json`(제목 `게임 실행`)과 `subgraphs/common/game_exit.graph.json`(제목 `게임 종료`)을 `kb_graph_create`·`kb_graph_patch`로 만든다(`kind: "subgraph"`). 저장 뒤 `kb_run_start`로 실행 → 종료를 실제로 한 번 돌려 통과를 확인한다. 실패하면 처음부터 다시 돌리며 고치지 않고, `kb_app_launch`로 켠 게임에 붙여 실행(`attach: true`, 실패한 노드부터 `from_node`)으로 고친 뒤 처음부터 실행은 마지막 확인 한 번만 한다. 끝까지 실패하면 그 실행으로 사건을 연다(`kb_case_open`).
+4. 서브그래프: 3에서 된 방법으로 `subgraphs/common/game_launch.graph.json`(제목 `게임 실행`)과 `subgraphs/common/game_exit.graph.json`(제목 `게임 종료`)을 `kb_graph_create`·`kb_graph_patch`로 만든다(`kind: "subgraph"`). **`core.app.launch`의 `path`는 비운다** — 비우면 워크스페이스 게임 설정(`game.executable`·`game.args`·`game.cwd`)으로 띄운다. 실행 파일 경로를 그래프에 쓰지 않는다(팀원마다 경로가 다르다). 다른 인자가 필요할 때만 `args`를 준다. 저장 뒤 `kb_run_start`로 실행 → 종료를 실제로 한 번 돌려 통과를 확인한다. 실패하면 처음부터 다시 돌리며 고치지 않고, `kb_app_launch`로 켠 게임에 붙여 실행(`attach: true`, 실패한 노드부터 `from_node`)으로 고친 뒤 처음부터 실행은 마지막 확인 한 번만 한다. 끝까지 실패하면 그 실행으로 사건을 연다(`kb_case_open`).
 5. 보고: 끝내기 전에 `kb_report_note`로 알게 된 것·모르는 것·막힌 것·다음 단계(접속 경로 만들기)를 요약한다.
+
+## 형식 최소 예 (형식 오류는 빠진 필드·허용 값을 한 번에 알려 준다 — 메시지대로 한 번에 고친다)
+주장 추가(`kb_knowledge_apply`) — `kind`는 `guess`·`observed`·`expected`(원본·사람 근거가 있을 때만), `status`는 생략하면 `hypothesis`, `id`는 `<기능>.<이름>`, `base_revision`은 그 기능 파일의 revision(새 파일은 0). `basis` 항목은 `{"type": "source"|"evidence"|"run", "ref": …}`:
+```json
+{"request_id": "init-claim-1", "ops": [{"op": "add", "file": "features/title", "base_revision": 0, "item": {"id": "title.touch_to_start", "kind": "guess", "statement": "타이틀 화면을 누르면 로그인 화면으로 간다", "basis": []}}]}
+```
+사건 가설(`kb_case_update`) — `cause`는 `environment`·`flow_change`·`intended_change`·`intermittent`·`product_regression`·`test_defect`·`ui_change`, `state`는 `open`·`supported`·`refuted`·`confirmed`. `hypotheses`는 목록 전체를 바꾼다:
+```json
+{"case": "<사건 ID>", "base_revision": 1, "changes": {"hypotheses": [{"cause": "environment", "state": "open", "note": "서버 주소 설정이 없어 연결에 실패한 것으로 보인다"}]}}
+```
 
 ## 먼저 직접 알아본다 (묻지 않는다)
 직접 알 수 있는 것은 묻지 않는다. 입력은 Kookabug 규칙(금지 동작·입력 임대권·예산)을 따른다.

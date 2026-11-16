@@ -1,7 +1,7 @@
 ---
 format: kookabug.playbook/0
 name: entry
-version: 4
+version: 5
 tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
 ---
 # 플레이북 entry — 게임 접속 경로 만들기
@@ -12,7 +12,7 @@ tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
 
 ## 단계 (각 단계를 시작할 때 `kb_job_progress`로 단계 번호·제목·하는 일 한 줄을 남긴다, total 5)
 1. 이어 받기: `kb_project_info`로 설정을 읽고, `kb_graph_list`로 `subgraphs/common/game_launch.graph.json`(`게임 실행`)·`game_exit.graph.json`(`게임 종료`)·`game_enter.graph.json`(`게임 접속`, 지난번에 만들었으면)을 찾는다. `kb_knowledge_get`(`file: unknowns`)으로 테스트 계정 질문(`kind: credential`)이 답함(`answered`)인지 본다 — 답이 있으면 그 `secret_keys`가 등록된 키다. `wiki/environment.md`는 `kb_wiki_read`로 읽는다.
-   - `게임 실행`이 없으면(Init 보고의 작업 기준 변경을 아직 수락하지 않았을 수 있다) Init 3·4단계처럼 이 작업에서 다시 만든다.
+   - `게임 실행`이 없으면(Init 보고의 작업 기준 변경을 아직 수락하지 않았을 수 있다) Init 3·4단계처럼 이 작업에서 다시 만든다. `core.app.launch`의 `path`는 비워 게임 설정(`game.executable`·`game.args`·`game.cwd`)을 쓴다 — 실행 파일 경로를 그래프에 쓰지 않는다(이미 경로가 있는 그래프는 그대로 둬도 동작한다).
 2. 원본 훑기(2분 안): 기획 원본(`kb_source_list`·`kb_source_read`)과 읽기 허용 폴더의 게임 코드·설정에서 접속 흐름을 찾아 **예상 경로와 갈래 목록**을 만든다(예: 타이틀 → 로그인 → 서버/월드 선택 → 캐릭터 선택·생성 → 진입 연출 → 첫 플레이 화면, 남은 세션 팝업 같은 곁가지). 이것이 걷기의 체크리스트다. 훑기만 한다.
    - **원본에 로그인이 보이고 테스트 계정 질문이 아직 없으면, 게임을 켜기 전에 바로 계정 질문을 남긴다**(아래 "계정만 묻는다").
 3. 한 세션으로 걷기: `kb_app_launch` 한 번 → `kb_explore_start` → `kb_explore_step`(입력 없이)으로 첫 화면 → 처음 보는 화면이면 `kb_screen_save` → `kb_explore_step`(입력)으로 한 걸음씩 앞으로 → 화면마다 저장 → 끝에 `kb_explore_end`. 창은 `window: "@game"`으로 부른다(로그인 뒤 창 제목이 바뀌어도 같은 게임이다). **이 단계에서는 그래프를 돌리지 않는다.**
@@ -29,6 +29,16 @@ tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
    - **마지막 확인은 처음부터 하는 보통 실행 1번**이다(`kb_run_start`, attach 없이 — 끝나면 `게임 종료`로 끈다).
    - **처음부터 실행이 실패하면 처음부터 다시 돌리며 고치지 않는다.** 그 실행의 게임은 실행이 끝나며 꺼지므로, `kb_app_launch`로 다시 켜고 **붙여 실행**(`attach: true`, `from_node` 없이)으로 실패 지점까지 보낸다 — 붙여 실행은 실패한 노드에서 멈추고 게임은 그 화면에 남는다(짧으면 `kb_explore_step`으로 그 화면까지 걸어도 된다). 그다음 그래프를 고치고 **실패한 노드부터** `attach`+`from_node`로 확인한다. 통과하면 처음부터 실행은 **마지막 확인 한 번만** 다시 한다. 처음부터 실행이 끝까지 실패로 남으면 그 실행으로 사건을 연다(`kb_case_open`).
 5. 보고: 끝내기 전에 `kb_report_note`로 지난 화면·만든 서브그래프·확인 결과·남은 막힘을 요약하고, `headline`에 한 줄 결과(60자, 예: "로비까지 — 서브그래프 확인됨", "로그인 팝업까지 — 계정 필요")를 쓴다. 요약 마지막 줄에 "다음: 기능 테스트 만들기"를 적는다.
+
+## 형식 최소 예 (형식 오류는 빠진 필드·허용 값을 한 번에 알려 준다 — 메시지대로 한 번에 고친다)
+주장 추가(`kb_knowledge_apply`) — `kind`는 `guess`·`observed`·`expected`(원본·사람 근거가 있을 때만), `status`는 생략하면 `hypothesis`, `id`는 `<기능>.<이름>`, `base_revision`은 그 기능 파일의 revision(새 파일은 0). `basis` 항목은 `{"type": "source"|"evidence"|"run", "ref": …}`:
+```json
+{"request_id": "entry-claim-1", "ops": [{"op": "add", "file": "features/login", "base_revision": 0, "item": {"id": "login.server_select", "kind": "observed", "statement": "로그인 뒤 서버 선택 화면이 나온다", "basis": []}}]}
+```
+사건 가설(`kb_case_update`) — `cause`는 `environment`·`flow_change`·`intended_change`·`intermittent`·`product_regression`·`test_defect`·`ui_change`, `state`는 `open`·`supported`·`refuted`·`confirmed`. `hypotheses`는 목록 전체를 바꾼다:
+```json
+{"case": "<사건 ID>", "base_revision": 1, "changes": {"hypotheses": [{"cause": "ui_change", "state": "open", "note": "로그인 버튼 위치가 지도와 달라 클릭이 빗나간 것으로 보인다"}]}}
+```
 
 ## 먼저 직접 알아본다 (묻지 않는다)
 직접 알 수 있는 것은 묻지 않는다. 입력은 Kookabug 규칙(금지 동작·입력 임대권·예산)을 따른다.

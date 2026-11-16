@@ -4,6 +4,24 @@
 // - `$literal` 안은 해석하지 않는다 (2.6). 연결($link)은 캔버스에서 만들고 여기서는 읽기·끊기만 한다
 import { findLinks, isObject, own, specialTag, type JsonObject } from "../graph/model";
 
+/** 비워 두면 워크스페이스 게임 설정을 쓰는 입력 핀 (UX10 B: `core.app.launch`) → 설정 키 */
+const GAME_SETTING_PINS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  "core.app.launch": { path: "game.executable", args: "game.args", cwd: "game.cwd" },
+};
+
+/** 노드 코드(`kookabug_nodes.app._game_setting`)와 같은 "비움": 없음·null, 글자 핀은 빈 글자도 */
+function blank(value: unknown, text: boolean): boolean {
+  return value === undefined || value === null || (text && value === "");
+}
+
+/** 빈 칸에 보일 자리 글 (없으면 null — 선언의 기본값·필수 표시를 쓴다). 설정은 `path`를 비웠을 때만 쓰므로
+ * `args`·`cwd`도 `path`가 비어 있고 그 핀이 비어 있을 때만 "게임 설정 사용"이다 */
+export function emptyHintFor(type: string, field: "in" | "config", name: string, inputs: unknown): string | null {
+  const key = field === "in" ? GAME_SETTING_PINS[type]?.[name] : undefined;
+  if (key === undefined || !blank(own(inputs, "path"), true)) return null;
+  return blank(own(inputs, name), name !== "args") ? `게임 설정 사용 (${key})` : null;
+}
+
 /** 상수를 고치는 입력 모양 */
 export type ConstKind = "number" | "text" | "bool" | "enum" | "point" | "rect" | "list" | "dict" | "json";
 

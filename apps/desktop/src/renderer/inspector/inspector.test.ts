@@ -6,6 +6,7 @@ import { indexNodeTypes } from "../graph/mapping";
 import { graphNodes, type GraphValue } from "../graph/model";
 import {
   editorFor,
+  emptyHintFor,
   fits,
   formatJson,
   moveItem,
@@ -322,5 +323,29 @@ describe("편집 명령과 항목", () => {
     expect(shaped.inputs).toEqual([{ name: "timeout_ms", type: "int", required: false, default: 1, minimum: 0, maximum: 9 }]);
     // 레지스트리에 없는 노드는 JSON 상자로 고친다
     expect(inspectNode(u, {}, types, [], "tests/a.graph.json")).toMatchObject({ unknown: true, inputs: [], config: [] });
+  });
+});
+
+describe("게임 설정을 쓰는 빈 칸 (UX10 B)", () => {
+  test("path를 비운 core.app.launch: path·args·cwd 빈 칸은 게임 설정 사용", () => {
+    for (const inputs of [{}, { path: null }, { path: "" }, undefined]) {
+      expect(emptyHintFor("core.app.launch", "in", "path", inputs)).toBe("게임 설정 사용 (game.executable)");
+      expect(emptyHintFor("core.app.launch", "in", "args", inputs)).toBe("게임 설정 사용 (game.args)");
+      expect(emptyHintFor("core.app.launch", "in", "cwd", inputs)).toBe("게임 설정 사용 (game.cwd)");
+    }
+    // 노드와 같은 규칙: cwd 빈 글자는 설정, args 빈 목록은 그 값([])
+    expect(emptyHintFor("core.app.launch", "in", "cwd", { cwd: "" })).toBe("게임 설정 사용 (game.cwd)");
+    expect(emptyHintFor("core.app.launch", "in", "args", { args: [] })).toBeNull();
+    expect(emptyHintFor("core.app.launch", "in", "window_title", {})).toBeNull();
+    expect(emptyHintFor("core.app.launch", "config", "path", {})).toBeNull();
+    expect(emptyHintFor("core.window.attach", "in", "path", {})).toBeNull();
+  });
+
+  test("path를 준(연결·설정 값 포함) launch는 args·cwd도 설정을 쓰지 않는다", () => {
+    for (const path of ["old.exe", { $setting: "game.executable" }, { $link: "n_a.out" }]) {
+      expect(emptyHintFor("core.app.launch", "in", "args", { path })).toBeNull();
+      expect(emptyHintFor("core.app.launch", "in", "cwd", { path })).toBeNull();
+      expect(emptyHintFor("core.app.launch", "in", "path", { path })).toBeNull();
+    }
   });
 });

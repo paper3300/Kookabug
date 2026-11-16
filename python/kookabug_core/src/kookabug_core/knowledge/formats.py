@@ -19,7 +19,7 @@ from typing import Any, Final, Literal, cast
 
 from kookabug_core.canonical import canonical_dumps
 from kookabug_core.schema import check_shape
-from kookabug_core.schema.shape import metaschema
+from kookabug_core.schema.shape import listing, metaschema, value_hints
 from kookabug_core.workspace import SecretProvider
 
 __all__ = [
@@ -187,32 +187,73 @@ def empty_doc(kind: Kind, feature: str | None = None) -> dict[str, Any]:
     return doc
 
 
+_MAX_PROBLEMS: Final = 5
+_HINTED: Final = frozenset({"invalid_value", "pattern_mismatch", "wrong_type", "out_of_range"})
+
+
 def shape_problem(data: Any, kind: str, *, ref: str | None = None) -> str | None:
-    """형식 검사 첫 문제의 위치와 코드 (값은 넣지 않는다 — 요청자가 정한 키도 스키마 위치 기준으로
+    """형식 검사 문제들의 위치와 코드 (값은 넣지 않는다 — 요청자가 정한 키도 스키마 위치 기준으로
     가린다). 문제없으면 None.
 
     UX7 F: 빠진 필드(`missing_field`)는 그 필드 이름(스키마가 정한 이름)을, 빠진·모르는 필드는 그
     자리의 허용 필드 목록(스키마 이름)을 붙인다. 모르는 필드의 이름은 요청자가 정한 글이라 싣지
-    않는다 (비밀값이 키 이름일 수 있다 — 위치는 지금처럼 `<key#n>`)."""
+    않는다 (비밀값이 키 이름일 수 있다 — 위치는 지금처럼 `<key#n>`).
+
+    UX10 A: 한 번에 고칠 수 있게 — 한 객체에서 빠진 필드는 전부(`missing_fields 'a', 'b'`), 값
+    오류는 스키마의 허용 값·정규식·기대 타입을 붙이고, 문제 여러 곳을 `; `로 잇는다(최대 5곳, 넘으면
+    "외 N곳")."""
     diags = check_shape(data, kind, ref=ref)  # type: ignore[arg-type]
     if not diags:
         return None
-    d = diags[0]
     cursor = schema_cursor(kind, ref)
-    pointer = d.pointer or ""
-    text = f"{mask_pointer(data, pointer, cursor) or '/'}: {d.code}"
-    if d.code not in ("missing_field", "unknown_field"):
-        return text
-    at = pointer if d.code == "missing_field" else pointer.rsplit("/", 1)[0]
+    hints = (
+        value_hints(data, kind, ref=ref)  # type: ignore[arg-type]
+        if any(d.code in _HINTED for d in diags)
+        else {}
+    )
+    groups: dict[tuple[str, str], list[str]] = {}
+    for d in diags:
+        groups.setdefault((d.pointer or "", d.code), []).append(d.message)
+    listed: set[str] = set()
+    parts = [
+        _problem_text(data, pointer, code, messages, cursor, hints, listed)
+        for (pointer, code), messages in list(groups.items())[:_MAX_PROBLEMS]
+    ]
+    rest = len(groups) - len(parts)
+    return "; ".join(parts) + (f" 외 {rest}곳" if rest > 0 else "")
+
+
+def _problem_text(
+    data: Any,
+    pointer: str,
+    code: str,
+    messages: list[str],
+    cursor: Cursor,
+    hints: Mapping[tuple[str, str], str],
+    listed: set[str],
+) -> str:
+    text = f"{mask_pointer(data, pointer, cursor) or '/'}: {code}"
+    if code not in ("missing_field", "unknown_field"):
+        hint = hints.get((pointer, code))
+        return f"{text} ({hint})" if hint else text
+    at = pointer if code == "missing_field" else pointer.rsplit("/", 1)[0]
     allowed = fields_at(data, at, cursor)
-    if d.code == "missing_field":
-        found = re.search(r"'([^']+)'", d.message)
-        name = found.group(1) if found else None
-        # 빠진 필드는 스키마의 required 이름이다 (요청자 글이 아니다)
-        if name is not None and name in allowed:
-            text += f" '{name}'"
+    if code == "missing_field":
+        names: list[str] = []
+        for message in messages:
+            found = re.search(r"'([^']+)'", message)
+            # 빠진 필드는 스키마의 required 이름이다 (요청자 글이 아니다)
+            if found and found.group(1) in allowed and found.group(1) not in names:
+                names.append(found.group(1))
+        if len(names) > 1:
+            text = text.replace(": missing_field", ": missing_fields", 1)
+        if names:
+            text += " " + ", ".join(f"'{n}'" for n in names)
+    elif at in listed:
+        return text  # 같은 객체의 허용 목록은 한 번만
+    listed.add(at)
     if allowed:
-        text += f" (허용: {', '.join(allowed)})"
+        text += f" (허용: {listing(allowed)})"
     return text
 
 

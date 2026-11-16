@@ -171,7 +171,7 @@
     },
     {
       "category": "app",
-      "description": "실행 파일을 띄우고 그 창(`window_title`을 주면 제목이 맞는 창)이 뜨기를 기다려 현재 대상\n창으로 정한다. 런처가 띄운 아래 프로세스의 창도 찾는다. `timeout_ms` 안에 창이 안 뜨면\n`timeout`.",
+      "description": "실행 파일을 띄우고 그 창(`window_title`을 주면 제목이 맞는 창)이 뜨기를 기다려 현재 대상\n창으로 정한다. 런처가 띄운 아래 프로세스의 창도 찾는다. `timeout_ms` 안에 창이 안 뜨면\n`timeout`.\n\n`path`를 비우면 워크스페이스 게임 설정(`game.executable`, 생략한 `args`·`cwd`는 `game.args`·\n`game.cwd`)으로 띄운다 — 그래프에 이 PC 경로가 남지 않는다.",
       "effects": [
         "process"
       ],
@@ -204,6 +204,8 @@
           "type": "string"
         },
         "path": {
+          "default": null,
+          "nullable": true,
           "type": "string"
         },
         "timeout_ms": {

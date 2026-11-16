@@ -60,7 +60,7 @@
 
 | 타입 | 하는 일 | 주요 입력 | 출력 | 출구 |
 |---|---|---|---|---|
-| `core.app.launch` | 실행 파일을 띄우고 창을 잡아 현재 대상 창으로 정함 | `path`, `args`, `window_title`, `cwd` | `window`, `process` | **attached**, timeout |
+| `core.app.launch` | 실행 파일을 띄우고 창을 잡아 현재 대상 창으로 정함. `path`를 비우면 게임 설정(`game.executable`·`game.args`·`game.cwd`)으로 띄운다 (UX10) | `path`, `args`, `window_title`, `cwd` | `window`, `process` | **attached**, timeout |
 | `core.app.close` | 프로세스 종료 (정상 종료 후 시간 초과면 강제) | `process`, `force_after_ms` | | **closed**, timeout |
 | `core.window.attach` | 이미 떠 있는 창을 찾아 현재 대상 창으로 정함 | `title` / `process_name`, `owned` | `window` | **found**, not_found |
 | `core.window.set_current` | 현재 대상 창을 바꿈 (호출 프레임 단위) | `window` | | **done** |

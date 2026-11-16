@@ -409,6 +409,7 @@ export function ConstantEditor({
   value,
   onCommit,
   ctx,
+  placeholder: hint,
 }: {
   editor: FieldEditor;
   spec?: FieldSpec;
@@ -416,9 +417,11 @@ export function ConstantEditor({
   value: unknown;
   onCommit(v: unknown): void;
   ctx: EditorContext;
+  /** 빈 칸 자리 글 (주면 기본값·필수 표시 대신) */
+  placeholder?: string;
 }) {
   const kind = value === undefined || fits(editor.kind, value) ? editor.kind : "json";
-  const placeholder = placeholderOf(spec);
+  const placeholder = hint ?? placeholderOf(spec);
   switch (kind) {
     case "number":
       return (

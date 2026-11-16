@@ -42,7 +42,7 @@ import {
   type EditorContext,
 } from "./editors";
 import { TargetField } from "./TargetField";
-import { editorFor, formatJson, parseJsonObject, valueModeFor, type FieldSpec } from "./fields";
+import { editorFor, emptyHintFor, formatJson, parseJsonObject, valueModeFor, type FieldSpec } from "./fields";
 import css from "./inspector.module.css";
 import { inspectNode, type NodeInspector } from "./model";
 import { PluginWidget } from "./PluginWidget";
@@ -91,6 +91,8 @@ interface FieldProps {
   agentPicker?: boolean;
   /** 그 노드 타입의 플러그인 ID (위젯은 자기 플러그인 것만) */
   nodePlugin?: string | null;
+  /** 빈 칸 자리 글 (예: "게임 설정 사용") — 없으면 기본값·필수 표시 */
+  emptyHint?: string | null;
 }
 
 const CLI_JUDGE_TYPE = "core.agent.cli_judge";
@@ -124,7 +126,7 @@ function AgentPicker({ label, value, onCommit, ctx }: { label: string; value: un
 }
 
 /** 핀(또는 config 키) 하나: 이름·타입, 값/설정/비밀/대상 고르기, 입력, 기본값으로 되돌리기, 진단 */
-function Field({ spec, field, value, node, diagnostics, edit, ctx: outer, extra, agentPicker, nodePlugin }: FieldProps) {
+function Field({ spec, field, value, node, diagnostics, edit, ctx: outer, extra, agentPicker, nodePlugin, emptyHint }: FieldProps) {
   const widgetOwner = spec.widget?.split(".", 1)[0];
   const widgetPlugin = usePlugins((s) =>
     widgetOwner === undefined ? undefined : s.list?.plugins.find((p) => p.id === widgetOwner),
@@ -202,7 +204,9 @@ function Field({ spec, field, value, node, diagnostics, edit, ctx: outer, extra,
   } else {
     // "값"을 고른 상수 입력. 설정·비밀·대상 값에서 "값"으로 바꾸면 빈 상자에서 새로 넣는다
     const constant = mode === "constant" ? value : undefined;
-    const plain = <ConstantEditor editor={editor} spec={spec} label={label} value={constant} onCommit={commit} ctx={ctx} />;
+    const plain = (
+      <ConstantEditor editor={editor} spec={spec} label={label} value={constant} onCommit={commit} ctx={ctx} placeholder={emptyHint ?? undefined} />
+    );
     // 플러그인 위젯 (M6 3.10): 잠금에 있고 환경이 준비된 그 노드 플러그인의 위젯만. 비밀값 항목에는 절대 쓰지 않는다
     const host = widgetPlugin !== undefined && widgetBlock(spec, field, value, widgetPlugin, nodePlugin ?? null) === null
       ? widgetPlugin.ui
@@ -291,6 +295,7 @@ function NodeFields({ path, view, ctx, graph }: { path: string; view: NodeInspec
       extra={extra}
       agentPicker={f === "config" && spec.name === "agent" && node.type === CLI_JUDGE_TYPE}
       nodePlugin={view.info?.plugin ?? null}
+      emptyHint={emptyHintFor(node.type, f, spec.name, node.in)}
     />
   );
   const extraSpec = (name: string): FieldSpec => ({ name, type: "any", required: false });

@@ -216,7 +216,8 @@ def test_app_window_node_pins(nodes: dict[str, dict[str, Any]]) -> None:
     assert launch["inputs"] == {
         "args": {"default": None, "nullable": True, "type": "list[string]"},
         "cwd": {"default": None, "nullable": True, "type": "string"},
-        "path": {"type": "string"},
+        # UX10 B: 비우면 워크스페이스 게임 설정(game.executable)
+        "path": {"default": None, "nullable": True, "type": "string"},
         "timeout_ms": {"default": 30000, "minimum": 0, "type": "int"},
         "window_title": {"default": None, "nullable": True, "type": "string"},
     }

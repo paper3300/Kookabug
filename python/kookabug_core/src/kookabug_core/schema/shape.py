@@ -230,6 +230,48 @@ def check_shape(
     return sorted(diags, key=lambda d: (d.pointer or "", d.code, d.message))
 
 
+MAX_LISTED: int = 20
+"""안내에 싣는 허용 값 수 상한 (넘으면 "외 N개")."""
+
+_RANGE_KEYWORDS = ("minimum", "maximum", "minItems", "maxItems", "minLength", "maxLength")
+
+
+def listing(values: Sequence[str], limit: int = MAX_LISTED) -> str:
+    """값 목록을 쉼표로 (상한을 넘으면 "외 N개")."""
+    head = ", ".join(values[:limit])
+    return head if len(values) <= limit else f"{head} 외 {len(values) - limit}개"
+
+
+def value_hints(
+    data: Any, kind: SchemaKind, *, ref: str | None = None
+) -> dict[tuple[str, str], str]:
+    """(pointer, 진단 코드) → 스키마가 정한 허용 범위 안내 (UX10 A). 값 오류(`invalid_value`)는 허용
+    값 목록, `pattern_mismatch`는 정규식, `wrong_type`은 기대 타입, `out_of_range`는 한계.
+
+    **스키마에서 온 것만** 싣는다 (요청 값·키 이름은 넣지 않는다 — 비밀값이 섞였을 수 있다). 키 이름
+    검사(`propertyNames`)는 다루지 않는다."""
+    hints: dict[tuple[str, str], str] = {}
+    for top in validator(kind, ref).iter_errors(data):
+        for error in _leaves(top):
+            if "propertyNames" in error.relative_schema_path:
+                continue
+            at = _pointer(list(error.absolute_path))
+            v = error.validator
+            value: Any = error.validator_value
+            if v in ("enum", "const"):
+                values = list(value) if v == "enum" else [value]
+                text = "허용 값: " + listing([_short(x) for x in values])
+                hints.setdefault((at, "invalid_value"), text)
+            elif v == "pattern":
+                hints.setdefault((at, "pattern_mismatch"), f"형식: 정규식 {value}")
+            elif v == "type":
+                kinds = [value] if isinstance(value, str) else list(value)
+                hints.setdefault((at, "wrong_type"), f"기대 타입: {', '.join(map(str, kinds))}")
+            elif v in _RANGE_KEYWORDS:
+                hints.setdefault((at, "out_of_range"), _range_message(str(v), value))
+    return hints
+
+
 def _bad_numbers(value: Any, path: list[str | int]) -> Iterator[tuple[list[str | int], str, str]]:
     """JSON에 쓸 수 없거나 JavaScript가 정확히 다루지 못하는 수.
 
