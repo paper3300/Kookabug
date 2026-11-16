@@ -175,6 +175,8 @@ METHOD_TOOLS: Final[dict[str, str]] = {
     # M7 B4 이동 그래프 (계획 3.3, 3.8 — 조회, 썸네일은 사람에게만)
     "screens.map": "kb_screen_list",
     "screens.save": "kb_screen_save",
+    # UX11 A3: 프레임 없이 이동만 잇기 (화면 저장과 같은 screens 변경 판정)
+    "screens.link": "kb_screen_link",
     "explore.start": "kb_explore_start",
     "explore.end": "kb_explore_end",
     # UX7 C: 입력 하나 → 기다림 → 캡처 → 판별 → 이동 기록 (판정은 입력 도구와 같은 control)

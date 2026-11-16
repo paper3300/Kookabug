@@ -1,7 +1,8 @@
 """`explore.start/end/list` (M7 계획 3.4): 에이전트 탐색 세션.
 
 `explore.start`·`explore.end`는 에이전트 전용(`kb_explore_start`·`kb_explore_end`, 사람 연결은
-`agent_only`). `explore.list`는 사람만(UI). 세션 제목·목표·창 이름은 3.5b 글자 검사를 지난다.
+`agent_only`). `explore.list`는 사람만(UI). 세션 제목·목표·창 이름은 3.5b 글자 검사(작업 토큰)를
+지난다.
 """
 
 from __future__ import annotations
@@ -66,7 +67,7 @@ def _start(call: Call) -> dict[str, Any]:
         )
         if v
     ]
-    check_texts(texts, call.daemon.guard, call.daemon.root, job_secrets(call.daemon))
+    check_texts(texts, job_secrets(call.daemon))
     session = call.daemon.explore.start(
         call.connection,
         agent_id,
@@ -95,7 +96,11 @@ def _end(call: Call) -> dict[str, Any]:
         (s["counts"] for s in listed if s["id"] == session.id),
         {"screens": 0, "moves": 0, "untried": 0},
     )
-    return {"session": session.id, "counts": counts}
+    from kookabug_daemon.screen_save import disconnected
+
+    # UX11 A4: 들어오는 이동이 없는 화면 (처음 저장한 화면 말고) — kb_screen_link로 잇는다
+    loose = disconnected(call.daemon.root, session.id, session.first)
+    return {"session": session.id, "counts": counts, "disconnected": loose}
 
 
 def _list(call: Call) -> dict[str, Any]:

@@ -145,8 +145,8 @@ def test_recorder_frame_pixels_d3_exception_cleaned(tmp_path: Path) -> None:
             ui.call("recorder.frame", {"step": secret["step"], "which": "pre_next"}),
             ui.call("recorder.frame", {"step": login["step"], "which": "pre_click"}),
         ]
-        # 비밀번호 칸이 보이는 프레임은 보호 영역을 함께 준다
-        assert shots[1]["protected"], shots[1]
+        # UX11 B: 비밀번호 칸이 보이는 프레임도 가리지 않는다 (보호 영역 없음)
+        assert shots[1]["protected"] == [], shots[1]
         pngs = [d.daemon.image_cache.path_of(s["frame"]["image"]["cache"]) for s in shots]
         assert all(p.parent == rig.root.joinpath(".kookabug", *CACHE_DIR) for p in pngs)
         assert all(p.is_file() for p in pngs)

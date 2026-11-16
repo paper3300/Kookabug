@@ -220,22 +220,14 @@ def test_events_artifact_compare_for_failed_run(
     for path, code in (("events.jsonl", "not_evidence"), ("run.json", "not_evidence")):
         assert mcp.error("kb_run_artifact_get", {"run": run, "path": path})["code"] == code
 
-    # 비밀값을 넘기는 예제 깨진 각본: 비밀번호 원문이 어떤 결과에도 없다, 호출 안쪽 증거는 없음
+    # 비밀값을 넘기는 예제 깨진 각본: UX11 B부터 호출 안쪽 증거도 준다 (게임 비밀값은 가리지 않음)
     set_preset(root, "full")
     broken = run_and_wait(mcp, BROKEN, "broken-sample")
     assert broken["outcome"]["verdict"] == "fail"
     summary = broken["failure"]
     assert summary["failure_path"][0] == "n_enter_world"
-    assert summary["evidence"] == []  # 비밀값을 받은 호출 스텝 안쪽은 이미지를 주지 않는다
-    seen = json.dumps(
-        [
-            broken,
-            mcp.data("kb_run_events", {"run": broken["run_id"], "limit": 500}),
-            mcp.data("kb_log_search", {"query": "sample"}),
-        ],
-        ensure_ascii=False,
-    )
-    assert PASSWORD not in seen
+    assert summary["evidence"]
+    assert mcp.data("kb_run_events", {"run": broken["run_id"], "limit": 500})
     assert mcp.close() == 0
 
 

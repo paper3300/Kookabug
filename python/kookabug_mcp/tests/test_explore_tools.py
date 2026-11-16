@@ -44,7 +44,6 @@ def test_fake_explorer_sample_game(
         try:
             mcp.initialize()
             summary = run_script(mcp, script)
-            raw = b"\n".join(mcp.lines).decode("utf-8", "replace")
         finally:
             mcp.close()
         with d.client() as ui:
@@ -58,9 +57,8 @@ def test_fake_explorer_sample_game(
         "world",
         "inventory",
     ]
-    # 비밀값 칸 둘을 넣은 로그인 화면 2번 + 로딩·인벤토리(칸 자리가 민무늬라 칸 없음을 확정하지
-    # 못함 — 녹화기 기준 그대로, 안전 쪽)
-    assert summary["protected"] == 4
+    # UX11 B: 비밀값을 넣은 로그인 화면도 보호하지 않는다
+    assert summary["protected"] == 0
     session = summary["session"]
     (listed,) = sessions
     assert (listed["id"], listed["status"]) == (session, "ended")
@@ -88,7 +86,7 @@ def test_fake_explorer_sample_game(
         assert screen is not None and screen.origin is not None, key
         assert screen.origin.session == session
         if key in ("loading", "inventory"):
-            # 보호 중에 저장: 판정 조건·스크린샷 없는 미완성 후보 (사람이 채운다)
+            # 판정 조건·스크린샷 없이 저장한 미완성 후보 (사람이 채운다)
             assert screen.incomplete and screen.shot is None
             continue
         assert screen.detect(), key
@@ -98,14 +96,8 @@ def test_fake_explorer_sample_game(
     assert login_card is not None
     login = read_screen_file(folder / "login.screen.json", login_card.path)
     assert {c.ocr is not None for c in login.detect()} == {True, False}
-    # 비밀값은 어디에도 없다: 응답 줄·탐색 결과 폴더·보호 기록
-    for value in (ACCOUNT, PASSWORD):
-        assert value not in raw
-        for path in folder.rglob("*"):
-            if path.is_file() and path.suffix != ".png":
-                assert value not in path.read_text("utf-8", "replace"), path
-    protect = json.loads((game.root / ".kookabug" / "agent-protect.json").read_text("utf-8"))
-    assert sorted(protect["secret_keys"]) == ["acc.id", "acc.pw"]
+    # UX11 B: 보호 기록 파일을 쓰지 않는다
+    assert not (game.root / ".kookabug" / "agent-protect.json").exists()
     # 확정 화면 경로에는 아무것도 쓰지 않았다
     assert list((game.root / "screens").glob("*.screen.json")) == []
     assert not (game.root / "targets" / "screens").exists()

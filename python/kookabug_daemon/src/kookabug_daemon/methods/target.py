@@ -198,15 +198,8 @@ def _read_text(call: Call) -> dict[str, Any]:
     params: Mapping[str, Any] = call.params
     frame_id = str(params["frame_id"])
     rect = [request_int(v) for v in params["rect"]]
-    # 녹화 세션이 올린 정지 화면이면 그 프레임의 보호 영역(비밀번호 칸)과 겹치는 영역은 읽지 않는다
-    recorder = getattr(call.daemon, "recorder", None)
-    if recorder is not None:
-        recorder.check_read_region(frame_id, rect)
-    result = call.daemon.targets.read_text(frame_id, rect)
-    if recorder is not None:
-        # 보호 영역 밖에 다시 보인 비밀값 원문도 응답으로 내보내지 않는다 (B5 검수 2차 High)
-        recorder.check_read_result(result)
-    return result
+    # 녹화 프레임의 비밀번호 칸도 그대로 읽는다 (UX11 B — 게임 비밀값은 가리지 않음)
+    return call.daemon.targets.read_text(frame_id, rect)
 
 
 async def _read_text_handler(call: Call) -> dict[str, Any]:
@@ -219,9 +212,6 @@ def _agent_frame(call: Call, frame_id: str) -> EditorFrame:
     만든 프레임은 `frame_not_owned`, 실행 증거에서 연 프레임은 그 파일의 분류를 다시 본다."""
     from kookabug_daemon.methods.run_agent import recheck_source
 
-    if call.principal.kind == "agent":
-        # 사라진 창의 정지 화면은 먼저 버린다 (M7 R1 — 그 뒤 frame_expired)
-        call.daemon.guard.sweep()
     frame = call.daemon.frames.get(frame_id)
     if call.principal.kind != "agent":
         return frame
@@ -289,26 +279,12 @@ def _save_crop(call: Call) -> Mapping[str, Any] | None:
 
 
 def _guard_crop(call: Call, frame: EditorFrame, rect: Any) -> None:
-    """에이전트 crop (`kb_target_create{frame_id}`, M7 3.5a): 보호 판정이 `clear`인 프레임만, 그리고
-    그 창의 알려진 비밀값 칸 상자와 겹치면 거부 (녹화기 `ProtectionSet.require_clear` — 안전 확인
-    직후 경계 이중 방어)."""
-    from kookabug_core.recorder.protect import SecretRegionOverlap
+    """에이전트 crop (`kb_target_create{frame_id}`, M7 3.5a): 보호 판정(민감 target)이 `clear`인
+    프레임만. 비밀값 칸과 겹쳐도 자른다 (UX11 B — 게임 비밀값은 가리지 않음)."""
     from kookabug_daemon.frames import check_rect
 
-    guard = call.daemon.guard
-    guard.require_clear(frame)
-    box = check_rect(frame, [request_int(v) for v in rect], what="잘라 낼 영역")
-    protection = guard.protection_set(frame)
-    if protection is None:
-        return
-    try:
-        protection.require_clear((box[0], box[1], box[2], box[3]), None, frame.pixels)
-    except SecretRegionOverlap as exc:
-        raise RequestFailed(
-            "frame_protected",
-            "비밀값을 입력한 칸과 겹치는 영역은 자르지 않아요",
-            reason="secret_field",
-        ) from exc
+    call.daemon.guard.require_clear(frame)
+    check_rect(frame, [request_int(v) for v in rect], what="잘라 낼 영역")
 
 
 async def _save(call: Call) -> dict[str, Any]:

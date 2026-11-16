@@ -8,7 +8,6 @@
 
 from __future__ import annotations
 
-import json
 import shutil
 import threading
 from pathlib import Path
@@ -329,8 +328,8 @@ def test_runs_rejected_while_recording_and_lease_released_on_stop(
 
 
 def test_coordinate_conversion_clears_missing_target(tmp_path: Path) -> None:
-    """비밀 칸을 다시 눌러 target 없는 클릭 → 좌표 클릭으로 바꾸면 target 없이 커밋된다 (B3 검수
-    M1, plan 2.9 "이미지 클릭 ↔ 좌표 클릭")."""
+    """비밀 칸을 다시 누른 클릭 → 좌표 클릭으로 바꾸면 target 없이 커밋된다 (B3 검수 M1, plan 2.9
+    "이미지 클릭 ↔ 좌표 클릭"). UX11 B: 비밀 칸도 가리지 않으므로 그 클릭에는 초안이 생긴다."""
     s = ScriptBuilder(scene="login")
     s.at(500).click(ACCOUNT_POINT)
     s.at(1000).type("vaultcode42")
@@ -347,9 +346,9 @@ def test_coordinate_conversion_clears_missing_target(tmp_path: Path) -> None:
         rig.advance(d, 6000)
         ui.call("recorder.stop", {})
         step = [s for s in steps_of(ui) if s["kind"] == "click"][-1]
-        assert step["target"]["source"] == "none", step
+        assert step["target"]["source"] != "none", step
+        assert "secret_overlap" not in step["needs_review"]
         params = {"mode": "new_test", "graph_path": "tests/coordinate.graph.json"}
-        assert refused(ui, "recorder.commit_prepare", params).kind == "target_missing"
         ui.call(
             "recorder.step.update",
             {"step": step["step"], "patch": {"node_type": "core.input.click"}},
@@ -486,7 +485,7 @@ def test_materialize_writes_one_draft_and_commit_does_not_rewrite(tmp_path: Path
         assert len(written_targets(rig)) == len(set(paths))
 
 
-def test_check_text_equals_patch_and_secret_text_rejected(tmp_path: Path) -> None:
+def test_check_text_equals_patch_and_secret_text_kept(tmp_path: Path) -> None:
     rig = RecorderRig.make(tmp_path)
     with rig.daemon() as d, d.client() as ui:
         ui.call("recorder.start", START)
@@ -500,13 +499,11 @@ def test_check_text_equals_patch_and_secret_text_rejected(tmp_path: Path) -> Non
         sid = inserted["step"]
         updated = ui.call("recorder.step.update", {"step": sid, "patch": {"equals": "서버 고르기"}})
         assert updated["step"]["equals"] == "서버 고르기"
-        # 비밀번호 원문을 담은 기댓값은 거부하고 원문을 오류에 싣지 않는다
-        error = refused(
-            ui, "recorder.step.update", {"step": sid, "patch": {"equals": "x sample-pass-01 y"}}
-        )
-        assert error.kind == "secret_region_overlap"
-        assert "sample-pass-01" not in str(error) and "sample-pass-01" not in str(error.data)
-        assert next(s for s in steps_of(ui) if s["step"] == sid)["equals"] == "서버 고르기"
+        # UX11 B: 비밀번호 원문을 담은 기댓값도 받는다 (가리지 않는다)
+        raw = "x sample-pass-01 y"
+        changed = ui.call("recorder.step.update", {"step": sid, "patch": {"equals": raw}})
+        assert changed["step"]["equals"] == raw
+        assert next(s for s in steps_of(ui) if s["step"] == sid)["equals"] == raw
         click = next(s for s in steps_of(ui) if s["kind"] == "click")
         assert refused(
             ui, "recorder.step.update", {"step": click["step"], "patch": {"equals": "a"}}
@@ -517,36 +514,28 @@ def test_check_text_equals_patch_and_secret_text_rejected(tmp_path: Path) -> Non
             "fragment"
         ]
         texts = [n["in"]["equals"] for n in fragment["nodes"] if n["type"] == "core.assert.text"]
-        assert texts == ["서버 고르기"]
+        assert texts == [raw]
 
 
-def _assert_check_equals_never_leaks(
-    rig: RecorderRig, d: Any, ui: DaemonClient, frame_id: str, rect: list[int], raw: str
-) -> None:
-    """새 값 확인 스텝의 OCR 기댓값이 비밀값 원문을 담을 때 세 경로 — `insert_check` 응답,
-    `recorder.changed` 뒤 `recorder.steps`, 세션 `steps.json` — 어디에도 원문이 없다 (B5 검수 2차
-    High). 스텝은 기댓값을 비우고 `secret_overlap`으로 버린다."""
+def _assert_check_equals_kept(ui: DaemonClient, frame_id: str, rect: list[int], raw: str) -> None:
+    """새 값 확인 스텝의 OCR 기댓값이 비밀값 원문을 담아도 그대로 둔다 (UX11 B — 가리지 않는다).
+    커밋도 막지 않는다."""
     result = ui.call("recorder.insert_check", {"kind": "text", "frame_id": frame_id, "rect": rect})
     step = result["step"]
-    assert raw not in json.dumps(result, ensure_ascii=False), "insert_check 응답에 원문"
-    assert step["kind"] == "check_text" and step["equals"] == ""
-    assert "secret_overlap" in step["needs_review"]
-    session = d.daemon.recorder.session
-    session.changed()
-    listed = steps_of(ui)
-    assert raw not in json.dumps(listed, ensure_ascii=False), "recorder.steps에 원문"
-    stored = session.store.folder / "steps.json"
-    wait_until(lambda: step["step"] in stored.read_text(encoding="utf-8-sig"), timeout=10)
-    assert raw not in stored.read_text(encoding="utf-8-sig"), "steps.json에 원문"
-    # 원문 없는 커밋 거부 (기댓값을 버린 값 확인)
+    assert step["kind"] == "check_text" and raw in step["equals"]
+    assert "secret_overlap" not in step["needs_review"]
+    listed = next(s for s in steps_of(ui) if s["step"] == step["step"])
+    assert raw in listed["equals"]
     choose_secret(ui, steps_of(ui))
-    error = refused(ui, "recorder.commit_prepare", {"mode": "new_test", "graph_path": GRAPH})
-    assert error.kind == "secret_region_overlap" and step["step"] in error.data["steps"]
-    assert raw not in str(error) and raw not in str(error.data)
+    prepared = ui.call("recorder.commit_prepare", {"mode": "new_test", "graph_path": GRAPH})
+    equals = [
+        n["in"]["equals"] for n in prepared["fragment"]["nodes"] if n["type"] == "core.assert.text"
+    ]
+    assert any(raw in e for e in equals)
 
 
 @pytest.mark.usefixtures("secret_env")
-def test_new_check_text_equals_with_secret_ocr_not_exposed(tmp_path: Path) -> None:
+def test_new_check_text_equals_with_secret_ocr_kept(tmp_path: Path) -> None:
     """반례 1: 안전한 영역의 OCR이 이미 알려진 비밀번호(`sample-pass-01`)를 읽은 경우."""
     rig = RecorderRig.make(tmp_path, login_script())
     with rig.daemon(speed=None) as d, d.client() as ui:
@@ -558,11 +547,11 @@ def test_new_check_text_equals_with_secret_ocr_not_exposed(tmp_path: Path) -> No
         session = d.daemon.recorder.session
         assert session is not None and session.pipeline is not None
         session.pipeline.read_text = lambda image, rect: f"안내 {SECRET_TEXT}"
-        _assert_check_equals_never_leaks(rig, d, ui, frame, LOBBY_TITLE, SECRET_TEXT)
+        _assert_check_equals_kept(ui, frame, LOBBY_TITLE, SECRET_TEXT)
 
 
 @pytest.mark.timeout(180)
-def test_new_check_text_equals_real_ocr_secret_elsewhere_not_exposed(tmp_path: Path) -> None:
+def test_new_check_text_equals_real_ocr_secret_elsewhere_kept(tmp_path: Path) -> None:
     """반례 2 (실제 OCR): 비밀번호 `Enter`가 화면 아래 안내문 "Enter: 로그인"에도 보인다."""
     script = ScriptBuilder(scene="login")
     script.at(500).click(ACCOUNT_POINT)
@@ -578,4 +567,4 @@ def test_new_check_text_equals_real_ocr_secret_elsewhere_not_exposed(tmp_path: P
         frame = ui.call("recorder.frame", {"which": "live"})["frame"]["frame_id"]
         ui.call("recorder.stop", {})
         assert any(s.get("text_state") == "secret" for s in steps_of(ui))
-        _assert_check_equals_never_leaks(rig, d, ui, frame, [300, 570, 430, 45], "Enter")
+        _assert_check_equals_kept(ui, frame, [300, 570, 430, 45], "Enter")

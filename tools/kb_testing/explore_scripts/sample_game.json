@@ -25,10 +25,10 @@
 
     {"act": "kb_input_click", "args": {"point": [560, 230]}},
     {"act": "kb_input_type", "args": {"secret": "acc.id"}},
-    {"see": "protected", "reason": "secret_field", "try_save": "login"},
+    {"see": "plain"},
     {"act": "kb_input_click", "args": {"point": [560, 310]}},
     {"act": "kb_input_type", "args": {"secret": "acc.pw"}},
-    {"see": "protected", "reason": "secret_field"},
+    {"see": "plain"},
     {"act": "kb_input_click", "args": {"point": [512, 408]}, "from": "login", "via": {"click": {"element": "로그인 버튼"}}},
 
     {"see": "new", "key": "lobby", "save": {"title": "서버 선택", "kind": "screen",
@@ -38,7 +38,7 @@
     {"see": "known", "key": "lobby"},
     {"act": "kb_input_click", "args": {"point": [512, 450]}, "from": "lobby", "via": {"click": {"point": [512, 450]}}},
 
-    {"see": "protected", "reason": "secret_field", "save_bare": {"key": "loading", "title": "로딩", "kind": "screen"}},
+    {"see": "plain", "save_bare": {"key": "loading", "title": "로딩", "kind": "screen"}},
     {"wait": "change", "from": "loading", "max_captures": 8},
 
     {"see": "new", "key": "world", "save": {"title": "월드", "kind": "screen",
@@ -46,7 +46,7 @@
       "moves": [{"via": {"key": "m"}, "to": null, "status": "untried", "note": "지도 — 아직 안 가 봄"}]}},
     {"act": "kb_input_key", "args": {"keys": "i"}, "from": "world", "via": {"key": "i"}},
 
-    {"see": "protected", "reason": "secret_field", "save_bare": {"key": "inventory", "title": "인벤토리", "kind": "popup"}},
+    {"see": "plain", "save_bare": {"key": "inventory", "title": "인벤토리", "kind": "popup"}},
     {"act": "kb_input_key", "args": {"keys": "esc"}, "from": "inventory", "via": {"key": "esc"}},
     {"see": "known", "key": "world"}
   ]

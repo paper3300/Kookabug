@@ -721,3 +721,47 @@ def _streams() -> tuple[Any, Any]:
     import sys
 
     return sys.stdout, sys.stderr
+
+
+# ---------------------------------------------------------------- UX11 검수 3: 이전 판 daemon
+
+
+@pytest.mark.parametrize("playbook", ["init", "entry", "explore"])
+def test_legacy_daemon_refused_before_job_created(
+    ws: Path,
+    daemon: ThreadDaemon,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    playbook: str,
+) -> None:
+    """`job.heartbeat` masks를 모르는 이전 판 daemon(hello에 `job_masks` 기능 표시 없음, heartbeat는
+    `job`만)에 붙으면 작업을 만들기 전에 `daemon_outdated`로 끝난다 — masks를 빼고 띄우지 않는다."""
+    from kookabug_core.schema import check_shape
+    from kookabug_daemon import transport
+    from kookabug_daemon.methods import session
+
+    normal = transport.params_problems
+
+    def legacy(method: str, params: Any) -> Any:
+        if method == "job.heartbeat":  # 이전 판 heartbeat 인자 (job만)
+            return check_shape(params, "daemon-rpc", ref="#/$defs/Kb8JobIdParams")
+        return normal(method, params)
+
+    monkeypatch.setattr(transport, "params_problems", legacy)
+    monkeypatch.setattr(session, "FEATURES", ())
+    script = write_script(tmp_path, "quick", [])
+    ran = run_sync(ws, env_for(tmp_path), script, playbook=playbook)
+    assert ran.outcome.job is None and ran.outcome.extra.get("code") == "daemon_outdated"
+    assert "다시 시작" in ran.outcome.message
+    assert not (ws / ".kookabug" / "jobs").exists() or not any(
+        (ws / ".kookabug" / "jobs").iterdir()
+    )
+    assert daemon.daemon.jobs.all() == []  # daemon에 작업을 만들지 않았다
+
+
+def test_current_daemon_advertises_job_masks(ws: Path, daemon: ThreadDaemon) -> None:
+    link = connect_daemon(ws)
+    try:
+        assert "job_masks" in link.features
+    finally:
+        link.close()

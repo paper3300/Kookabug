@@ -1,5 +1,5 @@
-"""UX4 이전 대화 daemon 쪽 (실제 daemon): 사람 연결은 저장·목록·읽기·지우기, 저장은 워크스페이스
-비밀값(환경 변수 `KOOKABUG_SECRET_*`)을 가린다. Agent 연결은 판정 전 거부."""
+"""UX4 이전 대화 daemon 쪽 (실제 daemon): 사람 연결은 저장·목록·읽기·지우기. 워크스페이스(게임)
+비밀값은 가리지 않는다(UX11 B — 작업 토큰만 가린다). Agent 연결은 판정 전 거부."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def daemon(ws: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[ThreadDaemon]:
         yield d
 
 
-def test_save_list_get_delete_redacted(ws: Path, daemon: ThreadDaemon) -> None:
+def test_save_list_get_delete_keeps_game_secret(ws: Path, daemon: ThreadDaemon) -> None:
     item = {"kind": "user", "text": f"토큰 {SECRET} 써", "chips": []}
     with daemon.client() as ui:
         saved = ui.call(
@@ -45,13 +45,14 @@ def test_save_list_get_delete_redacted(ws: Path, daemon: ThreadDaemon) -> None:
                 }
             },
         )["conversation"]
-        assert saved["id"] == CID and SECRET not in saved["title"]
+        # 게임 비밀값(워크스페이스 비밀값)은 가리지 않는다 (UX11 B)
+        assert saved["id"] == CID and SECRET in saved["title"]
         raw = (ws / ".kookabug/conversations" / f"{CID}.json").read_text("utf-8")
-        assert SECRET not in raw and "***" in raw
+        assert SECRET in raw and "***" not in raw
         listed = ui.call("conversations.list", {})["conversations"]
         assert [c["id"] for c in listed] == [CID]
         got = ui.call("conversations.get", {"id": CID})["conversation"]
-        assert got["items"][0]["text"] == "토큰 *** 써" and got["acp_session"] is None
+        assert got["items"][0]["text"] == f"토큰 {SECRET} 써" and got["acp_session"] is None
         assert ui.call("conversations.delete", {"id": CID}) == {"deleted": True}
         with pytest.raises(DaemonError) as caught:
             ui.call("conversations.get", {"id": CID})

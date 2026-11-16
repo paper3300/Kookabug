@@ -11,10 +11,9 @@
 - "이 탐색 동안 허용"(`allow_session`) 범위는 승인 브로커의 메모리에 있다. 세션 끝·연결 끊김·예산
   다 씀을 `on_scope_end`로 알리고, 감사 기록만 `explore.json` `approvals[]`에 남긴다
 
-저장·내보내는 글자 검사(3.5b, `check_texts`): 보호 기록의 비밀값 키 전부(`FrameGuard.secret_keys`)를
-워크스페이스 비밀값 제공자로 읽어, 공백·대소문자 무시로 그 값이 글자에 들어 있으면 아무것도 쓰지
-않고 `secret_in_text`(필드 이름만). 기록된 키를 하나라도 못 읽거나 보호 기록이 손상됐으면
-`secret_unchecked`로 거부한다(fail closed). 값은 검사 동안만 메모리에 있다.
+저장·내보내는 글자 검사(3.5b, `check_texts`): daemon 메모리의 작업 토큰 원문(Kookabug 자체 자격
+증명, M8 R9)이 공백·대소문자 무시로 글자에 들어 있으면 아무것도 쓰지 않고 `secret_in_text`(필드
+이름만). 게임 비밀값(워크스페이스 비밀값)은 보지 않는다 (UX11 B — 로컬 툴이라 가리지 않음).
 """
 
 from __future__ import annotations
@@ -41,7 +40,7 @@ from kookabug_core.screens import (
     ScreenDef,
     explored_candidates,
 )
-from kookabug_core.workspace import Workspace, WorkspaceError, default_secrets
+from kookabug_core.workspace import Workspace
 from kookabug_daemon.protocol import RequestFailed
 
 __all__ = [
@@ -104,46 +103,20 @@ def write_lock(root: Path, session: ExploreSession | None = None) -> Iterator[No
 
 
 def job_secrets(daemon: Any) -> list[str]:
-    """daemon 메모리의 작업 토큰 원문 (글자 검사 대상, M8 R9). 작업 표가 없는 대역이면 빈 목록."""
-    jobs = getattr(daemon, "jobs", None)
-    return [] if jobs is None else list(jobs.secret_values())
+    """글자 검사 대상 = Kookabug 자체 자격 증명 (작업 토큰 원문 M8 R9 + runner가 에이전트에 넣은
+    인증·환경 값 — UX11)."""
+    from kookabug_daemon.methods.sources import credential_values
+
+    return credential_values(daemon)
 
 
-def check_texts(
-    texts: Iterable[tuple[str, str]], guard: Any, root: Path, extra: Iterable[str] = ()
-) -> None:
-    """3.5b 글자 검사. `texts`는 (필드 이름, 글자). 걸리면 `secret_in_text`·`secret_unchecked`.
-    `extra`는 메모리 원문 (M8 R9 — daemon의 작업 토큰 원문)."""
+def check_texts(texts: Iterable[tuple[str, str]], extra: Iterable[str] = ()) -> None:
+    """3.5b 글자 검사. `texts`는 (필드 이름, 글자), `extra`는 메모리 원문(daemon의 작업 토큰 원문).
+    걸리면 `secret_in_text`."""
     pairs = [(name, text) for name, text in texts if text]
-    if getattr(guard, "save_blocked", False):
-        raise RequestFailed(
-            "secret_unchecked",
-            "보호 기록 파일이 손상돼 비밀값 검사를 할 수 없어 저장하지 않았다 (사람 확인 필요)",
-        )
-    keys = sorted(getattr(guard, "secret_keys", ()) or ())
     values: list[str] = [v for v in (normalize(x) for x in extra) if v]
-    if (not keys and not values) or not pairs:
+    if not values or not pairs:
         return
-    try:
-        provider = default_secrets(Workspace.open(root))
-    except (WorkspaceError, OSError) as exc:
-        raise RequestFailed(
-            "secret_unchecked", "비밀값을 읽지 못해 글자 검사를 할 수 없어 저장하지 않았다"
-        ) from exc
-    for key in keys:
-        try:
-            value = provider.get(key)
-        except Exception:
-            value = None
-        if value is None:
-            raise RequestFailed(
-                "secret_unchecked",
-                f"비밀값 '{key}'을(를) 읽지 못해 글자 검사를 할 수 없어 저장하지 않았다",
-                reason=key,
-            )
-        found = normalize(value)
-        if found:
-            values.append(found)
     try:
         for name, text in pairs:
             plain = normalize(text)
@@ -179,6 +152,10 @@ class ExploreSession:
     """스텝·예약·감사 기록 메모리 값 잠금 (짧게만 쥔다 — 이벤트 루프에서도 부른다)."""
     current: tuple[str, str] | None = None
     """UX7 C: 지금 화면 (`explored`·`confirmed`, 후보 키·화면 ID) — 다음 걸음의 이동 출발점."""
+    first: str | None = None
+    """UX11 A4: 이 세션에서 처음 저장한 후보 키 (끊긴 화면 목록에서 뺀다 — 출발 화면)."""
+    last_frame: Any = None
+    """UX11 검수 1 Mid 3: 직전 탐색 걸음의 마지막 프레임 픽셀 (걸음 사이에 바뀐 화면을 알아본다)."""
     pending: list[tuple[tuple[str, str], dict[str, Any]]] = field(
         default_factory=list[tuple[tuple[str, str], dict[str, Any]]]
     )
@@ -278,6 +255,9 @@ class ExploreSessions:
         """세션 끝·연결 끊김·예산 다 씀을 승인 브로커에 알린다 (`allow_session` 범위 소멸, B3)."""
         self._lock = threading.Lock()
         self._active: dict[int, ExploreSession] = {}
+        self._recent: dict[int, ExploreSession] = {}
+        """연결마다 마지막으로 끝낸 세션 (UX11 A3 — 끝낸 뒤 받은 끊긴 화면을 `screens.link`로
+        잇게)."""
 
     # ------------------------------------------------------------ 수명
 
@@ -329,6 +309,8 @@ class ExploreSessions:
     def end(self, connection: int, reason: str = "ended") -> ExploreSession | None:
         with self._lock:
             session = self._active.pop(connection, None)
+            if session is not None:
+                self._recent[connection] = session
         if session is None:
             return None
         # 표에서 뺀 **뒤에** 알린다: 그 사이 온 늦은 답도 살아 있는 세션을 찾지 못해 아무것도
@@ -351,6 +333,16 @@ class ExploreSessions:
 
     def require(self, connection: int) -> ExploreSession:
         session = self.get(connection)
+        if session is None:
+            raise RequestFailed(
+                "explore_not_active", "탐색 세션이 없다 (kb_explore_start로 먼저 시작한다)"
+            )
+        return session
+
+    def linkable(self, connection: int) -> ExploreSession:
+        """이동을 이을 세션 (UX11 A3): 지금 세션, 없으면 이 연결이 마지막으로 끝낸 세션."""
+        with self._lock:
+            session = self._active.get(connection) or self._recent.get(connection)
         if session is None:
             raise RequestFailed(
                 "explore_not_active", "탐색 세션이 없다 (kb_explore_start로 먼저 시작한다)"

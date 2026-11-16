@@ -110,6 +110,8 @@ TOOLS: Final[Mapping[str, ToolInfo]] = {
     # M7 탐색 세션·화면 지도 저장 (계획 3.4·3.5). 세션 끝(`kb_explore_end`)은 조회로 분류해
     # 늘 허용한다 — screens 변경이 ask·deny인 프리셋에서도 에이전트가 세션을 끝낼 수 있게 (B3)
     **_tools("screens", True, "kb_screen_save", "kb_explore_start"),
+    # UX11 A3: 프레임 없이 화면 카드 사이 이동만 잇기 (화면 저장과 같은 판정)
+    **_tools("screens", True, "kb_screen_link"),
     **_tools("screens", False, "kb_explore_end"),
     # M8 지식·사건 (계획 3.14). 사건 열기·증거 고정·채택 요청·보고 메모는 변경 도구
     **_tools("knowledge", False, "kb_knowledge_search", "kb_knowledge_get"),

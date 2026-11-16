@@ -25,7 +25,7 @@ ACCEPTANCE_TESTS: Final = [
     "test_promote_moves_into_screens_atomically",
     "test_explore_click_permissions",
     "test_explore_conflicts_with_run_and_recording",
-    "test_no_secret_through_any_exit",
+    "test_secret_shown_sensitive_still_protected",
 ]
 E2E_TESTS: Final = [
     "test_map_shows_cards_edges_sources",

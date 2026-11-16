@@ -300,8 +300,19 @@
       "type": "object"
     },
     "ScreenVia": {
-      "description": "이동 입력: 요소 클릭·점 클릭·키",
+      "description": "이동 입력: 요소 클릭·점 클릭·키·기다림(입력 없이 저절로 바뀜 — 로딩·컷신)",
       "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "wait": {
+              "additionalProperties": false,
+              "type": "object"
+            }
+          },
+          "required": ["wait"],
+          "type": "object"
+        },
         {
           "additionalProperties": false,
           "properties": {

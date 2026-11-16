@@ -24,6 +24,7 @@ from kookabug_sdk.rpc import check_value, decode_text
 
 __all__ = [
     "DAEMON_VERSION",
+    "FEATURES",
     "INTERNAL_ERROR",
     "INVALID_PARAMS",
     "INVALID_REQUEST",
@@ -55,6 +56,9 @@ __all__ = [
 ]
 
 PROTOCOL: Final = 1
+FEATURES: Final = ("job_masks",)
+"""`session.hello` 결과의 기능 표시 (UX11). 판을 올리지 않고 새 RPC 기능을 알린다 — `job_masks`:
+`job.heartbeat`의 `masks`(agent-job이 작업을 만들기 전에 확인한다)."""
 DAEMON_VERSION: Final = __version__
 MAX_FRAME: Final = 16 * 1024 * 1024
 

@@ -59,7 +59,6 @@ runner의 저널 쓰기는 `run.end`가 마지막이다.
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import importlib.metadata
 import math
 import os
@@ -138,7 +137,6 @@ from kookabug_core.registry import Registry, RegistryError, default_registry
 from kookabug_core.runner.clock import ActiveClock
 from kookabug_core.runner.control import Controller, PauseGate, PollPoint
 from kookabug_core.runner.spec import (
-    GAME_LABEL,
     MIB,
     PROTOCOL,
     VIDEO_FINISH_MAX_MS,
@@ -559,7 +557,7 @@ class Runner:
         if spec.job is not None:
             self._run_json["job"] = spec.job
         if spec.record_override is not None:
-            # 실행별 기록 강제 (M7 R2): 기록 뷰어 머리 줄 "이미지 기록 없음 · 비밀값 가림"
+            # 실행별 기록 강제 (M7 R2): 기록 뷰어 머리 줄 "이미지 기록 없음"
             self._run_json["record_override"] = dict(spec.record_override)
         write_run_json(self.folder.run_json, self._run_json)
         self.controller.journal_ready(self._emit_quiet)
@@ -1051,49 +1049,8 @@ class Runner:
         window = info.window
         if window.pid != attach.pid or str(window.process_created) != attach.created:
             return None
-        # 기록(게임 실행 노드 대신 내놓는 창 출력)에는 실제 제목 대신 `@game` (UX7 C2)
-        window = dataclasses.replace(window, title=GAME_LABEL)
-        mask, scrub = self._attach_masks()
-        return AttachStart(
-            window,
-            ProcessRef(attach.pid),
-            attach.from_node,
-            mask_title=mask,
-            scrub_secrets=scrub,
-        )
-
-    def _attach_masks(
-        self,
-    ) -> tuple[Callable[[str], str] | None, Callable[[str], str] | None]:
-        """붙여 실행 기록의 가림 (UX7 검수 1·2): 워크스페이스 비밀값(환경 변수·자격 증명 관리자 —
-        `agent.log` 가림과 같은 공급자)으로 (게임 아닌 창 제목 가림 — 들어 있으면 `[가림]`, 기록되는
-        모든 글의 비밀값 원문 → `***`). 값을 모으지 못하면 (None, None) — 기록에서 다른 창 제목을
-        비운다(글 가림 단계는 없다)."""
-        import re
-
-        from kookabug_core.agent_job.runner import known_secrets
-        from kookabug_core.knowledge.formats import normalize
-
-        try:
-            raw = [x for x in known_secrets(self.spec.workspace_root, os.environ) if x]
-        except Exception:
-            return None, None
-        values = [v for v in (normalize(x) for x in raw) if v]
-
-        def mask(title: str) -> str:
-            plain = normalize(title)
-            return "[가림]" if any(v in plain for v in values) else title
-
-        if not raw:
-            return mask, None
-        pattern = re.compile(
-            "|".join(re.escape(x) for x in sorted(set(raw), key=len, reverse=True)), re.IGNORECASE
-        )
-
-        def scrub(text: str) -> str:
-            return pattern.sub("***", text)
-
-        return mask, scrub
+        # 기록에도 실제 창 제목 그대로 (UX11 B — 로컬 툴이라 제목을 가리지 않는다)
+        return AttachStart(window, ProcessRef(attach.pid), attach.from_node)
 
     def _run_executor(self, executor: Executor, program: Program, remaining_ms: int) -> _End:
         try:

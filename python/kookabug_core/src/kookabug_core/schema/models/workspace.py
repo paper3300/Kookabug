@@ -241,7 +241,7 @@ class WorkspaceRecordPolicy(BaseModel):
     redact_secrets: Annotated[
         bool | None,
         Field(
-            description="비밀값 가림. true면 비밀값을 받은 스텝의 스크린샷·영상과 민감 target의 OCR 글자를 남기지 않고 이벤트·로그·실행 기록의 비밀값을 ***로 가린다. 없으면 false(개발 환경 도구라 그대로 남긴다)"
+            description="UX11부터 무시한다 (2026-11-16 사용자 결정 — 로컬 툴이라 게임 비밀값은 가리지 않는다). 옛 설정 호환으로 받기만 한다"
         ),
     ] = None
     screenshots: Literal["off", "on"] | None = None

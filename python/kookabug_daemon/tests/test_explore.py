@@ -68,7 +68,11 @@ def test_start_end_writes_explore_json(game: FakeGame, daemon: ThreadDaemon) -> 
         assert body["agent"]["id"] == "agent-x"
         assert [s["status"] for s in ui.call("explore.list", {})["sessions"]] == ["active"]
         ended = agent.call("explore.end", {})
-        assert ended == {"session": session, "counts": {"screens": 0, "moves": 0, "untried": 0}}
+        assert ended == {
+            "session": session,
+            "counts": {"screens": 0, "moves": 0, "untried": 0},
+            "disconnected": [],
+        }
         body = record(game, session)
         assert body["status"] == "ended" and body["ended_at"]
         # 사람 연결은 세션을 열지 않는다 (에이전트 전용), 에이전트는 목록을 보지 않는다 (사람 화면)
@@ -138,8 +142,8 @@ def approval_request(client: DaemonClient, timeout: float = 15) -> dict[str, Any
     raise AssertionError("approval.requested가 오지 않았다")
 
 
-def test_protection_survives_explore_end(game: FakeGame, daemon: ThreadDaemon) -> None:
-    # R5: 탐색 세션이 끝나도(연결도 끊겨도) 비밀값을 입력한 창의 보호는 그대로
+def test_secret_input_not_protected_after_explore_end(game: FakeGame, daemon: ThreadDaemon) -> None:
+    # UX11 B: 비밀값을 입력한 창도 가리지 않는다 (탐색 세션이 끝나도·연결이 바뀌어도 이미지가 온다)
     with daemon.client(AGENT) as agent:
         agent.call("explore.start", {"title": "보호"})
         for point in (START_BUTTON, PASSWORD_FIELD):
@@ -148,8 +152,8 @@ def test_protection_survives_explore_end(game: FakeGame, daemon: ThreadDaemon) -
         agent.call("explore.end", {})
         (window,) = agent.call("windows.list", {})["windows"]
         frame = agent.call("target.capture", {"window": window["handle"]})
-        assert frame["protected"]["reason"] == "secret_field"
+        assert "protected" not in frame and frame["agent_image"]
     with daemon.client(AGENT) as again:
         (window,) = again.call("windows.list", {})["windows"]
         frame = again.call("target.capture", {"window": window["handle"]})
-        assert frame["protected"]["reason"] == "secret_field" and "agent_image" not in frame
+        assert "protected" not in frame and frame["agent_image"]

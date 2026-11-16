@@ -1,19 +1,12 @@
-"""비밀값 보호 영역 (M4 계획 2.6 "비밀값 보호 영역", 검수 M6).
+"""비밀값 칸 상자 도구 (M4 계획 2.6 "비밀값 보호 영역").
 
-비밀값·판정 대기·확인 필요 입력 칸 구간의 칸 상자는 **보호 영역**이다. 구간 시작 뒤 프레임부터
-세션 끝까지 목록에 남는다. 칸이 없음으로 확정된(`end`) 보호도 풀리지 않고, **자를 그 프레임에서**
-칸이 없다는 근거(네 근거 조각 모두·칸 자체·장면이 바뀜)가 있을 때만 그 프레임의 겹침을 허용한다
-— 일부 가림·판정 불가는 보호. 사람이 "일반 글자"로 확인한 구간은 보호 영역이 아니다.
+UX11 B (2026-11-16 사용자 결정): Kookabug은 로컬 툴이라 **녹화는 비밀값 칸을 가리지 않는다** — 자동
+자르기·대기 자르기·수동 영역·확인 넣기·이름 OCR이 칸과 겹쳐도 그대로 쓴다. 녹화는 이 모듈의
+`ProtectionSet`을 쓰지 않고, 상자 형식(`Box`)·이름 정리(`sanitize_name`)만 쓴다. 비밀번호 칸 입력을
+`$secret` 참조로 바꾸는 분류는 `recorder.classify`·`recorder.secrets`가 그대로 한다.
 
-모든 target 내보내기(자동 클릭 자르기·넓히기·대기 자르기·REC 탭 수동 영역·화면/값 확인 삽입·즉시
-저장)와 이름·제목 짓기가 이 모듈 하나를 거친다. 모두 자를 프레임(`frame`)을 같이 넘긴다:
-
-- `ProtectionSet.overlaps(box, t_ns, frame)`: 그 프레임에서 보호하는 칸과 겹치는가
-- `ProtectionSet.require_clear(box, t_ns, frame)`: 사람이 고른 영역 — 겹치면 `SecretRegionOverlap`
-- `ProtectionSet.avoid(box, point, t_ns, frame=…)`: 자동 자르기 — 겹치지 않게 줄이거나 옮긴다(점은
-  안에 남긴다). 못 하면 None
-- `safe_name(ocr_text, raw_texts, fallback)`: 이름·제목용 글자. 세션의 보호 대상 원문을 포함하면
-  버린다
+`ProtectionSet`은 칸 상자 목록과 겹침 판정이다 (그 프레임에서 칸이 없다는 근거가 있을 때만 끝난
+보호의 겹침을 허용). `SecretRegionOverlap`은 오래된 호출자 호환으로 남긴다.
 """
 
 from __future__ import annotations
@@ -25,8 +18,6 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Final
 
-from kookabug_core.recorder.fields import SecretText
-
 __all__ = [
     "NAME_MAX",
     "AbsentIn",
@@ -35,7 +26,6 @@ __all__ = [
     "ProtectionSet",
     "SecretRegionOverlap",
     "boxes_overlap",
-    "safe_name",
     "sanitize_name",
 ]
 
@@ -221,23 +211,3 @@ def sanitize_name(text: str) -> str:
     text = unicodedata.normalize("NFC", text)
     text = _NAME_BAD.sub("_", text).strip("_")
     return text[:NAME_MAX].strip("_")
-
-
-def safe_name(ocr_text: str | None, raw_texts: Iterable[SecretText], fallback: str) -> str:
-    """이름용 OCR 글자 → 이름. 글자가 없거나 세션의 보호 대상 원문(비밀값·판정 대기·확인 필요
-    구간)을 하나라도 포함하면 `fallback`. 원문은 비교에만 쓰고 결과·예외에 넣지 않는다."""
-    if not ocr_text:
-        return fallback
-    name = sanitize_name(ocr_text)
-    if not name:
-        return fallback
-    folded_name = name.casefold()
-    folded_text = ocr_text.casefold()
-    for raw in raw_texts:
-        if not raw:
-            continue
-        secret = raw.reveal().casefold()
-        # 길이 예외 없음: 짧은 값 때문에 일반 이름이 대체 이름이 되는 불편은 감수한다
-        if secret in folded_text or secret in folded_name or folded_name in secret:
-            return fallback
-    return name

@@ -1,7 +1,6 @@
-"""실제 `kookabug mcp` → daemon → runner(가짜 예제 게임)로 본 정지 화면 보호 (M7 계획 3.5a, B2a).
+"""실제 `kookabug mcp` → daemon → runner(가짜 예제 게임)로 본 정지 화면 (M7 계획 3.5a, UX11 B).
 
-양성 대조군(사람 연결의 원본 캡처에서 테스트 비밀값이 OCR로 읽힌다)을 먼저 확인하고, 에이전트가 받은
-MCP 응답 줄 전부와 `.kookabug/cache/agent`·`cache/editor` 쓰기를 관찰한다."""
+UX11 B: 비밀값을 입력한 뒤에도 에이전트 캡처·OCR이 막히지 않는다(게임 비밀값은 가리지 않는다)."""
 
 from __future__ import annotations
 
@@ -61,49 +60,27 @@ def pngs(root: Path) -> list[Path]:
     return sorted(folder.rglob("*.png")) if folder.exists() else []
 
 
-def test_real_mcp_capture_response_has_no_image_after_secret(
+def test_real_mcp_capture_after_secret_not_blocked(
     tmp_path: Path, spawned: Spawned, monkeypatch: pytest.MonkeyPatch, ocr_models: Path
 ) -> None:
     game = prepare(tmp_path, monkeypatch, ocr_models)
-    with game.daemon(game_env(tmp_path)) as d:
+    with game.daemon(game_env(tmp_path)):
         mcp = mcp_for(spawned, game, tmp_path)
         try:
             act(mcp, "kb_input_click", point=list(START_BUTTON))
-            # 비밀값 전: 이미지가 온다
-            open_shot = mcp.call_tool("kb_screen_capture", {"window": WINDOW})
-            assert any(c["type"] == "image" for c in open_shot["content"])
             act(mcp, "kb_input_click", point=list(ACCOUNT_FIELD))
             act(mcp, "kb_input_type", text="qa_tester_01")
             act(mcp, "kb_input_click", point=list(PASSWORD_FIELD))
             act(mcp, "kb_input_type", secret="acc.pw")
-            before = {p for p in pngs(game.root)}
-            seen = len(mcp.lines)
             shot = mcp.call_tool("kb_screen_capture", {"window": WINDOW})
             assert shot["isError"] is False, shot
-            assert [c["type"] for c in shot["content"]] == ["text"]
-            protected = shot["structuredContent"]["protected"]
-            assert protected["reason"] == "secret_field" and protected["hint"]
-            # 이 캡처로 agent·편집기 캐시에 새 PNG가 생기지 않았다
-            assert {p for p in pngs(game.root)} == before
-            # OCR도 거부 (값 없음)
-            error = mcp.error("kb_ocr_read", {"frame_id": shot["structuredContent"]["frame_id"]})
-            assert error["code"] == "frame_protected"
-            # 양성 대조군: 같은 창을 사람이 캡처하면 그 칸에 값이 보인다
-            with d.client() as ui:
-                (window,) = ui.call("windows.list", {})["windows"]
-                frame = ui.call("target.capture", {"window": window["handle"]})
-                read = ui.call(
-                    "target.read_text", {"frame_id": frame["frame_id"], "rect": PASSWORD_BOX}
-                )
-                assert SECRET in read["text"].replace(" ", "").upper(), read
-            # 에이전트가 받은 MCP 응답 줄 전부에 값이 없다 (이미지 데이터 포함)
-            raw = b"\n".join(mcp.lines).decode("utf-8", "replace")
-            assert SECRET not in raw
-            after = [json.loads(line) for line in mcp.lines[seen:]]
-            assert not any(
-                c.get("type") == "image"
-                for m in after
-                for c in (m.get("result") or {}).get("content", [])
-            )
+            assert any(c["type"] == "image" for c in shot["content"])
+            assert "protected" not in shot["structuredContent"]
+            # OCR도 막히지 않고 칸의 값이 그대로 읽힌다
+            frame_id = shot["structuredContent"]["frame_id"]
+            read = mcp.call_tool("kb_ocr_read", {"frame_id": frame_id, "rect": PASSWORD_BOX})
+            assert read["isError"] is False, read
+            text = json.dumps(read["structuredContent"], ensure_ascii=False)
+            assert SECRET in text.replace(" ", "").upper()
         finally:
             mcp.close()

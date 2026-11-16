@@ -1,13 +1,11 @@
 """에이전트로 나가는 실행 기록 (M5 계획 3.8, 사용자 결정 U1).
 
-에이전트(외부 AI 서비스로 가는) 연결에 주는 실행 기록은 runner가 실행 때 남긴 **분류**로 가린다.
-값을 지금 비밀값과 맞대 보지 않으므로 그 뒤 비밀값을 바꾸거나 지워도 가림이 그대로다. 사람(UI)
-연결의 기록 보기는 이 모듈을 쓰지 않는다(D3 그대로 원문).
+게임 비밀값은 가리지 않는다 (UX11 B, 2026-11-16 — 로컬 툴): 이벤트·`run.json`은 원문 그대로,
+`secret: true` 스텝·`agent_withhold` 경로의 증거도 준다. `secret_paths`·`agent_mask` 분류는 기록에
+남아 있어도 쓰지 않는다. 사람(UI) 연결의 기록 보기는 이 모듈을 쓰지 않는다.
 
-- 분류 있는 기록(`run.json`의 `agent_mask: 1`): 이벤트·`run.json`의 `secret_paths` 자리는 `***`.
-  `secret: true` 스텝(그 안쪽 스텝 포함)의 이미지·글자 파일과 `agent_withhold` 경로는 주지 않는다
-- 분류 없는 기록(M5 이전·손상): **안전 필드만**(판정·스텝·노드·출구·상태·오류 코드·시각·기간).
-  글자(메시지·입출력·로그·사유)·파일은 주지 않는다
+- 분류 없는 기록(M5 이전·손상)도 같은 원문을 준다. `SAFE_EVENT_FIELDS`는 안전 필드만 보는 곳(채택
+  등)이 쓴다
 - 파일은 `steps/`·`thumbs/` 아래 그 스텝의 증거와 `video/index.json`만. 영상 조각·`events.jsonl`·
   `logs/`·`snapshot/`은 주지 않는다
 
@@ -113,25 +111,14 @@ def mask_pointer(value: Any, pointer: str) -> None:
 
 
 def _masked(value: Mapping[str, Any]) -> dict[str, Any]:
-    out = copy.deepcopy(dict(value))
-    for pointer in value.get("secret_paths") or ():
-        if isinstance(pointer, str):
-            mask_pointer(out, pointer)
-    return out
+    """에이전트용 사본 (가리지 않는다 — UX11 B)."""
+    return copy.deepcopy(dict(value))
 
 
 def mask_run_summary(summary: Mapping[str, Any], folder: Path | None) -> dict[str, Any]:
-    """`run.status`·`run.list` 요약 하나를 에이전트용으로: 사유(`reason`)는 분류가 비밀이라 하거나
-    분류 없는 기록이면 뺀다."""
-    out = dict(summary)
-    if "reason" not in out:
-        return out
-    data = None if folder is None else read_run_json(folder / RUN_JSON_FILE)
-    if data is None or data.get("agent_mask") != AGENT_MASK:
-        out.pop("reason")
-    elif "/reason" in (data.get("secret_paths") or ()):
-        out["reason"] = MASK
-    return out
+    """`run.status`·`run.list` 요약 하나를 에이전트용으로 (사유도 원문 그대로 — UX11 B)."""
+    del folder
+    return dict(summary)
 
 
 @dataclass(slots=True)
@@ -163,13 +150,12 @@ class AgentRun:
     events: list[dict[str, Any]]
     steps: dict[str, StepFacts]
     hidden: frozenset[str]
-    """`secret: true` 스텝과 그 안쪽 스텝, 자기나 조상이 끝나지 않은 스텝 (이미지·글자 파일을 주지
-    않는다)."""
+    """증거를 주지 않는 스텝 (UX11 B부터 늘 비어 있다 — 비밀값 스텝도 준다)."""
 
     @classmethod
     def load(cls, run_id: str, folder: Path) -> AgentRun:
         run_json = read_run_json(folder / RUN_JSON_FILE) or {}
-        classified = run_json.get("agent_mask") == AGENT_MASK
+        classified = True  # 분류와 상관없이 원문을 준다 (UX11 B)
         events = read_run(folder).events
         steps: dict[str, StepFacts] = {}
         for event in events:
@@ -208,21 +194,6 @@ class AgentRun:
                             files.append(rel)
                 facts.files = files
         hidden: set[str] = set()
-        for step, facts in steps.items():
-            current: StepFacts | None = facts
-            while current is not None:
-                # 비밀 분류는 step.end에 있다: 끝나지 않은 스텝(실행 중·중단)이 자기나 조상에 있으면
-                # 아직 분류가 끝나지 않은 것이라 주지 않는다 (B2 검수 H1)
-                if current.secret or current.end is None:
-                    hidden.add(step)
-                    break
-                if current.parent is None:
-                    break
-                parent = steps.get(current.parent)
-                if parent is None:  # 부모 step.start가 없는 기록 (손상) — 분류를 알 수 없다
-                    hidden.add(step)
-                    break
-                current = parent
         return cls(run_id, folder, run_json, classified, events, steps, frozenset(hidden))
 
     # ------------------------------------------------------------ 이벤트·요약
@@ -288,19 +259,6 @@ class AgentRun:
         if facts is None or (rel not in facts.files and not rel.startswith("thumbs/")):
             return RequestFailed(
                 "not_evidence", f"'{rel}'은(는) 이 실행의 증거 파일이 아니다", path=rel
-            )
-        if step in self.hidden:
-            return RequestFailed(
-                "secret_step",
-                f"'{rel}'은(는) 비밀값을 다뤘거나 아직 분류가 끝나지 않은(끝나지 않은 호출 안) "
-                f"스텝 {step}의 증거라 주지 않는다",
-                path=rel,
-            )
-        if rel in facts.withhold:
-            return RequestFailed(
-                "secret_step",
-                f"'{rel}'은(는) 비밀값 가림이 켜져 있었다면 남지 않았을 증거라 주지 않는다",
-                path=rel,
             )
         return None
 

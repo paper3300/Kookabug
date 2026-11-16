@@ -263,8 +263,8 @@ class RunSpec:
     agent: Mapping[str, Any] | None = None
     """그 실행을 낸 에이전트 (`{id}`, 에이전트 제어 실행)."""
     record_override: Mapping[str, Any] | None = None
-    """실행별 기록 강제 (`{screenshots: off, video: off, redact_secrets: true, by}`, M7 R2). 시작
-    정책에 덮고 `run.json`에 남긴다."""
+    """실행별 기록 강제 (`{screenshots: off, video: off, by}`, M7 R2 — `redact_secrets`는 무시,
+    UX11 B). 시작 정책에 덮고 `run.json`에 남긴다."""
     bound_window: BoundWindow | None = None
     """에이전트 제어 실행의 대상 창 (M7 R1). 있으면 창 붙기는 이 바인딩만 쓴다."""
     unattended: bool = False

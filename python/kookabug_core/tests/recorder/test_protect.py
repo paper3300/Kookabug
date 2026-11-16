@@ -1,17 +1,16 @@
-"""보호 영역 공용 검사 (M4 계획 2.6 "비밀값 보호 영역", 검수 M6, T6) — 순수 부분.
+"""칸 상자 목록 `ProtectionSet` 공용 검사 (M4 계획 2.6) — 순수 부분.
 
-자르기·넓히기·대기 자르기와 맞물린 검사는 `kookabug_platform/tests/test_recorder_protect_crop.py`.
+UX11 B: 녹화는 이 목록으로 비밀값 칸을 가리지 않는다 (`kookabug_platform/tests/
+test_recorder_protect_crop.py`가 "가리지 않는다"를 본다). 이름도 원문을 걸러 내지 않는다.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from kookabug_core.recorder.fields import SecretText
 from kookabug_core.recorder.protect import (
     ProtectionSet,
     SecretRegionOverlap,
-    safe_name,
     sanitize_name,
 )
 
@@ -88,28 +87,6 @@ def test_avoid_shrinks_keeps_point_or_gives_up() -> None:
     assert safe[0] <= 560 < safe[0] + safe[2] and safe[1] <= 230 < safe[1] + safe[3]
     assert p.avoid(box, (560, 310), 2000 * MS) is None  # 점이 비밀 칸 안
     assert p.avoid((380, 200, 400, 90), (560, 230), 2000 * MS, min_size=(16, 120)) is None
-
-
-def test_ocr_name_not_containing_secret() -> None:
-    secret = SecretText("hunter22")
-    assert safe_name("로그인", [secret], "click_3") == "로그인"
-    assert safe_name("pw hunter22!", [secret], "click_3") == "click_3"
-    assert safe_name("HUNTER22", [secret], "click_3") == "click_3"  # 대소문자 무시
-    assert safe_name("hunter", [secret], "click_3") == "click_3"  # 원문 일부도 버림
-    assert safe_name(None, [secret], "click_3") == "click_3"
-    assert safe_name("  ", [secret], "click_3") == "click_3"
-
-
-def test_one_char_secret_name_falls_back() -> None:
-    # review_B2_1 H2: 한 글자 비밀값도 이름·제목에 들어가지 않는다 (길이 예외 없음)
-    from kookabug_core.recorder.build import click_drafts
-
-    secret = SecretText("Q")
-    name = safe_name("Q", [secret], "click_2")
-    assert name == "click_2"
-    assert safe_name("Quit", [secret], "click_2") == "click_2"  # 짧은 값 때문에 대체 — 감수
-    assert '"Q"' not in click_drafts(f"targets/{name}.target.json", name)[0].title
-    assert safe_name("로그인", [secret], "click_2") == "로그인"
 
 
 def test_sanitize_name_for_files() -> None:

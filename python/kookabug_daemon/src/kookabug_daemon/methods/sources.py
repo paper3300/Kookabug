@@ -3,14 +3,13 @@
 Agent 도구 `kb_source_list`·`kb_source_read`(툴셋 core, 읽기). 본체는 코어
 `knowledge.source_read`: `kookabug.json#sources`·`local.json`에 등록된 원본 루트 아래만,
 링크·정션·`..`·파생 폴더·URL은 거부, 쓰기 없음. 돌려주는 글은 `agent.log`와 같은 가림(작업 토큰
-원문 + 워크스페이스 비밀값 공급자)을 하고, 가림 값을 못 모으면 글을 주지 않는다
-(`secret_unchecked`).
+원문 + runner가 에이전트에 넣은 인증·환경 값 — 워크스페이스 비밀값은 가리지 않음)을 하고, 가림
+값을 못 모으면 글을 주지 않는다 (`secret_unchecked`).
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import Any, Final
 
 from kookabug_core.knowledge import source_read
@@ -18,17 +17,21 @@ from kookabug_core.workspace import Workspace
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.methods.knowledge import run_guarded
 
-__all__ = ["METHODS", "secret_values"]
+__all__ = ["METHODS", "credential_values", "secret_values"]
 
 
 def secret_values(call: Call) -> list[str]:
-    """가림 값: daemon 메모리의 작업 토큰 원문 + 워크스페이스 비밀값 공급자 값 (`agent.log`와 같다).
-    못 모으면 예외 — 부르는 쪽은 글을 주지 않는다."""
-    from kookabug_core.agent_job.runner import known_secrets
+    """가림 값 = Kookabug 자체 자격 증명 (`credential_values`). 워크스페이스 비밀값은 용도와
+    무관하게 가리지 않는다 (UX11 B)."""
+    return credential_values(call.daemon)
 
-    jobs = getattr(call.daemon, "jobs", None)
-    tokens = [] if jobs is None else list(jobs.secret_values())
-    return tokens + list(known_secrets(call.daemon.root, os.environ))
+
+def credential_values(daemon: Any) -> list[str]:
+    """실행 중인 작업들이 daemon 메모리에 가진 작업 토큰 + runner가 그 에이전트 프로세스에 넣은
+    인증·환경 값 (`JobRegistry.secret_values`). 파일을 읽지 않는다 — 작업 활동·글자 검사·탐색 승인
+    감사도 같은 값을 쓴다."""
+    jobs = getattr(daemon, "jobs", None)
+    return [] if jobs is None else list(jobs.secret_values())
 
 
 def _arg(call: Call) -> str:

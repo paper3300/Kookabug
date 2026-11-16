@@ -20,9 +20,12 @@ export type NormRect = [number, number, number, number];
  */
 export type ScreenRef = string;
 /**
- * 이동 입력: 요소 클릭·점 클릭·키
+ * 이동 입력: 요소 클릭·점 클릭·키·기다림(입력 없이 저절로 바뀜 — 로딩·컷신)
  */
 export type ScreenVia =
+  | {
+      wait: {};
+    }
   | {
       click: {
         element: string;

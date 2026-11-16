@@ -444,8 +444,8 @@ def test_init_summary_from_records(tmp_path: Path) -> None:
 @pytest.mark.process
 @pytest.mark.timeout(300)
 def test_note_secret_checked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`kb_report_note`(job.note)의 글은 글자 검사를 거친다. 걸린 글은 저장하지 않고 보고에도
-    없다."""
+    """`kb_report_note`(job.note)의 글은 작업 토큰 검사를 거친다 — 토큰이 든 글은 저장하지 않는다.
+    게임 비밀값은 가리지 않는다 (UX11 B — 그대로 저장·보고)."""
     secret = "Qx7-note-secret-991"
     monkeypatch.setenv("KOOKABUG_SECRET_ACC_PW", secret)
     root = copy_example_workspace(tmp_path)
@@ -454,7 +454,6 @@ def test_note_secret_checked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     body["permissions"] = {"preset": "curator"}
     local.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
     with ThreadDaemon(root) as d:
-        d.daemon.guard.secret_keys = {"acc.pw"}  # 이 워크스페이스에서 비밀값을 넣은 적이 있다
         job = d.begin_job({"playbook": "repair"})
         info = {
             "kind": "agent",
@@ -467,15 +466,13 @@ def test_note_secret_checked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         with d.client(info) as conn:
             conn.call("agent.toolsets.enable", {"toolsets": ["cases"]})
             with pytest.raises(DaemonError) as caught:
-                conn.call("job.note", {"text": f"로그인 비밀번호는 {secret} 이다"})
+                conn.call("job.note", {"text": f"토큰은 {job['token']} 이다"})
             assert caught.value.kind == "secret_in_text"
-            assert secret not in json.dumps(caught.value.data, ensure_ascii=False)
-            # 양성 대조: 깨끗한 글은 받는다
-            conn.call("job.note", {"text": "구매 단추가 옮겨졌다"})
+            assert job["token"] not in json.dumps(caught.value.data, ensure_ascii=False)
+            conn.call("job.note", {"text": f"로그인 비밀번호는 {secret} 이다"})
         with d.client() as ui:
             ended = ui.call("job.finish", {"job": job["job"]}, timeout=300)
     stored = reports.read_report(root, job["job"])
-    assert stored is not None and stored["notes"] == "구매 단추가 옮겨졌다"
+    assert stored is not None and stored["notes"] == f"로그인 비밀번호는 {secret} 이다"
     rendered = (root / ended["report"]).read_text("utf-8")
-    assert "구매 단추가 옮겨졌다" in rendered and secret not in rendered
-    assert secret not in (root / "knowledge" / "log.jsonl").read_text("utf-8")
+    assert secret in rendered and job["token"] not in rendered

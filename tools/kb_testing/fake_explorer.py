@@ -4,8 +4,9 @@
 
 `kb_toolset_enable[observe, control, screens]` → `kb_explore_start` → 장면마다 캡처 →
 `kb_screen_identify` → 처음이면 `kb_screen_save` → 입력 → … → `kb_explore_end`. 단계마다 기대
-(처음 보는 화면 / 아는 화면 / 보호 중)를 단언한다. 보호 중 화면에 판정 조건을 저장하려 하면
-`frame_protected`여야 한다(`try_save`). 이동은 다음 화면을 확인한 뒤 앞 화면 카드에 `to`로 남긴다.
+(처음 보는 화면 / 아는 화면 / 보호 중 / 판정 없이 넘김 plain)를 단언한다. 보호 중 화면에 판정
+조건을 저장하려 하면 `frame_protected`여야 한다(`try_save`). 이동은 다음 화면을 확인한 뒤 앞 화면
+카드에 `to`로 남긴다.
 
 검사 결과물을 미리 쓰지 않는다 — 모든 것이 MCP → daemon → runner(가짜 게임)를 거친다. 권한은
 워크스페이스 설정(control allow)을 그대로 쓴다(사람 확인 카드는 B3 이후).
@@ -70,12 +71,18 @@ def run_script(mcp: McpClient, script: Mapping[str, Any]) -> dict[str, Any]:
     }
     pending: tuple[str, Mapping[str, Any]] | None = None  # (앞 화면 키, via) — 다음 화면이 to
 
+    last_image: list[str | None] = [None]
+    """마지막 캡처의 이미지 (기다림 단계가 화면이 바뀌었는지 본다 — 판정 조건 없는 후보는 식별로
+    가릴 수 없다)."""
+
     def capture() -> dict[str, Any]:
         shot = mcp.call_tool("kb_screen_capture", {"window": window}, timeout=60)
         if shot.get("isError"):
             raise ExploreFailed(f"캡처 실패: {shot['content'][0]['text']}")
-        if any(c.get("type") == "image" for c in shot["content"]):
+        images = [c for c in shot["content"] if c.get("type") == "image"]
+        if images:
             summary["images"] += 1
+        last_image[0] = str(images[0].get("data")) if images else None
         return shot["structuredContent"]
 
     def current(frame: Mapping[str, Any]) -> str | None:
@@ -112,11 +119,17 @@ def run_script(mcp: McpClient, script: Mapping[str, Any]) -> dict[str, Any]:
             frame = capture()
             expect = step["see"]
             entry["see"] = expect
-            if expect == "protected":
+            if expect in ("protected", "plain"):
+                # plain: 판정하지 않고 넘기는 화면 (UX11 B — 비밀값을 넣은 화면도 보호하지 않는다)
                 protected = frame.get("protected")
-                if not protected or protected["reason"] != step.get("reason", protected["reason"]):
+                if expect == "plain" and protected:
+                    raise ExploreFailed(f"단계 {index}: 보호 중이면 안 된다 ({protected})")
+                if expect == "protected" and (
+                    not protected or protected["reason"] != step.get("reason", protected["reason"])
+                ):
                     raise ExploreFailed(f"단계 {index}: 보호 중이어야 한다 ({frame})")
-                summary["protected"] += 1
+                if protected:
+                    summary["protected"] += 1
                 if "try_save" in step:
                     # 보호 중 화면에 판정 조건을 저장하려 하면 거부 (스크린샷·crop·OCR 없음)
                     error = _error(
@@ -132,7 +145,7 @@ def run_script(mcp: McpClient, script: Mapping[str, Any]) -> dict[str, Any]:
                         raise ExploreFailed(f"단계 {index}: frame_protected여야 한다 ({error})")
                     entry["save_refused"] = error["code"]
                 if "save_bare" in step:
-                    # 보호 중 화면: 판정 조건·스크린샷 없이 제목만 (미완성 후보 — 사람이 채운다)
+                    # 판정 조건·스크린샷 없이 제목만 (미완성 후보 — 사람이 채운다)
                     bare = dict(step["save_bare"])
                     saved = _tool(mcp, "kb_screen_save", {"frame_id": frame["frame_id"], **bare})
                     if saved["shot"] != "omitted" or not saved.get("incomplete"):
@@ -162,9 +175,10 @@ def run_script(mcp: McpClient, script: Mapping[str, Any]) -> dict[str, Any]:
                 link(key, frame)
                 entry["screen"] = key
         elif step.get("wait") == "change":
+            before = last_image[0]
             for _ in range(int(step.get("max_captures", 8))):
                 frame = capture()
-                if frame.get("protected"):
+                if frame.get("protected") or last_image[0] == before:
                     continue
                 if current(frame) != step["from"]:
                     break

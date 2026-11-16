@@ -34,16 +34,15 @@ def test_default_is_on() -> None:
     assert StepPolicy(policy).video == "on"
 
 
-def test_redact_secrets_workspace_only_default_false() -> None:
-    # D3: 비밀값 가림은 워크스페이스 층에서만 정하고, 없으면 false
+def test_redact_secrets_ignored() -> None:
+    # UX11 B: 비밀값은 가리지 않는다 — 워크스페이스·아래 층·실행별 강제의 redact_secrets는 무시
     assert workspace_policy(None, "kookabug.json#/record").redact_secrets is False
-    assert workspace_policy({"video": "on"}, "k").redact_secrets is False
     on = workspace_policy({"redact_secrets": True}, "k")
-    assert on.redact_secrets is True and on.video == "failed_only"
-    # 아래 층(테스트·서브그래프·노드)을 더해도 그대로, 아래 층의 값은 보지 않는다
-    lower = on.layer({"screenshots": "off", "redact_secrets": False}, "g#/record")
-    assert lower.redact_secrets is True and lower.screenshots == "off"
+    assert on.redact_secrets is False and on.video == "failed_only"
     assert RecordPolicy().layer({"redact_secrets": True}, "g").redact_secrets is False
+    forced = RecordPolicy().forced({"screenshots": "off", "video": "off", "redact_secrets": True})
+    assert forced.redact_secrets is False
+    assert (forced.screenshots, forced.video) == ("off", "off")
 
 
 @pytest.mark.parametrize("level", LEVELS)

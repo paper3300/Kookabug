@@ -106,7 +106,8 @@ class ScreenElement:
 
 @dataclass(frozen=True, slots=True)
 class ScreenMove:
-    """이동 하나. `via`는 `element`(요소 클릭)·`point`(점 클릭)·`key` 중 하나만 있다."""
+    """이동 하나. `via`는 `element`(요소 클릭)·`point`(점 클릭)·`key`·`wait`(입력 없이 저절로
+    바뀜 — 로딩·컷신, UX11 A1) 중 하나만 있다."""
 
     status: Literal["tried", "untried"]
     to: str | None
@@ -114,6 +115,7 @@ class ScreenMove:
     point: tuple[float, float] | None = None
     key: str | None = None
     note: str | None = None
+    wait: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -386,6 +388,8 @@ def _move(data: Mapping[str, Any], names: set[str], rel: str) -> ScreenMove:
     status = data["status"]
     if status == "tried" and to is None:
         raise ScreenFileError(f"화면 파일 '{rel}': 가 본 이동(tried)에는 to가 있어야 한다")
+    if "wait" in via:
+        return ScreenMove(status, to, wait=True, note=data.get("note"))
     click = via.get("click")
     if click is not None and "element" in click:
         if click["element"] not in names:

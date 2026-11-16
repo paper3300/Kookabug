@@ -1,7 +1,8 @@
 """세션 저장소 `steps.json`과 늦은 비밀값 (M5 SECFIX).
 
-스텝을 비밀값으로 바꾼 RPC가 끝난 뒤에는 저장소에 바뀌기 전 스냅숏(원문이 든 재사용 target 이름·
-제목)이 남거나 다시 써지지 않는다. 부하 때만 나던 순서를 이벤트·실제 파일 잠금으로 강제한다:
+스텝을 비밀값으로 바꾼 RPC가 끝난 뒤에는 저장소에 바뀌기 전 스냅숏(일반 글자 상태)이 남거나 다시
+써지지 않는다. UX11 B: 재사용 target 이름·제목의 원문은 가리지 않으므로, 저장소가 새 상태(글자
+스텝 `secret`)인지로 본다. 부하 때만 나던 순서를 이벤트·실제 파일 잠금으로 강제한다:
 - 바꾼 뒤 쓰기가 늦음: RPC는 그 쓰기가 끝나기 전에 응답하지 않고, 응답 직후 디스크에 원문이 없다
 - 바꾸기 전 스냅숏을 든 쓰기가 늦게 끝남: 바꾼 뒤 저장소를 덮지 못한다
 - 다른 쪽이 `steps.json`을 연 채(Windows 실제 핸들): 쓰기 공유가 있으면 제자리 덮어써 깨끗하고,
@@ -72,6 +73,11 @@ def recorded(rig: RecorderRig, d: Any, ui: DaemonClient) -> tuple[RecorderSessio
     assert session is not None and session.store is not None
     assert RAW in stored_text(session)
     return session, next(s for s in steps if s["kind"] == "text")
+
+
+def secret_stored(text: str) -> bool:
+    """저장소 내용이 비밀값으로 바꾼 뒤 상태인가 (글자 스텝 `secret`, 일반 상태 스냅숏이 아님)."""
+    return '"text_state": "secret"' in text and '"text_state": "ordinary"' not in text
 
 
 def stored_text(session: RecorderSession) -> str:
@@ -146,7 +152,7 @@ def test_secret_rpc_answers_only_after_store_is_clean(tmp_path: Path) -> None:
             on_disk = stored_text(session)  # 응답 직후 그대로 읽는다
             rpc.join(WAIT_S)
         assert out == [None], out
-        assert on_disk and RAW not in on_disk
+        assert on_disk and secret_stored(on_disk)
 
 
 def test_stale_snapshot_cannot_overwrite_after_secret(tmp_path: Path) -> None:
@@ -183,7 +189,7 @@ def test_stale_snapshot_cannot_overwrite_after_secret(tmp_path: Path) -> None:
             on_disk = stored_text(session)
         assert not stale.is_alive() and out == [None], out
         assert not answered_early, "지난 스냅숏 쓰기를 기다리지 않고 응답했다"
-        assert on_disk and RAW not in on_disk
+        assert on_disk and secret_stored(on_disk)
 
 
 # ------------------------------------------------------------ 실제 파일 잠금 (Windows)
@@ -238,8 +244,7 @@ def test_reader_with_write_share_is_overwritten_in_place(tmp_path: Path) -> None
         with held_open(session.store.folder / "steps.json", FILE_SHARE_READ | FILE_SHARE_WRITE):
             make_secret(ui, text)
             on_disk = stored_text(session)
-            assert RAW not in str(steps_of(ui))
-        assert on_disk and RAW not in on_disk
+        assert on_disk and secret_stored(on_disk)
         assert "store_unclean" not in warning_codes(ui)
 
 
@@ -260,12 +265,11 @@ def test_reader_without_write_share_fails_rpc_and_cleans_later(tmp_path: Path) -
                 caught.value
             )
             steps = steps_of(ui)
-            assert RAW not in str(steps)
             assert next(s for s in steps if s["step"] == text["step"])["text_state"] == "secret"
             assert "store_unclean" in warning_codes(ui)
         wait_until(lambda: "store_unclean" not in warning_codes(ui), timeout=WAIT_S, interval=0.1)
         on_disk = stored_text(session)  # 경고를 거둔 뒤에는 다시 쓰지 않는다
-        assert on_disk and RAW not in on_disk  # 새 내용으로 다시 썼다
+        assert on_disk and secret_stored(on_disk)  # 새 내용으로 다시 썼다
 
 
 @windows_only
@@ -425,10 +429,9 @@ def test_state_rpc_does_not_stall_event_loop_during_store_write(tmp_path: Path) 
 # ------------------------------------------------------------ 늦게 생긴 스텝
 
 
-def test_reuse_made_after_secret_does_not_carry_raw(tmp_path: Path) -> None:
-    """녹화 중 비밀값으로 바꾼 **뒤에** 만든 재사용 클릭(기존 파일 이름에 원문): 바꾼 RPC보다 늦게
-    생긴 스텝도 경로·제목을 공개 스텝·저장소에 싣지 않는다 (스텝을 만드는 `refresh`가 같은 잠금
-    안에서 재검사한다)."""
+def test_reuse_made_after_secret_keeps_path(tmp_path: Path) -> None:
+    """녹화 중 비밀값으로 바꾼 **뒤에** 만든 재사용 클릭(기존 파일 이름에 원문): UX11 B — 경로·
+    제목을 가리지 않고 재사용 그대로 둔다."""
     s = ScriptBuilder(scene="login")
     s.at(500).click(ACCOUNT_POINT)
     s.at(1000).type(RAW)
@@ -450,10 +453,9 @@ def test_reuse_made_after_secret_does_not_carry_raw(tmp_path: Path) -> None:
         ui.call("recorder.stop", {})
         steps = steps_of(ui)
         late = [s for s in steps if s["kind"] == "click" and s["t_ms"] >= 4500]
-        assert late and "secret_overlap" in late[0]["needs_review"]
-        assert late[0]["target"] == {"source": "none"}
-        assert RAW not in str(steps)
+        assert late and "secret_overlap" not in late[0]["needs_review"]
+        assert late[0]["target"]["source"] == "file" and RAW in late[0]["target"]["path"]
         session = d.daemon.recorder.session
         assert session is not None
         on_disk = stored_text(session)
-        assert on_disk and RAW not in on_disk
+        assert on_disk and RAW in on_disk and secret_stored(on_disk)

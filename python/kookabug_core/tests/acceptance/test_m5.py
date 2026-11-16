@@ -378,7 +378,7 @@ def test_agent_analyzes_secret_login_failure_via_mcp(
     example: Path, tmp_path: Path, start_mcp: Callable[..., McpClient]
 ) -> None:
     """완료 기준 1 (계획 9절 B6 메모): 비밀번호를 호출 인자로 받는 예제 로그인 실패 — 실패
-    노드·출구는 주고, 메시지는 가리고, 비밀 호출 안쪽 증거는 주지 않는다(`[]`·`secret_step`)."""
+    노드·출구와 증거를 준다. UX11 B부터 비밀 호출 안쪽 증거·원문도 가리지 않는다."""
     broken = "tests/broken/swapped_target.graph.json"
     write_local(example, {"preset": "runner"})
     with example_daemon(example, tmp_path):
@@ -387,14 +387,12 @@ def test_agent_analyzes_secret_login_failure_via_mcp(
         status = run_and_wait(mcp, broken, "m5-login")
         assert status["outcome"]["verdict"] == "fail"
         summary = status["failure"]
-        assert summary["failure_path"][0] == "n_enter_world"
         # 실패 위치 "월드 접속 > 타이틀 대기" (예제 깨진 각본 설명)
         assert summary["failure_path"] == ["n_enter_world", "n_wait_title"]
         assert summary["failure"]["node"] == "n_wait_title"
         assert summary["failure"]["exit"] == "timeout"
-        assert summary["evidence"] == []  # 비밀값을 받은 호출 스텝 안쪽 이미지는 주지 않는다
+        assert summary["evidence"]  # 비밀값을 받은 호출 안쪽 증거도 준다
         run_id = status["run_id"]
-        # 안쪽 스텝의 증거 파일은 디스크에 있지만 에이전트에게는 secret_step
         inner = [
             path
             for e in events_of(example, run_id)
@@ -403,20 +401,7 @@ def test_agent_analyzes_secret_login_failure_via_mcp(
         ]
         assert inner, "안쪽 스텝 증거가 기록에 없다"
         for path in inner:
-            error = mcp.error("kb_run_artifact_get", {"run": run_id, "path": path})
-            assert error["code"] == "secret_step", (path, error)
-        seen = json.dumps(
-            [
-                status,
-                mcp.data("kb_run_events", {"run": run_id, "limit": 500}),
-                mcp.data("kb_log_search", {"query": "sample"}),
-                mcp.data("kb_run_status"),
-            ],
-            ensure_ascii=False,
-        )
-        assert EXAMPLE_PW not in seen
-        # 사람이 보는 기록에는 원문 그대로 있다 (D3 — 가림은 에이전트로 나가는 길에만)
-        assert EXAMPLE_PW in (run_folder(example, run_id) / "events.jsonl").read_text("utf-8")
+            mcp.data("kb_run_artifact_get", {"run": run_id, "path": path})
         assert mcp.close() == 0
 
 
@@ -1097,105 +1082,38 @@ def secret_run_graph() -> GraphBuilder:
     )  # fmt: skip
 
 
-def test_agent_never_sees_secret_values(
+def test_agent_sees_secret_values_as_is(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ocr_models: Path
 ) -> None:
+    """UX11 B: 에이전트용 기록 보기도 게임 비밀값을 가리지 않는다 (입력·로그·실패 메시지·판정
+    사유·비밀 스텝 증거 그대로). 원문 기록 파일을 주는 사람용 길은 그대로 에이전트에게 막혀 있다."""
     monkeypatch.setenv("KOOKABUG_SECRET_ACC_PW", PW)
     rig = RunRig.make(tmp_path / "rig", secret_run_graph(), KOOKABUG_SECRET_ACC_PW=PW)
     write_json(rig.root, ".kookabug/local.json",
                {"format": "kookabug.local/0", "permissions": {"preset": "full"}})  # fmt: skip
-
-    # ① 실제 runner 실행: 입력·로그·실패 메시지·판정 사유에 비밀값 (D3 — 기록에는 원문)
     agent = agent_hello()
     with rig.daemon() as d, d.client() as ui, d.client(agent) as bot:
         run_id = ui.call("run.start", {"path": TEST})["run_id"]
         wait_ended(ui, run_id)
-        assert PW in ui.call("run.file", {"run_id": run_id, "name": "events_tail"})["text"]
         seen = [
             bot.call("run.events", {"run_id": run_id, "limit": 500}),
             bot.call("run.failure", {"run_id": run_id}),
-            bot.call("run.status", {"run_id": run_id}),
-            bot.call("run.list", {}),
-            bot.call("run.search", {"query": PW}),
         ]
-        assert PW not in json.dumps(seen, ensure_ascii=False)
-        assert seen[1]["failure"]["node"] == "n_cmp" and seen[1]["reason"] == "***"
-        assert seen[4]["matches"] == []
-    # 실행 뒤 비밀값을 바꾸거나 지워도 가림은 그대로 (분류가 기록에 있다)
-    for value in ("changed-value", None):
-        if value is None:
-            rig.env.pop("KOOKABUG_SECRET_ACC_PW", None)
-            monkeypatch.delenv("KOOKABUG_SECRET_ACC_PW")
-        else:
-            rig.env["KOOKABUG_SECRET_ACC_PW"] = value
-            monkeypatch.setenv("KOOKABUG_SECRET_ACC_PW", value)
-        with rig.daemon() as d, d.client(agent) as bot:
-            got = bot.call("run.events", {"run_id": run_id, "limit": 500})
-            assert PW not in json.dumps(got, ensure_ascii=False)
-            assert bot.call("run.failure", {"run_id": run_id})["reason"] == "***"
+        assert PW in json.dumps(seen, ensure_ascii=False)
+        assert seen[1]["failure"]["node"] == "n_cmp" and seen[1]["reason"] != "***"
 
-    # ② 증거 파일: $link(변수)·호출 인자로 받은 비밀 스텝, 민감 target OCR 글자 — 실제 runner가 쓴
-    # 실행 폴더·증거 그대로
-    monkeypatch.setenv("KOOKABUG_SECRET_ACC_PW", PW)
     ev = evidence_rig(tmp_path / "evidence", ocr_models)
     with ev.daemon() as d, d.client() as ui, d.client(agent) as bot:
         eng = ui.call("run.start", {"path": TEST})["run_id"]
         wait_ended(ui, eng)
-        folder = run_folder(ev.root, eng)
-        assert json.loads((folder / "run.json").read_text(encoding="utf-8"))["agent_mask"] == 1
         events = events_of(ev.root, eng)
         ends = {e["step"]: e for e in events if e["event"] == "step.end"}
         nodes = {e["step"]: e["node"] for e in events if e["event"] == "step.start"}
         by_node = {nodes[s]: ends[s] for s in ends if s in nodes}
-        assert {"n_use", "n_in", "n_read", "n_x"} <= set(by_node), by_node
-        ocr = by_node["n_read"]["outputs"]["text"]
-        assert isinstance(ocr, str) and "Server" in ocr, ocr  # 실제 OCR, 사람 기록에는 원문 (D3)
-        assert ocr in ui.call("run.file", {"run_id": eng, "name": "events_tail"})["text"]
-        secret_shots = [*by_node["n_use"]["artifacts"], *by_node["n_in"]["artifacts"]]
-        assert len(secret_shots) == 2, by_node
-        withheld = [*secret_shots, *by_node["n_read"].get("artifacts", [])]
-        for rel in withheld:
-            assert (folder / rel).is_file(), rel
-            error = refused(bot, "run.artifact", {"run_id": eng, "path": rel})
-            assert error.kind == "secret_step", rel
-        (plain,) = by_node["n_plain"]["artifacts"]
-        assert bot.call("run.artifact", {"run_id": eng, "path": plain})["kind"] == "image"
-        got = bot.call("run.events", {"run_id": eng, "limit": 500})
-        failure = bot.call("run.failure", {"run_id": eng})
-        assert not set(withheld) & set(failure["evidence"])
-        text = json.dumps([got, failure], ensure_ascii=False)
-        assert PW not in text and ocr not in text
-        rel = f"runs/{folder.name}/{secret_shots[0]}"
-        assert refused(bot, "target.load_image", {"path": rel}).kind == "agent_use_safe_api"
+        for rel in [*by_node["n_use"]["artifacts"], *by_node["n_in"]["artifacts"]]:
+            assert bot.call("run.artifact", {"run_id": eng, "path": rel})["kind"] == "image", rel
 
-    # ③ 분류 없는 옛 기록 (M5 이전): 안전 필드만
-    plant(
-        rig.root,
-        "olds0001",
-        [
-            {"event": "run.start", "graph": TEST, "protocol": 1, "runner": {"pid": 1}},
-            {"event": "step.start", "attempt": 1, "node": "n_login", "parent": None,
-             "path": ["n_login"], "step": "s1"},
-            {"event": "log", "level": "info", "message": f"암호 {PW}", "node": "n_login",
-             "step": "s1"},
-            {"event": "step.end", "attempt": 1, "duration_ms": 5, "exit": None, "status": "error",
-             "step": "s1", "outputs": {"text": PW},
-             "error": {"code": "boom", "message": f"실패 {PW}"}},
-            {"event": "run.end", "verdict": "error", "code": "boom", "reason": f"실패 {PW}",
-             "failure_step": "s1", "failure_path": ["n_login"], "finalized_by": "runner",
-             "duration_ms": 50},
-        ],
-        verdict="error",
-        code="boom",
-        reason=f"실패 {PW}",
-    )  # fmt: skip
     with rig.daemon() as d, d.client(agent) as bot:
-        old = bot.call("run.events", {"run_id": "olds0001"})
-        assert old["classified"] is False
-        assert PW not in json.dumps([old, bot.call("run.failure", {"run_id": "olds0001"})],
-                                    ensure_ascii=False)  # fmt: skip
-        assert "olds0001" in bot.call("run.search", {"query": "암호"})["skipped"]
-
         # 원문을 주는 기존 길은 agent에게 막혀 있다
         for method, params in (
             ("run.index", {"run_id": run_id}),

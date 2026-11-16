@@ -126,7 +126,7 @@ def test_secret_fail_message_and_error_marked(tmp_path: Path) -> None:
     assert end["secret"] is True
     assert ran.result.reason_secret is True
 
-    # 가림을 켜도 표시는 같다 (값은 이미 ***)
+    # 가림 설정을 켜도 무시된다 (UX11 B): 원문과 표시 그대로
     redacted = run_graph(
         make_workspace(tmp_path / "2", record={"redact_secrets": True}),
         g,
@@ -134,9 +134,8 @@ def test_secret_fail_message_and_error_marked(tmp_path: Path) -> None:
         secrets={"a": PW, "b": "hunter3"},
     )
     end = redacted.end("n_cmp")
-    assert PW not in repr(redacted.events)
+    assert PW in end["message"] and "***" not in repr(redacted.events)
     assert "/message" in end["secret_paths"] and end["secret"] is True
-    assert "agent_withhold" not in end  # 가림이 켜져 있으면 이미 남기지 않았다
 
 
 # ---------------------------------------------------------------- 민감 target OCR
@@ -206,9 +205,9 @@ def test_sensitive_ocr_output_marked(tmp_path: Path) -> None:
 
 
 def test_no_plaintext_secret_list_written(tmp_path: Path, spawned: Spawned) -> None:
-    """실제 runner: 가림을 켠 워크스페이스에서 분류가 들어간 실행 폴더·워크스페이스 어디에도 비밀값
-    원문이 없다(분류는 위치만 남긴다). `run.json`에 `agent_mask: 1`, 판정 사유가 비밀값이면
-    `secret_paths: ["/reason"]`."""
+    """실제 runner: 비밀값 목록은 어디에도 쓰지 않는다(분류는 위치만 남긴다). 가림 설정을 켜도
+    무시돼 실행 기록(`events.jsonl`)에는 원문이 그대로 남는다 (UX11 B). `run.json`에
+    `agent_mask: 1`, 판정 사유가 비밀값이면 `secret_paths: ["/reason"]`."""
     root = tmp_path / "ws"
     make_workspace(root, record={"redact_secrets": True})
     g = (
@@ -238,13 +237,13 @@ def test_no_plaintext_secret_list_written(tmp_path: Path, spawned: Spawned) -> N
     assert end is not None and end["secret_paths"] == ["/reason"]
     marked = [e for e in view.events if e.get("event") == "step.end" and e.get("secret") is True]
     assert len(marked) >= 2  # n_take·n_log·n_x (입력에 비밀값)
-    assert all("agent_withhold" not in e for e in marked)  # 가림이 켜져 있으면 남기지 않았다
     (log,) = [e for e in view.events if e.get("event") == "log" and e.get("node") == "n_log"]
-    assert log["secret_paths"] == ["/message"] and log["message"] == "***"
+    assert log["secret_paths"] == ["/message"] and log["message"] == PW
     for event in view.events:
         assert check_shape(event, "events") == [], event
     needle = PW.encode()
-    for base in (root, tmp_path / "runs"):
-        for path in base.rglob("*"):
-            if path.is_file():
-                assert needle not in path.read_bytes(), path
+    assert needle in (handle.run_dir / "events.jsonl").read_bytes()  # 원문 그대로 (UX11 B)
+    # 실행 폴더 밖 워크스페이스에는 비밀값 목록을 쓰지 않는다
+    for path in root.rglob("*"):
+        if path.is_file():
+            assert needle not in path.read_bytes(), path

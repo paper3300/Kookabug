@@ -466,14 +466,9 @@ class ApprovalBroker:
         }
         if arg and len(arg) <= AUDIT_ARG_MAX:
             try:
-                check_texts(
-                    [("arg", arg)],
-                    self.daemon.guard,
-                    self.daemon.root,
-                    job_secrets(self.daemon),
-                )
+                check_texts([("arg", arg)], job_secrets(self.daemon))
             except RequestFailed:
-                pass  # 비밀값이 들었거나 검사할 수 없다: 창 제목을 적지 않는다
+                pass  # 작업 토큰이 들었다: 창 제목을 적지 않는다
             else:
                 entry["arg"] = arg
         return entry

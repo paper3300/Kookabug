@@ -155,9 +155,19 @@ def test_explore_step_records_move_and_fills_to(game: FakeGame, daemon: ThreadDa
             "card": "title",
         }
         assert len(card(game, session, "title")["moves"]) == 1  # 같은 이동은 합친다
+        # 입력 없이 로그인 → 타이틀로 바뀐 것은 저절로 바뀐 이동 (UX11 A1)
+        assert back["move"] == {
+            "from": "login",
+            "to": "title",
+            "status": "recorded",
+            "card": "login",
+        }
+        assert card(game, session, "login")["moves"] == [
+            {"via": {"wait": {}}, "to": "title", "status": "tried"}
+        ]
         # 지도 탭: 저장·이동 기록 뒤 explore.changed (후보·이동 수가 는다)
         listed = ui.call("explore.list", {})["sessions"]
-        assert listed[0]["counts"] == {"screens": 2, "moves": 1, "untried": 0}
+        assert listed[0]["counts"] == {"screens": 2, "moves": 2, "untried": 0}
         agent.call("explore.end", {})
 
 
@@ -190,7 +200,8 @@ def test_screen_save_tried_move_without_to_waits(game: FakeGame, daemon: ThreadD
         assert "kb_screen_list" in error.message and "key" in error.message
 
 
-def test_explore_step_secret_not_in_result_or_records(game: FakeGame, daemon: ThreadDaemon) -> None:
+def test_explore_step_secret_input_not_protected(game: FakeGame, daemon: ThreadDaemon) -> None:
+    """UX11 B: 비밀값 입력 뒤 화면도 가리지 않는다 (이미지가 온다)."""
     with daemon.client(AGENT) as agent:
         session = agent.call("explore.start", {"title": "비밀값", "window": WINDOW})["session"]
         agent.call("explore.step", {"window": "@game", "point": list(START_BUTTON)}, timeout=120)
@@ -200,15 +211,10 @@ def test_explore_step_secret_not_in_result_or_records(game: FakeGame, daemon: Th
             "explore.step", {"window": "@game", "secret": "acc.pw", "wait_ms": 1000}, timeout=120
         )
         assert typed["input"]["verdict"] == "pass", typed["input"]
-        # 칸에 값이 그려진 화면은 보호: 이미지 없이 사유만
-        assert typed["frame"].get("protected") and "agent_image" not in typed["frame"]
-        assert SECRET not in json.dumps(typed, ensure_ascii=False)
+        assert "protected" not in typed["frame"] and typed["frame"]["agent_image"]
         agent.call("explore.end", {})
-    # 값은 게임에 갔다 (양성 대조: 게임 칸 값) — 결과·실행 기록·탐색 폴더에는 없다
+    assert session
     assert game.state()["forms"]["login"]["values"]["password"] == SECRET
-    assert SECRET not in texts_under(
-        game.root / "runs", game.root / "screens" / "_explored" / session
-    )
 
 
 def test_explore_step_permission_denied_first(game: FakeGame) -> None:
@@ -457,45 +463,10 @@ def test_attach_run_permission_denied(game: FakeGame) -> None:
 # ---------------------------------------------------------------- 검수 1 (High 1·3·Mid 4)
 
 
-def test_attach_window_title_is_not_recorded(game: FakeGame, daemon: ThreadDaemon) -> None:
-    """붙여 실행 안의 일반 창 붙기 노드 출력도 기록에는 실제 제목 대신 `@game` (High 1)."""
-    write_graphs(game.root)
-    path = game.root / ATTACH_GRAPH
-    graph = json.loads(path.read_text(encoding="utf-8"))
-    graph["nodes"]["n_call"]["next"]["ok"] = "n_attach"
-    graph["nodes"]["n_attach"] = {
-        "type": "core.window.attach",
-        "version": 1,
-        "in": {"title": WINDOW},
-        "next": {"found": "n_click"},
-    }
-    path.write_text(json.dumps(graph), encoding="utf-8")
-    with daemon.client(AGENT) as agent:
-        agent.call("explore.start", {"title": "기억", "window": WINDOW})
-        agent.call("explore.end", {})
-        retitle(game, f"{WINDOW} [Account : {ACCOUNT_ID}]")
-        run = agent.call(
-            "run.start", {"path": ATTACH_GRAPH, "idempotency_key": "t1", "attach": True}
-        )
-        assert wait_run(agent, run["run_id"])["outcome"]["verdict"] == "pass"
-        # Agent 결과(가린 기록 읽기)에도 없다
-        events = agent.call("run.events", {"run_id": run["run_id"], "limit": 500})
-        assert ACCOUNT_ID not in json.dumps(events, ensure_ascii=False)
-        attached = [
-            e for e in events["events"] if e.get("event") == "step.end" and e.get("outputs")
-        ]
-        assert any((e["outputs"].get("window") or {}).get("title") == "@game" for e in attached), (
-            attached
-        )
-    folder = next(p for p in game.run_folders() if p.name.endswith(run["run_id"]))
-    assert ACCOUNT_ID not in (folder / "events.jsonl").read_text(encoding="utf-8")
-    assert ACCOUNT_ID not in (folder / "run.json").read_text(encoding="utf-8")
-
-
-def test_attach_scrub_end_to_end_keeps_protocol(game: FakeGame) -> None:
-    """종단 (검수 3): 실제 runner가 쓴 `events.jsonl`·`run.json`과 daemon `run.events` RPC. 판정
-    값과 같은 워크스페이스 비밀값(`pass`)과 계정이 든 창 제목에서도 실행이 끝까지 가고, 구조
-    필드(판정·이벤트 종류·노드·실행 ID)는 그대로, 글(판정 사유 등)만 가려진다."""
+def test_attach_run_records_title_and_secret_as_is(game: FakeGame) -> None:
+    """종단 (UX11 B — 가리지 않는다): 실제 runner가 쓴 `events.jsonl`·`run.json`과 daemon
+    `run.events` RPC. 판정 값과 같은 워크스페이스 비밀값(`pass`)과 계정이 든 창 제목에서도 실행이
+    끝까지 가고, 구조 필드는 그대로, 글(판정 사유·창 붙기 출력 제목)도 원문 그대로 남는다."""
     write_graphs(game.root)
     path = game.root / ATTACH_GRAPH
     graph = json.loads(path.read_text(encoding="utf-8"))
@@ -523,23 +494,20 @@ def test_attach_scrub_end_to_end_keeps_protocol(game: FakeGame) -> None:
     on_disk = [
         json.loads(x) for x in (folder / "events.jsonl").read_text(encoding="utf-8").splitlines()
     ]
-    # 구조 필드 그대로
     assert body["verdict"] == "pass" and body["source"] == "agent_attach"
     assert all(e["run"] == run["run_id"] for e in on_disk)
-    assert {"run.start", "step.start", "step.end", "run.end"} <= {e["event"] for e in on_disk}
     (end,) = [e for e in on_disk if e["event"] == "run.end"]
     assert end["verdict"] == "pass"
-    started = [e["node"] for e in on_disk if e["event"] == "step.start"]
-    assert "n_pass" in started and "n_attach" in started
     assert [e["event"] for e in events] == [e["event"] for e in on_disk]
-    # 글은 가려졌다 (판정 사유의 `pass` → ***), 계정이 든 제목은 어디에도 없다
-    assert "***" in str(body.get("reason")) and "***" in str(end.get("reason"))
+    attached = [e for e in events if e.get("event") == "step.end" and e.get("outputs")]
+    titles = [(e["outputs"].get("window") or {}).get("title") for e in attached]
+    assert f"{WINDOW} [Account : {ACCOUNT_ID}]" in titles, titles
     for text in (
         (folder / "events.jsonl").read_text(encoding="utf-8"),
-        (folder / "run.json").read_text(encoding="utf-8"),
         json.dumps(events, ensure_ascii=False),
     ):
-        assert ACCOUNT_ID not in text
+        assert ACCOUNT_ID in text and "[가림]" not in text and "***" not in text
+    assert "***" not in str(body.get("reason")) and "***" not in str(end.get("reason"))
 
 
 def test_denied_explore_does_not_select_game(game: FakeGame) -> None:
@@ -671,26 +639,17 @@ def test_pending_move_kept_and_reported_when_attach_fails(
         ]
 
 
-def test_wiki_read_hides_known_secret(game: FakeGame, daemon: ThreadDaemon) -> None:
-    """비밀값이 든 위키 페이지는 원문(가린 본문도)을 돌려주지 않는다 (High 2)."""
+def test_wiki_keeps_game_secret(game: FakeGame, daemon: ThreadDaemon) -> None:
+    """UX11 B: 게임 비밀값이 든 위키 페이지도 그대로 쓰고 읽는다."""
     path = game.root / "wiki" / "review-notes.md"
     path.parent.mkdir(exist_ok=True)
     path.write_text(f"테스트 계정: {SECRET}", encoding="utf-8")
     with daemon.client(AGENT) as agent:
-        # 비밀값 키를 보호 기록에 등록한다 (그 값이 글자 검사 대상이 된다)
         agent.call("control.type", {"window": WINDOW, "secret": "acc.pw"}, timeout=120)
-        rejected = refused(
-            agent, "wiki.write", {"path": "wiki/blocked.md", "text": SECRET, "base_sha256": None}
-        )
-        assert rejected.kind == "secret_in_text"
-        error = refused(agent, "wiki.read", {"path": "wiki/review-notes.md"})
-        assert error.kind == "secret_in_text"
-        assert "사람이 그 페이지를 고쳐야" in error.message
-        assert SECRET not in json.dumps([error.message, error.data], ensure_ascii=False)
-        assert len((error.data or {}).get("revision") or "") == 64  # 원본 해시는 준다
-        # 양성 대조: 비밀값 없는 페이지는 읽힌다
-        (game.root / "wiki" / "plain.md").write_text("평문", encoding="utf-8")
-        assert agent.call("wiki.read", {"path": "wiki/plain.md"})["text"] == "평문"
+        agent.call("wiki.write", {"path": "wiki/kept.md", "text": SECRET, "base_sha256": None})
+        assert (game.root / "wiki" / "kept.md").read_text(encoding="utf-8") == SECRET
+        read = agent.call("wiki.read", {"path": "wiki/review-notes.md"})
+        assert read["text"] == f"테스트 계정: {SECRET}"
 
 
 # ---------------------------------------------------------------- B·E·F 작업 연결

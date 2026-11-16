@@ -318,18 +318,12 @@ def test_explore_step_click_and_secret_one_step(game: FakeGame, daemon: ThreadDa
             timeout=120,
         )
         assert step["input"]["verdict"] == "pass"
-        # 칸이 보이는 동안: 칸 위치를 아는 보호 (unknown 아님)
-        assert step["frame"]["protected"]["reason"] == "secret_field"
-        assert capture(agent)["protected"]["reason"] == "secret_field"
-        # 칸에서 벗어나면 clear (로그인 → 로비)
+        # UX11 B: 칸이 보여도 가리지 않는다
+        assert "protected" not in step["frame"] and step["frame"]["agent_image"]
+        assert game.state()["forms"]["login"]["values"]["password"] == SECRET
         done = agent.call("control.click", {"window": WINDOW, "point": list(LOGIN_BUTTON)})
         assert done["verdict"] == "pass" and game.state()["scene"] == "lobby"
-        lobby = capture(agent)
-        assert "protected" not in lobby and lobby["agent_image"]["cache"]
-        ended = agent.call("explore.end", {})
-        assert SECRET not in json.dumps([step, done, ended], ensure_ascii=False)
-    root = game.root
-    assert SECRET not in texts_under(root / "runs", root / "screens", root / ".kookabug")
+        agent.call("explore.end", {})
 
 
 def test_input_type_with_point_one_request(game: FakeGame, daemon: ThreadDaemon) -> None:
@@ -340,33 +334,9 @@ def test_input_type_with_point_one_request(game: FakeGame, daemon: ThreadDaemon)
             {"window": WINDOW, "point": list(PASSWORD_FIELD), "secret": "acc.pw"},
             timeout=120,
         )
-        assert done["verdict"] == "pass" and SECRET not in json.dumps(done)
-        assert capture(agent)["protected"]["reason"] == "secret_field"
-        # 비밀값 칸을 target으로 누르는 조합은 받지 않는다 (칸 위치 근거가 없다)
-        error = refused(
-            agent,
-            "control.type",
-            {"window": WINDOW, "target": "targets/x.target.json", "secret": "acc.pw"},
-        )
-        assert error.kind == "target_invalid" and "point" in error.message
-    assert SECRET not in texts_under(game.root / "runs")
-
-
-def test_separate_late_click_stays_unknown(game: FakeGame, daemon: ThreadDaemon) -> None:
-    """따로 보낸 클릭이 10초(`CLICK_FRESH_S`)를 넘기면 지금처럼 unknown — 힌트에 풀리는 방법."""
-    guard = daemon.daemon.guard
-    real = guard.clock
-    with daemon.client(AGENT) as agent:
-        to_login(agent)
-        done = agent.call("control.click", {"window": WINDOW, "point": list(PASSWORD_FIELD)})
         assert done["verdict"] == "pass"
-        guard.clock = lambda: real() + 11.0  # LLM 턴 사이 11초가 지났다
-        typed = agent.call("control.type", {"window": WINDOW, "secret": "acc.pw"}, timeout=120)
-        assert typed["verdict"] == "pass"
-        kept = capture(agent)
-    assert kept["protected"]["reason"] == "secret_field_unknown"
-    hint = kept["protected"]["hint"]
-    assert "kb_app_launch" in hint and "자동으로 끝" in hint and "point" in hint
+        assert "protected" not in capture(agent)  # UX11 B: 가리지 않는다
+    assert game.state()["forms"]["login"]["values"]["password"] == SECRET
 
 
 # ---------------------------------------------------------------- B 같은 주체의 이전 게임 정리
@@ -682,8 +652,8 @@ def test_stop_failure_keeps_record_and_refuses_relaunch(
 def test_old_secret_frame_not_published_after_window_gone(
     game: FakeGame, daemon: ThreadDaemon, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """비밀값 칸이 보이던 창이 첫 캡처 뒤 닫히면(프로세스는 삶) 옛 픽셀을 clear 프레임으로 내지
-    않는다 — `window_not_found`이고, 에이전트 이미지·탐색 저장이 없다."""
+    """창이 첫 캡처 뒤 닫히면(프로세스는 삶) 옛 픽셀을 프레임으로 내지 않는다 — `window_not_found`
+    이고, 에이전트 이미지·탐색 저장이 없다."""
     source = daemon.daemon.screen_source
     with daemon.client(AGENT) as agent:
         agent.call("explore.start", {"title": "닫힌 창", "window": WINDOW})
@@ -694,7 +664,6 @@ def test_old_secret_frame_not_published_after_window_gone(
             timeout=120,
         )
         assert typed["verdict"] == "pass"
-        assert capture(agent)["protected"]["reason"] == "secret_field"
         agent_cache = game.root / ".kookabug" / "cache" / "agent"
         before_images = set(agent_cache.rglob("*.png")) if agent_cache.exists() else set()
         real_capture, real_main, real_alive = source.capture, source.main_window_of, source.alive

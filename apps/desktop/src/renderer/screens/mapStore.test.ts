@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import {
   activeSession,
   agentRequest,
+  isWaitEdge,
   cardMeta,
   cardSource,
   confirmedCards,
@@ -24,7 +25,7 @@ import { recordOverrideText } from "../runs/runListStore";
 describe("기록 뷰어 머리 줄 (B2a 넘김)", () => {
   test("에이전트 제어 실행 기록 강제", () => {
     expect(recordOverrideText({ record_override: { by: "agent_control", screenshots: "off" } })).toBe(
-      "에이전트 제어 실행 · 이미지 기록 없음 · 비밀값 가림",
+      "에이전트 제어 실행 · 이미지 기록 없음",
     );
     expect(recordOverrideText({ graph: "tests/a.graph.json" })).toBeNull();
     expect(recordOverrideText(null)).toBeNull();
@@ -89,6 +90,16 @@ describe("경로·요청 문장", () => {
     expect(flow.text).toBe("로비에서 장비 강화까지 가는 서브그래프(플로)를 만들어 줘. 경로: 로비 → 가방 → 장비 강화.");
     expect(agentRequest(MAP, "lobby", "test").chip).toBe("@screen lobby");
     expect(agentRequest({ ...MAP, start: null }, "bag", "flow").text).toContain("이어진 경로가 없으니");
+  });
+
+  test("저절로 바뀌는 이동(via wait, UX11 A1): 구분하고 경로 문장에 (기다림)", () => {
+    const wait = { from: "bag", to: `x:${S}/loading`, via: { wait: {} }, label: "저절로", status: "tried" as const, sources: [{ kind: "explored", session: S }] };
+    expect(isWaitEdge(wait)).toBe(true);
+    expect(isWaitEdge(MAP.edges[0]!)).toBe(false);
+    const map = { ...MAP, edges: [...MAP.edges, wait] };
+    expect(agentRequest(map, `x:${S}/loading`, "flow").text).toBe(
+      "로비에서 로딩까지 가는 서브그래프(플로)를 만들어 줘. 경로: 로비 → 가방 → (기다림) 로딩.",
+    );
   });
 });
 

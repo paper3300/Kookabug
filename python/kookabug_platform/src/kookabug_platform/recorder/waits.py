@@ -5,8 +5,8 @@
 바깥 상자(전이 기록에서 잠깐 바뀌었다 돌아온 것은 B에 남지 않으므로 빠진다).
 
 대기 target 자르기: R이 클라이언트 25% 이하면 R(+여백 4), 넘으면 R 안 가장자리 밀도가 가장 높은
-`0.2h` 정사각. 보호 영역을 피하고(`ProtectionSet.avoid`), B에서 유일하고, **A에서는 찾아지지
-않아야**(임계값 미만) 한다. 못 만들면 None → 보수적 지연 + `wait_target_unknown`.
+`0.2h` 정사각. B에서 유일하고, **A에서는 찾아지지 않아야**(임계값 미만) 한다(비밀값 칸은 피하지
+않는다 — UX11 B). 못 만들면 None → 보수적 지연 + `wait_target_unknown`.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from typing import Final
 import cv2
 import numpy as np
 
-from kookabug_core.recorder.protect import Box, ProtectionSet
+from kookabug_core.recorder.protect import Box
 from kookabug_core.recorder.waits import NextKind, WaitDecision, WaitFacts, decide_wait
 from kookabug_platform.recorder.crop import UNIQUE_SLACK, find_peaks, fit_inside
 from kookabug_platform.vision import DEFAULT_THRESHOLD, Pixels
@@ -76,11 +76,9 @@ def wait_crop(
     b: Pixels,
     region: Box,
     *,
-    protect: ProtectionSet | None = None,
-    t_ns: int | None = None,
     threshold: float = DEFAULT_THRESHOLD,
 ) -> Box | None:
-    """R에서 기다릴 조각 (B에서 유일, A에 없음, 보호 영역 밖). 못 만들면 None."""
+    """R에서 기다릴 조각 (B에서 유일, A에 없음). 못 만들면 None."""
     height, width = int(b.shape[0]), int(b.shape[1])
     size = (width, height)
     x, y, w, h = region
@@ -88,11 +86,6 @@ def wait_crop(
         box = fit_inside((x - _PAD, y - _PAD, w + 2 * _PAD, h + 2 * _PAD), size)
     else:
         box = _densest_square(b, region, round(0.2 * height))
-    if protect is not None:
-        safe = protect.avoid(box, None, t_ns, frame=b, min_size=(12, 12))
-        if safe is None:
-            return None
-        box = safe
     template = b[box[1] : box[1] + box[3], box[0] : box[0] + box[2]]
     if template.size == 0 or float(template.std()) < 1.0:
         return None  # 평평한 조각은 찾을 수 없다
@@ -123,7 +116,6 @@ def infer_wait(
     next_kind: NextKind,
     field_box: Box | None = None,
     click_found_in: Callable[[Pixels], bool] | None = None,
-    protect: ProtectionSet | None = None,
     option_on: bool = True,
     threshold: float = DEFAULT_THRESHOLD,
 ) -> WaitPlan:
@@ -148,7 +140,7 @@ def infer_wait(
         and not in_field
         and not (next_kind == "click" and in_a is False)
     ):
-        box = wait_crop(a, b, region, protect=protect, t_ns=t_ns, threshold=threshold)
+        box = wait_crop(a, b, region, threshold=threshold)
     decision = decide_wait(
         WaitFacts(
             prev_t_ns=prev_t_ns,

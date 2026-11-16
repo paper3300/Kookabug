@@ -48,11 +48,12 @@ export function badgesOf(run: RunSummary): Badge[] {
   return out;
 }
 
-/** 에이전트 제어 실행의 기록 강제 (M7 R2, run.json record_override): 기록 뷰어 머리 줄로 사람에게 알린다 */
+/** 에이전트 제어 실행의 기록 강제 (M7 R2, run.json record_override — 한 스텝짜리 실행이라 이미지 기록을 끈다):
+ * 기록 뷰어 머리 줄로 사람에게 알린다. 비밀값은 가리지 않는다 (UX11 B) */
 export function recordOverrideText(run: unknown): string | null {
   const override = (run as { record_override?: { by?: unknown } } | null | undefined)?.record_override;
   if (override?.by !== "agent_control") return null;
-  return "에이전트 제어 실행 · 이미지 기록 없음 · 비밀값 가림";
+  return "에이전트 제어 실행 · 이미지 기록 없음";
 }
 
 /** 경과 글 (3분 08초, 12.4초) */

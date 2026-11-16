@@ -105,6 +105,12 @@ export function confirmedCards(map: ScreenMap | null): MapCard[] {
   return map.screens.filter((s) => s.state === "confirmed").sort((a, b) => cardTitle(a).localeCompare(cardTitle(b), "ko"));
 }
 
+/** 입력 없이 저절로 바뀌는 이동인가 (via `{wait: {}}` — 로딩·컷신, UX11 A1) */
+export function isWaitEdge(edge: Pick<MapEdge, "via">): boolean {
+  const via = edge.via as Record<string, unknown> | null | undefined;
+  return via !== null && via !== undefined && typeof via === "object" && "wait" in via;
+}
+
 /** 이동 간선(가 본 것)만 따라가는 최단 경로 (노드 목록, 없으면 null) */
 export function shortestPath(edges: readonly Pick<MapEdge, "from" | "to" | "status">[], from: string, to: string): string[] | null {
   if (from === to) return [from];
@@ -143,11 +149,23 @@ export function agentRequest(map: ScreenMap, node: string, kind: "flow" | "test"
   const steps =
     path === null
       ? "지도에 이어진 경로가 없으니 탐색 결과를 보고 정해"
-      : `경로: ${path.map((n) => cardTitle(map.screens.find((s) => s.node === n) ?? { node: n, title: null })).join(" → ")}`;
+      : `경로: ${pathText(map, path)}`;
   return {
     chip,
     text: `${startCard === undefined ? "시작 화면" : cardTitle(startCard)}에서 ${name}까지 가는 서브그래프(플로)를 만들어 줘. ${steps}.`,
   };
+}
+
+/** 경로 문장 — 저절로 바뀌는 이동은 "(기다림)"으로 (그래프에서는 입력 없이 다음 화면 기다림 노드) */
+function pathText(map: ScreenMap, path: readonly string[]): string {
+  const title = (n: string): string => cardTitle(map.screens.find((s) => s.node === n) ?? { node: n, title: null });
+  return path
+    .map((n, i) => {
+      if (i === 0) return title(n);
+      const hop = map.edges.find((e) => e.from === path[i - 1] && e.to === n && e.status === "tried");
+      return `${hop !== undefined && isWaitEdge(hop) ? "(기다림) " : ""}${title(n)}`;
+    })
+    .join(" → ");
 }
 
 /** 탐색기 경로 → 지도 노드 (확정 화면 파일·후보 카드 파일·합치기 후보 파일은 합칠 화면) */

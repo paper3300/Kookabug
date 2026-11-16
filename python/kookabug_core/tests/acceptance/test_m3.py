@@ -677,8 +677,8 @@ def test_stuck_encoder_video_omitted_and_cleaned_by_supervisor(
 def hidden_tree(seen_ms: int = DELAY) -> tuple[GraphBuilder, dict[str, GraphBuilder]]:
     """a → 비밀값 호출(c: 비밀값 직접, d: 일반 대기, 중첩 호출 e) → b → 영상 끈 서브그래프(f) → h.
 
-    비밀값 호출·영상 끈 서브그래프 구간의 장면(c·d·e·f)은 어느 조각에도 없어야 한다. `seen_ms`는
-    보여야 하는 장면(a·b·h)을 띄워 두는 시간이다."""
+    영상 끈 서브그래프 구간의 장면(f)은 어느 조각에도 없어야 한다. 비밀값 호출 구간(c·d·e)은 UX11
+    B부터 가리지 않아 남는다. `seen_ms`는 보여야 하는 장면(a·b·h)을 띄워 두는 시간이다."""
     g = tk().entry("n_launch")
     launch(g, "n_launch", "n_a")
     show(g, "n_a", "a", "n_call", ms=seen_ms)
@@ -710,12 +710,12 @@ def hidden_tree(seen_ms: int = DELAY) -> tuple[GraphBuilder, dict[str, GraphBuil
     return g, {SUB: sub, INNER: inner, "subgraphs/off.graph.json": off}
 
 
-HIDDEN: Final = frozenset({"c", "d", "e", "f"})
+HIDDEN: Final = frozenset({"f"})
+"""영상 끈 서브그래프 구간만 빠진다 (UX11 B — 비밀값 호출 구간 c·d·e는 남는다)."""
+SECRET_SPAN: Final = frozenset({"c", "d", "e"})
 
 
-def test_record_off_and_secret_call_spans_absent_from_video(
-    tmp_path: Path, spawned: Spawned
-) -> None:
+def test_record_off_span_absent_secret_span_kept_in_video(tmp_path: Path, spawned: Spawned) -> None:
     # 실제 runner + 가짜 인코더 (워크스페이스 on이라 pass여도 조각이 남는다): 모든 조각의 모든 칸
     g, subs = hidden_tree()
     h = video_run(tmp_path, g)
@@ -730,15 +730,14 @@ def test_record_off_and_secret_call_spans_absent_from_video(
     written = fake_markers(h.run_dir)
     assert sorted(written) == sorted(s["file"] for s in index["segments"])
     seen = {m for scenes in written.values() for m in scenes}
-    assert {"a", "b", "h"} <= seen, seen
+    assert {"a", "b", "h"} | SECRET_SPAN <= seen, seen
     assert not (HIDDEN & seen), seen
     for seg in index["segments"]:
         assert len(written[seg["file"]]) == seg["frames"]
-    # 두 구간은 이유와 함께 빈 구간이다
+    # 영상 끈 구간만 이유와 함께 빈 구간이다 (비밀값 호출은 빈 구간이 아니다 — UX11 B)
     reasons = {gap["gap"]: gap.get("step") for gap in index["gaps"]}
-    call, _ = step_of(done.view.events, "n_call")
     off, _ = step_of(done.view.events, "n_off")
-    assert reasons.get("secret_input") == call["step"], index["gaps"]
+    assert "secret_input" not in reasons, index["gaps"]
     assert reasons.get("policy_off") == off["step"], index["gaps"]
 
 
@@ -790,13 +789,13 @@ def flash_run(tmp_path: Path, seen_ms: int = DELAY, **kw: Any) -> Any:
     )
 
 
-def test_secret_step_scene_between_start_and_classification_absent(tmp_path: Path) -> None:
-    # 2차 N1: 비밀값 호출의 step.start와 비밀값 분류 사이에 바뀐 장면(g)도 조각에 없다
+def test_secret_step_span_kept_in_video(tmp_path: Path) -> None:
+    # UX11 B: 비밀값 호출 구간도 영상에 남는다 (영상 끈 구간 f만 빠진다)
     ran = flash_run(tmp_path)
     assert ran.result.verdict == "pass", ran.result.reason
     seen = ran.markers()
-    assert {"a", "b", "h"} <= seen
-    assert not ((HIDDEN | {"g"}) & seen), seen
+    assert {"a", "b", "h"} | SECRET_SPAN <= seen, seen
+    assert not (HIDDEN & seen), seen
 
 
 def test_flash_check_fails_without_pending_block(
@@ -816,7 +815,7 @@ def test_flash_check_fails_without_pending_block(
 
 
 @pytest.mark.media
-def test_record_off_and_secret_spans_absent_from_decoded_mp4(tmp_path: Path) -> None:
+def test_record_off_span_absent_from_decoded_mp4(tmp_path: Path) -> None:
     # media: 같은 실행을 실제 H.264 조각으로 쓰고 모든 조각을 디코드해 장면을 대조한다.
     # 빈 구간 뒤 새 조각의 첫 프레임은 MSMF 쓰기 열기만큼 늦을 수 있어(설계상 2초까지 허용) 느린
     # 러너에서 0.6초 장면은 통째로 빠진다 (CI 0455c4e: {'b'}뿐) — 보여야 할 장면을 2.5초 띄운다
@@ -831,8 +830,8 @@ def test_record_off_and_secret_spans_absent_from_decoded_mp4(tmp_path: Path) -> 
         scenes = decode_mp4(ran.run_dir / VIDEO_DIR / seg["file"])
         assert len(scenes) == seg["frames"], seg
         decoded |= set(scenes)
-    assert {"a", "b", "h"} <= decoded, decoded
-    assert not ((HIDDEN | {"g"}) & decoded), decoded
+    assert {"a", "b", "h"} | SECRET_SPAN <= decoded, decoded
+    assert not (HIDDEN & decoded), decoded
 
 
 # ---------------------------------------------------------------- (5장) 영상 사용 불가

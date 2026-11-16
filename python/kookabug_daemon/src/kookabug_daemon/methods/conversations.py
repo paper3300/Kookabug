@@ -2,8 +2,8 @@
 전 거부).
 
 본체는 코어 `conversations`: `.kookabug/conversations/<id>.json`(이 PC). 저장 전에 `agent.log`와
-같은 가림(작업 토큰 원문 + 워크스페이스 비밀값 공급자)을 하고, 가림 값을 못 모으면 쓰지 않는다
-(`secret_unchecked`).
+같은 가림(작업 토큰 원문 — 게임 비밀값은 가리지 않는다, UX11 B)을 하고, 가림 값을 못 모으면 쓰지
+않는다 (`secret_unchecked`).
 """
 
 from __future__ import annotations

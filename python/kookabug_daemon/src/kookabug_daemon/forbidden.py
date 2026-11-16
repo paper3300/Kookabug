@@ -23,7 +23,7 @@ from kookabug_daemon.frames import EditorFrame
 from kookabug_daemon.protocol import RequestFailed
 from kookabug_daemon.screen_source import WindowBinding
 
-__all__ = ["MASK_PAD", "check_agent_input", "masked", "refusal_error", "window_sight"]
+__all__ = ["check_agent_input", "refusal_error", "window_sight"]
 
 
 class _LazyReader:
@@ -62,37 +62,14 @@ def window_sight(daemon: Any, bindings: Sequence[WindowBinding]) -> rules.PixelS
         window=True,
         binding=binding,
     )
-    pixels = grab.pixels
     try:
         verdict = daemon.guard.check(frame)
         protected = None if verdict.clear else str(verdict.reason or "frame_protected")
-        if verdict.reason == "secret_field":
-            # 비밀값 칸 상자를 모두 알면 그 칸만 가리고 나머지 글자를 읽는다 (비밀번호 입력 뒤
-            # 로그인 단추 같은 흐름이 막히지 않게). 하나라도 모르면 읽지 않는다
-            boxes = daemon.guard.secret_boxes(frame)
-            if boxes:
-                pixels = masked(grab.pixels, boxes)
-                protected = None
     except Exception:
         protected = "guard_error"
     return rules.PixelSight(
-        daemon.root, pixels, reader=_LazyReader(daemon), protected=protected, dpi=grab.dpi
+        daemon.root, grab.pixels, reader=_LazyReader(daemon), protected=protected, dpi=grab.dpi
     )
-
-
-MASK_PAD = 8
-"""칸 상자를 가릴 때 둘레 여유 (px)."""
-
-
-def masked(pixels: Any, boxes: Sequence[tuple[int, int, int, int]]) -> Any:
-    """칸 상자(x, y, w, h)를 둘레 여유까지 단색으로 칠한 사본."""
-    out = pixels.copy()
-    height, width = int(out.shape[0]), int(out.shape[1])
-    for x, y, w, h in boxes:
-        left, top = max(0, x - MASK_PAD), max(0, y - MASK_PAD)
-        right, bottom = min(width, x + w + MASK_PAD), min(height, y + h + MASK_PAD)
-        out[top:bottom, left:right] = 128
-    return out
 
 
 def check_agent_input(daemon: Any, principal: Principal, bindings: Sequence[WindowBinding]) -> None:

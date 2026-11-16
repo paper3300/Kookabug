@@ -1,6 +1,6 @@
 # 생성물 (packages/schema/screen.schema.json → tools/gen_schema.py). 직접 고치지 않는다.
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
@@ -170,6 +170,17 @@ class ScreenShot(BaseModel):
     scale: Annotated[float | None, Field(ge=0.0)] = None
 
 
+class ScreenVia1(BaseModel):
+    """
+    이동 입력: 요소 클릭·점 클릭·키·기다림(입력 없이 저절로 바뀜 — 로딩·컷신)
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    wait: Annotated[dict[str, Any], Field(max_length=0)]
+
+
 class Click(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -177,9 +188,9 @@ class Click(BaseModel):
     element: Annotated[str, Field(max_length=100, min_length=1)]
 
 
-class ScreenVia1(BaseModel):
+class ScreenVia2(BaseModel):
     """
-    이동 입력: 요소 클릭·점 클릭·키
+    이동 입력: 요소 클릭·점 클릭·키·기다림(입력 없이 저절로 바뀜 — 로딩·컷신)
     """
 
     model_config = ConfigDict(
@@ -195,9 +206,9 @@ class Click1(BaseModel):
     point: NormPoint
 
 
-class ScreenVia2(BaseModel):
+class ScreenVia3(BaseModel):
     """
-    이동 입력: 요소 클릭·점 클릭·키
+    이동 입력: 요소 클릭·점 클릭·키·기다림(입력 없이 저절로 바뀜 — 로딩·컷신)
     """
 
     model_config = ConfigDict(
@@ -206,9 +217,9 @@ class ScreenVia2(BaseModel):
     click: Click1
 
 
-class ScreenVia3(BaseModel):
+class ScreenVia4(BaseModel):
     """
-    이동 입력: 요소 클릭·점 클릭·키
+    이동 입력: 요소 클릭·점 클릭·키·기다림(입력 없이 저절로 바뀜 — 로딩·컷신)
     """
 
     model_config = ConfigDict(
@@ -217,10 +228,13 @@ class ScreenVia3(BaseModel):
     key: Annotated[str, Field(max_length=64, min_length=1)]
 
 
-class ScreenVia(RootModel[ScreenVia1 | ScreenVia2 | ScreenVia3]):
+class ScreenVia(RootModel[ScreenVia1 | ScreenVia2 | ScreenVia3 | ScreenVia4]):
     root: Annotated[
-        ScreenVia1 | ScreenVia2 | ScreenVia3,
-        Field(description="이동 입력: 요소 클릭·점 클릭·키", title="ScreenVia"),
+        ScreenVia1 | ScreenVia2 | ScreenVia3 | ScreenVia4,
+        Field(
+            description="이동 입력: 요소 클릭·점 클릭·키·기다림(입력 없이 저절로 바뀜 — 로딩·컷신)",
+            title="ScreenVia",
+        ),
     ]
 
 

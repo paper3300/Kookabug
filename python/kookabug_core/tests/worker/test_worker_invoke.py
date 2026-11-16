@@ -246,7 +246,9 @@ def test_node_exception_error_with_traceback(tmp_path: Path) -> None:
     assert exit["reason"] == "shutdown"
 
 
-def test_secret_input_reaches_node_masked_in_events(tmp_path: Path) -> None:
+def test_secret_input_recorded_raw_in_events(tmp_path: Path) -> None:
+    """`$secret` 입력: 노드는 Secret으로 받고, 기록(이벤트·로그·노드 출력)에는 원문이 그대로
+    남는다 — 워크스페이스 가림 설정을 켜도 무시 (UX11 B, 2026-11-16)."""
     graph = (
         tk()
         .entry("n_rt")
@@ -266,19 +268,20 @@ def test_secret_input_reaches_node_masked_in_events(tmp_path: Path) -> None:
         frames=[FRAME],
         secrets={"accounts.pw": raw},
         trace=lambda _, body: messages.append(body),
-        record={"redact_secrets": True},  # 비밀값 가림 켬 (기본은 원문, D3)
+        record={"redact_secrets": True},  # 켜도 무시된다 (UX11 B)
     )
     result = h.run_all()
     assert result.verdict == "pass", result.reason
     end = end_of(result, "n_rt")
-    # 노드는 Secret으로 받고(변수 왕복 뒤에도), 기록에는 가린 값만
+    # 노드는 Secret으로 받고(변수 왕복 뒤에도), 기록에는 원문
     assert end["outputs"]["value_type"] == "secret"
-    assert end["outputs"]["value"] == "***"
+    assert end["outputs"]["value"] == raw
+    # 노드가 f-문자열로 만든 글은 SDK `Secret.__str__`(가린 값)이 정한다 — 기록 가림과 별개
     assert h.events.has_log("pw: ***")
-    assert raw not in repr(result.events) and raw not in repr(h.events.all)
-    # 비밀값 스텝의 스크린샷은 정책으로 생략
-    assert end["outputs"]["saved"] is None
-    assert end["omitted"][0]["reason"] == "secret_input"
+    assert raw in repr(result.events)
+    # 비밀값 스텝의 스크린샷도 남긴다
+    assert end["outputs"]["saved"] is not None
+    assert "omitted" not in end
     # 원문은 인증된 파이프로만 (워커가 노드에 Secret을 줘야 하므로)
     assert any(raw.encode() in m for m in messages)
 
@@ -296,7 +299,8 @@ def _secret_message_record(result: RunResult) -> dict[str, Any]:
 
 
 def _secret_message_expected(redact: bool) -> dict[str, Any]:
-    value = "***" if redact else "worker-original"
+    del redact  # 가림 설정은 무시된다 (UX11 B)
+    value = "worker-original"
     return {
         "logs": [value, f"read={value}"],
         "message": f"read={value}",
@@ -376,11 +380,11 @@ def test_in_process_secret_message_in_output_follows_policy(tmp_path: Path, reda
     ran = run_graph(ws, _output_graph(), secrets={"pw": "worker-original"})
     assert ran.result.verdict == "fail", ran.result.reason
     (end,) = [e for e in ran.result.events if e["event"] == "step.end" and e["status"] == "fail"]
-    value = "read=***" if redact else "read=worker-original"
+    value = "read=worker-original"  # 가림 설정은 무시된다 (UX11 B)
     assert end["message"] == value
     assert end["outputs"] == {"details": {"message": value}}
     recorded = _journaled(tmp_path, ran.result.events)
-    assert ("worker-original" in recorded) is not redact
+    assert "worker-original" in recorded
     assert '"raw"' not in recorded and '"masked"' not in recorded
 
 

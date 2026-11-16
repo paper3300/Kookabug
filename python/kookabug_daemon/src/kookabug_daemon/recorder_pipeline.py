@@ -6,12 +6,13 @@
 - **먹이기**(`feed`, 처리 스레드): 이벤트는 그 즉시 관측이 오고 그 시각의 기하가 확인된 뒤 변환기에
   넣는다(관측 200 ms·기하 500 ms를 넘게 기다리면 없는 채로 — 판정 불가로 남는다)
 - **구간 열림**(변환기 `on_span_open`): 칸 상자(클릭 구간 = 클릭 직전 프레임의 경계 추정, Tab 구간 =
-  Tab 직전·첫 키 직전 프레임의 포커스 테두리)를 정하고 판정·보호 영역·칸 존재를 연다
+  Tab 직전·첫 키 직전 프레임의 포커스 테두리)를 정하고 판정·칸 존재를 연다
 - **프레임 훑기**: 새 링 프레임마다 칸 존재(`FieldPresenceTracker.observe`)와 바뀐 시각(대기 추론의
-  전이)을 적는다. 칸 없음이 확정되면 보호를 끝내고 같은 칸 상속을 끊는다
+  전이)을 적는다. 칸 없음이 확정되면 같은 칸 상속을 끊는다
 - **만들기**(`refresh`): 닫힌 구간이 마지막 키 뒤 400 ms 지나면 변환기 동작을 스텝으로 만든다 —
-  클릭은 같은 확정 세대 프레임에서만 자르고(보호 영역을 피함), 재사용·이름(보호 규칙), 앞 동작과의
-  대기 추론, 글자 구간은 판정 재료(라벨·끝난 뒤 칸 OCR)를 다음 동작 직전 프레임으로 본다
+  클릭은 같은 확정 세대 프레임에서만 자르고, 재사용·이름, 앞 동작과의 대기 추론, 글자 구간은 판정
+  재료(라벨·끝난 뒤 칸 OCR)를 다음 동작 직전 프레임으로 본다. 비밀값 칸은 자르기·이름·확인에서
+  가리지 않는다 (UX11 B — 로컬 툴). 비밀값 입력을 `$secret` 참조로 바꾸는 판정은 그대로다
 
 글자 원문은 `RecorderTexts`(메모리)에만 있다. 스텝 JSON(`step_json`)은 `ordinary`일 때만 `text`를
 싣고 세션 저장소용(`reveal=False`)은 싣지 않는다. 로그에는 개수만 쓴다.
@@ -39,8 +40,8 @@ from kookabug_core.recorder.actions import (
     ScrollAction,
     TextAction,
 )
-from kookabug_core.recorder.fields import FieldSpan, SecretText
-from kookabug_core.recorder.protect import Box, ProtectionSet, sanitize_name
+from kookabug_core.recorder.fields import FieldSpan
+from kookabug_core.recorder.protect import Box
 from kookabug_core.recorder.secrets import RecorderTexts
 from kookabug_core.recorder.waits import NextKind
 from kookabug_platform.dpi import normalized_to_pixels
@@ -162,7 +163,6 @@ class Step:
     kept: bool = False
     peaks: int | None = None
     classified: bool = False
-    invalidated: bool = False
     """만든 뒤 보호 상태가 바뀌어(일반 → 비밀값) 초안·이름·문구를 버렸다 — 사람이 고치기 전에는
     커밋하지 않는다 (`secret_region_overlap`)."""
 
@@ -194,7 +194,6 @@ class Pipeline:
         self._held_lock = threading.Lock()
         self._held_at: dict[int, RingEntry | None] = {}
         self.tracker = FieldPresenceTracker()
-        self.protect = ProtectionSet(absent_in=self.tracker.absent_in)
         self.texts = RecorderTexts()
         self.converter = Converter(
             target_hwnd,
@@ -317,8 +316,6 @@ class Pipeline:
             ref = self._ref(entry)
             client = None if ref is None else ref.client()
             for span_id in self.tracker.observe(entry.arrival_ns, client):
-                gone = self.tracker.gone_at(span_id)
-                self.protect.end(span_id, entry.arrival_ns if gone is None else gone)
                 info = self._fields.get(span_id)
                 if info is not None and info.box is not None:
                     self.texts.classifier.scene_changed(info.box)
@@ -351,7 +348,6 @@ class Pipeline:
         self._fields[span.span_id] = _Field(box, start, span.t_start)
         self.texts.open_span(span.span_id, box)
         if box is not None and start is not None:
-            self.protect.add(span.span_id, box, span.t_start)
             self.tracker.register(span.span_id, box, start.client(), span.t_start)
 
     # ------------------------------------------------------------ 스텝 만들기
@@ -379,8 +375,6 @@ class Pipeline:
                 self._built.add(key)
                 changed = True
         changed = self._classify() or changed
-        if self.revalidate():
-            changed = True
         if changed:
             self.rev += 1
         return changed
@@ -466,21 +460,12 @@ class Pipeline:
     def _meta(self, size: tuple[int, int], dpi: int) -> FrameMeta:
         return FrameMeta(size, dpi, backend="recorder")
 
-    def _name(self, image: Pixels, box: Box, t_ns: int, fallback: str) -> str:
-        return name_for_box(
-            image,
-            box,
-            read_text=self.read_text,
-            protect=self.protect,
-            t_ns=t_ns,
-            raw_texts=list(self.texts.protected_texts()),
-            fallback=fallback,
-        )
+    def _name(self, image: Pixels, box: Box, fallback: str) -> str:
+        return name_for_box(image, box, read_text=self.read_text, fallback=fallback)
 
     def _click_target(self, step: Step, frame: ClickFrame) -> None:
         client = np.ascontiguousarray(frame.client_pixels())
-        arrival = frame.entry.arrival_ns
-        crop = crop_click(client, frame.client_point, protect=self.protect, t_ns=arrival)
+        crop = crop_click(client, frame.client_point)
         step.badges = sorted({*step.badges, *crop.badges})
         step.peaks = crop.same_shape
         if crop.box is None:
@@ -492,9 +477,7 @@ class Pipeline:
         )
         if hover.badge is not None:
             step.badges.append(hover.badge)
-        if hover.source == "pre_hover" and not self.protect.overlaps(
-            crop.box, hover.frame.entry.arrival_ns, hover.frame.client_pixels()
-        ):
+        if hover.source == "pre_hover":
             image, used = np.ascontiguousarray(hover.frame.client_pixels()), hover.frame
             step.frames["pre_hover"] = FrameRef(used.entry, used.generation)
         size = frame.generation.geometry.client_size
@@ -503,7 +486,7 @@ class Pipeline:
             image,
             meta,
             crop,
-            name=lambda n: self._name(image, crop.box or (0, 0, 1, 1), arrival, f"click_{n}"),
+            name=lambda n: self._name(image, crop.box or (0, 0, 1, 1), f"click_{n}"),
             frame_t_ns=used.entry.arrival_ns,
         )
         step.target = key
@@ -561,7 +544,6 @@ class Pipeline:
             next_kind=_NEXT_KIND[step.kind],
             field_box=field,
             click_found_in=click_found_in,
-            protect=self.protect,
         )
         decision = plan.decision
         gap_ms = max(0, (step.t_ns - prev.t_ns) // MS)
@@ -577,7 +559,7 @@ class Pipeline:
                 b,
                 self._meta(size, dpi),
                 box,
-                name=lambda n: self._name(b, box, t_b, f"wait_{n}"),
+                name=lambda n: self._name(b, box, f"wait_{n}"),
                 frame_t_ns=t_b,
             )
             self.draft_frames.setdefault(draft, ref)
@@ -607,16 +589,15 @@ class Pipeline:
     def insert_check(
         self, kind: Literal["visible", "text"], pixels: Pixels, dpi: int, rect: Box, t_ns: int
     ) -> Step:
-        """사람이 고른 영역(그 정지 화면 `pixels`) → 화면 확인·값 확인 스텝. 보호 영역과 겹치면
-        `SecretRegionOverlap`."""
-        self.protect.require_clear(rect, t_ns, pixels)
+        """사람이 고른 영역(그 정지 화면 `pixels`) → 화면 확인·값 확인 스텝 (비밀값 칸과 겹쳐도
+        그대로 — UX11 B)."""
         size = (int(pixels.shape[1]), int(pixels.shape[0]))
         image = np.ascontiguousarray(pixels)
         draft = self.targets.add_draft(
             image,
             self._meta(size, dpi),
             rect,
-            name=lambda n: self._name(image, rect, t_ns, f"check_{n}"),
+            name=lambda n: self._name(image, rect, f"check_{n}"),
             frame_t_ns=t_ns,
         )
         self.draft_frames[draft] = image
@@ -630,9 +611,6 @@ class Pipeline:
             text = None if self.read_text is None else self.read_text(image, rect)
             step.equals = text or ""
         step.target, step.name = draft, name
-        # 보호 영역 밖이라도 다른 자리에 다시 보인 비밀값 원문을 OCR이 읽을 수 있다:
-        # 응답·알림·저장 전에 본다
-        self.scrub_equals(step)
         step.frames["pre_next"] = image
         self._before(step, image)
         self._insert(step)
@@ -680,82 +658,7 @@ class Pipeline:
                     self.texts.classifier.final(span, seen, typed)
             step.classified = True
             changed = True
-            if self.texts.state(span) == "ordinary":
-                self.protect.release(span)
         return changed
-
-    # ------------------------------------------------------------ 보호 상태가 바뀐 뒤 재검사
-
-    def revalidate(self) -> list[str]:
-        """만든 초안·이름·제목·문구를 **지금** 보호 영역·원문 목록으로 다시 본다 (B3 검수 H1).
-
-        일반 글자로 판정됐던 구간이 비밀값이 되면(자동·사람) 그 칸을 덮은 초안 그림과 그 원문을 읽은
-        이름·문구가 남는다. 걸린 스텝은 초안을 버리고(이름·제목은 대체 이름, 문구는 비움)
-        `secret_overlap` 확인 필요로 둔다. 버린 초안 ID를 돌려준다 (써진 파일 정리는 세션)."""
-        raws = [t for t in self.texts.protected_texts() if t]
-        bad_drafts: set[str] = set()
-        for draft_id, draft in self.targets.drafts.items():
-            source = self.draft_frames.get(draft_id)
-            if source is None:
-                continue
-            pixels = source.client() if isinstance(source, FrameRef) else source
-            if self.protect.overlaps(draft.box, draft.frame_t_ns, pixels) or _leaks(
-                draft.name, raws
-            ):
-                bad_drafts.add(draft_id)
-        hit = False
-        for step in self.steps:
-            if step.deleted:
-                continue
-            # 이름·제목·문구와 함께 재사용 target 경로 문자열도 본다 (공개 스텝·저장소로 나감)
-            leaked = (
-                (step.target in bad_drafts)
-                or _leaks(step.name, raws)
-                or (step.target is not None and _leaks(step.target, raws))
-            )
-            if step.equals and any(_contains(step.equals, raw) for raw in raws):
-                leaked = True
-            if leaked:
-                self._invalidate(step)
-                hit = True
-        for draft_id in bad_drafts:
-            self.targets.drafts.pop(draft_id, None)
-            self.draft_frames.pop(draft_id, None)
-        if hit or bad_drafts:
-            self.rev += 1
-        return sorted(bad_drafts)
-
-    def invalidate(self, step: Step) -> None:
-        """세션이 미리 쓴 target 파일(materialize)의 초안이 버려졌을 때 그 스텝도 버린다."""
-        self._invalidate(step)
-
-    def leaks_secret(self, text: str) -> bool:
-        """`text`가 세션의 비밀값·판정 대기·확인 필요 원문을 담는가 (값 확인 기댓값·글자 읽기)."""
-        raws = [t for t in self.texts.protected_texts() if t]
-        return bool(text) and any(_contains(text, raw) for raw in raws)
-
-    def scrub_equals(self, step: Step) -> bool:
-        """값 확인 기댓값이 원문을 담으면 비우고 스텝을 `secret_overlap`으로 버린다(재검사와 같은
-        처리). 기댓값을 내보내는 모든 경로(새 확인 스텝·`step_json`)가 이것을 거친다."""
-        if step.equals and self.leaks_secret(step.equals):
-            self._invalidate(step)
-            self.rev += 1
-            return True
-        return False
-
-    def _invalidate(self, step: Step) -> None:
-        """초안이든 기존 파일 재사용이든 스텝의 target 참조를 버린다 — 재사용 경로도 공개 스텝·
-        저장소로 나가지 않게 (기존 사용자 파일은 그대로 둔다)."""
-        step.target = None
-        step.reused = False
-        step.badges = [b for b in step.badges if b != "reused"]
-        step.name = ""
-        step.title = _PLAIN_TITLE.get(step.kind, step.title)
-        if step.equals:
-            step.equals = ""
-        if "secret_overlap" not in step.needs_review:
-            step.needs_review.append("secret_overlap")
-        step.invalidated = True
 
     def pending_classification(self) -> list[Step]:
         return [
@@ -772,9 +675,6 @@ class Pipeline:
 
     def step_json(self, step: Step, *, reveal: bool, base_ns: int = 0) -> dict[str, Any]:
         """`RecorderStep`. `reveal=False`면 일반 글자도 싣지 않는다 (세션 저장소)."""
-        # 직렬화 방어: 어떤 경로로 만든 기댓값이든 내보내기 직전에 원문 목록과 대조한다
-        if step.kind == "check_text":
-            self.scrub_equals(step)
         review = set(step.needs_review)
         title = step.title
         out: dict[str, Any] = {
@@ -801,7 +701,6 @@ class Pipeline:
         out["badges"] = badges
         out["needs_review"] = sorted(review)
         if step.kind == "check_text":
-            # 위 scrub_equals를 지난 값 (원문을 담았으면 비었다)
             out["equals"] = step.equals or ""
         if step.needs_target:
             out["target"] = self.target_json(step)
@@ -858,10 +757,6 @@ class Pipeline:
     def active_spans(self) -> list[int]:
         return [s.span_id for s in self.steps if s.span_id is not None and not s.deleted]
 
-    def overlap_check(self, rect: Box, t_ns: int | None, frame: Pixels) -> None:
-        """사람이 고른 영역의 보호 영역 검사 (`SecretRegionOverlap`)."""
-        self.protect.require_clear(rect, t_ns, frame)
-
     def wipe(self) -> None:
         self.wiped = True
         self.texts.wipe()
@@ -871,27 +766,6 @@ class Pipeline:
             self._held_at.clear()
         self.draft_frames.clear()
         self._prev = None
-
-
-_PLAIN_TITLE: Final = {
-    "click": "이미지 클릭",
-    "drag": "끌기",
-    "wait": "나타날 때까지 대기",
-    "check_visible": "화면 확인",
-    "check_text": "문구 확인",
-}
-
-
-def _contains(text: str, raw: SecretText) -> bool:
-    """`text`에 원문(또는 이름으로 정리한 원문)이 들어 있는가. 원문은 비교에만 쓴다."""
-    secret = raw.reveal().casefold()
-    folded = text.casefold()
-    cleaned = sanitize_name(secret).casefold()
-    return bool(secret) and (secret in folded or (bool(cleaned) and cleaned in folded))
-
-
-def _leaks(name: str, raws: list[SecretText]) -> bool:
-    return bool(name) and any(_contains(name, raw) for raw in raws)
 
 
 def _badge(code: str) -> dict[str, Any]:

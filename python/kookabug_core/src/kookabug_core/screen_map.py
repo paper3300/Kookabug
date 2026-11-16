@@ -284,7 +284,13 @@ def detect_text(screen: ScreenDef) -> str:
     return " && ".join(parts)
 
 
+WAIT_LABEL: Final = "저절로"
+"""입력 없이 바뀌는 이동의 이름표 (UX11 A1 — 로딩·컷신)."""
+
+
 def _via(move: ScreenMove) -> tuple[dict[str, Any], str]:
+    if move.wait:
+        return {"wait": {}}, WAIT_LABEL
     if move.element is not None:
         return {"click": {"element": move.element}}, move.element
     if move.point is not None:

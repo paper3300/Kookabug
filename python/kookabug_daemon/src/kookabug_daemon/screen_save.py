@@ -54,7 +54,16 @@ if TYPE_CHECKING:
     from kookabug_daemon.frames import EditorFrame
     from kookabug_sdk.types import Target
 
-__all__ = ["SHOT_SIDE", "add_moves", "identify", "save"]
+__all__ = [
+    "SHOT_SIDE",
+    "add_moves",
+    "arrival",
+    "disconnected",
+    "identify",
+    "link",
+    "save",
+    "specificity",
+]
 
 SHOT_SIDE: Final = 1280
 """대표 스크린샷 긴 변 (U7)."""
@@ -170,7 +179,13 @@ def identify(
         if node == exclude or not screen.detect():
             continue  # 판정 조건 없는 후보·of만 있는 후보는 판정하지 않는다
         checked += 1
-        entry = {"node": node, "state": state, "title": screen.title}
+        entry: dict[str, Any] = {
+            "node": node,
+            "state": state,
+            "title": screen.title,
+            "kind": screen.kind,
+            "conditions": len(screen.detect()),
+        }
         entry["id" if state == "confirmed" else "key"] = name
         try:
             result = evaluate_screen(screen, load, frame.pixels, frame.meta(), Vision(), ocr=reader)
@@ -181,7 +196,37 @@ def identify(
             matches.append(entry)
         elif result.state == "unknown":
             unknown.append(entry)
+    matches.sort(key=specificity)  # 안정 정렬 — 같으면 지금 순서 (UX11 A2)
     return {"matches": matches, "unknown": unknown, "checked": checked, "problems": problems}
+
+
+def specificity(match: Mapping[str, Any]) -> tuple[int, int]:
+    """식별 결과 정렬 열쇠 (작을수록 구체적, UX11 A2): 팝업 먼저, 그다음 판정 조건이 많은 것.
+    반투명 팝업은 뒤 화면 글자가 보여 뒤 화면 조건도 맞는다 — 더 구체적인 쪽이 지금 화면이다."""
+    return (0 if match.get("kind") == "popup" else 1, -int(match.get("conditions") or 0))
+
+
+def arrival(
+    matches: Sequence[Mapping[str, Any]], origin: tuple[str, str] | None
+) -> Mapping[str, Any] | None:
+    """도착 화면 (UX11 A2): 가장 구체적인 화면. 그것이 출발 화면이고 같은 정도로 구체적인 다른
+    화면도 맞으면 그 다른 화면에 도착한 것으로 본다. 맞는 화면이 없으면 None."""
+    if not matches:
+        return None
+    ranked = sorted(matches, key=specificity)
+    first = ranked[0]
+    if origin is None or _ref(first) != origin:
+        return first
+    other = next(
+        (m for m in ranked[1:] if _ref(m) != origin and specificity(m) == specificity(first)),
+        None,
+    )
+    return first if other is None else other
+
+
+def _ref(match: Mapping[str, Any]) -> tuple[str, str]:
+    state = "confirmed" if match.get("state") == "confirmed" else "explored"
+    return state, str(match.get("id") or match.get("key"))
 
 
 # ---------------------------------------------------------------- 저장
@@ -266,10 +311,10 @@ def _moves(
             raise _bad(f"moves[{i}].via가 없다")
         via_map = cast(dict[str, Any], via)
         click = via_map.get("click")
-        if isinstance(click, dict) and "point" in cast(dict[str, Any], click):
-            shaped: dict[str, Any] = {
-                "click": {"point": _point_norm(cast(dict[str, Any], click)["point"], frame)}
-            }
+        if "wait" in via_map:
+            shaped: dict[str, Any] = {"wait": {}}  # 입력 없이 저절로 (UX11 A1)
+        elif isinstance(click, dict) and "point" in cast(dict[str, Any], click):
+            shaped = {"click": {"point": _point_norm(cast(dict[str, Any], click)["point"], frame)}}
         elif isinstance(click, dict):
             shaped = {"click": {"element": cast(dict[str, Any], click).get("element")}}
         else:
@@ -338,7 +383,7 @@ def save(call: Any, frame: EditorFrame, session: ExploreSession) -> dict[str, An
             raise _bad(f"elements[{i}]은(는) 객체다")
         _length(f"elements[{i}].name", cast(dict[str, Any], e).get("name"), _LIMITS["element"])
     # 3.5b: 글자 필드 전부 비밀값 검사 — 아무것도 쓰기 전에
-    check_texts(_texts(params), daemon.guard, root, job_secrets(daemon))
+    check_texts(_texts(params), job_secrets(daemon))
 
     workspace = Workspace.open(root)
     confirmed = screen_index(workspace)
@@ -473,7 +518,7 @@ def add_moves(
             texts.append((f"moves[{i}].via.key", m["via"]["key"]))
         if isinstance(m.get("note"), str):
             texts.append((f"moves[{i}].note", m["note"]))
-    check_texts(texts, daemon.guard, root, job_secrets(daemon))
+    check_texts(texts, job_secrets(daemon))
     rel = f"{session.rel}/{key}{SUFFIX}"
     session_parts = (SCREENS_DIR, EXPLORED_DIR, session.id)
     from kookabug_core.screen_promote import PromoteError, ensure_clear
@@ -517,6 +562,91 @@ def add_moves(
             return None
     daemon.explore.changed()
     return key
+
+
+def _link_ref(root: Path, session: ExploreSession, name: Any, field_name: str) -> tuple[str, str]:
+    """`screens.link`의 from·to → (state, 이름). 이 세션 후보 키(카드 파일이 있음)가 먼저, 아니면
+    확정 화면 ID. 둘 다 아니면 `invalid_params`."""
+    if not isinstance(name, str) or not name:
+        raise _bad(f"{field_name}는 이 세션 후보 키 또는 확정 화면 ID다")
+    if is_screen_key(name):
+        card = plain_path(root, (SCREENS_DIR, EXPLORED_DIR, session.id, f"{name}{SUFFIX}"))
+        if card.is_file():
+            return "explored", name
+    if name in screen_index(Workspace.open(root)):
+        return "confirmed", name
+    raise _bad(
+        f"{field_name} {name!r}은(는) 이 탐색 세션의 후보 키도 확정 화면 ID도 아니다 "
+        "(먼저 kb_screen_save로 저장하거나 kb_screen_list의 id를 쓴다)"
+    )
+
+
+def _link_via(value: Any) -> dict[str, Any]:
+    """이을 이동의 via (프레임이 없으므로 점은 0~1 비율)."""
+    if not isinstance(value, dict):
+        raise _bad("via는 {wait: {}}·{key}·{click: {element}}·{click: {point: [x, y] 비율}}다")
+    via = cast(dict[str, Any], value)
+    if "wait" in via:
+        return {"wait": {}}
+    if isinstance(via.get("key"), str) and via["key"]:
+        return {"key": via["key"]}
+    click = via.get("click")
+    if isinstance(click, dict):
+        item = cast(dict[str, Any], click)
+        if isinstance(item.get("element"), str) and item["element"]:
+            return {"click": {"element": item["element"]}}
+        point = item.get("point")
+        if isinstance(point, list) and len(cast(list[Any], point)) == 2:
+            x, y = (float(v) for v in cast(list[Any], point))
+            if 0 <= x <= 1 and 0 <= y <= 1:
+                return {"click": {"point": [round(x, 4), round(y, 4)]}}
+            raise _bad("via.click.point는 프레임 비율 [x, y] (0~1)다")
+    raise _bad("via는 {wait: {}}·{key}·{click: {element}}·{click: {point: [x, y] 비율}}다")
+
+
+def link(daemon: Any, session: ExploreSession, params: Mapping[str, Any]) -> dict[str, Any]:
+    """`screens.link` (UX11 A3): 프레임 없이 이 세션 지도의 두 화면 사이에 이동 하나를 더한다
+    (`add_moves`와 같은 길 — 출발이 확정 화면이면 `of_<id>` 카드, 같은 이동은 합친다)."""
+    root: Path = daemon.root
+    source = _link_ref(root, session, params.get("from"), "from")
+    target = _link_ref(root, session, params.get("to"), "to")
+    if source == target:
+        raise _bad("from과 to가 같은 화면이다")
+    move: dict[str, Any] = {
+        "via": _link_via(params.get("via")),
+        "to": target[1],
+        "status": params.get("status", "tried"),
+    }
+    if move["status"] not in ("tried", "untried"):
+        raise _bad("status는 tried·untried다")
+    if params.get("note") is not None:
+        move["note"] = _length("note", params["note"], _LIMITS["note"])
+    card = add_moves(daemon, session, source, [move])
+    if card is None:
+        raise RequestFailed(
+            "validation_failed",
+            f"이동을 '{source[1]}' 카드에 붙이지 못했다 — 요소 이름이 그 카드 elements에 없거나 "
+            "키 이름을 모르거나, 화면 지도 정리(승격)가 끝나지 않았다",
+            diagnostics=[],
+        )
+    return {"card": card, "from": source[1], "to": target[1]}
+
+
+def disconnected(root: Path, session_id: str, first: str | None) -> list[dict[str, Any]]:
+    """끊긴 화면 (UX11 A4): 이 세션 후보(of 카드 제외) 중 처음 저장한 것(`first`) 말고 들어오는
+    이동이 없는 것 (키 순). 들어오는 이동은 이 세션 카드(of 카드 포함)의 `to`로 센다."""
+    workspace = Workspace.open(root)
+    mine = [
+        c
+        for c in explored_candidates(workspace)
+        if c.session == session_id and c.placement == "session" and c.screen is not None
+    ]
+    incoming = {m.to for c in mine if c.screen is not None for m in c.screen.moves if m.to}
+    return [
+        {"key": c.key, "title": c.screen.title}
+        for c in mine
+        if c.screen is not None and c.screen.of is None and c.key != first and c.key not in incoming
+    ]
 
 
 def _commit(

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from helpers.evidence import START, SceneRun, run_scene
-from helpers.graphs import link, secret, subgraph_interface, target
+from helpers.graphs import subgraph_interface, target
 from helpers.run import tk
 
 from kookabug_core.engine import MemoryArtifacts
@@ -91,73 +91,6 @@ def test_thumbnail_follows_screenshot_policy_and_capture_mark(tmp_path: Path) ->
     (omitted,) = ran.end("n_wait")["omitted"]
     assert (omitted["kind"], omitted["reason"]) == ("thumbnail", "policy_off")
     assert "n_wait" in omitted["source"]
-
-    # 비밀값 입력 스텝(비밀값 가림 켬) → secret_input
-    sec = launch(tk().entry("n_launch"), "n_shot").node(
-        "n_shot", "testkit.shot", inputs={"captures": 2, "value": secret("acc.pw")}
-    )
-    redact = {"redact_secrets": True}
-    ran = run_scene(tmp_path / "secret", sec, secrets={"acc.pw": "hunter2"}, ws_record=redact)
-    assert ran.thumbs() == set()
-    (omitted,) = ran.end("n_shot")["omitted"]
-    assert (omitted["kind"], omitted["reason"]) == ("thumbnail", "secret_input")
-
-    # 비밀값을 받은 호출: 호출 스텝은 직접 캡처하지 않아 썸네일이 없고, 비밀값을 직접 받은 안쪽
-    # 스텝도 없다. 비밀값을 받지 않은 안쪽 스텝은 스크린샷 예외(M1)와 같이 남는다
-    sub = (
-        tk("subgraph", interface=subgraph_interface(inputs={"pw": "secret"}))
-        .entry("n_s")
-        .node(
-            "n_s",
-            "testkit.shot",
-            inputs={"value": link("n_entry.pw")},
-            next={"done": "n_plain"},
-        )
-        .node("n_plain", "testkit.shot", next={"done": "n_x"})
-        .exit("n_x", "done")
-    )
-    call = (
-        launch(tk().entry("n_launch"), "n_call")
-        .call("n_call", "subs/s.graph.json", inputs={"pw": secret("acc.pw")}, next=PASS)
-        .node("n_pass", "core.test.pass")
-    )
-    ran = run_scene(
-        tmp_path / "call",
-        call,
-        secrets={"acc.pw": "hunter2"},
-        subgraphs={"subs/s.graph.json": sub},
-        ws_record=redact,
-    )
-    assert ran.result.verdict == "pass", ran.result.reason
-    assert ran.thumbs() == {f"thumbs/{ran.step('n_plain')}.jpg"}
-    (omitted,) = ran.end("n_s")["omitted"]
-    assert (omitted["kind"], omitted["reason"]) == ("thumbnail", "secret_input")
-
-    # 획득 당시 표시: 썸네일은 그 스텝이 직접 얻은 프레임만 쓴다 — 비밀값 스텝이 얻어 출력한
-    # 이미지를 받은 다음 스텝은 캡처하지 않으면 썸네일이 없고(저장도 capture_policy로 막힘),
-    # 직접 캡처하면 자기 프레임으로 남는다 (실행기 단위)
-    mark = (
-        launch(tk().entry("n_launch"), "n_secret")
-        .node(
-            "n_secret",
-            "testkit.shot",
-            inputs={"value": secret("acc.pw")},
-            next={"done": "n_reuse"},
-        )
-        .node(
-            "n_reuse",
-            "testkit.shot",
-            inputs={"captures": 0, "save": True, "image": link("n_secret.image")},
-            next={"done": "n_own"},
-        )
-        .node("n_own", "testkit.shot", next=PASS)
-        .node("n_pass", "core.test.pass")
-    )
-    ran = run_scene(tmp_path / "mark", mark, secrets={"acc.pw": "hunter2"}, ws_record=redact)
-    assert ran.result.verdict == "pass", ran.result.reason
-    assert ran.thumbs() == {f"thumbs/{ran.step('n_own')}.jpg"}
-    (blocked,) = ran.end("n_reuse")["omitted"]
-    assert (blocked["kind"], blocked["reason"]) == ("screenshot", "capture_policy")
 
     # Recorder 단위: 직접 캡처하지 않은 스텝은 썸네일을 남기지 않는다
     recorder = Recorder(MemoryArtifacts(), _Frames())

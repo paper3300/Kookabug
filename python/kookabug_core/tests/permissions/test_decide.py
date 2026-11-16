@@ -234,7 +234,10 @@ PRESET_TABLE: list[tuple[list[str], tuple[Verdict, ...]]] = [
         ("deny", "deny", "ask", "allow", "ask", "ask", "deny"),
     ),
     (["kb_screen_list", "kb_screen_get"], ALLOW5),
-    (["kb_screen_save"], ("deny", "ask", "ask", "allow", "allow", "allow", "deny")),
+    (
+        ["kb_screen_save", "kb_screen_link"],
+        ("deny", "ask", "ask", "allow", "allow", "allow", "deny"),
+    ),
     # M7 식별(조회)·탐색 세션 시작(변경)·끝(조회 — 늘 허용, B3 Low 8)
     (["kb_screen_identify", "kb_explore_end"], ALLOW5),
     (["kb_explore_start"], ("deny", "ask", "ask", "allow", "allow", "allow", "deny")),

@@ -6,8 +6,7 @@
 3. **유일성**: 그 템플릿을 같은 프레임 전체에서 찾아 자기 자리 말고 `임계값 - 0.03` 이상 봉우리가
    있으면 1.5배로 두 번까지 넓히고, 그래도 여럿이면 상자 3배 **검색 범위**로 좁힌다. 범위 안에서도
    여럿이면 배지 `same_shape`(검색 범위를 좁히세요)
-4. **보호 영역**: 모든 상자(처음·넓힌 것)는 `ProtectionSet.avoid`를 거친다. 유효한 상자를 못
-   만들면 target 없이 `secret_overlap`
+4. **비밀값 칸**은 피하지 않는다 (UX11 B — 로컬 툴이라 비밀번호 칸도 그대로 자른다)
 5. **클릭 지점**: `anchor: center`, `offset` = 클릭 점 - 상자 가운데 (재생은 `offset x 배율`)
 
 프레임은 클라이언트 그림(같은 확정 세대로 검증된 `ClickFrame.client_pixels()`)이다.
@@ -21,7 +20,7 @@ from typing import Final, Literal
 import cv2
 import numpy as np
 
-from kookabug_core.recorder.protect import Box, ProtectionSet
+from kookabug_core.recorder.protect import Box
 from kookabug_platform.dpi import pixels_to_normalized
 from kookabug_platform.recorder.frames import ClickFrame, Unresolved
 from kookabug_platform.vision import DEFAULT_THRESHOLD, Pixels, score_peaks
@@ -168,8 +167,6 @@ def crop_click(
     image: Pixels,
     point: tuple[int, int],
     *,
-    protect: ProtectionSet | None = None,
-    t_ns: int | None = None,
     threshold: float = DEFAULT_THRESHOLD,
 ) -> ClickCrop:
     """클라이언트 그림과 클릭 점 → 자를 상자·검색 범위·오프셋. 규칙은 모듈 설명."""
@@ -182,24 +179,20 @@ def crop_click(
     else:
         box = fixed_box(size, point)
         kind = "fixed"
-    guard = protect or ProtectionSet()
-    safe = guard.avoid(box, point, t_ns, frame=image)
-    if safe is None:
-        return ClickCrop(None, bounds, kind, point, needs_review=("secret_overlap",))
-    box = first = safe
+    first = box
     floor = threshold - UNIQUE_SLACK
     for attempt in range(WIDEN_TIMES + 1):
         if _other_best(image, box) < floor:
             return ClickCrop(box, bounds, kind, point, click_offset(box, point))
         if attempt == WIDEN_TIMES:
             break
-        wider = guard.avoid(_grow(box, WIDEN, size), point, t_ns, frame=image)
-        if wider is None or wider == box:
+        wider = _grow(box, WIDEN, size)
+        if wider == box:
             break
         box = wider
     # 넓혀도 여럿: 처음 상자로 돌아가 그 둘레(3배) 검색 범위로 좁힌다
     box = first
-    region = guard.avoid(_grow(box, REGION_SCALE, size), point, t_ns, frame=image) or box
+    region = _grow(box, REGION_SCALE, size)
     template = image[box[1] : box[1] + box[3], box[0] : box[0] + box[2]]
     inside = [p for p in find_peaks(image, template, region) if p[0] >= floor]
     same = max(1, len(inside))
@@ -212,19 +205,16 @@ def crop_click(
 def crop_from_frame(
     frame: ClickFrame | Unresolved,
     *,
-    protect: ProtectionSet | None = None,
     threshold: float = DEFAULT_THRESHOLD,
 ) -> ClickCrop | Unresolved:
     """클릭과 같은 확정 세대로 검증된 프레임에서만 자른다 (M4 계획 2.5 "자르기 조건"). 프레임이
     없거나 세대가 다르면 그대로 돌려준다 — 뒤 프레임으로 대신하지 않는다(`no_frame`·
-    `geometry_unresolved`·다시 물을 `pending`). 보호 영역은 그 프레임의 도착 시각으로 본다."""
+    `geometry_unresolved`·다시 물을 `pending`)."""
     if isinstance(frame, Unresolved):
         return frame
     return crop_click(
         np.ascontiguousarray(frame.client_pixels()),
         frame.client_point,
-        protect=protect,
-        t_ns=frame.entry.arrival_ns,
         threshold=threshold,
     )
 

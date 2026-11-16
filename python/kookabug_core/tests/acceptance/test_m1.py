@@ -203,8 +203,8 @@ def no_keys_left() -> Iterator[None]:
 def test_sample_game_enter_world_and_inventory_open_pass(
     tmp_path: Path, ocr_models: Path, mode: str
 ) -> None:
-    # 실제 게임 판은 비밀번호가 기록에 없는지도 본다: 비밀값 가림을 켠 사본 (예제 원본은 기본값)
-    ws = copy_example_workspace(tmp_path, redact_secrets=True)
+    # 비밀값은 기록에서 가리지 않는다 (UX11 B) — 예제 원본 그대로
+    ws = copy_example_workspace(tmp_path)
     if mode == "headless":
         code, out = run_example(ws, tmp_path, ocr_models, INVENTORY_OPEN, *FAKE)
         assert (code, out["verdict"], out["code"]) == (0, "pass", "assertion_passed"), out
@@ -229,14 +229,12 @@ def test_sample_game_enter_world_and_inventory_open_pass(
         keys.release_all_for_test()
     seen = game_events(event_log)
     assert (code, out["verdict"], out["code"]) == (0, "pass", "assertion_passed"), (out, seen[-5:])
-    # 게임이 실제로 지나간 화면과 받은 글자 (비밀번호는 게임에만, 기록에는 없음)
+    # 게임이 실제로 지나간 화면과 받은 글자
     scenes = [e["scene"] for e in seen if e["event"] == "screen"]
     for scene in ("title", "login", "lobby_server1", "loading", "world", "inventory"):
         assert scene in scenes, scenes
     typed = "".join(e["text"] for e in seen if e["event"] == "char")
     assert "qa_tester_01" in typed and EXAMPLE_SECRETS["accounts.qa_tester_01"] in typed
-    record = (Path(out["run_dir"]) / "events.jsonl").read_text(encoding="utf-8")
-    assert EXAMPLE_SECRETS["accounts.qa_tester_01"] not in record
 
 
 @pytest.mark.process

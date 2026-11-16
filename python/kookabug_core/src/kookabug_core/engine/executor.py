@@ -47,11 +47,10 @@ from __future__ import annotations
 
 import contextlib
 import copy
-import dataclasses
 import uuid
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, Final, Literal, cast
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 from kookabug_core.diagnostics import Diagnostic, has_errors
 from kookabug_core.engine.cancel import Cancelled, CancelToken, DeadlineExceeded
@@ -112,13 +111,11 @@ if TYPE_CHECKING:
 
 __all__ = [
     "DEFAULT_DEADLINE_MS",
-    "AttachScrub",
     "AttachStart",
     "ExecOptions",
     "Executor",
     "GraphInvalid",
     "RunResult",
-    "attach_record",
     "run_record_policy",
 ]
 
@@ -151,189 +148,6 @@ class AttachStart:
     window: WindowRef
     process: ProcessRef
     from_node: str | None = None
-    mask_title: Callable[[str], str] | None = None
-    """기억한 게임 아닌 창 제목의 비밀값 가림 (runner가 워크스페이스 비밀값으로 만든다). None이면
-    제목을 비운다 (가림을 확인하지 못하면 남기지 않는다)."""
-    scrub_secrets: Callable[[str], str] | None = None
-    """기록되는 모든 글의 비밀값 가림 (워크스페이스 비밀값 원문을 `***`로 — `AttachScrub`이 한 번 더
-    건다). None이면 이 단계는 없다 (제목 치환은 그대로)."""
-
-
-ATTACH_GAME_TITLE: Final = "@game"
-
-
-def attach_record(
-    value: Any,
-    attach: AttachStart,
-    seen: dict[str, str] | None = None,
-    games: Collection[tuple[int, str]] = (),
-) -> Any:
-    """붙여 실행에서 기록(이벤트 출력)에 남길 값 (UX7 검수 1 High 1). 어느 노드 출력이든 창 참조의
-    제목을: 기억한 게임 프로세스(PID·생성 시각)의 창이면 `@game`, 그 밖의 창이면 비밀값 가림을
-    거친 글로 바꾼다. 실행이 쓰는 값은 그대로다 (기록만 바꾼다). `seen`에는 바꾼 실제 제목 →
-    바꾼 글을 모은다 (저널 경계가 그 뒤 모든 글에서 같은 제목을 바꾼다 — `AttachScrub`). `games`는
-    실행기가 따라간 같은 게임의 창들의 (PID, 생성 시각) — 그 창도 `@game` (UX9 2)."""
-    game = attach.window
-
-    def title_of(window: WindowRef) -> str:
-        if (window.pid, str(window.process_created)) in games:
-            return ATTACH_GAME_TITLE
-        if window.pid == game.pid and (
-            not window.process_created
-            or not game.process_created
-            or str(window.process_created) == str(game.process_created)
-        ):
-            return ATTACH_GAME_TITLE
-        mask = attach.mask_title
-        return "" if mask is None else mask(window.title)
-
-    def walk(item: Any) -> Any:
-        if isinstance(item, WindowRef):
-            shown = title_of(item)
-            if seen is not None and item.title and item.title != shown:
-                seen[item.title] = shown
-            return replace(item, title=shown)
-        # 바뀐 것이 없으면 같은 객체를 돌려준다 (다시 만들지 않는다)
-        if isinstance(item, Mapping):
-            mapping = cast(Mapping[Any, Any], item)
-            pairs = {k: walk(v) for k, v in mapping.items()}
-            same = all(pairs[k] is v for k, v in mapping.items())
-            return item if same else pairs
-        if isinstance(item, list | tuple):
-            seq = cast(list[Any] | tuple[Any, ...], item)
-            walked = [walk(v) for v in seq]
-            if all(a is b for a, b in zip(walked, seq, strict=True)):
-                return item
-            return walked if isinstance(item, list) else tuple(walked)
-        if dataclasses.is_dataclass(item) and not isinstance(item, type):
-            # 창 참조를 품은 필드가 있을 때만 다시 만든다 (그 밖의 값은 그대로 — 기록 식별자 등)
-            changed = {
-                f.name: new
-                for f in dataclasses.fields(item)
-                if f.init and (new := walk(old := getattr(item, f.name))) is not old
-            }
-            if not changed:
-                return item
-            try:
-                return replace(item, **changed)
-            except TypeError, ValueError:
-                return item
-        return item
-
-    return walk(value)
-
-
-TITLE_MIN: Final = 3
-"""이보다 짧은 제목은 글 치환 대상에서 뺀다 (짧은 글자를 모든 메시지에서 바꾸지 않게)."""
-TITLE_TTL_S: Final = 1.0
-"""게임 창 제목을 다시 읽는 간격 (그 사이는 캐시)."""
-TEXT_FIELDS: Final = ("message", "reason", "detail")
-"""가리는 이벤트 글 필드 (UX7 검수 3 — 허용 목록). `error`는 글이면 그대로, 객체면 그 안의
-`message`·`detail`, `outputs`는 그 안의 모든 문자열 값. 실행 ID·이벤트 종류·노드·스텝·판정·코드·
-시각·seq 같은 구조·프로토콜 필드는 건드리지 않는다."""
-
-
-class AttachScrub:
-    """붙여 실행의 이벤트 쓰기 경계 (UX7 검수 2·3): 기록되기 전 글 필드(로그·노드 메시지·오류·
-    예외·판정 사유·노드 출력 안의 문자열 — `TEXT_FIELDS`)에서 창 제목을 막는다. 바인딩한 게임
-    창의 지금 제목은 `@game`으로, 실행 중 창 참조로 나온 다른 창의 실제 제목은 출력 경계와 같은
-    규칙(`AttachStart.mask_title`)으로 바꾸고, 그 뒤 비밀값 가림(`AttachStart.scrub_secrets`)을
-    한 번 더 건다. 구조·프로토콜 필드는 보존한다. 붙여 실행에서만 쓴다."""
-
-    def __init__(
-        self, attach: AttachStart, platform: Any, *, clock: Callable[[], float] | None = None
-    ) -> None:
-        import time
-
-        self.attach = attach
-        self.platform = platform
-        self.seen: dict[str, str] = {}
-        """실제 제목 → 바꾼 글 (`attach_record`가 모은다)."""
-        self._clock = clock or time.monotonic
-        self._title: str | None = None
-        self._read_at: float | None = None
-
-    def _game_title(self) -> str | None:
-        """게임 창의 지금 제목 (가벼운 `window_title`, 없으면 `window_info`). 최대 1초에 한 번 읽고
-        그 사이는 캐시를 쓴다."""
-        now = self._clock()
-        if self._read_at is not None and now - self._read_at < TITLE_TTL_S:
-            return self._title
-        self._read_at = now
-        title: str | None = None
-        try:
-            read = getattr(self.platform, "window_title", None)
-            if read is not None:
-                title = str(read(self.attach.window))
-            else:
-                info = getattr(self.platform, "window_info", None)
-                if info is not None:
-                    title = str(info(self.attach.window).title)
-        except Exception:
-            title = None
-        if title:
-            self._title = title  # 못 읽으면 지난 제목을 계속 쓴다 (가리는 쪽)
-        return self._title
-
-    def follow(self, new: WindowRef, old: WindowRef | None = None) -> None:
-        """게임 창이 바뀌었다(실행기가 검증한 창 따라가기, UX9 2): 제목을 읽을 대상을 새 창으로 하고
-        곧바로 다시 읽는다. 옛 창 제목과 새 참조의 제목은 계속 가린다 (`seen`)."""
-        for title in (self._title, None if old is None else old.title, new.title):
-            if title:
-                self.seen[title] = ATTACH_GAME_TITLE
-        self.attach = replace(self.attach, window=new)
-        self._read_at = None  # 캐시를 버리고 새 창 제목을 바로 읽는다
-        self._game_title()
-
-    def pairs(self) -> list[tuple[str, str]]:
-        found = dict(self.seen)
-        game = self._game_title()
-        if game is not None:
-            found[game] = ATTACH_GAME_TITLE
-        return sorted(
-            ((real, shown) for real, shown in found.items() if len(real) >= TITLE_MIN),
-            key=lambda pair: len(pair[0]),
-            reverse=True,
-        )
-
-    def text(self, value: str, pairs: list[tuple[str, str]] | None = None) -> str:
-        for real, shown in self.pairs() if pairs is None else pairs:
-            if real in value:
-                value = value.replace(real, shown)
-        scrub = self.attach.scrub_secrets
-        return value if scrub is None else scrub(value)
-
-    def event(self, event: dict[str, Any]) -> dict[str, Any]:
-        """허용 목록의 글 필드만 바꾼 새 이벤트 (구조 필드는 그대로)."""
-        pairs = self.pairs()
-
-        def walk(item: Any) -> Any:
-            """노드 출력 안: 문자열 값만 (키는 그대로)."""
-            if isinstance(item, str):
-                return self.text(item, pairs)
-            if isinstance(item, Mapping):
-                return {k: walk(v) for k, v in cast(Mapping[Any, Any], item).items()}
-            if isinstance(item, list):
-                return [walk(v) for v in cast(list[Any], item)]
-            return item
-
-        out = dict(event)
-        for name in TEXT_FIELDS:
-            value = out.get(name)
-            if isinstance(value, str):
-                out[name] = self.text(value, pairs)
-        error = out.get("error")
-        if isinstance(error, str):
-            out["error"] = self.text(error, pairs)
-        elif isinstance(error, Mapping):
-            fixed = dict(cast(Mapping[str, Any], error))
-            for name in ("message", "detail"):
-                if isinstance(fixed.get(name), str):
-                    fixed[name] = self.text(fixed[name], pairs)
-            out["error"] = fixed
-        if "outputs" in out:
-            out["outputs"] = walk(out["outputs"])
-        return out
 
 
 def run_record_policy(
@@ -489,12 +303,9 @@ class Executor:
 
         events: list[dict[str, Any]] = []
         collect = options.collect_events
-        # 붙여 실행: 기록되기 전 모든 글에서 창 제목·비밀값을 막는다 (UX7 검수 2)
-        scrub = None if options.attach is None else AttachScrub(options.attach, self.platform)
+        # 붙여 실행도 창 제목·비밀값을 가리지 않는다 (UX11 B — 로컬 툴)
 
         def emit(event: dict[str, Any]) -> None:
-            if scrub is not None:
-                event = scrub.event(event)
             if collect:
                 events.append(event)
             if self.sink is not None:
@@ -540,13 +351,10 @@ class Executor:
         )
         run = _Run(runtime, options.graph_prefix, self.before_step, self.video, gate)
         run.attach = options.attach
-        run.scrub = scrub
         runtime.on_window_changed = run.window_changed
         judgement = run.execute(top)
         cause = judgement.cause if judgement.verdict != "pass" else None
         reason = judgement.reason
-        if scrub is not None and isinstance(reason, str):
-            reason = scrub.text(reason)  # 최종 판정 사유 (run.end·run.json)
         return RunResult(
             run=run_id,
             verdict=judgement.verdict,
@@ -665,27 +473,15 @@ class _Run:
         self.qa = QaTrace()
         self.scopes = LoopScopes(runtime.program, runtime.registry)
         self.attach: AttachStart | None = None
-        self.scrub: AttachScrub | None = None
-        self.games: set[tuple[int, str]] = set()
-        """붙여 실행에서 따라간 같은 게임 창들의 (PID, 생성 시각) (UX9 2)."""
 
     def window_changed(self, old: WindowRef, new: WindowRef) -> None:
-        """실행기가 검증한 창 전환 (UX9 2 — `Runtime.on_window_changed`): 녹화 대상을 새 창으로,
-        붙여 실행이면 기록 가림의 게임 창도 새 창으로 (옛 제목 가림은 그대로)."""
+        """실행기가 검증한 창 전환 (UX9 2 — `Runtime.on_window_changed`): 녹화 대상을 새 창으로."""
         if self.video is not None:
             self.video.retarget(old, new)
-        if self.attach is not None:
-            self.games.add((new.pid, str(new.process_created)))
-            if self.scrub is not None:
-                self.scrub.follow(new, old)
 
     def _value(self, value: Any, event: dict[str, Any], field: str) -> Any:
-        """이벤트 `event`의 `field`(pointer)에 남길 값 (비밀값은 `record.redact_secrets`가 켜진
-        실행만 가린다, D3). 비밀값이 있던 자리는 `secret_paths`로 표시한다 (M5 3.8). 붙여 실행이면
-        창 참조 제목을 `@game`·가린 글로 (UX7)."""
-        if self.attach is not None:
-            seen = None if self.scrub is None else self.scrub.seen
-            value = attach_record(value, self.attach, seen, self.games)
+        """이벤트 `event`의 `field`(pointer)에 남길 값. 비밀값은 원문 그대로 (UX11 B — 가리지
+        않는다). 비밀값이 있던 자리는 `secret_paths`로 표시만 한다 (M5 3.8 — 기록 형식 호환)."""
         value, paths = classified_value(
             value, redact=self.rt.recorder.redact_secrets, pointer=field
         )

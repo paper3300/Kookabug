@@ -23,7 +23,7 @@ from kookabug_core import adopt as rules
 from kookabug_core.filetx import TxError
 from kookabug_core.knowledge.formats import Actor, KnowledgeError, SecretCheck, secret_checker
 from kookabug_core.workspace import Workspace, WorkspaceError, default_secrets
-from kookabug_daemon.adopt import Adopter, RunVerifier, pin_run, request_negatives, secret_keys_of
+from kookabug_daemon.adopt import Adopter, RunVerifier, pin_run, request_negatives
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.protocol import RequestFailed
 
@@ -100,24 +100,19 @@ def _negatives(call: Call, items: list[Mapping[str, Any]]) -> list[Any]:
 
 
 def checker_of(call: Call) -> SecretCheck:
-    """daemon의 글자 검사기 (지식 연산·위키·사건·채택 기록·감사 이력·증거 묶음·보고 메모 — M7
-    3.5b와 같은 규칙 + 작업 토큰 원문, M8 R9). 키를 못 읽거나 보호 기록이 손상됐으면
-    `secret_unchecked`."""
+    """daemon의 글자 검사기 (지식 연산·위키·사건·채택 기록·감사 이력·증거 묶음·보고 메모 — 작업
+    토큰 원문, M8 R9)."""
     return text_checker(call.daemon)
 
 
-def text_checker(daemon: Any, keys: set[str] | None = None) -> SecretCheck:
-    """보호 기록의 비밀값 키(+ `keys`) 값과 daemon 메모리의 작업 토큰 원문(살아 있는 것 + 폐기했지만
-    보고를 아직 쓰지 않은 것)을 거르는 검사기. 보고 생성 직전 재검사도 이것을 쓴다."""
-    guard = daemon.guard
+def text_checker(daemon: Any) -> SecretCheck:
+    """Kookabug 자체 자격 증명(daemon 메모리의 작업 토큰 원문 — 살아 있는 것 + 폐기했지만 보고를
+    아직 쓰지 않은 것, runner가 에이전트 프로세스에 넣은 인증·환경 값)을 거르는 검사기. 워크스페이스
+    비밀값은 보지 않는다 (UX11 B — 로컬 툴이라 가리지 않음). 보고 생성 직전 재검사도 이것을 쓴다."""
+    from kookabug_daemon.methods.sources import credential_values
+
     workspace = Workspace.open(daemon.root)
-    jobs = getattr(daemon, "jobs", None)
-    return secret_checker(
-        set(getattr(guard, "secret_keys", ()) or ()) | (keys or set()),
-        default_secrets(workspace),
-        blocked=bool(getattr(guard, "save_blocked", False)),
-        extra=None if jobs is None else jobs.secret_values,
-    )
+    return secret_checker((), default_secrets(workspace), extra=lambda: credential_values(daemon))
 
 
 async def _request(call: Call) -> dict[str, Any]:
@@ -193,7 +188,7 @@ def pin_of(call: Call, run_id: str, step: str | None, note: str | None) -> dict[
     길)."""
     where = call.daemon.run_manager.locate(run_id)
     guard = call.daemon.guard
-    check = text_checker(call.daemon, secret_keys_of(where.folder))
+    check = text_checker(call.daemon)
 
     def guard_of(pixels: Any) -> str:
         from kookabug_daemon.frames import EditorFrame

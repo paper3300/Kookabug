@@ -324,7 +324,7 @@ def _run_status(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     data = dict(status)
     summary = f"실행 {run}: {status['state']} ({verdict})"
     if status["state"] == "ended" and verdict != "pass":
-        # 실패 요약: 실패 위치·오류·증거 파일·지난 성공 (비밀값은 daemon이 가린다)
+        # 실패 요약: 실패 위치·오류·증거 파일·지난 성공
         failure = _daemon(link, "run.failure", {"run_id": str(run)})
         data["failure"] = failure
         where = failure.get("failure")
@@ -612,11 +612,26 @@ def _explore_start(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
 def _explore_end(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     got = _daemon(link, "explore.end", {})
     counts = got["counts"]
+    loose = got.get("disconnected") or []
+    note = (
+        f" · 끊긴 화면 {len(loose)}개({', '.join(str(d['key']) for d in loose)}) — 들어오는 "
+        "이동이 없다. kb_screen_link로 잇는다"
+        if loose
+        else ""
+    )
     return ok_result(
         f"탐색 세션 {got['session']} 끝: 화면 {counts['screens']} · 이동 {counts['moves']} · "
-        f"미탐색 {counts['untried']}",
+        f"미탐색 {counts['untried']}{note}",
         got,
     )
+
+
+def _screen_link(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
+    keys = ("from", "to", "via", "status", "note")
+    got = _daemon(link, "screens.link", {k: args[k] for k in keys if k in args})
+    loose = got.get("disconnected") or []
+    rest = f" · 아직 끊긴 화면: {', '.join(str(d['key']) for d in loose)}" if loose else ""
+    return ok_result(f"이동 {got['from']} → {got['to']} 이음 (카드 {got['card']}){rest}", got)
 
 
 def _explore_step(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
@@ -919,7 +934,7 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_log_search",
         "기록 찾기",
-        "최근 실행 기록의 이벤트 메시지·오류·판정 사유에서 글자를 찾는다 (비밀값은 가려져 있다)",
+        "최근 실행 기록의 이벤트 메시지·오류·판정 사유에서 글자를 찾는다",
         _schema(
             {
                 "query": {"type": "string", "minLength": 1},
@@ -945,7 +960,7 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "원본 읽기",
         "등록된 원본 또는 읽기 허용 폴더 파일 하나의 글(텍스트·docx·xlsx·pptx). 200 KB씩, "
         "나머지는 next_offset을 offset으로. 원본 결과의 ref·hash를 source 근거로 그대로 쓴다 "
-        "(읽기 허용 폴더 read:<…>는 근거가 아니다). 비밀값은 ***로 가린다",
+        "(읽기 허용 폴더 read:<…>는 근거가 아니다)",
         daemon_def("Ux2SourcesReadParams"),
         _source_read,
     ),
@@ -1056,8 +1071,8 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_run_events",
         "실행 이벤트",
-        "실행 이벤트 (seq 순). 비밀값이 든 필드는 ***, 분류 없는 옛 기록은 판정·노드·출구·"
-        "오류 코드·시각만. step·kinds(예: step.end, log)로 거른다",
+        "실행 이벤트 (seq 순). 분류 없는 옛 기록은 판정·노드·출구·오류 코드·시각만. "
+        "step·kinds(예: step.end, log)로 거른다",
         _schema(
             {
                 "run": RUN,
@@ -1074,7 +1089,7 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "kb_run_artifact_get",
         "실행 증거",
         "실행 폴더의 증거 파일(steps/·thumbs/ 이미지·글자, video/index.json). 이미지는 image "
-        "내용으로 준다. 비밀값을 다룬 스텝의 증거와 영상 조각은 주지 않는다",
+        "내용으로 준다",
         _schema(
             {"run": RUN, "path": {**PATH, "description": "실행 폴더 기준 경로 ('/')"}},
             ("run", "path"),
@@ -1092,8 +1107,8 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_screen_capture",
         "화면 캡처",
-        "window(창 제목)를 주면 그 창을 캡처(frame_id·이미지), 없으면 창 목록. 민감 대상이 "
-        "보이거나 비밀값을 입력한 칸이 남은 화면은 이미지 없이 protected(사유·안내)만 준다",
+        "window(창 제목)를 주면 그 창을 캡처(frame_id·이미지), 없으면 창 목록. 민감 대상"
+        "(sensitive target)이 보이는 화면은 이미지 없이 protected(사유·안내)만 준다",
         _schema({"window": WINDOW}),
         _screen_capture,
     ),
@@ -1114,7 +1129,7 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_ocr_read",
         "글자 읽기",
-        "정지 화면의 글자 (sensitive target이 보이는 화면·비밀값을 입력한 칸이 남은 화면은 거부)",
+        "정지 화면의 글자 (sensitive target이 보이는 화면은 거부)",
         _schema({"frame_id": {"type": "string", "minLength": 1}, "rect": RECT}, ("frame_id",)),
         _ocr_read,
     ),
@@ -1145,9 +1160,8 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
     ToolDef(
         "kb_input_type",
         "글자 입력",
-        "글자를 입력한다. secret을 주면 그 비밀값(키 이름)을 입력하고 값은 돌려주지 않는다. "
-        "비밀값 칸은 point(칸 위치)를 함께 줘 클릭+입력을 한 번에 보낸다(select_all이면 클릭 뒤 "
-        "ctrl+a) — 따로 보내 칸 위치 근거가 없으면 그 창이 닫힐 때까지 이미지가 오지 않는다",
+        "글자를 입력한다. secret을 주면 그 비밀값(키 이름)의 값을 입력한다. 칸은 point(칸 "
+        "위치)를 함께 줘 클릭+입력을 한 번에 보낼 수 있다(select_all이면 클릭 뒤 ctrl+a)",
         _schema(
             {
                 "window": WINDOW,
@@ -1178,9 +1192,10 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "입력 하나(point·target 클릭, keys, text·secret — kb_input_*와 같은 인자, 또는 입력 "
         "없음) → 화면이 바뀌고 멈추기를 기다림(wait_ms, 입력이 있으면 기본 10초·최대 60초) → "
         "캡처(이미지) → 화면 판별(kb_screen_identify와 같음) → 탐색 세션이 열려 있으면 "
-        "'직전 화면 --입력--> 이번 화면' 이동을 직전 화면 카드에 tried로 자동 기록. 처음 보는 "
+        "'직전 화면 --입력--> 이번 화면' 이동을 직전 화면 카드에 tried로 자동 기록(입력 없는 "
+        "걸음에서 화면이 바뀌었으면 via wait — 로딩·컷신처럼 저절로 바뀜). 처음 보는 "
         "화면이면 new_screen: true — kb_screen_save(key)로 저장하면 그 키로 이동의 to를 "
-        "채운다. 권한·금지 동작·입력 임대권·비밀값 가림·탐색 스텝 예산은 kb_input_*와 같다. "
+        "채운다. 권한·금지 동작·입력 임대권·탐색 스텝 예산은 kb_input_*와 같다. "
         "클릭(point)과 text·secret을 함께 주면 클릭+입력 한 걸음(로그인 칸은 이렇게 — "
         'select_all이면 ctrl+a 뒤 입력). window "@game"은 창이 아직 없거나 시작 화면 창이 '
         "닫히면 wait_ms 안에서 같은 게임의 본 창을 기다려 따라간다(window_changed) — 게임을 "
@@ -1255,13 +1270,25 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "kb_screen_save",
         "화면 저장",
         "탐색 세션의 후보 화면 카드를 저장·갱신한다 (key = 새 화면 ID 후보, 좌표는 프레임 픽셀). "
-        "detect는 image(영역을 잘라 조건) 또는 ocr(영역 + 글자), moves는 via(click element·point "
-        "또는 key)·to(화면 키)·status(tried·untried). kb_explore_step이 이동을 자동 기록하므로 "
+        "detect는 image(영역을 잘라 조건) 또는 ocr(영역 + 글자) — 그 화면에만 있는 글자·그림을 "
+        "쓴다(팝업 뒤 화면 글자 말고). 팝업은 kind popup. moves는 via(click element·point, key "
+        "또는 wait {})·to(화면 키)·status(tried·untried). kb_explore_step이 이동을 자동 기록하므로 "
         "보통 moves는 untried만 직접 쓴다. to 없는 tried 이동은 대기로 두었다가 다음 새 화면 "
         "저장 때 그 키로 채운다. of는 확정 화면 ID(kb_screen_list의 id)만. 보호 중인 화면은 "
         "조건·스크린샷 없이만 저장된다",
         daemon_def("ScreensSaveParams"),
         _screen_save,
+    ),
+    ToolDef(
+        "kb_screen_link",
+        "화면 잇기",
+        "프레임 없이 이 탐색 세션(끝냈으면 방금 끝낸 세션) 지도의 두 화면 사이에 이동 하나를 "
+        "더한다 (끊긴 지도 잇기 — kb_explore_end의 disconnected). from·to는 그 세션 후보 키 또는 "
+        "확정 화면 ID. via는 "
+        "{wait: {}}(입력 없이 저절로 — 로딩·컷신)·{key}·{click: {element}}·{click: {point: "
+        "[x, y] 프레임 비율 0~1}}. 같은 이동은 합친다",
+        daemon_def("ScreensLinkParams"),
+        _screen_link,
     ),
     # knowledge (M8 3.3·3.14)
     ToolDef(

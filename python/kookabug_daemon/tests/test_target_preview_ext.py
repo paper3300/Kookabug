@@ -20,7 +20,6 @@ from helpers.daemon_targets import (
 )
 
 from kb_testing.daemon import ThreadDaemon
-from kookabug_core.recorder.protect import ProtectionSet
 from kookabug_daemon.client import DaemonError
 
 pytestmark = pytest.mark.process
@@ -124,38 +123,24 @@ class _FakeEngine:
         return [OcrLine("가짜", tuple(region), 0.9)]
 
 
-def test_read_text_refuses_recorder_protected_region(root: Path) -> None:
-    """녹화 세션이 올린 정지 화면의 보호 영역(비밀번호 칸)과 겹치면 OCR 전에 거부한다."""
+def test_read_text_reads_recorder_secret_region(root: Path) -> None:
+    """UX11 B: 녹화 세션이 올린 정지 화면의 비밀번호 칸과 겹쳐도 읽고, 읽은 글자를 그대로 준다."""
     with ThreadDaemon(root) as d, d.client() as client:
         engine = _FakeEngine()
         d.daemon.targets.ocr_factory = lambda: engine
         frame = client.call("target.load_image", {"path": "captures/login.png"})
         frame_id = frame["frame_id"]
-        protect = ProtectionSet()
-        protect.add(1, (400, 285, 320, 50), 0)
         shot = SimpleNamespace(cache="", pixels=None, t_ns=10, dpi=96)
         session = SimpleNamespace(
             lock=threading.RLock(),
             s=SimpleNamespace(shots={frame_id: shot}),
-            pipeline=SimpleNamespace(
-                lock=threading.RLock(), protect=protect, leaks_secret=lambda text: False
-            ),
+            pipeline=SimpleNamespace(lock=threading.RLock()),
         )
         d.daemon.recorder.session = session  # pyright: ignore[reportAttributeAccessIssue]
         try:
-            with pytest.raises(DaemonError) as caught:
-                client.call("target.read_text", {"frame_id": frame_id, "rect": [380, 270, 200, 40]})
-            assert caught.value.kind == "secret_region_overlap"
-            assert engine.calls == []
-            # 겹치지 않는 영역은 읽는다
-            ok = client.call("target.read_text", {"frame_id": frame_id, "rect": list(LOGIN_BUTTON)})
-            assert ok["text"] == "가짜" and engine.calls == [LOGIN_BUTTON]
-            # 보호 영역 밖이어도 읽은 글자가 세션 비밀값 원문을 담으면 주지 않는다 (원문 없는 오류)
-            session.pipeline.leaks_secret = lambda text: "가짜" in text
-            with pytest.raises(DaemonError) as caught:
-                client.call("target.read_text", {"frame_id": frame_id, "rect": list(LOGIN_BUTTON)})
-            assert caught.value.kind == "secret_region_overlap"
-            assert "가짜" not in str(caught.value) and "가짜" not in str(caught.value.data)
+            rect = [380, 270, 200, 40]  # 비밀번호 칸과 겹친다
+            got = client.call("target.read_text", {"frame_id": frame_id, "rect": rect})
+            assert got["text"] == "가짜" and engine.calls == [tuple(rect)]
         finally:
             d.daemon.recorder.session = None  # pyright: ignore[reportAttributeAccessIssue]
 

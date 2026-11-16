@@ -9,6 +9,7 @@ import {
   cardTitle,
   closePromote,
   edgeSource,
+  isWaitEdge,
   legend,
   loadLayout,
   loadMap,
@@ -167,6 +168,7 @@ export function ScreenMapTab() {
                       data-status={e.status}
                       data-source={edgeSource(e)}
                       data-pending={e.pending === true}
+                      data-via={isWaitEdge(e) ? "wait" : undefined}
                       data-active={active}
                     />
                   );
@@ -185,6 +187,7 @@ export function ScreenMapTab() {
                     style={{ left: label.x, top: label.y }}
                     data-part="map-edge-label"
                     data-status={e.status}
+                    data-via={isWaitEdge(e) ? "wait" : undefined}
                   >
                     {e.status === "untried" ? "아직 안 가 봄" : e.label}
                   </div>

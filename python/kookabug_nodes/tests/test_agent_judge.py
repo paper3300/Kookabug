@@ -491,9 +491,9 @@ def test_api_timeout_and_endpoint_rules(rig: Rig) -> None:
 
 @pytest.mark.parametrize("redact", [False, True])
 def test_judge_record_written_and_secret_policy(rig: Rig, redact: bool) -> None:
-    """`steps/<스텝>_judge.json`을 남긴다. API 키는 기록에 없다. `redact_secrets: true`면 이벤트에도
-    없고(가림), 이미지는 비밀값 입력 스텝이라 남기지 않는다. 기본(D3)은 원문 기록 + 에이전트용
-    분류(`secret`) — agent 조회는 이 스텝 증거를 거부한다."""
+    """`steps/<스텝>_judge.json`을 남긴다. API 키(Kookabug 자체 자격 증명)는 기록에 없다. 게임
+    비밀값 가림 설정(`redact_secrets`)은 무시돼 이미지도 남고 에이전트도 판단 기록을 받는다
+    (UX11 B). 에이전트용 분류(`secret`)는 그대로 붙는다."""
     with FakeModelApi('{"answer": "title", "reason": "제목"}') as api:
         ran = rig.run(
             api_graph(api, "anthropic"),
@@ -515,14 +515,8 @@ def test_judge_record_written_and_secret_policy(rig: Rig, redact: bool) -> None:
     assert path in end["artifacts"]
     assert end.get("secret") is True  # 에이전트용 분류 (D3 여부와 상관없이)
     image = f"steps/{step}_judge.png"
-    dumped = json.dumps(ran.result.events, ensure_ascii=False)
-    if redact:
-        assert KEY not in dumped
-        assert image not in end["artifacts"]
-        assert any(o.get("reason") == "secret_input" for o in end.get("omitted", []))
-    else:
-        assert image in end["artifacts"]
-    agent_refuses(ran, path)
+    assert image in end["artifacts"]
+    assert agent_run(ran).refusal(path) is None
 
 
 def agent_run(ran: Judged, run_id: str = "r1") -> Any:
@@ -552,12 +546,6 @@ def agent_run(ran: Judged, run_id: str = "r1") -> Any:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
     return agent_view.AgentRun.load(run_id, folder)
-
-
-def agent_refuses(ran: Judged, rel: str) -> None:
-    """에이전트 연결의 `run.artifact`가 이 파일을 거부한다 (B2 분류 — 비밀값 스텝)."""
-    refusal = agent_run(ran).refusal(rel)
-    assert refusal is not None and refusal.code == "secret_step"
 
 
 # ---------------------------------------------------------------- 인증값·전송·수명 (B4 검수 반례)
@@ -590,7 +578,6 @@ def test_api_echo_is_hidden_from_agent_events(rig: Rig, redact: bool) -> None:
     assert "/outputs/reason" in end["secret_paths"] and end["secret"] is True
     assert ECHO_KEY not in ran.artifacts.texts[f"steps/{ran.step('n_judge')}_judge.json"]
     assert ECHO_KEY not in agent_exposure(ran)
-    assert agent_run(ran).refusal(f"steps/{ran.step('n_judge')}_judge.json").code == "secret_step"
 
 
 def test_api_echo_is_redacted_in_record(rig: Rig) -> None:
@@ -607,9 +594,8 @@ def test_api_echo_is_redacted_in_record(rig: Rig) -> None:
 @pytest.mark.parametrize("redact", [False, True])
 @pytest.mark.parametrize("mode", ["echo", "error"])
 def test_cli_env_secret_is_hidden(rig: Rig, redact: bool, mode: str) -> None:
-    """에이전트 env의 `$secret` 값이 답(echo)·ACP 오류(error)에 섞여 와도 기록·이벤트·에이전트
-    조회에 원문이 없다. env에 비밀값을 준 스텝은 `secret`이라 판단 기록을 에이전트에게 주지
-    않는다."""
+    """에이전트 env의 `$secret` 값(Kookabug 자체 자격 증명)이 답(echo)·ACP 오류(error)에 섞여
+    와도 기록·이벤트·에이전트 조회에 원문이 없다 (판단 노드가 가린다 — UX11 B 뒤에도 유지)."""
     rig.agents([{"id": "fake", "name": "F", "env": {"AGENT_TOKEN": {"$secret": "agent.token"}}}])
     step = (
         {"do": "say_env", "var": "AGENT_TOKEN"}
@@ -628,8 +614,7 @@ def test_cli_env_secret_is_hidden(rig: Rig, redact: bool, mode: str) -> None:
     assert ECHO_KEY not in json.dumps(ran.artifacts.texts)
     assert ECHO_KEY not in json.dumps(ran.result.events)
     assert ran.end("n_judge")["secret"] is True
-    assert ECHO_KEY not in agent_exposure(ran)
-    assert agent_run(ran).refusal(f"steps/{ran.step('n_judge')}_judge.json").code == "secret_step"
+    assert ECHO_KEY not in agent_exposure(ran)  # 판단 기록도 주지만 자격 증명은 가린 채
 
 
 def test_short_api_key_http_error_is_scrubbed(rig: Rig) -> None:
@@ -888,7 +873,6 @@ def test_json_decoded_credentials_stay_redacted(rig: Rig, redact: bool, kind: st
     """JSON 해석이 이스케이프를 풀어 인증값을 되살려도 출력·기록·에이전트 이벤트·실제 RPC에 원문이
     없고, 가린 출력은 `secret_paths`로 분류된다."""
     daemon_runs = pytest.importorskip("helpers.daemon_runs")
-    from kookabug_daemon.client import DaemonError
 
     if kind == "cli":
         rig.agents(
@@ -920,12 +904,12 @@ def test_json_decoded_credentials_stay_redacted(rig: Rig, redact: bool, kind: st
     with daemon_rig.daemon() as daemon, daemon.client(info) as client:
         got = client.call("run.events", {"run_id": "b4round2"})
         assert not holds(got, QUOTED_KEY)
-        with pytest.raises(DaemonError) as caught:
-            client.call(
-                "run.artifact",
-                {"run_id": "b4round2", "path": f"steps/{ran.step('n_judge')}_judge.json"},
-            )
-        assert caught.value.kind == "secret_step"
+        # 판단 기록도 에이전트에게 준다 (UX11 B) — 자격 증명은 판단 노드가 이미 가렸다
+        shown = client.call(
+            "run.artifact",
+            {"run_id": "b4round2", "path": f"steps/{ran.step('n_judge')}_judge.json"},
+        )
+        assert not holds(shown, QUOTED_KEY)
 
 
 def test_scrubber_json_escaped_forms() -> None:

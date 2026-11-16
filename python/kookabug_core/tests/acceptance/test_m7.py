@@ -5,8 +5,8 @@
 2. 재탐색은 아는 화면을 식별하고 합친다 — 보호가 풀리는 화면(타이틀)으로, 미완성 후보는 승격 불가
 3. 그 결과가 화면 카드와 이동 그래프로 보인다 — 후보·확정 화면·실행 기록 사슬 간선
 4. 사람이 확인해 `screens/`로 옮긴다 — 저널 거래, 실패 주입 대표 지점 3개(kill)
-(엄격) 탐색 클릭은 M5 권한·승인·입력 안전 그대로, 입력 충돌, 비밀값은 어느 출구로도
-나가지 않는다
+(엄격) 탐색 클릭은 M5 권한·승인·입력 안전 그대로, 입력 충돌. UX11 B부터 게임 비밀값은 가리지
+않는다 — 민감 target 화면만 막는다
 
 다른 테스트 모듈을 import하지 않는다. 자세한 경우는 근거 테스트
 (`kookabug_core/tests/test_screen_promote.py`·`test_screen_map.py`·`test_run_chain.py`,
@@ -21,7 +21,6 @@ from __future__ import annotations
 import base64
 import contextlib
 import json
-import logging
 import os
 import queue
 import re
@@ -56,6 +55,7 @@ from kookabug_core.screen_promote import PromoteRequest, check, journals, promot
 from kookabug_core.screens import explored_candidates, read_screen_file
 from kookabug_core.workspace import Workspace
 from kookabug_daemon.client import DaemonClient, DaemonError
+from kookabug_platform.ocr.engine import Ocr
 
 pytestmark = [pytest.mark.process, pytest.mark.timeout(900)]
 
@@ -195,7 +195,7 @@ def test_agent_explores_sample_game_into_explored(
         with w.daemon.client() as ui:
             (listed,) = ui.call("explore.list", {})["sessions"]
     assert summary["saved"] == SAVED
-    assert summary["protected"] == 4  # 비밀값 칸 둘 넣은 로그인 2번 + 로딩·인벤토리
+    assert summary["protected"] == 0  # UX11 B: 비밀값을 넣은 화면도 막지 않는다
     folder = w.root / "screens" / "_explored" / w.session
     record = json.loads((folder / "explore.json").read_text("utf-8"))
     assert (record["status"], listed["status"]) == ("ended", "ended")
@@ -234,7 +234,7 @@ def test_reexplore_marks_known_and_merges(
         w.explore()
         first = w.session
         human_promote(w.root, first, "title")
-        # 미완성 후보(보호 중 저장 — 판정 조건 없음)는 새 화면으로 옮길 수 없다
+        # 미완성 후보(판정 조건 없이 저장)는 새 화면으로 옮길 수 없다
         bad = check(w.root, PromoteRequest(first, "loading"))
         assert (bad["ok"], bad["code"]) == (False, "validation_failed")
         w.reset_game()
@@ -245,7 +245,7 @@ def test_reexplore_marks_known_and_merges(
                 "session"
             ]
             shot = mcp.data("kb_screen_capture", {"window": WINDOW})
-            assert shot.get("protected") is None  # 보호가 풀린 화면 (타이틀)
+            assert shot.get("protected") is None
             found = mcp.data("kb_screen_identify", {"frame_id": shot["frame_id"]})
             assert [(m["state"], m.get("id")) for m in found["matches"]] == [("confirmed", "title")]
             # 같은 화면을 새 키로 저장하면 확정 화면과 같다고 알려 준다 (중복 판정)
@@ -531,153 +531,50 @@ def mcp_images(lines: list[bytes]) -> list[bytes]:
     return images
 
 
-def test_no_secret_through_any_exit(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    ocr_models: Path,
-    caplog: pytest.LogCaptureFixture,
+def test_secret_shown_sensitive_still_protected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ocr_models: Path
 ) -> None:
-    caplog.set_level(logging.DEBUG, logger="kookabug_daemon")
-    notes: list[dict[str, Any]] = []
+    """UX11 B: 비밀값을 넣은 화면도 에이전트에게 그대로 간다(이미지·OCR에 값). 민감 target이 보이는
+    화면은 여전히 이미지 없이 사유만."""
     with world(tmp_path, monkeypatch, ocr_models) as w:
-        d = w.daemon
-        with d.client() as ui:
-            # 양성 대조군: 비밀값을 넣은 원본 프레임에는 값이 보인다 (사람 연결 캡처 + 실제 OCR)
-            mcp = w.mcp("mcp-control")
-            try:
-                mcp.data("kb_toolset_enable", {"toolsets": ["observe", "control"]})
-                for tool, args in (
-                    ("kb_input_click", {"point": list(START_BUTTON)}),
-                    ("kb_input_click", {"point": list(ACCOUNT_FIELD)}),
-                    ("kb_input_type", {"secret": "acc.id"}),
-                    ("kb_input_click", {"point": list(PASSWORD_FIELD)}),
-                    ("kb_input_type", {"secret": "acc.pw"}),
-                ):
-                    mcp.data(tool, {"window": WINDOW, **args})
-                (window,) = ui.call("windows.list", {})["windows"]
-                raw = ui.call("target.capture", {"window": window["handle"]})
-                text = ui.call(
-                    "target.read_text", {"frame_id": raw["frame_id"], "rect": PASSWORD_BOX}
-                )["text"]
-                assert "samplepass01" in squash(text), text
-                # 사람 연결 캡처는 사람 출구(편집기 캐시)에 값이 보이는 게 맞다
-                # — 그림 검사에서 이 파일만 뺀다
-                control_shots = set((w.root / ".kookabug" / "cache" / "editor").glob("*.png"))
-                assert control_shots
-                # 에이전트 캡처: 이미지 없음 (OCR이 아무것도 못 읽게 해도
-                # — 보호는 OCR 음성에 기대지 않는다)
-                targets: Any = d.daemon.targets
-                engine = targets.ocr()
-                for blind in (False, True):
-                    targets._ocr = Blind() if blind else engine
-                    shot = mcp.call_tool("kb_screen_capture", {"window": WINDOW}, timeout=60)
-                    assert [c["type"] for c in shot["content"]] == ["text"], blind
-                    assert shot["structuredContent"]["protected"]["reason"] == "secret_field"
-                targets._ocr = engine
-            finally:
-                w.mcp_lines += mcp.lines
-                mcp.close()
-            # 탐색 각본 전체 (로그인에 비밀값 두 개) → 승격까지
-            w.reset_game()
-            w.explore()
-            for key in ("title", "login", "lobby", "world"):
-                human_promote(w.root, w.session, key)
-            # 민감 target이 보이는 화면: 이미지 없음
-            frames = w.game.frames
-            login = cv2.imread(str(frames / "login.png"))
-            assert login is not None
-            x, y, width, height = TITLE_BOX
-            crop = login[y : y + height, x : x + width]
-            cv2.imwrite(str(w.root / "targets" / "sensitive_title.png"), crop)
-            (w.root / "targets" / "sensitive_title.target.json").write_text(
-                json.dumps(
-                    {
-                        "format": "kookabug.target/0",
-                        "image": "sensitive_title.png",
-                        "sensitive": True,
-                    }
-                ),
-                encoding="utf-8",
-            )
-            w.reset_game()
-            mcp = w.mcp("mcp-sensitive")
-            try:
-                mcp.data("kb_toolset_enable", {"toolsets": ["observe", "control"]})
-                mcp.data("kb_input_click", {"window": WINDOW, "point": list(START_BUTTON)})
-                shot = mcp.call_tool("kb_screen_capture", {"window": WINDOW}, timeout=60)
-                assert [c["type"] for c in shot["content"]] == ["text"]
-                assert shot["structuredContent"]["protected"]["reason"] == "sensitive_visible"
-            finally:
-                w.mcp_lines += mcp.lines
-                mcp.close()
-            while not ui.notifications.empty():
-                notes.append(ui.notifications.get_nowait())
-        from kookabug_platform.ocr.engine import Ocr
-
-        reader = Ocr(d.daemon.targets.ocr())
-        # 글자 출구: MCP 응답 줄 전부·RPC 알림·daemon 로그·워크스페이스와 MCP 출력 폴더의 모든 파일
-        texts = [
-            b"\n".join(w.mcp_lines).decode("utf-8", "replace"),
-            json.dumps(notes, ensure_ascii=False),
-        ]
-        texts.append(
-            "\n".join(r.getMessage() for r in caplog.records if r.name.startswith("kookabug"))
+        mcp = w.mcp("mcp-control")
+        try:
+            mcp.data("kb_toolset_enable", {"toolsets": ["observe", "control"]})
+            for tool, args in (
+                ("kb_input_click", {"point": list(START_BUTTON)}),
+                ("kb_input_click", {"point": list(ACCOUNT_FIELD)}),
+                ("kb_input_type", {"secret": "acc.id"}),
+                ("kb_input_click", {"point": list(PASSWORD_FIELD)}),
+                ("kb_input_type", {"secret": "acc.pw"}),
+            ):
+                mcp.data(tool, {"window": WINDOW, **args})
+            shot = mcp.call_tool("kb_screen_capture", {"window": WINDOW}, timeout=60)
+            assert "protected" not in shot["structuredContent"]
+            [image] = [c for c in shot["content"] if c["type"] == "image"]
+            reader = Ocr(w.daemon.daemon.targets.ocr())
+            shown = squash(readable(base64.b64decode(image["data"]), reader))
+            assert all(value in shown for value in SHOWN_VALUES), shown
+        finally:
+            w.mcp_lines += mcp.lines
+            mcp.close()
+        # 민감 target이 보이는 화면: 이미지 없음
+        login = cv2.imread(str(w.game.frames / "login.png"))
+        assert login is not None
+        x, y, width, height = TITLE_BOX
+        crop = login[y : y + height, x : x + width]
+        cv2.imwrite(str(w.root / "targets" / "sensitive_title.png"), crop)
+        body = {"format": "kookabug.target/0", "image": "sensitive_title.png", "sensitive": True}
+        (w.root / "targets" / "sensitive_title.target.json").write_text(
+            json.dumps(body), encoding="utf-8"
         )
-        # 예제 워크스페이스 원본 그대로인 파일(README의 기본 비밀번호 안내)은 출구가 아니다
-        from kb_testing.packaging import REPO_ROOT
-
-        sample = REPO_ROOT / "fixtures" / "sample-game" / "workspace"
-        files = [
-            p for base in (w.root, *w.out.glob("mcp-*")) for p in base.rglob("*") if p.is_file()
-        ]
-        for path in files:
-            if path.suffix.lower() == ".png" or path.name.endswith(".lock"):
-                continue
-            if path.is_relative_to(w.root):
-                original = sample / path.relative_to(w.root)
-                if original.is_file() and original.read_bytes() == path.read_bytes():
-                    continue
-            data = path.read_bytes()
-            texts.append(data.decode("utf-8", "replace") + data.decode("utf-16-le", "replace"))
-        for text in texts:
-            assert PASSWORD not in text and "samplepass01" not in squash(text)
-        # 그림 출구: agent 캐시·편집기 캐시·탐색 결과·승격 파일·제어 실행 기록의 PNG 전부를
-        # OCR로 읽어도 값 없음
-        pictures = [
-            p
-            for base in (
-                w.root / ".kookabug" / "cache",
-                w.root / "screens",
-                w.root / "targets",
-                w.root / "runs",
-            )
-            if base.exists()
-            for p in base.rglob("*.png")
-            if p not in control_shots
-        ]
-        assert any(
-            "_explored" in str(p) or "screens" in p.parts for p in pictures
-        )  # 대상이 실제로 있다
-        # 양성 대조: 같은 OCR 비교가 사람 캡처(값이 그려짐)에서는 두 값을 다 찾는다
-        human = " ".join(squash(readable(p, reader)) for p in control_shots)
-        assert all(value in human for value in SHOWN_VALUES), human
-        for path in pictures:
-            shown = squash(readable(path, reader))
-            assert not any(value in shown for value in SHOWN_VALUES), path
-        # 에이전트가 실제로 받은 그림: MCP 응답 줄의 image 내용을 풀어 같은 OCR로 읽어도 값 없음
-        # (보호를 통과해 나간 그림 — 타이틀·입력 전 로그인·로비·월드 등이 실제로 있다)
-        sent = mcp_images(w.mcp_lines)
-        assert sent, "에이전트에게 나간 그림이 없다 (검사 대상 없음)"
-        read = [squash(readable(data, reader)) for data in sent]
-        assert any(read), "MCP 그림을 OCR이 하나도 읽지 못했다"  # 읽기가 실제로 된다
-        for n, shown in enumerate(read):
-            assert not any(value in shown for value in SHOWN_VALUES), f"MCP 그림 {n}: {shown}"
-        # 에이전트 제어 실행 기록은 이미지 기록 자체가 없다 (실행별 기록 강제)
-        control_runs = [
-            p.parent
-            for p in (w.root / "runs").glob("*/run.json")
-            if json.loads(p.read_text("utf-8")).get("source") == "agent_control"
-        ]
-        assert control_runs
-        for folder in control_runs:
-            assert list(folder.rglob("*.png")) == [], folder
+        w.reset_game()
+        mcp = w.mcp("mcp-sensitive")
+        try:
+            mcp.data("kb_toolset_enable", {"toolsets": ["observe", "control"]})
+            mcp.data("kb_input_click", {"window": WINDOW, "point": list(START_BUTTON)})
+            shot = mcp.call_tool("kb_screen_capture", {"window": WINDOW}, timeout=60)
+            assert [c["type"] for c in shot["content"]] == ["text"]
+            assert shot["structuredContent"]["protected"]["reason"] == "sensitive_visible"
+        finally:
+            w.mcp_lines += mcp.lines
+            mcp.close()

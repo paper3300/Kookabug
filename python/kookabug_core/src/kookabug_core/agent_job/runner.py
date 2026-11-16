@@ -13,8 +13,10 @@
    → 입력 복구 → 보고)로 간다. daemon이 끝 상태를 줄 때까지(`ending`이면 다시) `jobs.lock`을 쥔다.
    daemon 연결을 잃으면 daemon 프로세스가 없어졌고 입력이 풀렸음을 확인한 뒤에만 `interrupted`
    보고를 직접 쓴다 — 확인하지 못하면 `job.json`에 `recovery_unconfirmed`만 남긴다
-6. 표준 출력·오류는 해석하지 않고 `agent.log`에 쓴다: 알려진 비밀값(워크스페이스 비밀값 공급자 값,
-   프로필 인증 값, 작업 토큰)을 `***`로 바꾸고(청크 경계를 넘는 값도 — 최대 값 길이만큼 겹쳐 둔다)
+6. 표준 출력·오류는 해석하지 않고 `agent.log`에 쓴다: Kookabug 자체 자격 증명(프로필 인증 값·
+   넘긴 환경 값, 작업 토큰)을 `***`로 바꾸고(워크스페이스 비밀값은 가리지 않는다 — UX11 B, 청크
+   경계를 넘는 값도 — 최대 값 길이만큼 겹쳐 둔다). 넘긴 값은 `job.heartbeat` `masks`로 daemon에도
+   알린다(공용 출구 가림)
    20 MB에서 자른다. 비밀값을 모으지 못하면 원문을 남기지 않는다("가림 불가로 생략")
 """
 
@@ -150,6 +152,11 @@ class AgentLog:
     def close(self) -> None:
         with self.lock:
             self.file.close()
+
+
+REQUIRED_FEATURE: Final = "job_masks"
+"""작업을 띄우기 전에 daemon `session.hello` `features`에 있어야 하는 기능 (UX11)."""
+DAEMON_OUTDATED: Final = "실행 중인 daemon이 이전 판이다 — 앱이나 daemon을 다시 시작하라"
 
 
 def known_secrets(root: Path, environ: Mapping[str, str]) -> list[str]:
@@ -388,6 +395,15 @@ def _run_locked(
         daemon = connect(root)
     except Exception as exc:
         return JobOutcome(EXIT_USAGE, None, None, message=f"daemon에 붙지 못했다: {exc}")
+    features = getattr(daemon, "features", None)
+    if features is not None and REQUIRED_FEATURE not in features:
+        # 이전 판 daemon (UX11 검수 3): 넣은 인증·환경 값(`job.heartbeat` masks)을 받지 못한다 —
+        # 작업을 만들기 전에 멈춘다 (masks를 빼고 띄우면 공용 출구 가림이 빠진다)
+        with contextlib.suppress(Exception):
+            daemon.close()
+        return JobOutcome(
+            EXIT_USAGE, None, None, message=DAEMON_OUTDATED, extra={"code": "daemon_outdated"}
+        )
     try:
         try:
             begun = daemon.call(
@@ -546,15 +562,23 @@ def _supervise(
         mcp_path=mcp_path,
         pass_env=options.pass_env,
     )
-    # 가림 대상: 워크스페이스 비밀값 + 자식에게 실제로 넘기는 환경 중 시스템 기본(`BASE_ENV`) 밖의
-    # 값 전부(프로필 인증·`--pass-env`·작업 변수 — 이름을 바꿔 넘긴 인증 값도). 못 모으면 원문을
-    # 남기지 않는다
+    # 가림 대상: 자식에게 실제로 넘기는 환경 중 시스템 기본(`BASE_ENV`) 밖의 값 전부(프로필 인증·
+    # `--pass-env`·작업 변수 — 이름을 바꿔 넘긴 인증 값도)와 작업 토큰. 워크스페이스 비밀값은 용도와
+    # 무관하게 가리지 않는다 (UX11 B). `secrets`는 더 넣을 값. 못 모으면 원문을 남기지 않는다
     try:
-        values: list[str] | None = list((secrets or (lambda: known_secrets(root, env)))())
-        values += profiles.passed_values(child)
+        values: list[str] | None = [] if secrets is None else list(secrets())
+        passed = profiles.passed_values(child)
+        values += passed
         values.append(token)
     except Exception:
         values = None
+        passed = []
+    # 넣은 인증·환경 값을 daemon 작업 기록(메모리)에 둔다 — 공용 출구(원본 읽기·대화 저장·작업
+    # 활동·글자 검사)가 작업 토큰과 함께 가린다 (UX11). 못 보내면 띄우지 않는다
+    try:
+        daemon.call("job.heartbeat", {"job": job_id, "masks": list(passed)}, timeout=10)
+    except Exception:
+        return _prep_failed(daemon, root, doc, "spawn_failed", out)
     log = AgentLog(log_path, values)
     try:
         proc, process_job = _spawn(command.argv, child, root)

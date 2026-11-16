@@ -88,6 +88,7 @@ export type ToolName =
   | "kb_screen_capture"
   | "kb_screen_get"
   | "kb_screen_identify"
+  | "kb_screen_link"
   | "kb_screen_list"
   | "kb_screen_save"
   | "kb_setting_propose"
@@ -162,7 +163,7 @@ export type DaemonErrorCode = -32700 | -32600 | -32601 | -32602 | -32603 | -3210
  */
 export type DaemonErrorObject = DaemonStandardError | DaemonRequestFailedError;
 /**
- * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(비밀값 입력 전 보호 기록을 쓰지 못함 — 입력을 보내지 않았다). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 비밀값 — data.field), secret_unchecked(비밀값 검사 불가 — 키를 못 읽음·보호 기록 손상), screens_busy(화면 지도 잠금) M8 B4: job_token_invalid(작업 토큰이 틀림·만료·폐기 — 연결 거부), job_only(작업 토큰 연결 전용 메서드), forbidden_visible(금지 문구·target·화면이 보여 입력하지 않음 — data.kind·value), forbidden_unverifiable(화면·OCR·target 확인 실패로 입력하지 않음), stalled_repeat(같은 작업에서 같은 실패 3번 — 그 테스트를 다시 돌리지 않음), case_resolution_reserved(사건 resolved·closed는 Kookabug·사람만), case_closed(닫힌 사건), verification_active(자동 채택 검증 실행 중이라 게임 입력을 받지 않음), 지식 연산 거부(duplicate_id·basis_required·basis_unknown·basis_hash_mismatch·basis_derived·human_basis_reserved·adoption_reserved·answer_reserved·too_large·path_alias) UX2: source_unavailable(원본을 읽을 수 없음 — data.reason missing·unreadable·unchecked_url·duplicate_id), unsupported_format(텍스트·docx·xlsx·pptx가 아님·너무 큼·깨짐 — data.reason), setting_not_allowed(허용 목록 밖 설정 키 제안) UX7: basis_probe(붙여 실행 agent_attach 기록은 사건·지식 근거로 쓰지 않는다)
+ * -32100 request_failed의 종류 (M2 계획 2.4 오류 표). 캡처·창 오류는 M1 플랫폼 코드 그대로. M3: read_only(스냅샷 그래프 저장), not_paused(멈추지 않은 실행에 Step), run_not_debuggable(이 daemon이 띄운 UI 실행이 아님). M4 녹화: recording_active(이 daemon이 녹화 중이라 실행 거부 — starting 포함), input_lease_busy(입력 임대권을 다른 주체가 쥠), not_owner(녹화 세션을 연 연결이 아님), recorder_state_invalid(지금 녹화 상태에 맞지 않는 조작·없는 커밋 토큰), hook_failed(훅 프로세스를 띄우지 못함), hook_lost·input_overflow(훅이 끊김·중요 입력 유실로 녹화가 멈춤), no_frame(고를 프레임이 없음), 커밋 거부 classification_pending(비밀 판정 중)·text_review_required(확인 필요 입력)·secret_unresolved(키 없는 비밀값)·target_missing(대상 없는 클릭)·secret_region_overlap(비밀번호 칸과 겹치는 영역). M5: toolset_disabled(agent 연결이 켜지 않은 툴셋의 메서드 — 판정 전), force_not_allowed(agent 연결의 graph.save force), patch_invalid(graph.patch 연산이 틀림), agent_use_safe_api(agent 연결의 기록 원문 경로 — run.index·children·step·file·compare·subscribe, runs/ 이미지의 target.load_image·preview), secret_step(비밀값 스텝·agent_withhold 증거), unclassified_run(비밀값 분류 없는 옛 기록의 파일), not_evidence(그 실행의 증거 파일이 아님), video_not_served(영상 조각), recorder_frame(녹화 세션 프레임), sensitive_region(sensitive target이 보이는 화면의 OCR), frame_not_owned(agent 연결이 다른 연결이 만든 정지 화면을 씀). M5 B3: approval_required(사람 확인 필요 — data.reason no_approver면 확인할 사람 연결 없음), approval_denied(사람이 거부), approval_timeout(120초 안에 답 없음), always_not_allowed(control 도구에 항상 허용), settings_invalid(형식이 틀린 설정 파일 — 고치지 않음). M5 SECFIX: recorder_store_unclean(녹화 임시 파일을 정리하지 못함 — 메모리 스텝은 바뀌었고 daemon이 다시 정리한다). M6: plugin_failed(플러그인 작업 오류 — data.plugin_error의 code·stage·message, plugin_busy 포함), op_not_found(승인·취소할 플러그인 작업·미리보기가 없음 — 5분 지남·끝남). M7: frame_protected(보호 판정을 통과하지 못한 정지 화면 — data.reason 사유·message 안내, 민감 target 사유는 sensitive_region 그대로), protect_record_failed(UX11부터 쓰지 않음 — 옛 비밀값 보호 기록). M7 탐색: agent_only(에이전트 연결 전용 메서드), explore_active(이 연결에 탐색 세션이 이미 있음), explore_not_active(탐색 세션 없음), explore_budget_exhausted(스텝 예산 다 씀 — 판정 전), screen_exists(확정 화면과 같은 키), detect_not_matching(판정 조건이 그 정지 화면에서 맞지 않음), secret_in_text(글자 필드에 작업 토큰 원문 — data.field, UX11부터 게임 비밀값은 보지 않음), secret_unchecked(UX11부터 쓰지 않음), screens_busy(화면 지도 잠금) M8 B4: job_token_invalid(작업 토큰이 틀림·만료·폐기 — 연결 거부), job_only(작업 토큰 연결 전용 메서드), forbidden_visible(금지 문구·target·화면이 보여 입력하지 않음 — data.kind·value), forbidden_unverifiable(화면·OCR·target 확인 실패로 입력하지 않음), stalled_repeat(같은 작업에서 같은 실패 3번 — 그 테스트를 다시 돌리지 않음), case_resolution_reserved(사건 resolved·closed는 Kookabug·사람만), case_closed(닫힌 사건), verification_active(자동 채택 검증 실행 중이라 게임 입력을 받지 않음), 지식 연산 거부(duplicate_id·basis_required·basis_unknown·basis_hash_mismatch·basis_derived·human_basis_reserved·adoption_reserved·answer_reserved·too_large·path_alias) UX2: source_unavailable(원본을 읽을 수 없음 — data.reason missing·unreadable·unchecked_url·duplicate_id), unsupported_format(텍스트·docx·xlsx·pptx가 아님·너무 큼·깨짐 — data.reason), setting_not_allowed(허용 목록 밖 설정 키 제안) UX7: basis_probe(붙여 실행 agent_attach 기록은 사건·지식 근거로 쓰지 않는다)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "RequestFailedCode".
@@ -518,6 +519,33 @@ export type RunCompareResult = import("./run-index.js").CompareResult;
  */
 export type RunIndexResult = import("./run-index.js").RunIndex;
 /**
+ * 이을 이동 입력: 기다림(저절로)·키·요소 클릭·점 클릭(프레임 비율 0~1 — 프레임이 없으므로)
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensLinkVia".
+ */
+export type ScreensLinkVia =
+  | {
+      wait: {};
+    }
+  | {
+      key: string;
+    }
+  | {
+      click: {
+        element: string;
+      };
+    }
+  | {
+      click: {
+        /**
+         * @minItems 2
+         * @maxItems 2
+         */
+        point: [number, number];
+      };
+    };
+/**
  * image = 이 영역을 잘라 이미지 조건으로, ocr = 이 영역에 text가 있어야 (프레임 물리 픽셀)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -532,12 +560,15 @@ export type ScreensSaveCondition =
       text: string;
     };
 /**
- * 이동 입력: 요소 클릭·점 클릭(프레임 물리 픽셀)·키
+ * 이동 입력: 요소 클릭·점 클릭(프레임 물리 픽셀)·키·기다림(입력 없이 저절로 바뀜)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "ScreensSaveVia".
  */
 export type ScreensSaveVia =
+  | {
+      wait: {};
+    }
   | {
       click: {
         element: string;
@@ -1065,7 +1096,7 @@ export interface RequestFailedData {
   };
   diagnostics?: Diagnostic[];
   /**
-   * M7 secret_in_text: 비밀값이 든 글자 필드 이름 (값 없음)
+   * M7 secret_in_text: 작업 토큰 원문이 든 글자 필드 이름 (값 없음)
    */
   field?: string;
   /**
@@ -1258,6 +1289,13 @@ export interface ExploreEndParams {}
  */
 export interface ExploreEndResult {
   counts: ExploreCounts;
+  /**
+   * 끊긴 화면 (UX11 A4): 처음 저장한 화면 말고 들어오는 이동이 없는 이 세션 후보 키. kb_screen_link로 잇는다
+   */
+  disconnected: {
+    key: string;
+    title: string | null;
+  }[];
   session: string;
 }
 /**
@@ -1372,7 +1410,7 @@ export interface Frame {
   height: number;
   image: ImageRef;
   /**
-   * agent 연결의 target.capture만 (M7 3.5a): 이 정지 화면은 보호 판정을 통과하지 못해 이미지를 어디에도 쓰지 않았다(agent_image 없음, image.cache 파일 없음). 사유와 안내만
+   * agent 연결의 target.capture만 (M7 3.5a): 이 정지 화면은 보호 판정을 통과하지 못해 이미지를 어디에도 쓰지 않았다(agent_image 없음, image.cache 파일 없음). 사유와 안내만. UX11부터 사유는 민감 target·guard_error뿐(protect_state_unknown·secret_field·secret_field_unknown은 옛 클라이언트 호환으로 남긴 값)
    */
   protected?: {
     hint: string;
@@ -1403,12 +1441,19 @@ export interface ScreensIdentifyResult {
   unknown: ScreensIdentifyMatch[];
 }
 /**
+ * 맞는 화면 하나. 여럿이면 더 구체적인 것이 앞 (UX11 A2: kind popup 먼저, 그다음 판정 조건 수가 많은 것, 같으면 원래 순서)
+ *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "ScreensIdentifyMatch".
  */
 export interface ScreensIdentifyMatch {
+  /**
+   * 판정 조건 수
+   */
+  conditions?: number;
   id?: string;
   key?: string;
+  kind?: "popup" | "screen";
   node: string;
   state: "confirmed" | "explored";
   title: string | null;
@@ -2852,6 +2897,16 @@ export interface Kb8JobFinishParams {
   state?: "budget_exhausted" | "cancelled" | "done" | "failed" | "interrupted" | "prep_failed";
 }
 /**
+ * job.heartbeat (사람 쪽 agent-job, 소유 연결만). masks(UX11): 이 작업의 에이전트 프로세스에 runner가 실제로 넣은 인증·환경 값 — daemon 메모리에만 두고 공용 출구(원본 읽기·대화 저장·작업 활동·글자 검사·탐색 승인 감사)가 작업 토큰과 함께 가린다. 주면 바꾼다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "Kb8JobHeartbeatParams".
+ */
+export interface Kb8JobHeartbeatParams {
+  job: string;
+  masks?: string[];
+}
+/**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "Kb8JobHeartbeatResult".
  */
@@ -3887,7 +3942,7 @@ export interface Methods {
     tool: "ui_only";
   };
   "job.heartbeat": {
-    params: Kb8JobIdParams;
+    params: Kb8JobHeartbeatParams;
     renderer: false;
     result: Kb8JobHeartbeatResult;
     tool: "ui_only";
@@ -4305,6 +4360,12 @@ export interface Methods {
     renderer: true;
     result: ScreensLayout;
     tool: "ui_only";
+  };
+  "screens.link": {
+    params: ScreensLinkParams;
+    renderer: false;
+    result: ScreensLinkResult;
+    tool: "kb_screen_link";
   };
   "screens.list": {
     params: ScreensListParams;
@@ -5989,6 +6050,38 @@ export interface ScreensLayoutSetParams {
   };
 }
 /**
+ * screens.link (kb_screen_link, UX11 A3): 프레임 없이 이 탐색 세션(없으면 이 연결이 마지막으로 끝낸 세션)의 화면 카드 사이에 이동 하나를 더한다 (끊긴 지도 잇기). from·to는 그 세션 후보 키 또는 확정 화면 ID. 같은 이동은 합친다
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensLinkParams".
+ */
+export interface ScreensLinkParams {
+  from: string;
+  note?: string;
+  status?: "tried" | "untried";
+  to: string;
+  via: ScreensLinkVia;
+}
+/**
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensLinkResult".
+ */
+export interface ScreensLinkResult {
+  /**
+   * 이동을 쓴 카드 키 (확정 화면 출발이면 of_<id> 카드)
+   */
+  card: string;
+  /**
+   * 아직 끊긴 화면 (ExploreEndResult.disconnected와 같다)
+   */
+  disconnected: {
+    key: string;
+    title: string | null;
+  }[];
+  from: string;
+  to: string;
+}
+/**
  * screens.list (kb_screen_list, M5): under(screens/ 기준 또는 워크스페이스 기준 폴더) 아래 화면 지도
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -6162,7 +6255,7 @@ export interface ScreensPromoteResult {
   warnings: string[];
 }
 /**
- * screens.save (kb_screen_save, M7 3.5): 자기 탐색 세션 폴더의 후보 카드 하나를 저장·갱신. 글자 필드는 비밀값 검사(3.5b)를 지난다
+ * screens.save (kb_screen_save, M7 3.5): 자기 탐색 세션 폴더의 후보 카드 하나를 저장·갱신. 글자 필드는 작업 토큰 검사(3.5b)를 지난다 (UX11부터 게임 비밀값은 보지 않음)
  *
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
  * via the `definition` "ScreensSaveParams".
@@ -6256,6 +6349,10 @@ export interface SessionHelloParams {
  */
 export interface SessionHelloResult {
   daemon_version: string;
+  /**
+   * 이 daemon이 가진 기능 표시 (UX11: job_masks — job.heartbeat masks). 프로토콜 판은 그대로 두고 새 기능만 알린다. 없으면 그 기능 전 daemon
+   */
+  features?: string[];
   principal: Principal;
   protocol: number;
   start_id: string;

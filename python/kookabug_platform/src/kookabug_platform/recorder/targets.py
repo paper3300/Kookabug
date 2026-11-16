@@ -6,8 +6,8 @@
 (`anchor + offset x 배율`)이 녹화 클릭과 같은 요소 안이면(경계 추정 상자가 있으면 그 상자 안,
 고정 크기 대비면 4 px 이내) 그 target을 쓴다. 여럿이면 점수가 높은 것.
 
-**이름**: 상자 안 OCR 글자(파일 이름에 쓸 수 있게, 20자), 없으면 `click_<순번>`. 상자가 보호
-영역과 겹치면 OCR하지 않고, 결과가 세션의 보호 대상 원문을 포함하면 버린다(`safe_name`).
+**이름**: 상자 안 OCR 글자(파일 이름에 쓸 수 있게, 20자), 없으면 `click_<순번>`. 비밀값 칸·원문도
+가리지 않는다 (UX11 B).
 """
 
 from __future__ import annotations
@@ -18,8 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
-from kookabug_core.recorder.fields import SecretText
-from kookabug_core.recorder.protect import Box, ProtectionSet, safe_name
+from kookabug_core.recorder.protect import Box, sanitize_name
 from kookabug_platform.recorder.crop import ClickCrop, target_spec
 from kookabug_platform.vision import (
     FrameMeta,
@@ -158,19 +157,16 @@ def name_for_box(
     box: Box,
     *,
     read_text: ReadText | None,
-    protect: ProtectionSet | None,
-    t_ns: int | None,
-    raw_texts: Iterable[SecretText],
     fallback: str,
 ) -> str:
-    """이름용 OCR (보호 영역과 겹치면 하지 않음) → `safe_name`."""
-    if read_text is None or (protect is not None and protect.overlaps(box, t_ns, image)):
+    """이름용 OCR → 파일 이름에 쓸 수 있게 정리. 글자가 없으면 `fallback`."""
+    if read_text is None:
         return fallback
     try:
         text = read_text(image, box)
     except Exception:
         text = None
-    return safe_name(text, raw_texts, fallback)
+    return (sanitize_name(text) if text else "") or fallback
 
 
 @dataclass

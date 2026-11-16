@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import secrets
 import threading
 import time
@@ -187,6 +186,9 @@ class JobRegistry:
         self._by_digest: dict[str, str] = {}
         self._tokens: dict[str, str] = {}
         """작업 → 토큰 원문 (글자 검사 대상, R9). 보고를 쓴 뒤 `forget_token`이 지운다."""
+        self._masks: dict[str, list[str]] = {}
+        """작업 → runner가 그 작업의 에이전트 프로세스에 넣은 인증·환경 값 (UX11 — `job.heartbeat`
+        `masks`). 토큰과 같은 수명."""
         self.on_budget: Callable[[Job], None] | None = None
         """실행 예산에 처음 막혔을 때 (`job.budget` 알림)."""
         self._counted: dict[str, deque[tuple[int, int]]] = {}
@@ -250,14 +252,26 @@ class JobRegistry:
         return job, token
 
     def secret_values(self) -> list[str]:
-        """메모리의 토큰 원문 전부 (살아 있는 것 + 폐기했지만 보고를 아직 쓰지 않은 것)."""
+        """Kookabug 자체 자격 증명 (UX11): 메모리의 토큰 원문 전부(살아 있는 것 + 폐기했지만 보고를
+        아직 쓰지 않은 것)와 runner가 그 작업들의 에이전트 프로세스에 넣은 인증·환경 값.
+        워크스페이스 비밀값 저장소의 값은 들지 않는다 (용도와 무관하게 가리지 않음). 파일을 읽지
+        않는다."""
         with self._lock:
-            return list(self._tokens.values())
+            masks = [v for job_id in self._tokens for v in self._masks.get(job_id, ())]
+            return [*self._tokens.values(), *masks]
+
+    def set_masks(self, job_id: str, values: Collection[str]) -> None:
+        """runner가 넣은 인증·환경 값을 그 작업 기록(메모리)에 둔다 (토큰과 같은 수명)."""
+        with self._lock:
+            if job_id in self._tokens:
+                self._masks[job_id] = [v for v in values if v]
 
     def forget_token(self, job_id: str) -> None:
-        """보고를 쓴 뒤 그 작업의 토큰 원문을 지운다 (해시는 남아 폐기된 토큰으로 판정된다)."""
+        """보고를 쓴 뒤 그 작업의 토큰 원문·넣은 값을 지운다 (해시는 남아 폐기된 토큰으로
+        판정된다)."""
         with self._lock:
             self._tokens.pop(job_id, None)
+            self._masks.pop(job_id, None)
 
     def bind(self, token: str, client_id: str) -> Job:
         """hello의 토큰 → 살아 있는 작업. 아니면 `job_token_invalid` (이유는 고정 글자)."""
@@ -474,22 +488,15 @@ class JobRegistry:
 
     def record_activity(self, job_id: str, tool: str, result: str, target: str) -> None:
         """작업 활동 목록에 도구 호출 한 줄 (UX1 U3). 못 써도 요청은 그대로다 (화면 표시용).
-        대상은 쓰기 직전 `agent.log`와 같은 가림 대상(작업 토큰 + 워크스페이스 비밀값 공급자)으로
-        검사한다 — 못 모으면 대상을 비운다. 그 작업의 토큰 원문이 이미 없으면(끝난 작업·토큰을
-        지운 뒤 늦게 도는 기록·모르는 작업) 가릴 자료가 없으니 대상을 비운다."""
+        대상은 쓰기 직전 Kookabug 자체 자격 증명(`secret_values` — 작업 토큰 + runner가 넣은
+        인증·환경 값)으로 검사한다. 워크스페이스 비밀값은 가리지 않는다(UX11 B). 그 작업의 토큰
+        원문이 이미 없으면(끝난 작업·토큰을 지운 뒤 늦게 도는 기록·모르는 작업) 가릴 자료가 없으니
+        대상을 비운다."""
         root = Path(self.workspace)
         if target:
             with self._lock:
                 own = self._tokens.get(job_id)
-                tokens = list(self._tokens.values())
-            values: list[str] | None = None
-            if own is not None:
-                try:
-                    from kookabug_core.agent_job.runner import known_secrets
-
-                    values = tokens + list(known_secrets(root, os.environ))
-                except Exception:
-                    values = None
+            values = None if own is None else self.secret_values()
             target = activity.mask_target(target, values)
         try:
             activity.append(root, job_id, tool, result, target)

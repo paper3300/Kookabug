@@ -384,16 +384,15 @@ def run_switch(tmp_path: Path) -> tuple[Any, ObserveSwitch]:
     return result, invoker
 
 
-def test_followed_window_title_scrubbed_before_node_sees_it(tmp_path: Path) -> None:
-    """붙여 실행: 따라간 새 창의 제목(계정 ID)이 출력 없이 바로 남긴 로그에도 나가지 않는다 — 옛
-    창 제목도 계속 가린다. 제목 캐시(1초)를 기다리지 않는다."""
+def test_followed_window_title_recorded_as_is(tmp_path: Path) -> None:
+    """붙여 실행: 노드는 따라간 새 창을 바로 받고, 그 제목(계정 ID)은 기록에 그대로 남는다
+    (UX11 B — 창 제목을 가리지 않는다)."""
     result, invoker = run_switch(tmp_path)
     logs = [str(e["message"]) for e in result.events if e["event"] == "log"]
     mine = [m for m in logs if m.startswith("현재 게임 창")]
-    assert mine == ["현재 게임 창: @game / 이전: @game"], mine
+    assert mine == [f"현재 게임 창: {ACCOUNT_TITLE} / 이전: {invoker.old_title}"], mine
     assert invoker.old_title and invoker.old_title != ACCOUNT_TITLE
-    dumped = json.dumps(result.events, ensure_ascii=False)
-    assert ACCOUNT_TITLE not in dumped and "synthetic-user-ux9" not in dumped
+    assert "@game" not in json.dumps(result.events, ensure_ascii=False)
 
 
 def test_video_tracks_new_window_within_current_node(tmp_path: Path) -> None:

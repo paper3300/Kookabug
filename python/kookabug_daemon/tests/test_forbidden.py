@@ -73,6 +73,13 @@ def click(conn: DaemonClient, point: tuple[int, int]) -> dict[str, Any]:
     return conn.call("control.click", {"window": SHOP, "point": list(point)}, timeout=180)
 
 
+def look(conn: DaemonClient) -> None:
+    """한 번 캡처한다 — 가짜 게임은 캡처가 화면을 넘긴다(띄운 직후 boot → shop). 사람 클릭 앞에
+    둔다 (UX11 B 전에는 클릭 직전 보호 캡처가 이 일을 대신했다)."""
+    (window,) = conn.call("windows.list", {})["windows"]
+    conn.call("target.capture", {"window": window["handle"]})
+
+
 def refused(fn: Any, *args: Any) -> DaemonError:
     with pytest.raises(DaemonError) as caught:
         fn(*args)
@@ -224,6 +231,7 @@ def test_text_click_refused(game: FakeGame, daemon: ThreadDaemon) -> None:
 
 def test_human_click_not_checked(game: FakeGame, daemon: ThreadDaemon) -> None:
     with daemon.client() as ui:
+        look(ui)
         assert click(ui, CHARGE)["verdict"] == "pass"
         assert scene(game) == "shop_purchase_confirm"
         # 사람은 금지 문구가 보여도 누른다 (판정 대상 아님) — 결제 누르기가 실제로 게임에 간다
@@ -234,6 +242,7 @@ def test_human_click_not_checked(game: FakeGame, daemon: ThreadDaemon) -> None:
 
 def test_key_combo_refused_when_forbidden_visible(game: FakeGame, daemon: ThreadDaemon) -> None:
     with daemon.client() as ui:
+        look(ui)
         click(ui, CHARGE)
     with daemon.client(AGENT) as agent:
         for method, params in (
@@ -313,8 +322,8 @@ def test_ocr_unavailable_refuses(game: FakeGame, daemon: ThreadDaemon) -> None:
 
 
 def test_protected_frame_refuses(game: FakeGame) -> None:
-    """보호 판정이 clear가 아니면 글자를 읽지 않고 거부한다. 비밀값 칸 상자를 모두 알면 그 칸만 가린
-    사본으로 읽는다(로그인 단추 같은 흐름이 막히지 않게)."""
+    """보호 판정(민감 target)이 clear가 아니면 글자를 읽지 않고 거부한다. clear면 원본 그대로 읽는다
+    (UX11 B — 비밀값 칸을 가린 사본을 만들지 않는다)."""
     from kookabug_platform.frames import decode_image
 
     pixels = decode_image((game.frames / "shop_purchase_confirm.png").read_bytes())
@@ -328,18 +337,14 @@ def test_protected_frame_refuses(game: FakeGame) -> None:
         root = game.root
         screen_source = Source()
 
-        def __init__(self, verdict: Guard, boxes: list[Any] | None) -> None:
+        def __init__(self, verdict: Guard) -> None:
             self.guard = self
             self.verdict = verdict
-            self.boxes = boxes
             self.read: list[Any] = []
             self.targets = self
 
         def check(self, frame: Any) -> Guard:
             return self.verdict
-
-        def secret_boxes(self, frame: Any) -> list[Any] | None:
-            return self.boxes
 
         def ocr(self) -> Any:
             daemon = self
@@ -354,19 +359,15 @@ def test_protected_frame_refuses(game: FakeGame) -> None:
             return Engine()
 
     items = (rules.Item("text", "결제"),)
-    unknown = Daemon(Guard("protected", "secret_field_unknown"), None)
-    refusal = rules.judge(items, window_sight(unknown, [binding]))
-    assert refusal is not None
-    assert (refusal.code, refusal.reason) == ("forbidden_unverifiable", "secret_field_unknown")
-    assert unknown.read == []  # 보호 화면은 OCR에 넘기지 않는다
-    sensitive = Daemon(Guard("protected", "sensitive_visible"), [(0, 0, 10, 10)])
+    sensitive = Daemon(Guard("protected", "sensitive_visible"))
     refusal = rules.judge(items, window_sight(sensitive, [binding]))
-    assert refusal is not None and refusal.reason == "sensitive_visible"
-    known = Daemon(Guard("protected", "secret_field"), [(352, 372, 140, 52)])
-    assert rules.judge(items, window_sight(known, [binding])) is None  # 스텁 OCR: 빈 글자
-    [seen] = known.read
-    assert np.all(seen[372:424, 352:492] == 128)  # 칸 상자는 가린 사본만 읽었다
-    assert not np.array_equal(seen, pixels)
+    assert refusal is not None
+    assert (refusal.code, refusal.reason) == ("forbidden_unverifiable", "sensitive_visible")
+    assert sensitive.read == []  # 보호 화면은 OCR에 넘기지 않는다
+    clear = Daemon(Guard("clear"))
+    assert rules.judge(items, window_sight(clear, [binding])) is None  # 스텁 OCR: 빈 글자
+    [seen] = clear.read
+    assert np.array_equal(seen, pixels)  # 가리지 않은 원본
 
 
 def test_forbidden_files_not_writable_by_agent(game: FakeGame, daemon: ThreadDaemon) -> None:
@@ -435,6 +436,7 @@ def test_graph_key_node_refused_when_forbidden_visible(
     }
     rel = run_graph(game, "esc", {"n_1": key})
     with daemon.client() as ui:
+        look(ui)
         click(ui, CHARGE)
     with daemon.client(AGENT) as agent:
         started = agent.call("run.start", {"path": rel, "idempotency_key": "k2"})

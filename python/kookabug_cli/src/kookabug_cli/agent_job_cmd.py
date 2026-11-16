@@ -117,6 +117,9 @@ class _Link:
         client = {"kind": "ui", "name": "agent-job", "version": __version__}
         self.client = DaemonClient.connect(info.port, info.token, client=client)
         self.notifications = self.client.notifications
+        hello = self.client.hello_result or {}
+        self.features: frozenset[str] = frozenset(str(f) for f in hello.get("features") or ())
+        """daemon 기능 표시 (UX11 — 작업을 만들기 전에 `job_masks`를 확인한다)."""
 
     def call(self, method: str, params: Any, timeout: float = 60.0) -> Any:
         return self.client.call(method, dict(params), timeout=timeout)

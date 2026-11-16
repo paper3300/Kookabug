@@ -89,7 +89,7 @@ class Qa(BaseModel):
 
 class RecordOverride(BaseModel):
     """
-    실행별 기록 강제 (M7 R2): 에이전트 제어 실행은 스크린샷·영상을 끄고 비밀값을 가렸다. 그래프·워크스페이스 기록 정책과 별개
+    실행별 기록 강제 (M7 R2): 에이전트 제어 실행은 스크린샷·영상을 끈다(클릭마다 생기는 한 스텝짜리 실행이라 이미지 기록이 무겁다). 그래프·워크스페이스 기록 정책과 별개. redact_secrets는 UX11부터 무시한다(형식 호환으로 남김)
     """
 
     model_config = ConfigDict(
@@ -324,7 +324,7 @@ class Run(BaseModel):
     record_override: Annotated[
         RecordOverride | None,
         Field(
-            description="실행별 기록 강제 (M7 R2): 에이전트 제어 실행은 스크린샷·영상을 끄고 비밀값을 가렸다. 그래프·워크스페이스 기록 정책과 별개"
+            description="실행별 기록 강제 (M7 R2): 에이전트 제어 실행은 스크린샷·영상을 끈다(클릭마다 생기는 한 스텝짜리 실행이라 이미지 기록이 무겁다). 그래프·워크스페이스 기록 정책과 별개. redact_secrets는 UX11부터 무시한다(형식 호환으로 남김)"
         ),
     ] = None
     retried_steps: Annotated[

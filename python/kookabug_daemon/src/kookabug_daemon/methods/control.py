@@ -5,8 +5,8 @@
 그래서 실행·녹화 중이면 `run_busy`·`recording_active`, 다른 주체가 임대권을 쥐었으면
 `input_lease_busy`다. 키·버튼은 액터가 누르고 떼고, runner가 죽으면 감독자가, 둘 다 죽으면 다음
 임대권 획득자가 뗀다(기존 보장). 기록은 `runs/` 아래 일반 실행 폴더(`run.json` `source:
-agent_control`). 실행 사양의 기록 강제로 스크린샷·영상을 끄고 비밀값을 가린다(`record_override`,
-M7 R2 — 워크스페이스 설정과 무관).
+agent_control`). 실행 사양의 기록 강제로 스크린샷·영상을 끈다(`record_override`, M7 R2 —
+워크스페이스 설정과 무관).
 
 - 판정은 처리기가 한다(`self_authorized`): 그 도구(`kb_input_*`) 판정 → ask면 사람 확인(control은
   "항상 허용" 없음) → 집행한 판정을 내부 진입점에 넘긴다(`kb_run_start`를 다시 판정하지 않음)
@@ -16,8 +16,8 @@ M7 R2 — 워크스페이스 설정과 무관).
   남긴다(창 제목에 계정 ID가 들어가는 게임이 있다). 제목으로 하나로 정해진 창은 그 프로세스를
   게임으로 기억한다
 - `explore.step`(`kb_explore_step`, UX7 C)도 같은 경로(`send_input`)로 입력한다
-- `control.type{secret}`은 그래프에 `{"$secret": 키}`만 넣는다. 값은 runner가 찾고, 결과·기록의
-  에이전트 쪽 보기(3.8 분류)·오류 메시지에 원문이 없다
+- `control.type{secret}`은 그래프에 `{"$secret": 키}`만 넣는다. 값은 runner가 찾는다. 결과·기록에서
+  원문을 가리지 않는다 (UX11 B — 로컬 툴이라 게임 비밀값은 가리지 않음)
 - `app.launch`는 입력이 아니라 daemon이 직접 띄운다(실행 Job 밖, C5)
 """
 
@@ -34,7 +34,6 @@ from kookabug_core.documents import template
 from kookabug_core.engine.context import FORBIDDEN_CODES
 from kookabug_core.permissions import Decision
 from kookabug_core.runner.spec import BoundWindow
-from kookabug_daemon.agent_view import MASK
 from kookabug_daemon.documents import resolve_path
 from kookabug_daemon.explore import StepReservation
 from kookabug_daemon.forbidden import check_agent_input
@@ -171,32 +170,17 @@ def _result(run_id: str, outcome: Any) -> dict[str, Any]:
             raise RequestFailed(
                 code,
                 str(reason)
-                if isinstance(reason, str) and not run_end.get("secret_paths")
+                if isinstance(reason, str)
                 else "입력 직전 금지 동작 판정에 걸려 입력하지 않았다",
                 kind=None,
                 value=None,
                 reason="runner",
                 run_id=run_id,
             )
-        # 사유는 실행 때 분류(3.8)대로 가린다: 비밀값이 든 사유면 ***
+        # 사유는 그대로 (UX11 B — 게임 비밀값은 가리지 않는다)
         reason = run_end.get("reason")
-        secret = "/reason" in (run_end.get("secret_paths") or ())
-        message = MASK if secret else (str(reason) if isinstance(reason, str) else code)
-        out["error"] = {"code": code, "message": message}
+        out["error"] = {"code": code, "message": str(reason) if isinstance(reason, str) else code}
     return out
-
-
-def _input_kind(
-    method: str, params: Mapping[str, Any]
-) -> tuple[str, tuple[int, int] | None, str | None]:
-    """(입력 종류, 점 클릭의 점, 비밀값 키) — 보호 기록·칸 상자 근거(M7 R3)용."""
-    if method == "control.click":
-        point = params.get("point")
-        return "click", None if point is None else (int(point[0]), int(point[1])), None
-    if method == "control.key":
-        return "key", None, None
-    secret = params.get("secret")
-    return "type", None, None if secret is None else str(secret)
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,9 +277,7 @@ async def click_then_type(
     typed: tuple[Mapping[str, Any], dict[str, Any]],
 ) -> dict[str, Any]:
     """클릭+입력 한 걸음 (UX8 C): 클릭 제어 실행 → (같은 판정으로) 입력 제어 실행. 클릭이 pass가
-    아니면 입력하지 않는다. 클릭 위치가 곧 칸 상자 근거다 — 두 실행 사이에 다른 입력이 끼지 않고
-    (전부 고르기는 입력 실행 안), 클릭 뒤 바로 입력하므로 `CLICK_FRESH_S` 안이다. 돌려주는 것은
-    마지막 제어 실행 결과."""
+    아니면 입력하지 않는다. 돌려주는 것은 마지막 제어 실행 결과."""
     grant: list[Any] = []
     clicked = await send_input(call, "control.click", click[0], target, click[1], grant=grant)
     if clicked["verdict"] != "pass":
@@ -304,19 +286,13 @@ async def click_then_type(
 
 
 def split_click_type(params: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]] | None:
-    """`point`·`target` 클릭과 `text`·`secret`을 함께 줬으면 (클릭 인자, 입력 인자), 아니면 None.
-    비밀값 칸은 point로만 누른다 (target 클릭은 칸 위치 근거가 없어 그 창 이미지가 막힌다)."""
+    """`point`·`target` 클릭과 `text`·`secret`을 함께 줬으면 (클릭 인자, 입력 인자), 아니면 None."""
     if not ("point" in params or "target" in params) or not (
         "text" in params or "secret" in params
     ):
         if params.get("select_all") is True and "text" not in params and "secret" not in params:
             raise RequestFailed("target_invalid", "select_all은 text·secret과 함께 준다")
         return None
-    if "secret" in params and "point" not in params:
-        raise RequestFailed(
-            "target_invalid",
-            "비밀값 칸은 point로 누른다 (target 클릭은 칸 위치 근거가 없어 그 창 이미지가 막힌다)",
-        )
     click = {k: params[k] for k in ("point", "target", "button", "count") if k in params}
     typed = {k: params[k] for k in ("text", "secret", "select_all") if k in params}
     return click, typed
@@ -368,8 +344,6 @@ async def _reserved(
     decision = authorized.decision
     assert isinstance(decision, Decision)  # control.*·explore.step은 ui_only가 아니다
     manager = call.daemon.run_manager
-    guard = call.daemon.guard
-    kind, point, secret = _input_kind(method, params)
     if target.bindings is None:
         # 대상 창을 여기서 **한 번** 정한다 (판정 뒤 — M7 R1). 정확히 하나가 아니면 붙지 않는
         # 바인딩(hwnd 0)을 넘겨 입력 없이 실패한다
@@ -379,48 +353,34 @@ async def _reserved(
     assert bound is not None
     # 자동 채택 검증 중이면 Agent 입력을 받지 않는다 (M8 R7 — 시작 예약 안에서 다시 본다)
     manager.refuse_agent_during_verification(call.principal)
-    # 금지 동작 (M8 3.7·R6): 창이 하나로 정해졌으면 보내기 전에 그 창 한 장으로 판정한다(비밀값
-    # 보호 기록을 쓰기 전 — 이 입력이 만들 보호로 자기 자신을 막지 않게). 창이 없으면 제어 실행이
-    # 창 붙기에서 입력 없이 끝난다. 어느 쪽이든 runner가 입력 직전에 같은 판정을 다시 한다
+    # 금지 동작 (M8 3.7·R6): 창이 하나로 정해졌으면 보내기 전에 그 창 한 장으로 판정한다. 창이
+    # 없으면 제어 실행이 창 붙기에서 입력 없이 끝난다. 어느 쪽이든 runner가 입력 직전에 같은 판정을
+    # 다시 한다. 비밀값 입력도 따로 보호 기록을 쓰지 않는다 (UX11 B — 게임 비밀값은 가리지 않음)
     if bindings:
         await asyncio.to_thread(check_agent_input, call.daemon, call.principal, bindings)
-    before = None
-    if point is not None and bindings:
-        before = await asyncio.to_thread(guard.before_click, bindings)
-    if secret is not None and bindings:
-        # 그 바인딩의 보호 기록을 디스크에 쓴 뒤에만 비밀값을 보낸다. 실패면 protect_record_failed
-        await asyncio.to_thread(guard.record_secret, call.connection, bindings, secret)
-    try:
-        # "이 탐색 동안 허용"으로 승인된 입력은 그 세션 동안만 유효하다: 판정 뒤 창 찾기·보호 기록
-        # 사이에 세션이 끝났으면 실행하지 않는다 (예약은 finally가 되돌림, B3 검수 Mid 1)
-        if authorized.scoped and (
-            step is None or call.daemon.explore.live(call.connection, step.session.id) is None
-        ):
-            raise RequestFailed(
-                "explore_not_active",
-                "탐색 세션이 끝나 '이 탐색 동안 허용'으로 승인된 입력을 보내지 않았다",
-            )
-        run_id = await asyncio.to_thread(
-            functools.partial(
-                manager.start_internal,
-                call.principal,
-                value,
-                decision,
-                approved=authorized.approved,
-                bound_window=bound,
-            )
+    # "이 탐색 동안 허용"으로 승인된 입력은 그 세션 동안만 유효하다: 판정 뒤 창 찾기 사이에 세션이
+    # 끝났으면 실행하지 않는다 (예약은 finally가 되돌림, B3 검수 Mid 1)
+    if authorized.scoped and (
+        step is None or call.daemon.explore.live(call.connection, step.session.id) is None
+    ):
+        raise RequestFailed(
+            "explore_not_active",
+            "탐색 세션이 끝나 '이 탐색 동안 허용'으로 승인된 입력을 보내지 않았다",
         )
-        # 판정을 통과해 제어 실행에 들어갔다: 예약한 칸을 탐색 세션의 스텝 하나로
-        if step is not None:
-            await asyncio.to_thread(step.commit)
-        outcome = await asyncio.to_thread(manager.wait_outcome, run_id, WAIT_S)
-    finally:
-        # 결과와 상관없이 이 창들로 입력이 갔다고 본다 (칸 상자 근거를 끊는 쪽이 안전)
-        await asyncio.to_thread(
-            functools.partial(
-                guard.note_input, call.connection, bindings, kind, point=point, before=before
-            )
+    run_id = await asyncio.to_thread(
+        functools.partial(
+            manager.start_internal,
+            call.principal,
+            value,
+            decision,
+            approved=authorized.approved,
+            bound_window=bound,
         )
+    )
+    # 판정을 통과해 제어 실행에 들어갔다: 예약한 칸을 탐색 세션의 스텝 하나로
+    if step is not None:
+        await asyncio.to_thread(step.commit)
+    outcome = await asyncio.to_thread(manager.wait_outcome, run_id, WAIT_S)
     result = _result(run_id, outcome)
     if result["verdict"] == "pass":
         remember_target(call, target)

@@ -25,7 +25,13 @@ from kookabug_core.schema import check_shape
 from kookabug_daemon.jobs import JobRegistry, job_namespace, plain_ascii_id
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.principal import principal_json, principal_of
-from kookabug_daemon.protocol import DAEMON_VERSION, PROTOCOL, RequestFailed, params_problems
+from kookabug_daemon.protocol import (
+    DAEMON_VERSION,
+    FEATURES,
+    PROTOCOL,
+    RequestFailed,
+    params_problems,
+)
 
 __all__ = ["METHODS", "HelloOutcome", "InvalidHello", "hello"]
 
@@ -112,6 +118,7 @@ def hello(
         {
             "protocol": PROTOCOL,
             "daemon_version": DAEMON_VERSION,
+            "features": list(FEATURES),
             "start_id": start_id,
             "workspace": workspace,
             "principal": principal_json(principal),

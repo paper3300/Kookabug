@@ -189,7 +189,8 @@ class StartOptions:
     source: str | None = None
     agent: Mapping[str, Any] | None = None
     record_override: Mapping[str, Any] | None = None
-    """실행별 기록 강제 (M7 R2, `record.policy.AGENT_CONTROL_RECORD` — daemon 내부 진입점만)."""
+    """실행별 기록 강제 (M7 R2, `record.policy.AGENT_CONTROL_RECORD` — 이미지 기록 끔, daemon 내부
+    진입점만)."""
     bound_window: BoundWindow | None = None
     """에이전트 제어 실행의 대상 창 바인딩 (M7 R1 — daemon 내부 진입점만)."""
     unattended: bool = False

@@ -202,8 +202,8 @@ def test_public_fail_exit_not_double_propagated(tmp_path: Path) -> None:
     assert ran.end("n_inner")["status"] == "fail"
 
 
-def test_secret_input_masked_in_events(tmp_path: Path) -> None:
-    # 비밀값 가림을 켠 워크스페이스 (기본은 원문, D3 — test_record_runtime의 기본값 검사)
+def test_secret_input_raw_in_events(tmp_path: Path) -> None:
+    # 가림 설정을 켜도 무시된다 — 서브그래프 인자·로그에 원문 그대로 (UX11 B)
     ws = make_workspace(tmp_path, record={"redact_secrets": True})
     (
         sub(inputs={"password": "secret"})
@@ -226,8 +226,8 @@ def test_secret_input_masked_in_events(tmp_path: Path) -> None:
     ran = run_graph(ws, g, secrets={"accounts.qa": "hunter2"})
     assert ran.result.verdict == "pass"
     dumped = json.dumps(ran.events, ensure_ascii=False)
-    assert "hunter2" not in dumped
+    assert "hunter2" in dumped and "***" not in dumped
     inner_entry = [e for e in ran.of("step.start") if e["path"] == ["n_call", "n_entry"]]
     (end,) = [e for e in ran.of("step.end") if e["step"] == inner_entry[0]["step"]]
-    assert end["outputs"] == {"password": "***"}
-    assert [e["message"] for e in ran.of("log")] == ["***"]
+    assert end["outputs"] == {"password": "hunter2"}
+    assert [e["message"] for e in ran.of("log")] == ["hunter2"]

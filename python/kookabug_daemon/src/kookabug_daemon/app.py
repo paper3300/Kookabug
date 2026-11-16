@@ -56,7 +56,6 @@ from kookabug_daemon.agent_cache import AgentCache
 from kookabug_daemon.approvals import APPROVAL_TIMEOUT_S, ApprovalBroker
 from kookabug_daemon.documents import DocumentTable, GraphChecker
 from kookabug_daemon.explore import ExploreSessions
-from kookabug_daemon.frame_guard import FILE as GUARD_FILE
 from kookabug_daemon.frame_guard import FrameGuard
 from kookabug_daemon.frames import FrameCache
 from kookabug_daemon.game_window import GameMemory
@@ -290,11 +289,7 @@ class Daemon:
         self.game = GameMemory(self.screen_source)
         """마지막으로 실행한 게임 (UX7 `@game`, 메모리에만)."""
         self.guard = FrameGuard(self.root, self._frames, self._targets, self.screen_source)
-        """에이전트 정지 화면 보호 판정 (M7 3.5a)."""
-        # 보호 기록 손상으로 처음 막았을 때 사람 연결에 알린다 (값 없음, M7 3라운드)
-        self.guard.on_corrupt = lambda: self.post(
-            lambda: self.notify_ui("agent.protect_corrupt", {"path": GUARD_FILE})
-        )
+        """에이전트 정지 화면 보호 판정 (M7 3.5a — UX11부터 민감 target만)."""
         self.explore = ExploreSessions(self.root, self._explore_changed)
         """에이전트 탐색 세션 (M7 3.4)."""
         self._run_manager = RunManager(
@@ -896,8 +891,6 @@ class Daemon:
             await asyncio.to_thread(self._image_cache.reset)
             await asyncio.to_thread(AgentCache(self.root).reset)
             await asyncio.to_thread(RecorderStore.clear_all, self.root)
-            # 에이전트 보호 기록 (M7 R1): 재시작 뒤에도 비밀값을 넣은 창은 계속 보호한다
-            await asyncio.to_thread(self.guard.load)
             # 남은 화면 지도 승격 거래를 끝낸다 (M7 3.7 — 커밋이면 앞으로, 아니면 뒤로)
             await asyncio.to_thread(self._recover_screens)
             # 지난 daemon의 끝나지 않은 작업 (M8 3.9 "재시작": interrupted + 보고 하나)

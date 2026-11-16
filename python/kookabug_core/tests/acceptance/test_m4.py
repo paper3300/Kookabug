@@ -642,8 +642,8 @@ def test_split_password_secret_span_and_login(tmp_path: Path) -> None:
 
 @pytest.mark.usefixtures("secret_env")
 def test_replay_runs_follow_d3(tmp_path: Path) -> None:
-    """녹화한 그래프의 재생 `runs/`는 D3: 기본은 비밀값을 받은 스텝도 영상에 남고(빈 구간 없음),
-    워크스페이스 `record.redact_secrets: true`면 그 스텝이 영상의 `secret_input` 빈 구간이다.
+    """녹화한 그래프의 재생 `runs/`: 비밀값을 받은 스텝도 영상에 남는다(빈 구간 없음). 워크스페이스
+    `record.redact_secrets: true`도 무시된다 (UX11 B — 가리지 않는다).
     녹화 데이터의 원문 부재 검사와는 따로다 (검수 M7). 녹화 그래프의 글자 입력 노드는 비밀값을
     출력·로그에 싣지 않아 이벤트에는 어느 쪽이든 원문이 없다 — 원문이 남을 수 있는 곳은
     화면(영상·스크린샷)이다."""
@@ -676,7 +676,7 @@ def test_replay_runs_follow_d3(tmp_path: Path) -> None:
     start, _ = step_of(events, secret_node)
     assert start is not None
     gaps = [g for g in video_gaps(rig.root, redacted) if g["gap"] == "secret_input"]
-    assert [g.get("step") for g in gaps] == [start["step"]], gaps
+    assert gaps == [], gaps
     for run in (ended, redacted):
         assert_no_raw("재생 이벤트", run_events(rig.root, run))
 

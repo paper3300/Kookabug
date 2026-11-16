@@ -102,17 +102,17 @@ def test_scene_change_login_to_lobby_ends_field_and_protection() -> None:
     assert protect.overlaps(PASSWORD, 1200 * MS, None)  # 프레임 모름
 
 
-def test_lobby_button_at_same_place_can_be_cropped_after_scene_change() -> None:
-    # 양성 대조: 로그인 → 로비. 비밀번호 칸이 있던 자리의 로비 단추(Server 2)는 target이 된다
+def test_lobby_button_at_same_place_is_free_after_scene_change() -> None:
+    # 양성 대조: 로그인 → 로비. 칸 목록은 로비 프레임에서 칸이 없다고 본다
     tracker, protect = linked(LOGIN)
     tracker.observe(1000 * MS, LOBBY)
     for span in tracker.observe(1200 * MS, LOBBY):
         protect.end(span, tracker.gone_at(span) or 0)
-    crop = crop_click(LOBBY, (560, 310), protect=protect, t_ns=1300 * MS)
+    assert not protect.overlaps(PASSWORD, 1300 * MS, LOBBY)
+    assert protect.overlaps(PASSWORD, 1400 * MS, plaintext_field())  # 칸이 다시 보이는 프레임
+    # UX11 B: 녹화 자르기는 칸 목록을 보지 않는다 — 칸이 보여도 그대로 자른다
+    crop = crop_click(plaintext_field(), (560, 310))
     assert crop.box is not None and crop.needs_review == ()
-    # 같은 보호에서 칸이 다시 보이는 프레임이면 막힌다
-    blocked = crop_click(plaintext_field(), (560, 310), protect=protect, t_ns=1400 * MS)
-    assert blocked.box is None and blocked.needs_review == ("secret_overlap",)
 
 
 def linked(reference: np.ndarray) -> tuple[FieldPresenceTracker, ProtectionSet]:
@@ -166,9 +166,9 @@ def popup(image: np.ndarray, rect: tuple[int, int, int, int], color=(50, 60, 70)
         (350, 340, 800, 580),  # review_B2_2: 아래 둘레
     ],
 )
-def test_partial_popup_keeps_protection_and_blocks_target(rect) -> None:
+def test_partial_popup_keeps_field_present(rect) -> None:
     # 칸과 겹치지 않는 팝업이 근거 일부만 가림: 칸 픽셀은 그대로 → 없음으로 확정하지 않고,
-    # 끝난 보호로 쳐도 그 프레임은 일부 가림이라 보호한다
+    # 끝난 칸으로 쳐도 그 프레임은 일부 가림이라 칸이 있다고 본다
     reference = plaintext_field()
     shown = popup(reference, rect)
     assert np.array_equal(reference[285:335, 400:720], shown[285:335, 400:720])
@@ -176,11 +176,9 @@ def test_partial_popup_keeps_protection_and_blocks_target(rect) -> None:
     for t in (100, 300, 500, 2000):
         assert tracker.observe(t * MS, shown) == []
     assert tracker.gone_at(1) is None
-    crop = crop_click(shown, (560, 310), protect=protect, t_ns=2000 * MS)
-    assert crop.box is None and crop.needs_review == ("secret_overlap",)
+    assert protect.overlaps(PASSWORD, 2000 * MS, shown)
     protect.end(1, 100 * MS)  # 끝났다고 해도 프레임 기준
-    crop = crop_click(shown, (560, 310), protect=protect, t_ns=2000 * MS)
-    assert crop.box is None and crop.needs_review == ("secret_overlap",)
+    assert protect.overlaps(PASSWORD, 2000 * MS, shown)
 
 
 @pytest.mark.parametrize(
@@ -191,9 +189,9 @@ def test_partial_popup_keeps_protection_and_blocks_target(rect) -> None:
         (230, 260, 390, 340),  # review_B2_2: 작은 라벨 알림이 남음
     ],
 )
-def test_field_back_after_absence_blocks_target(notice) -> None:
-    # 큰 대화상자가 칸을 덮어 없음으로 확정·보호 끝 → 대화상자가 닫히고 원문이 남은 칸이 다시 보임
-    # (일부 가림 동반) → 그 프레임에서 칸이 없다는 근거가 없으니 target·수동 영역·이름 OCR 차단
+def test_field_back_after_absence_is_present(notice) -> None:
+    # 큰 대화상자가 칸을 덮어 없음으로 확정 → 대화상자가 닫히고 원문이 남은 칸이 다시 보임(일부 가림
+    # 동반) → 그 프레임에서 칸이 없다는 근거가 없다. UX11 B: 녹화 이름 OCR은 그래도 막지 않는다
     tracker, protect = linked(LOGIN)
     typed = plaintext_field()
     dialog = popup(typed, (50, 150, 800, 500), (85, 75, 65))
@@ -204,21 +202,12 @@ def test_field_back_after_absence_blocks_target(notice) -> None:
     protect.end(1, tracker.gone_at(1) or 0)
     assert not protect.overlaps(PASSWORD, 800 * MS, dialog)  # 덮인 프레임은 칸이 없음
     back = typed if notice is None else popup(typed, notice)
-    crop = crop_click(back, (560, 310), protect=protect, t_ns=1100 * MS)
-    assert crop.box is None and crop.needs_review == ("secret_overlap",)
     with pytest.raises(SecretRegionOverlap):
         protect.require_clear(PASSWORD, 1100 * MS, back)
-    calls: list[object] = []
     name = name_for_box(
-        back,
-        (397, 282, 325, 55),
-        read_text=lambda *a: calls.append(a) or "review-pass-42",
-        protect=protect,
-        t_ns=1100 * MS,
-        raw_texts=[],
-        fallback="click_1",
+        back, (397, 282, 325, 55), read_text=lambda *a: "review-pass-42", fallback="click_1"
     )
-    assert name == "click_1" and calls == []  # 보호 칸과 겹쳐 OCR하지 않음
+    assert name == "review-pass-42"  # 칸과 겹쳐도 읽고 그대로 쓴다
 
 
 def text_actions(script: Script, tracker: FieldPresenceTracker) -> list[TextAction]:

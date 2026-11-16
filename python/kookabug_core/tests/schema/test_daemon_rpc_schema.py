@@ -112,6 +112,7 @@ TOOLS = {
     # M7 탐색 세션·화면 지도 저장·식별 (목록은 사람 화면용)
     "screens.identify": "kb_screen_identify",
     "screens.save": "kb_screen_save",
+    "screens.link": "kb_screen_link",
     "explore.start": "kb_explore_start",
     "explore.end": "kb_explore_end",
     "explore.list": "ui_only",
@@ -286,6 +287,8 @@ def test_method_table_matches_permission_table() -> None:
         "question.wait",
         "job.progress",
         "wiki.read",
+        # UX11 A3: Agent 도구만
+        "screens.link",
     }
     for row in table.values():
         for part in ("params", "result"):

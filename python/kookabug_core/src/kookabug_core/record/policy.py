@@ -5,9 +5,9 @@
   항목마다 한 번이라도 `off`면 `off`이고 아래에서 다시 켤 수 없다. `video`는
   `on` < `failed_only` < `off`로 센 쪽이 이긴다
 - 정책을 끈 곳(`source`)은 그 항목을 처음 가장 세게 만든 층이다 (위가 아래를 이긴다)
-- 워크스페이스 `record.redact_secrets`가 true일 때만: 스텝의 입력(재귀)에 비밀값이 있으면 그 스텝의
-  스크린샷·영상을 남기지 않는다 (`secret_input`). 단 서브그래프 호출 스텝의 실패·예외 증거는 비밀값
-  입력으로 막지 않는다 (`Recorder`, M1 T12). 기본(false)은 비밀값 스텝도 그대로 남긴다 (D3)
+- 비밀값은 가리지 않는다 (UX11 B, 2026-11-16 — 로컬 툴): 워크스페이스 `record.redact_secrets`와
+  실행별 강제의 `redact_secrets`는 읽기만 하고 무시한다. 비밀값 입력 스텝도 스크린샷·영상·글을
+  그대로 남긴다
 
     policy = RecordPolicy().layer(ws.config.get("record"), "kookabug.json#/record")
     policy.screenshots  # "on" | "off"
@@ -49,8 +49,10 @@ AGENT_CONTROL_RECORD: Final[Mapping[str, Any]] = {
     "redact_secrets": True,
     "by": "agent_control",
 }
-"""에이전트 제어 실행의 기록 강제 (M7 3.4a·R2): 이미지 기록을 모두 끄고 비밀값을 가린다. 사용자·
-워크스페이스 설정 파일과 그래프 계층 규칙은 바꾸지 않는다 — 실행 사양으로만 넘긴다."""
+"""에이전트 제어 실행의 기록 강제 (M7 3.4a·R2): 이미지 기록(스크린샷·영상)을 끈다 — 클릭마다 생기는
+한 스텝짜리 실행이라 이미지·영상 기록이 무겁다. `redact_secrets: True`는 실행 사양·`run.json`
+`record_override` 형식이 필수로 요구해서 남긴 값이고 무시된다 — 비밀값은 가리지 않는다 (UX11 B).
+사용자·워크스페이스 설정 파일과 그래프 계층 규칙은 바꾸지 않는다 — 실행 사양으로만 넘긴다."""
 OVERRIDE_SOURCE: Final = "run.json#/record_override"
 
 _VIDEO_STRENGTH: Final[dict[str, int]] = {"on": 0, "failed_only": 1, "off": 2}
@@ -79,8 +81,7 @@ class RecordPolicy:
     video: VideoMode = "on"
     sources: Mapping[str, str] = field(default_factory=dict[str, str])
     redact_secrets: bool = False
-    """비밀값 가림 (워크스페이스 `record.redact_secrets`, 기본 false — 2026-11-03 사용자 결정 D3).
-    아래 층이 바꾸지 않는다."""
+    """비밀값 가림 — 늘 false (UX11 B: 가리지 않는다). 기록 형식 호환으로 필드만 남긴다."""
 
     def layer(self, record: Mapping[str, Any] | None, source: str) -> RecordPolicy:
         """한 층(`record` 객체, 없으면 그대로)을 더한다. 더 엄격한 값만 받아들인다."""
@@ -102,22 +103,18 @@ class RecordPolicy:
 
     def forced(self, override: Mapping[str, Any] | None) -> RecordPolicy:
         """실행별 기록 강제(`RunSpec.record_override`, M7 R2)를 덮는다. 계층 규칙(`layer`)과
-        별개로 실행 시작 정책에 한 번만 쓴다: 스크린샷·영상 off, 비밀값 가림 — 끄기·가리기만 받는다.
-        정한 곳(`sources`)은 `run.json#/record_override`."""
+        별개로 실행 시작 정책에 한 번만 쓴다: 스크린샷·영상 off — 끄기만 받는다(`redact_secrets`는
+        무시, UX11 B). 정한 곳(`sources`)은 `run.json#/record_override`."""
         if not override:
             return self
         source = OVERRIDE_SOURCE
         sources = dict(self.sources)
-        screenshots, video, redact = self.screenshots, self.video, self.redact_secrets
+        screenshots, video = self.screenshots, self.video
         if override.get("screenshots") == "off" and screenshots != "off":
             screenshots, sources["screenshots"] = "off", source
         if override.get("video") == "off" and video != "off":
             video, sources["video"] = "off", source
-        if override.get("redact_secrets") is True:
-            redact = True
-        return replace(
-            self, screenshots=screenshots, video=video, sources=sources, redact_secrets=redact
-        )
+        return replace(self, screenshots=screenshots, video=video, sources=sources)
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,10 +147,9 @@ DEFAULT_VIDEO: Final[VideoMode] = "failed_only"
 
 def workspace_policy(record: Mapping[str, Any] | None, source: str) -> RecordPolicy:
     """워크스페이스 층: `record`에 `video`가 없으면 기본값 `failed_only`(정한 곳 없음).
-    `redact_secrets`는 이 층에서만 정한다 (없으면 false)."""
+    `redact_secrets`는 무시한다 (UX11 B — 가리지 않는다)."""
     has_video = isinstance(record, Mapping) and record.get("video") in _VIDEO_MODES
-    redact = isinstance(record, Mapping) and record.get("redact_secrets") is True
-    base = RecordPolicy(redact_secrets=redact)
+    base = RecordPolicy()
     if not has_video:
         base = replace(base, video=DEFAULT_VIDEO)
     return base.layer(record if isinstance(record, Mapping) else None, source)

@@ -105,6 +105,10 @@ async def _finish(call: Call) -> dict[str, Any]:
 
 async def _heartbeat(call: Call) -> dict[str, Any]:
     job = call.daemon.jobs.heartbeat(str(call.params["job"]), call.connection)
+    masks = call.params.get("masks")
+    if isinstance(masks, list):
+        # runner가 에이전트 프로세스에 넣은 인증·환경 값 (UX11 — 공용 출구 가림, 메모리에만)
+        call.daemon.jobs.set_masks(job.id, [str(v) for v in masks])
     return {"job": job.id, "state": "running"}
 
 

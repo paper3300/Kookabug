@@ -113,148 +113,6 @@ def _secret_tree(tmp_path: Path) -> Any:
     return g, {SUB: sub, INNER: inner}
 
 
-def test_secret_call_blocks_video_for_whole_call_subtree(tmp_path: Path) -> None:
-    g, subs = _secret_tree(tmp_path)
-    ran = run_video(tmp_path, g, subgraphs=subs, secrets=PW, ws_record=VIDEO_ON_REDACT)
-    assert ran.result.verdict == "pass", ran.result.reason
-    markers = ran.markers()
-    assert {"a", "b"} <= markers
-    assert not ({"c", "d", "e"} & markers), markers
-    start, end = ran.span("n_call")
-    for seg in ran.segments():
-        assert seg["t_end"] <= start or seg["t0"] >= end, (seg, start, end)
-    (gap,) = [g for g in ran.gaps() if g["gap"] == "secret_input"]
-    assert gap["step"] == ran.step("n_call")[0]["step"]
-
-
-def test_secret_call_screenshot_exception_unchanged(tmp_path: Path) -> None:
-    # 영상 차단은 스택에서 따로 센다: 비밀값을 받지 않는 안쪽 스텝의 스크린샷은 M1 규칙대로 남는다
-    g, subs = _secret_tree(tmp_path)
-    ran = run_video(tmp_path, g, subgraphs=subs, secrets=PW, ws_record=VIDEO_ON_REDACT)
-    _, shot = ran.step("n_shot")
-    assert shot is not None and shot["outputs"]["saved"] is None
-    assert [o["reason"] for o in shot["omitted"]] == ["secret_input"]
-    _, shot2 = ran.step("n_shot2")
-    assert shot2 is not None and shot2["outputs"]["saved"] is not None
-    assert "omitted" not in shot2
-
-
-def test_secret_call_fail_evidence_still_saved(tmp_path: Path) -> None:
-    # 호출 스텝의 실패 증거는 호출 노드의 비밀값 입력으로 막지 않는다 (M1 T12) — 영상만 막힌다
-    g = tk().entry("n_launch")
-    launch(g, "n_launch", "n_call")
-    g.call("n_call", SUB, inputs={"pw": secret("acc.pw")})
-    sub = tk(
-        "subgraph", interface=subgraph_interface(exits={"bad": "fail"}, inputs={"pw": "secret"})
-    ).entry("n_c")
-    show(sub, "n_c", "c", "n_shot", ms=300)
-    sub.node("n_shot", "testkit.shot", next={"done": "n_x"})
-    sub.exit("n_x", "bad")
-    ran = run_video(tmp_path, g, subgraphs={SUB: sub}, secrets=PW, ws_record=VIDEO_ON_REDACT)
-    assert ran.result.verdict == "fail"
-    _, call = ran.step("n_call")
-    assert call is not None
-    assert any(a.endswith("_fail.png") for a in call.get("artifacts", ())), call
-    assert "c" not in ran.markers()
-
-
-def test_child_end_or_exception_does_not_reopen_parent_block(tmp_path: Path) -> None:
-    # 자식 스텝이 끝나거나 예외로 닫혀도(잡힌 실패 분기 포함) 비밀값 호출이 열려 있으면 off
-    g = tk().entry("n_launch")
-    launch(g, "n_launch", "n_a")
-    show(g, "n_a", "a", "n_call")
-    g.call("n_call", SUB, inputs={"pw": secret("acc.pw")}, next={"done": "n_pass"})
-    g.node("n_pass", "core.test.pass")
-    sub = tk("subgraph", interface=subgraph_interface(inputs={"pw": "secret"})).entry("n_c")
-    show(sub, "n_c", "c", "n_fail")
-    # 자식이 fail 출구로 끝나고(연결된 분기) 그 뒤에도 호출 안에서 장면이 이어진다
-    sub.node(
-        "n_fail",
-        "testkit.fail_once",
-        inputs={"exit": "fail"},
-        next={"fail": "n_d", "ok": "n_d", "timeout": "n_d"},
-    )
-    show(sub, "n_d", "d", "n_back")
-    show(sub, "n_back", "idle", "n_x", ms=0)
-    sub.exit("n_x", "done")
-    ran = run_video(tmp_path, g, subgraphs={SUB: sub}, secrets=PW, ws_record=VIDEO_ON_REDACT)
-    assert not ({"c", "d"} & ran.markers())
-    # 게이트 단위: 자식이 예외로 닫혀도 부모 차단은 그대로
-    gate = VideoGate()
-    gate.set_base("on")
-    gate.hold("s1")
-    gate.classify("s1", "on", secret=True, window=None)
-    gate.hold("s2")
-    gate.classify("s2", "on", secret=False, window=None)
-    gate.release("s2")  # 자식이 (예외로) 닫힘
-    view = gate.view()
-    assert (view.state, view.gap, view.step) == ("off", "secret_input", "s1")
-    gate.release("s1")
-    assert gate.view().gap != "secret_input"
-
-
-def test_pending_gate_blocks_new_pixels_until_classified(tmp_path: Path) -> None:
-    # 스텝의 step.start 직후(분류 전) 장면이 바뀌고 0.6초 머문다.
-    # - 비밀값 스텝(n_secret, 장면 c): c는 어디에도 없고, 빈 구간은 그 스텝의 step.start부터
-    # - 일반 스텝(n_plain, 장면 d): 보류 칸은 보류 전 프레임(b) 반복, 조각은 잘리지 않음
-    g = tk().entry("n_launch")
-    launch(g, "n_launch", "n_a")
-    show(g, "n_a", "a", "n_secret")
-    g.node("n_secret", "testkit.shot", inputs={"value": secret("acc.pw")}, next={"done": "n_b"})
-    show(g, "n_b", "b", "n_plain")
-    g.node("n_plain", "testkit.sleep", inputs={"ms": 0}, next={"done": "n_wait"})
-    g.node("n_wait", "core.flow.delay", inputs={"ms": 400}, next={"done": "n_pass"})
-    g.node("n_pass", "core.test.pass")
-
-    def to(scene: str, hold: float = 0.0) -> Any:
-        def action(platform: ScenarioPlatform, gate: VideoGate) -> None:
-            switch(platform, scene)
-            time.sleep(hold)
-
-        return action
-
-    def recording(segments: int) -> Any:
-        # 녹화 시작·차단이 풀린 뒤 첫 칸이 늦으면(느린 러너) 비밀값·일반 스텝 앞에 조각이 없어 아래
-        # 검사가 빈다 — 그 앞 장면 스텝 끝(아직 스택에 있다, 게이트 기록)에서 조각을 기다린다
-        def action(platform: ScenarioPlatform, gate: VideoGate) -> None:
-            wait_slots(tmp_path / "run", segments)
-
-        return action
-
-    ran = run_video(
-        tmp_path,
-        g,
-        secrets=PW,
-        ws_record=VIDEO_ON_REDACT,
-        hooks=[
-            on_event("step.end", "n_a", recording(1)),
-            on_event("step.start", "n_secret", to("c", 0.6)),
-            on_event("step.end", "n_secret", to("idle")),  # 아직 스택에 있다 (게이트 off)
-            on_event("step.end", "n_b", recording(2)),
-            on_event("step.start", "n_plain", to("d", 0.6)),
-        ],
-    )
-    assert ran.result.verdict == "pass", ran.result.reason
-    assert "c" not in ran.markers()
-    start, _ = ran.span("n_secret")
-    (gap,) = [g for g in ran.gaps() if g["gap"] == "secret_input"]
-    assert gap["t_start"] <= start
-    before = [s for s in ran.segments() if s["t0"] < start]
-    assert before and before[-1]["t_end"] <= start
-    # 일반 스텝의 보류: 보류 전 프레임(b)을 반복하고, 그 뒤 d가 이어서 같은 조각에 들어간다
-    plain, _ = ran.span("n_plain")
-    (seg,) = [s for s in ran.segments() if s["t0"] < plain < s["t_end"]]
-    lines = ran.written[seg["file"]]
-    frames = _frames(ran.run_dir, seg["file"])
-    held = [
-        (line["marker"], frame["repeat"])
-        for line, frame in zip(lines, frames, strict=True)
-        if plain < _slot_at(seg, frame["slot"]) <= _shift(plain, 0.35)
-    ]
-    assert held and all(item == ("b", True) for item in held), held
-    assert "d" in {line["marker"] for line in lines}
-
-
 def _slot_at(seg: dict[str, Any], slot: int) -> str:
     from datetime import datetime
 
@@ -309,7 +167,8 @@ def test_event_order_unchanged_step_start_before_input_eval(tmp_path: Path) -> N
     assert shape(ran.events) == shape(plain.events)
 
 
-def test_secret_input_step_has_no_frames(tmp_path: Path) -> None:
+def test_secret_input_step_keeps_frames(tmp_path: Path) -> None:
+    """비밀값 입력 스텝도 영상에 남는다 — 워크스페이스 가림 설정을 켜도 무시 (UX11 B)."""
     g = tk().entry("n_launch")
     launch(g, "n_launch", "n_a")
     show(g, "n_a", "a", "n_secret")
@@ -338,11 +197,8 @@ def test_secret_input_step_has_no_frames(tmp_path: Path) -> None:
             on_event("step.end", "n_secret", at_end),
         ],
     )
-    assert "c" not in ran.markers()
-    start, end = ran.span("n_secret")
-    for seg in ran.segments():
-        assert seg["t_end"] <= start or seg["t0"] >= end, (seg, start, end)
-    assert any(g["gap"] == "secret_input" for g in ran.gaps())
+    assert "c" in ran.markers()
+    assert not any(g["gap"] == "secret_input" for g in ran.gaps())
 
 
 def test_gate_closed_before_step_start_drops_inflight_frame(tmp_path: Path) -> None:
@@ -435,7 +291,7 @@ def test_gaps_recorded_with_reasons(tmp_path: Path) -> None:
     ran = run_video(tmp_path, g, secrets=PW, ws_record=VIDEO_ON_REDACT)
     reasons = [gap["gap"] for gap in ran.gaps()]
     assert reasons[:1] == ["no_window"], reasons
-    assert "policy_off" in reasons and "secret_input" in reasons
+    assert "policy_off" in reasons and "secret_input" not in reasons  # UX11 B
     for gap in ran.gaps():
         assert gap["t_start"] <= gap["t_end"]
     assert ran.index is not None

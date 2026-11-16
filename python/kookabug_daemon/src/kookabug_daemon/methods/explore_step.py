@@ -8,8 +8,10 @@
 - 기다림: 입력 직전 프레임과 비교해 바뀐 뒤 0.5초 동안 차이가 작으면 끝. 바뀐 뒤 3초가 지나도 계속
   움직이면(배경 애니메이션 등) 그때 끝. 상한 `wait_ms`(입력이 있으면 기본 10초, 없으면 0, 최대
   60초). 안 바뀌면 그대로 캡처하고 `changed: false`
-- 이동 기록: 출발 = 세션의 지금 화면(직전 판별·저장), 도착 = 이번 판별의 첫 화면. 점 클릭·키 입력만
-  기록한다(target 클릭·글자 입력은 via가 없다). 도착이 처음 보는 화면이면 대기 이동으로 두고
+- 이동 기록: 출발 = 세션의 지금 화면(직전 판별·저장), 도착 = 이번 판별에서 가장 구체적인 화면
+  (`screen_save.arrival` — 팝업 먼저, 조건 많은 것, UX11 A2). 점 클릭·키 입력·입력 없음(via
+  `wait` — 로딩·컷신처럼 저절로 바뀜, UX11 A1)만 기록한다(target 클릭·글자 입력은 via가 없다).
+  도착이 처음 보는 화면이면 대기 이동으로 두고
   `new_screen: true` — 에이전트가 `kb_screen_save`(key)로 저장하면 그 키로 `to`를 채운다
 - 창은 정확히 하나로 정해져야 한다(제목 또는 `@game`). 결과의 `window`는 준 이름(`@game`이면
   `@game`만 — 실제 제목은 권한 판정에만 쓴다)
@@ -103,10 +105,16 @@ def _input_of(params: Mapping[str, Any]) -> tuple[str | None, dict[str, Any]]:
     return kinds[0]
 
 
+WAIT_VIA: Final = {"wait": {}}
+"""입력 없는 걸음의 이동 via (UX11 A1 — 로딩·컷신처럼 저절로 바뀜)."""
+
+
 def _via(
     method: str | None, params: Mapping[str, Any], size: tuple[int, int]
 ) -> dict[str, Any] | None:
-    """이동 기록의 via (점 클릭·키만). 점은 프레임 비율로."""
+    """이동 기록의 via (점 클릭·키·입력 없음). 점은 프레임 비율로."""
+    if method is None:
+        return dict(WAIT_VIA)
     if method == "control.key":
         return {"key": str(params["keys"])}
     if method == "control.click" and params.get("point") is not None:
@@ -116,6 +124,11 @@ def _via(
             return None
         return {"click": {"point": [round(x / width, 4), round(y / height, 4)]}}
     return None
+
+
+def _ref_of(match: Mapping[str, Any]) -> tuple[str, str]:
+    state = "confirmed" if match["state"] == "confirmed" else "explored"
+    return state, str(match.get("id") or match.get("key"))
 
 
 GAME_GONE: Final = "@game: 게임 프로세스가 끝났다 — kb_app_launch로 다시 띄운다"
@@ -259,7 +272,7 @@ async def _wait(watch: _Watch, before: Grab, deadline: float) -> tuple[Grab, boo
 
 async def _step(call: Call) -> dict[str, Any]:
     from kookabug_daemon.methods.target import frame_result, new_frame
-    from kookabug_daemon.screen_save import add_moves, identify
+    from kookabug_daemon.screen_save import add_moves, arrival, identify, specificity
 
     if call.principal.kind != "agent":
         raise RequestFailed("agent_only", "탐색 한 걸음은 에이전트 연결만 쓴다")
@@ -340,26 +353,52 @@ async def _step(call: Call) -> dict[str, Any]:
         via = None if typed is not None else _via(method, given, (frame.width, frame.height))
         origin = session.where()
         arrived: tuple[str, str] | None = None
-        if matches:
-            first = matches[0]
+        # 겹친 화면(반투명 팝업 뒤 화면 글자 등)은 더 구체적인 화면, 출발 화면과 같은 정도로
+        # 구체적인 다른 화면도 맞으면 그 화면에 도착한 것으로 본다 (UX11 A2)
+        first = arrival(matches, origin)
+        if first is not None:
             state = "confirmed" if first["state"] == "confirmed" else "explored"
             arrived = (state, str(first.get("id") or first.get("key")))
+        if method is None and not changed and arrived is not None and arrived != origin:
+            # 입력도 변화도 없는데 출발과 같은 정도로 구체적인 다른 화면이면(겹친 카드 동률) 출발
+            # 그대로 — 겹친 카드 사이를 오가지 않게. 더 구체적인 화면(걸음 사이에 뜬 팝업·로그인된
+            # 화면)이면 그 도착을 둔다 (UX11 검수 1 Mid 2)
+            here = next((m for m in matches if _ref_of(m) == origin), None)
+            if here is not None and first is not None and specificity(first) >= specificity(here):
+                arrived = origin
+        # 입력 없는 걸음의 이동은 화면이 실제로 바뀌었을 때만: 이번 기다림 동안, 또는 걸음 사이(직전
+        # 걸음 프레임과 비교 — UX11 검수 1 Mid 3). 조건 없는 카드처럼 같은 화면을 다른 카드로
+        # 식별하는 잡음은 이 픽셀 비교가 막는다
+        moved = (
+            method is not None
+            or changed
+            or (
+                session.last_frame is not None
+                and frame_change(session.last_frame, last.pixels) > CHANGED
+            )
+        )
         if method is not None:
             session.wait_for([])  # 새 걸음: 지난 대기 이동은 버린다
-        if via is not None and origin is not None:
+        if via is not None and origin is not None and moved:
             if arrived is not None and arrived != origin:
                 card = await asyncio.to_thread(
                     add_moves, call.daemon, session, origin, [{"via": via, "to": arrived[1]}]
                 )
                 if card is not None:
                     move = {"from": origin[1], "to": arrived[1], "status": "recorded", "card": card}
-            elif arrived is None and new_screen and changed:
-                session.wait_for([(origin, {"via": via, "status": "tried"})])
+            elif arrived is None and new_screen and (changed or method is None):
+                pending = [(origin, {"via": via, "status": "tried"})]
+                if method is None:
+                    # 입력 없는 걸음은 지난 대기 이동(저장에서 온 것 등)을 지우지 않는다
+                    session.add_pending(pending)
+                else:
+                    session.wait_for(pending)
                 move = {"from": origin[1], "to": None, "status": "pending"}
         if arrived is not None:
             session.move_to(arrived)
         elif changed or new_screen:
             session.move_to(None)  # 처음 보는(또는 확인 못 한) 화면 — 저장하면 그 키가 된다
+        session.last_frame = last.pixels
     out: dict[str, Any] = {
         "frame": shown,
         "changed": changed,

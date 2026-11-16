@@ -171,8 +171,6 @@ def test_mask_target_decodes_and_unifies_paths() -> None:
 
 
 ENV_SECRET = "ux1-env-secret-9137"
-REVIEW_SECRET = "review-credential-7a9c"
-PATH_SECRET = "ux1vault\\ux1-path-secret-5521"
 
 
 def _activity_texts(
@@ -199,38 +197,6 @@ def _assert_hidden(texts: Iterable[str], secrets: Iterable[str]) -> None:
         for secret in secrets:
             want = secret.replace("\\", "/").casefold()
             assert not any(want in f for f in folded)
-
-
-def test_activity_target_masks_encoded_and_path_forms(
-    daemon: ThreadDaemon, ws: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # 검수 재현(UX1_2 H1): 인코딩·경로 표현의 알려진 비밀값 → 성공·실패 호출 모두 파일·RPC에 없음
-    monkeypatch.setenv("KOOKABUG_SECRET_REVIEW", REVIEW_SECRET)
-    monkeypatch.setenv("KOOKABUG_SECRET_UX1_PATH", PATH_SECRET)
-    job = daemon.begin_job({"playbook": "init"})
-    folder = ws / jobdir.JOBS_DIR / job["job"]
-    folder.mkdir(parents=True)
-    wiki = ws / "wiki"
-    wiki.mkdir(exist_ok=True)
-    (wiki / "%72eview-credential-7a9c.md").write_text("# ok\n", encoding="utf-8")
-    nested = wiki / "ux1vault"
-    nested.mkdir()
-    (nested / "ux1-path-secret-5521.md").write_text("# ok\n", encoding="utf-8")
-    with daemon.client(agent(job["agent_id"], job["token"])) as conn:
-        # 성공 호출 (실제 파일: 이름 그대로의 인코딩 글, 구분자가 다른 경로)
-        conn.call("workspace.read", {"path": "wiki/%72eview-credential-7a9c.md"})
-        conn.call("workspace.read", {"path": "wiki/ux1vault/ux1-path-secret-5521.md"})
-        # 실패 호출 (없는 파일)
-        with pytest.raises(DaemonError):
-            conn.call("workspace.read", {"path": "wiki/missing-%2572eview-credential-7a9c.md"})
-        with pytest.raises(DaemonError):
-            conn.call("workspace.read", {"path": "wiki/ux1vault/ux1-path-secret-5521+x.md"})
-    entries, rpc, raw = _activity_texts(daemon, folder, job["job"], 4)
-    _assert_hidden([rpc, raw], [REVIEW_SECRET, PATH_SECRET])
-    assert len(entries) == 4
-    # 퍼센트 인코딩 대상은 비우고(UX1 검수 5), 구분자가 다른 경로는 가린다
-    assert sorted(e["target"] for e in entries) == ["", "", activity.MASKED, activity.MASKED]
-    assert sorted(e["result"] == "ok" for e in entries) == [False, False, True, True]
 
 
 def test_activity_target_dropped_after_finish_on_old_connection(
@@ -282,10 +248,11 @@ def test_activity_target_dropped_when_record_runs_after_finish(
     assert [(e["result"], e["target"]) for e in entries] == [("ok", "")]
 
 
-def test_activity_target_masks_token_and_workspace_secret(
+def test_activity_target_masks_token_not_workspace_secret(
     daemon: ThreadDaemon, ws: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # 검수 재현(H1): 경로·창 제목에 작업 토큰·워크스페이스 비밀값 → 파일·RPC 어디에도 원문 없음
+    # 작업 토큰(Kookabug 자체 자격 증명)은 파일·RPC 어디에도 원문 없음. 워크스페이스(게임) 비밀값은
+    # 가리지 않는다 (UX11 B)
     monkeypatch.setenv("KOOKABUG_SECRET_UX1_PROBE", ENV_SECRET)
     job = daemon.begin_job({"playbook": "init"})
     token = job["token"]
@@ -316,38 +283,18 @@ def test_activity_target_masks_token_and_workspace_secret(
     raw = (folder / activity.ACTIVITY_FILE).read_text(encoding="utf-8")
     for text in (rpc, raw):
         assert token not in text
-        assert ENV_SECRET not in text
+        assert ENV_SECRET in text
     entries = got["entries"]
     assert len(entries) == 5
-    assert all(e["target"] == activity.MASKED for e in entries)
+    masked = [e for e in entries if e["target"] == activity.MASKED]
+    assert len(masked) == 3  # 토큰이 든 대상 셋 (읽기 성공·실패, 창 제목)
+    assert sorted(e["target"] for e in entries if e not in masked) == [
+        f"Game {ENV_SECRET}",
+        f"wiki/{ENV_SECRET}.md",
+    ]
     # 기록은 실행기 스레드라 순서가 바뀔 수 있다 — 성공 3·실패 2, 창 제목 호출 2
     assert sorted(e["result"] == "ok" for e in entries) == [False, False, True, True, True]
     assert [e["tool"] for e in entries].count("kb_input_type") == 2
-
-
-def test_activity_target_dropped_when_secrets_unreadable(
-    daemon: ThreadDaemon, ws: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    import kookabug_core.agent_job.runner as runner
-
-    def broken(root: Path, environ: Any) -> list[str]:
-        raise OSError("자격 증명 관리자를 읽지 못함")
-
-    monkeypatch.setattr(runner, "known_secrets", broken)
-    job = daemon.begin_job({"playbook": "init"})
-    folder = ws / jobdir.JOBS_DIR / job["job"]
-    folder.mkdir(parents=True)
-    with daemon.client(agent(job["agent_id"], job["token"])) as conn:
-        conn.call("knowledge.get", {"file": "unknowns"})
-        with daemon.client() as ui:
-            wait_until(
-                lambda: len(ui.call("jobs.activity", {"job": job["job"]})["entries"]) >= 1,
-                timeout=15,
-            )
-            got = ui.call("jobs.activity", {"job": job["job"]})
-    assert [(e["tool"], e["result"], e["target"]) for e in got["entries"]] == [
-        ("kb_knowledge_get", "ok", "")
-    ]
 
 
 def test_activity_not_written_outside_job_folder(daemon: ThreadDaemon, ws: Path) -> None:

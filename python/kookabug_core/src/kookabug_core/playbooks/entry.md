@@ -1,7 +1,7 @@
 ---
 format: kookabug.playbook/0
 name: entry
-version: 5
+version: 6
 tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
 ---
 # 플레이북 entry — 게임 접속 경로 만들기
@@ -15,10 +15,12 @@ tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
    - `게임 실행`이 없으면(Init 보고의 작업 기준 변경을 아직 수락하지 않았을 수 있다) Init 3·4단계처럼 이 작업에서 다시 만든다. `core.app.launch`의 `path`는 비워 게임 설정(`game.executable`·`game.args`·`game.cwd`)을 쓴다 — 실행 파일 경로를 그래프에 쓰지 않는다(이미 경로가 있는 그래프는 그대로 둬도 동작한다).
 2. 원본 훑기(2분 안): 기획 원본(`kb_source_list`·`kb_source_read`)과 읽기 허용 폴더의 게임 코드·설정에서 접속 흐름을 찾아 **예상 경로와 갈래 목록**을 만든다(예: 타이틀 → 로그인 → 서버/월드 선택 → 캐릭터 선택·생성 → 진입 연출 → 첫 플레이 화면, 남은 세션 팝업 같은 곁가지). 이것이 걷기의 체크리스트다. 훑기만 한다.
    - **원본에 로그인이 보이고 테스트 계정 질문이 아직 없으면, 게임을 켜기 전에 바로 계정 질문을 남긴다**(아래 "계정만 묻는다").
-3. 한 세션으로 걷기: `kb_app_launch` 한 번 → `kb_explore_start` → `kb_explore_step`(입력 없이)으로 첫 화면 → 처음 보는 화면이면 `kb_screen_save` → `kb_explore_step`(입력)으로 한 걸음씩 앞으로 → 화면마다 저장 → 끝에 `kb_explore_end`. 창은 `window: "@game"`으로 부른다(로그인 뒤 창 제목이 바뀌어도 같은 게임이다). **이 단계에서는 그래프를 돌리지 않는다.**
-   - **게임은 `kb_app_launch` 한 번.** 창이 안 보이거나 로딩 중(시작 화면 창이 떴다 닫히는 게임)이면 `kb_explore_step`(`window: "@game"`, `wait_ms` 30000~60000, 입력 없이)이 같은 게임의 본 창이 뜨기를 기다려 따라간다(`window_changed: true`). **다시 띄우지 않는다.** 다시 띄우는 것은 `frame_protected`(`secret_field_unknown`)이거나 "게임 프로세스가 끝났다"일 때만이다(다시 띄우면 이전 게임은 자동으로 끝난다 — 같은 게임이 여럿 뜨지 않는다).
+3. 한 세션으로 걷기: `kb_app_launch` 한 번 → `kb_explore_start` → `kb_explore_step`(입력 없이)으로 첫 화면 → 처음 보는 화면이면 `kb_screen_save` → `kb_explore_step`(입력)으로 한 걸음씩 앞으로 → 화면마다 저장 → 끝에 `kb_explore_end` → 결과의 `disconnected`(들어오는 이동이 없는 화면)를 `kb_screen_link`(`from`·`to`·`via` — 저절로 바뀌었으면 `{"wait": {}}`)로 잇는다(방금 끝낸 세션에도 이어진다). 창은 `window: "@game"`으로 부른다(로그인 뒤 창 제목이 바뀌어도 같은 게임이다). **이 단계에서는 그래프를 돌리지 않는다.**
+   - **게임은 `kb_app_launch` 한 번.** 창이 안 보이거나 로딩 중(시작 화면 창이 떴다 닫히는 게임)이면 `kb_explore_step`(`window: "@game"`, `wait_ms` 30000~60000, 입력 없이)이 같은 게임의 본 창이 뜨기를 기다려 따라간다(`window_changed: true`). **다시 띄우지 않는다.** 다시 띄우는 것은 "게임 프로세스가 끝났다"일 때만이다(다시 띄우면 이전 게임은 자동으로 끝난다 — 같은 게임이 여럿 뜨지 않는다).
    - 이동은 `kb_explore_step`이 직전 화면 카드에 자동으로 기록한다. 처음 보는 화면(`new_screen: true`)은 `kb_screen_save`(key)로 저장하면 그 키로 이동이 채워진다.
-   - **로그인 칸은 클릭+입력 한 걸음**으로: `kb_explore_step`에 칸 위치 `point`와 `secret`(또는 `text`)을 함께 주고, 칸에 글자가 남아 있으면 `select_all: true`. 칸 클릭·`ctrl+a`·입력을 따로 보내면 칸 위치를 몰라 그 창 이미지가 게임이 끝날 때까지 막힌다.
+   - 저장할 때 `detect`에는 **그 화면에만 있는 글자·그림**을 쓴다. 반투명 팝업 뒤로 보이는 타이틀 글자처럼 다른 화면에도 보이는 것만 쓰면 그 화면으로 식별되지 않아 이동이 끊긴다. 팝업(로그인 칸 등)은 `kind: "popup"`으로 저장한다. 로그인 전·후 타이틀처럼 비슷한 화면은 다른 쪽에 없는 글자를 하나 더 넣는다.
+   - 로딩·진입 연출처럼 입력 없이 바뀌는 화면은 입력 없는 `kb_explore_step`(`wait_ms`)으로 기다린다 — `wait` 이동으로 기록된다.
+   - **로그인 칸은 클릭+입력 한 걸음**으로: `kb_explore_step`에 칸 위치 `point`와 `secret`(또는 `text`)을 함께 주고, 칸에 글자가 남아 있으면 `select_all: true`.
    - "화면을 터치" 류 화면에서 클릭이 무시되면(`changed: false`) 같은 걸음을 짧은 `wait_ms`(2000~3000)로 2~3번 반복한다. 그래프로 옮길 때는 "누르고 → 다음 화면 기다림"을 재시도 묶음으로 만든다.
    - 로그인 화면에 닿았는데 계정이 아직 없으면, **게임을 그 화면에 둔 채** `kb_question_wait`(질문 ID, `wait_ms` 600000)로 기다린다. 답(`answered`)이 오면 클릭+`secret` 한 걸음으로 입력해 이어서 걷는다. 기한까지 안 오면 지도까지 저장하고 보고를 쓰고 끝낸다(사람이 계정을 등록하고 "이어서 진행"을 누르면 이어 간다).
    - 곁가지는 이 세션에서 닿는 것만 직접 간다(예: 캐릭터가 없으면 생성 화면). 다시 켜야 나오는 곁가지는 재시작 1번으로 모아서 가거나, 원본 근거와 함께 `untried` 이동으로 남긴다.

@@ -111,6 +111,12 @@
   stroke-dasharray: 5 4;
 }
 
+/* 입력 없이 저절로 바뀌는 이동 (로딩·컷신, UX11 A1): 가는 점선 */
+.edge[data-via="wait"] {
+  stroke-width: 1.5;
+  stroke-dasharray: 6 3;
+}
+
 .edge[data-active="true"] {
   stroke: var(--kb-map-edge-active);
   stroke-width: 3;
@@ -609,4 +615,9 @@
   color: var(--kb-fg-muted);
   font-size: 12px;
   line-height: 1.6;
+}
+
+.edgeLabel[data-via="wait"] {
+  font-size: 11px;
+  opacity: 0.8;
 }

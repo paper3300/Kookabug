@@ -32,7 +32,7 @@ INNER = "subgraphs/inner.graph.json"
 TEST_FILE = "tests/t.graph.json"
 FRAMES = ["a", "b", "c"]
 REDACT = {"redact_secrets": True}
-"""비밀값 가림을 켠 워크스페이스 기록 정책 (기본은 가리지 않는다, D3)."""
+"""비밀값 가림을 켠 워크스페이스 기록 정책 — UX11 B부터 무시된다 (켜도 원문 그대로)."""
 
 
 def run(ws: Workspace, g: Any, **kw: Any) -> Ran:
@@ -58,94 +58,6 @@ def sub_off(ws: Workspace, inner: Any, *, record: dict[str, Any] | None = None) 
 
 
 # ---------------------------------------------------------------- 비밀값 입력
-
-
-def test_secret_input_node_screenshots_omitted(tmp_path: Path) -> None:
-    ws = make_workspace(tmp_path, record=REDACT)
-    g = (
-        tk()
-        .entry("n_shot")
-        .node(
-            "n_shot",
-            "testkit.shot",
-            inputs={"save": True, "value": secret("acc.pw")},
-            next={"done": "n_pass"},
-        )
-        .node("n_pass", "core.test.pass")
-    )
-    ran = run(ws, g, secrets={"acc.pw": "hunter2"})
-    assert ran.result.verdict == "pass"
-    source = f"{TEST_FILE}#/nodes/n_shot/in/value"
-    assert omitted(ran, "n_shot") == [
-        {"kind": "screenshot", "name": "shot", "reason": "secret_input", "source": source}
-    ]
-    assert ran.end("n_shot")["outputs"]["saved"] is None
-    no_saved_paths(ran)
-
-    # 실패(예외) 스크린샷도 남기지 않는다
-    g = (
-        tk()
-        .entry("n_shot")
-        .node(
-            "n_shot", "testkit.shot", inputs={"save": True, "boom": True, "value": secret("acc.pw")}
-        )
-    )
-    ran = run(make_workspace(tmp_path / "2", record=REDACT), g, secrets={"acc.pw": "hunter2"})
-    assert (ran.result.verdict, ran.result.failure_path) == ("error", ("n_shot",))
-    assert [(o["name"], o["reason"]) for o in omitted(ran, "n_shot")] == [
-        ("shot", "secret_input"),
-        ("error", "secret_input"),
-    ]
-    no_saved_paths(ran)
-    assert "hunter2" not in repr(ran.events)
-
-
-def test_secret_nested_in_list_input_omits(tmp_path: Path) -> None:
-    g = (
-        tk()
-        .entry("n_shot")
-        .node(
-            "n_shot",
-            "testkit.shot",
-            inputs={"save": True, "value": [1, {"pw": secret("acc.pw")}]},
-            next={"done": "n_pass"},
-        )
-        .node("n_pass", "core.test.pass")
-    )
-    ran = run(make_workspace(tmp_path, record=REDACT), g, secrets={"acc.pw": "hunter2"})
-    assert ran.result.verdict == "pass"
-    (entry,) = omitted(ran, "n_shot")
-    assert entry["reason"] == "secret_input"
-    assert entry["source"] == f"{TEST_FILE}#/nodes/n_shot/in/value/1/pw"
-    no_saved_paths(ran)
-
-
-def test_secret_via_var_get_any_pin_omits(tmp_path: Path) -> None:
-    # 정적으로는 any 핀일 뿐이다. 스텝 시작 때 계산한 값으로 판단한다
-    g = (
-        tk()
-        .entry("n_set")
-        .node(
-            "n_set",
-            "core.var.set",
-            inputs={"name": "pw", "value": secret("acc.pw")},
-            next={"done": "n_shot"},
-        )
-        .node("n_get", "core.var.get", inputs={"name": "pw"})
-        .node(
-            "n_shot",
-            "testkit.shot",
-            inputs={"save": True, "value": link("n_get.value")},
-            next={"done": "n_pass"},
-        )
-        .node("n_pass", "core.test.pass")
-    )
-    ran = run(make_workspace(tmp_path, record=REDACT), g, secrets={"acc.pw": "hunter2"})
-    assert ran.result.verdict == "pass"
-    assert [(o["reason"], o["source"]) for o in omitted(ran, "n_shot")] == [
-        ("secret_input", f"{TEST_FILE}#/nodes/n_shot/in/value")
-    ]
-    no_saved_paths(ran)
 
 
 # ---------------------------------------------------------------- 구간 끄기
@@ -499,7 +411,7 @@ def _bytes_capture_saved_outside(
 
 
 @pytest.mark.parametrize("frame", [None, 42])
-@pytest.mark.parametrize("blocked_by", ["policy", "secret"])
+@pytest.mark.parametrize("blocked_by", ["policy"])
 def test_bytes_only_capture_keeps_capture_policy_outside(
     tmp_path: Path, blocked_by: str, frame: int | None
 ) -> None:
@@ -552,7 +464,7 @@ def test_video_allowed_query(tmp_path: Path) -> None:
 
     assert allowed("n_plain") == ("on", True, True)
     assert allowed("n_in") == ("failed_only", False, True)
-    assert allowed("n_secret") == ("off", False, False)
+    assert allowed("n_secret") == ("on", True, True)  # 비밀값 입력도 막지 않는다
     assert allowed("n_off") == ("off", False, False)
 
 
@@ -672,20 +584,6 @@ def test_ocr_text_artifact_is_last_read(tmp_path: Path) -> None:
     assert ran.end("n_read")["outputs"]["number"] == 12345
 
 
-def test_sensitive_ocr_text_artifact_omitted_with_reason(tmp_path: Path) -> None:
-    ws = make_workspace(tmp_path, record=REDACT)
-    ran = _run_ocr(ws, _read_graph(_gold_target(ws, sensitive=True)))
-    assert ran.result.verdict == "pass", ran.result.reason
-    end = ran.end("n_read")
-    assert "artifacts" not in end and ran.artifacts.texts == {}
-    assert end["omitted"] == [{"kind": "text", "name": "ocr", "reason": "sensitive_target"}]
-    # 출력도 가린 값, 숫자는 null
-    assert end["outputs"]["text"] == "***" and end["outputs"]["number"] is None
-    assert "12,345" not in repr(ran.events)
-    journaled = {**end, "run": "r8k2x7qm", "seq": 1, "t": "2026-10-30T00:00:00.000Z"}
-    assert check_shape(journaled, "events") == []
-
-
 def test_ocr_text_artifact_follows_screenshot_policy(tmp_path: Path) -> None:
     ws = make_workspace(tmp_path)
     g = _read_graph(_gold_target(ws, sensitive=False))
@@ -718,13 +616,13 @@ def test_default_keeps_secret_screens_and_values(tmp_path: Path) -> None:
     assert ran.artifacts.saved != {}
     (log,) = [e for e in ran.of("log") if e["node"] == "n_log"]
     assert log["message"] == "hunter2"
-    # false를 명시해도 같다
-    again = run(
-        make_workspace(tmp_path / "2", record={"redact_secrets": False}),
-        g,
-        secrets={"acc.pw": "hunter2"},
-    )
-    assert omitted(again, "n_shot") == [] and "hunter2" in repr(again.events)
+    # 가림을 켜도(무시 — UX11 B) false를 명시해도 같다
+    for n, record in enumerate(({"redact_secrets": False}, REDACT), start=2):
+        again = run(
+            make_workspace(tmp_path / str(n), record=record), g, secrets={"acc.pw": "hunter2"}
+        )
+        assert omitted(again, "n_shot") == [] and "hunter2" in repr(again.events)
+        assert "***" not in repr(again.events)
 
 
 def test_default_keeps_sensitive_ocr_text(tmp_path: Path) -> None:
@@ -741,17 +639,17 @@ def test_default_keeps_sensitive_ocr_text(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("redact", [False, True], ids=["default", "redact"])
 def test_compare_fail_message_follows_policy(tmp_path: Path, redact: bool) -> None:
-    """P1 검수 4: 서로 다른 두 비밀값 비교 실패 메시지·판정 사유는 기본이면 원문, 가림을 켜면
-    예전처럼 가린 글."""
+    """P1 검수 4: 서로 다른 두 비밀값 비교 실패 메시지·판정 사유는 원문 (가림 설정은 무시 —
+    UX11 B)."""
     g = tk().entry("n_cmp")
     g.node("n_cmp", "core.assert.compare", inputs={"a": secret("a"), "op": "==", "b": secret("b")})
     ws = make_workspace(tmp_path, record=REDACT if redact else None)
     ran = run(ws, g, secrets={"a": "hunter2", "b": "hunter3"})
-    expected = '"***" == "***"이(가) 아니다' if redact else '"hunter2" == "hunter3"이(가) 아니다'
+    expected = '"hunter2" == "hunter3"이(가) 아니다'  # 가림을 켜도 원문 (UX11 B)
     assert ran.result.verdict == "fail"
     assert ran.end("n_cmp")["message"] == expected
     assert ran.result.reason is not None and ran.result.reason.endswith(expected)
-    assert ("hunter2" in repr(ran.events)) is not redact
+    assert "hunter2" in repr(ran.events)
 
 
 class _PlainWordPlatform(_OcrPlatform):
@@ -775,7 +673,7 @@ def test_sensitive_ocr_fail_messages_follow_policy(tmp_path: Path, redact: bool)
         inputs={"region": {"$target": rel}, "equals": "Gold 0", "timeout_ms": 0},
     )
     ran = _run_ocr(ws, g)
-    shown = "***" if redact else repr(GOLD_TEXT)
+    shown = repr(GOLD_TEXT)  # 가림을 켜도 원문 (UX11 B)
     assert ran.end("n_text")["message"] == f"읽은 글자 {shown}이(가) 'Gold 0'와(과) 같지 않는다"
 
     g = tk().entry("n_read")
@@ -789,37 +687,8 @@ def test_sensitive_ocr_fail_messages_follow_policy(tmp_path: Path, redact: bool)
     ).run(load_program(ws, TEST_FILE, secrets=MemorySecrets({})), ExecOptions(run_id="r2"))
     (start,) = [e for e in result.events if e["event"] == "step.start" and e["node"] == "n_read"]
     (end,) = [e for e in result.events if e["event"] == "step.end" and e["step"] == start["step"]]
-    shown = "***" if redact else "'Gold'"
+    shown = "'Gold'"
     assert end["message"] == f"읽은 글자 {shown}에 수가 없다"
-
-
-def test_secret_derived_from_sensitive_flows_as_secret(tmp_path: Path) -> None:
-    ws = make_workspace(tmp_path, record=REDACT)
-    rel = _gold_target(ws, sensitive=True)
-    g = _read_graph(rel, then="n_log")
-    g.node(
-        "n_fmt",
-        "core.text.format",
-        inputs={"template": "읽음: {t}", "values": {"t": link("n_read.text")}},
-    )
-    g.node(
-        "n_log", "core.log.message", inputs={"text": link("n_fmt.text")}, next={"done": "n_shot"}
-    )
-    g.node(
-        "n_shot",
-        "testkit.shot",
-        inputs={"value": link("n_read.text"), "save": True},
-        next={"done": "n_ok"},
-    )
-    g.node("n_ok", "core.assert.compare", inputs={"a": 1, "op": "==", "b": 1})
-    ran = _run_ocr(ws, g)
-    assert ran.result.verdict == "pass", ran.result.reason
-    (log,) = [e for e in ran.of("log") if e["node"] == "n_log"]
-    assert log["message"] == "***"  # 비밀값에서 만든 글자도 비밀값
-    # 민감 글자를 받은 스텝은 스크린샷을 남기지 않는다 (비밀값 입력)
-    (omitted,) = ran.end("n_shot")["omitted"]
-    assert omitted["reason"] == "secret_input"
-    assert "12,345" not in repr(ran.events)
 
 
 def test_sensitive_text_cannot_reach_string_only_pin(tmp_path: Path) -> None:

@@ -54,6 +54,7 @@ const TOOL_TEXT: Record<string, string> = {
   kb_screen_get: "화면 읽기",
   kb_screen_identify: "화면 알아보기",
   kb_screen_save: "화면 저장",
+  kb_screen_link: "화면 잇기",
   kb_explore_start: "탐색 시작",
   kb_explore_end: "탐색 끝",
   kb_input_click: "클릭",

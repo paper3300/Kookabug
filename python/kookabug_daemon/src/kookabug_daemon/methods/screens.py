@@ -163,6 +163,8 @@ def _save(call: Call) -> dict[str, Any]:
             failed.append((source, fixed))
     session.add_pending([*later, *failed])
     session.move_to(("explored", key))
+    if session.first is None and call.params.get("of") is None:
+        session.first = key  # 출발 화면 (UX11 A4 — 끊긴 화면 목록에서 뺀다)
     _note_job_screen(call, session, key, result)
     call.daemon.explore.changed()
     if failed:
@@ -200,11 +202,27 @@ def _identify(call: Call) -> dict[str, Any]:
     session = call.daemon.explore.get(call.connection)
     found = identify(call.daemon, _frame(call), session)
     if session is not None and found["matches"]:
-        # UX7 C: 지금 화면 (다음 kb_explore_step 이동의 출발점)
+        # UX7 C: 지금 화면 (다음 kb_explore_step 이동의 출발점) — 가장 구체적인 화면 (UX11 A2)
         first = found["matches"][0]
         state = "confirmed" if first["state"] == "confirmed" else "explored"
         session.move_to((state, str(first.get("id") or first.get("key"))))
     return found
+
+
+def _link(call: Call) -> dict[str, Any]:
+    """`screens.link` (UX11 A3): 프레임 없이 이 탐색 세션 지도의 두 화면 사이에 이동을 더한다."""
+    from kookabug_daemon.screen_save import link
+
+    if call.principal.kind != "agent":
+        raise RequestFailed("agent_only", "화면 지도 잇기는 에이전트 탐색 세션만 한다")
+    from kookabug_daemon.screen_save import disconnected
+
+    # 끝낸 직후에도 (kb_explore_end가 알려 준 끊긴 화면을 잇게) 이 연결의 마지막 세션에 잇는다
+    session = call.daemon.explore.linkable(call.connection)
+    result = link(call.daemon, session, call.params)
+    call.daemon.explore.changed()
+    result["disconnected"] = disconnected(call.daemon.root, session.id, session.first)
+    return result
 
 
 async def _save_handler(call: Call) -> dict[str, Any]:
@@ -524,6 +542,7 @@ METHODS: Final = {
     "screens.get": MethodSpec(_get_handler, _path_arg),
     "screens.save": MethodSpec(_save_handler),
     "screens.identify": MethodSpec(_identify_handler),
+    "screens.link": MethodSpec(_threaded(_link)),
     "screens.map": MethodSpec(_threaded(_map)),
     "screens.check": MethodSpec(_threaded(_check)),
     "screens.promote": MethodSpec(_threaded(_promote)),
