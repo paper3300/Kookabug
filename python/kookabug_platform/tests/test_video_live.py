@@ -29,7 +29,7 @@ def test_live_window_recording_sample_game(tmp_path: Path) -> None:
             window = platform._ref(game.hwnd)  # pyright: ignore[reportPrivateUsage]
             gate = VideoGate()
             gate.hold("s1")
-            gate.classify("s1", "on", secret=False, window=window)
+            gate.classify("s1", "on", window=window)
             run_dir = tmp_path / "run"
             run_dir.mkdir()
             recorder = VideoRecorder(run_dir, gate, platform, MsmfFactory()).start()

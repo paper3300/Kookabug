@@ -93,7 +93,8 @@ def encode(value: Any) -> Any:
     if isinstance(value, WindowRef):
         return _window(value)
     if isinstance(value, ProcessRef):
-        return {TAG: "process", "pid": value.pid, "name": value.name}
+        out = {TAG: "process", "pid": value.pid, "name": value.name}
+        return {**out, "created": value.created} if value.created else out
     if isinstance(value, Image):
         return _image(value)
     if isinstance(value, Match):
@@ -308,8 +309,10 @@ def _decode_tagged(tag: Any, data: dict[str, Any]) -> Any:
         case "window":
             return _decode_window(data)
         case "process":
-            _fields(data, "pid", "name")
-            return ProcessRef(_int(data["pid"]), _str(data["name"]))
+            optional = ("created",) if "created" in data else ()
+            _fields(data, "pid", "name", *optional)
+            created = _str(data["created"]) if optional else ""
+            return ProcessRef(_int(data["pid"]), _str(data["name"]), created)
         case "image":
             _fields(data, "width", "height", "path", "frame", "data", "capture_id")
             raw = data["data"]

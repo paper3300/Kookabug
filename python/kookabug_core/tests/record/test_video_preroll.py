@@ -112,7 +112,7 @@ def test_slow_probe_keeps_frames_from_before_encoder_ready(tmp_path: Path) -> No
     started = time.time()
     recorder.start()
     gate.hold("s1")
-    gate.classify("s1", "on", secret=False, window=game.window)
+    gate.classify("s1", "on", window=game.window)
     time.sleep(3.0)
     gate.release("s1")
     assert recorder.stop()
@@ -135,15 +135,15 @@ def test_slow_probe_keeps_frames_from_before_encoder_ready(tmp_path: Path) -> No
 
 
 def test_preroll_drops_frames_before_a_block(tmp_path: Path) -> None:
-    """모으는 동안 비밀값 차단이 끼면 그 앞 프레임은 버린다 — 조각이 차단을 건너 잇지 않고, 차단 중
-    화면은 들어가지 않는다."""
+    """모으는 동안 차단(영상 끔 스텝)이 끼면 그 앞 프레임은 버린다 — 조각이 차단을 건너 잇지
+    않고, 차단 중 화면은 들어가지 않는다."""
     recorder, gate, game, run_dir = recorder_on(tmp_path, probe_delay_s=2.0)
     recorder.start()
     gate.hold("s1")
-    gate.classify("s1", "on", secret=False, window=game.window)
+    gate.classify("s1", "on", window=game.window)
     time.sleep(0.6)
     gate.hold("s2")
-    gate.classify("s2", "on", secret=True, window=game.window)
+    gate.classify("s2", "off", window=game.window)
     time.sleep(0.5)
     block_end = time.time()
     gate.release("s2")
@@ -165,7 +165,7 @@ def test_preroll_bounded_by_bytes(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     started = time.time()
     recorder.start()
     gate.hold("s1")
-    gate.classify("s1", "on", secret=False, window=game.window)
+    gate.classify("s1", "on", window=game.window)
     time.sleep(2.6)
     gate.release("s1")
     assert recorder.stop()
@@ -179,7 +179,7 @@ def test_preroll_bounded_by_bytes(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.parametrize("slow_open", [False, True])
-@pytest.mark.parametrize("reason", ["secret_input", "policy_off"])
+@pytest.mark.parametrize("reason", ["policy_off"])  # 비밀값 차단은 UX12에서 걷어 냄
 def test_preroll_stops_at_final_block_before_close(
     tmp_path: Path, reason: str, slow_open: bool
 ) -> None:
@@ -192,12 +192,11 @@ def test_preroll_stops_at_final_block_before_close(
     )
     recorder.start()
     gate.hold("s1")
-    gate.classify("s1", "on", secret=False, window=game.window)
+    gate.classify("s1", "on", window=game.window)
     time.sleep(0.35)
-    gate.hold("s2")  # 입력 계산·비밀값 분류 대기 (보류)
+    gate.hold("s2")  # 입력 계산 대기 (보류)
     time.sleep(0.5)
-    mode = "off" if reason == "policy_off" else "on"
-    gate.classify("s2", mode, secret=reason == "secret_input", window=game.window)
+    gate.classify("s2", "off", window=game.window)
     gate.release("s2")  # 실행기 스텝 정리 순서 그대로
     gate.release("s1")
     gate.close()  # 분류 뒤 곧바로 실패·종료
@@ -222,15 +221,15 @@ def test_fill_limit_follows_latest_block_history(tmp_path: Path) -> None:
     gate.set_base("on")
     gate.hold("s1")
     now[0] = 101.0
-    gate.classify("s1", "on", secret=False, window=window)
+    gate.classify("s1", "on", window=window)
     gate.drain()  # 창 없음 구간을 비운다 (녹화 스레드가 반영함)
     assert gate.fill_limit(105.0) == 105.0
     now[0] = 102.0
     gate.hold("s2")  # 보류: 분류 결과 off면 빈 구간이 여기서 시작한다
     assert gate.fill_limit(105.0) == 102.0
     now[0] = 103.0
-    gate.classify("s2", "on", secret=True, window=window)
-    assert gate.fill_limit(105.0) == 102.0  # 열린 비밀값 구간 (보류 시작부터)
+    gate.classify("s2", "off", window=window)
+    assert gate.fill_limit(105.0) == 102.0  # 열린 off 구간 (보류 시작부터)
     now[0] = 104.0
     gate.release("s2")
     assert gate.fill_limit(105.0) == 102.0  # 끝났지만 아직 비우지 않은 구간
@@ -321,7 +320,7 @@ def test_marker_stays_until_late_frames_are_written(tmp_path: Path) -> None:
     marker = run_dir / VIDEO_DIR / ENCODER_WAIT_FILE
     recorder.start()
     gate.hold("s1")
-    gate.classify("s1", "failed_only", secret=False, window=game.window)
+    gate.classify("s1", "failed_only", window=game.window)
     wait_preroll(recorder)
     gate.release("s1")
     gate.close()
@@ -378,7 +377,7 @@ def test_late_result_journal_failure_keeps_writing_marker(
     attempts = journal_full(monkeypatch, run_dir)
     recorder.start()
     gate.hold("s1")
-    gate.classify("s1", "on", secret=False, window=game.window)
+    gate.classify("s1", "on", window=game.window)
     wait_preroll(recorder)
     gate.close()
     assert recorder.stop()
@@ -413,7 +412,7 @@ def test_unavailable_result_settles_marker_only_when_recorded(
     attempts = journal_full(monkeypatch, run_dir) if full else []
     recorder.start()
     gate.hold("s1")
-    gate.classify("s1", "on", secret=False, window=game.window)
+    gate.classify("s1", "on", window=game.window)
     wait_preroll(recorder)
     gate.close()
     assert recorder.stop()
@@ -440,7 +439,7 @@ def test_give_up_settles_marker_only_when_recorded(
     attempts = journal_full(monkeypatch, run_dir) if full else []
     recorder.start()
     gate.hold("s1")
-    gate.classify("s1", "on", secret=False, window=game.window)
+    gate.classify("s1", "on", window=game.window)
     wait_preroll(recorder)
     gate.close()
     assert recorder.stop()  # 스스로 포기한다 (`PREROLL_STOP_WAIT_S`)
@@ -479,7 +478,7 @@ def test_recorded_late_frames_survive_marker_reader_handle(
     marker = run_dir / VIDEO_DIR / ENCODER_WAIT_FILE
     recorder.start()
     gate.hold("s1")
-    gate.classify("s1", "failed_only", secret=False, window=game.window)
+    gate.classify("s1", "failed_only", window=game.window)
     wait_preroll(recorder)
     gate.close()
     recorder.request_stop()
@@ -531,7 +530,7 @@ def test_recorder_gives_up_late_wait_with_reason(tmp_path: Path) -> None:
     )  # fmt: skip
     recorder.start()
     gate.hold("s1")
-    gate.classify("s1", "failed_only", secret=False, window=game.window)
+    gate.classify("s1", "failed_only", window=game.window)
     wait_preroll(recorder)
     gate.release("s1")
     gate.close()

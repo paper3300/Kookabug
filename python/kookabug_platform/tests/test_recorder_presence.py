@@ -12,7 +12,6 @@ from helpers.recorder_script import Script
 
 from kb_testing.sample_game import FRAMES_DIR
 from kookabug_core.recorder.actions import TextAction
-from kookabug_core.recorder.protect import ProtectionSet, SecretRegionOverlap
 from kookabug_platform.recorder.crop import crop_click
 from kookabug_platform.recorder.presence import FieldPresenceTracker, field_present, scene_changed
 from kookabug_platform.recorder.targets import name_for_box
@@ -85,43 +84,34 @@ def test_uncertain_geometry_keeps_protection() -> None:
     assert tracker.gone_at(1) == 300 * MS
 
 
-def test_scene_change_login_to_lobby_ends_field_and_protection() -> None:
+def test_scene_change_login_to_lobby_ends_field() -> None:
     assert not field_present(LOGIN, LOBBY, PASSWORD) and scene_changed(LOGIN, LOBBY, PASSWORD)
     tracker = FieldPresenceTracker()
-    protect = ProtectionSet()
     tracker.register(1, PASSWORD, LOGIN, 0)
-    protect.add(1, PASSWORD, 0)
     tracker.observe(1000 * MS, LOBBY)
     gone = tracker.observe(1200 * MS, LOBBY)
     assert gone == [1] and tracker.gone_at(1) == 1000 * MS
-    protect.end(1, 1000 * MS)
-    assert protect.overlaps(PASSWORD, 1200 * MS, LOBBY)  # 판정기 없으면 끝나도 보호
-    protect.absent_in = tracker.absent_in
-    assert not protect.overlaps(PASSWORD, 1200 * MS, LOBBY)  # 로비 화면: 칸 없음
-    assert protect.overlaps(PASSWORD, 1200 * MS, field_state(3))  # 칸이 다시 보이는 프레임
-    assert protect.overlaps(PASSWORD, 1200 * MS, None)  # 프레임 모름
+    assert tracker.absent_in(1, PASSWORD, LOBBY)  # 로비 화면: 칸 없음
+    assert not tracker.absent_in(1, PASSWORD, field_state(3))  # 칸이 다시 보이는 프레임
+    assert not tracker.absent_in(1, PASSWORD, None)  # 프레임 모름
 
 
 def test_lobby_button_at_same_place_is_free_after_scene_change() -> None:
-    # 양성 대조: 로그인 → 로비. 칸 목록은 로비 프레임에서 칸이 없다고 본다
-    tracker, protect = linked(LOGIN)
+    # 양성 대조: 로그인 → 로비. 로비 프레임에서 칸이 없다고 본다
+    tracker = linked(LOGIN)
     tracker.observe(1000 * MS, LOBBY)
-    for span in tracker.observe(1200 * MS, LOBBY):
-        protect.end(span, tracker.gone_at(span) or 0)
-    assert not protect.overlaps(PASSWORD, 1300 * MS, LOBBY)
-    assert protect.overlaps(PASSWORD, 1400 * MS, plaintext_field())  # 칸이 다시 보이는 프레임
-    # UX11 B: 녹화 자르기는 칸 목록을 보지 않는다 — 칸이 보여도 그대로 자른다
+    assert tracker.observe(1200 * MS, LOBBY) == [1]
+    assert tracker.absent_in(1, PASSWORD, LOBBY)
+    assert not tracker.absent_in(1, PASSWORD, plaintext_field())  # 칸이 다시 보이는 프레임
+    # UX11 B: 녹화 자르기는 칸을 보지 않는다 — 칸이 보여도 그대로 자른다
     crop = crop_click(plaintext_field(), (560, 310))
     assert crop.box is not None and crop.needs_review == ()
 
 
-def linked(reference: np.ndarray) -> tuple[FieldPresenceTracker, ProtectionSet]:
-    """세션 연결과 같게: 칸 존재 판정기를 보호 영역의 프레임 판정에 쓴다."""
+def linked(reference: np.ndarray) -> FieldPresenceTracker:
     tracker = FieldPresenceTracker()
     tracker.register(1, PASSWORD, reference, 0)
-    protect = ProtectionSet(absent_in=tracker.absent_in)
-    protect.add(1, PASSWORD, 0)
-    return tracker, protect
+    return tracker
 
 
 def test_absence_needs_two_frames_and_150ms() -> None:
@@ -172,13 +162,11 @@ def test_partial_popup_keeps_field_present(rect) -> None:
     reference = plaintext_field()
     shown = popup(reference, rect)
     assert np.array_equal(reference[285:335, 400:720], shown[285:335, 400:720])
-    tracker, protect = linked(reference)
+    tracker = linked(reference)
     for t in (100, 300, 500, 2000):
         assert tracker.observe(t * MS, shown) == []
     assert tracker.gone_at(1) is None
-    assert protect.overlaps(PASSWORD, 2000 * MS, shown)
-    protect.end(1, 100 * MS)  # 끝났다고 해도 프레임 기준
-    assert protect.overlaps(PASSWORD, 2000 * MS, shown)
+    assert not tracker.absent_in(1, PASSWORD, shown)
 
 
 @pytest.mark.parametrize(
@@ -192,18 +180,16 @@ def test_partial_popup_keeps_field_present(rect) -> None:
 def test_field_back_after_absence_is_present(notice) -> None:
     # 큰 대화상자가 칸을 덮어 없음으로 확정 → 대화상자가 닫히고 원문이 남은 칸이 다시 보임(일부 가림
     # 동반) → 그 프레임에서 칸이 없다는 근거가 없다. UX11 B: 녹화 이름 OCR은 그래도 막지 않는다
-    tracker, protect = linked(LOGIN)
+    tracker = linked(LOGIN)
     typed = plaintext_field()
     dialog = popup(typed, (50, 150, 800, 500), (85, 75, 65))
     tracker.observe(100 * MS, typed)
     tracker.observe(500 * MS, dialog)
     gone = tracker.observe(800 * MS, dialog)
     assert gone == [1], "불투명 대화상자가 없음으로 확정되는 사전 조건"
-    protect.end(1, tracker.gone_at(1) or 0)
-    assert not protect.overlaps(PASSWORD, 800 * MS, dialog)  # 덮인 프레임은 칸이 없음
+    assert tracker.absent_in(1, PASSWORD, dialog)  # 덮인 프레임은 칸이 없음
     back = typed if notice is None else popup(typed, notice)
-    with pytest.raises(SecretRegionOverlap):
-        protect.require_clear(PASSWORD, 1100 * MS, back)
+    assert not tracker.absent_in(1, PASSWORD, back)
     name = name_for_box(
         back, (397, 282, 325, 55), read_text=lambda *a: "review-pass-42", fallback="click_1"
     )

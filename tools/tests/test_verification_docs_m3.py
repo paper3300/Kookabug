@@ -159,8 +159,6 @@ def test_user_reported_items_present() -> None:
 
 COPY_MARK: Final = "# M3 사본 만들기"
 R2_GRAPH_MARK: Final = "# M3 R2 그래프 만들기"
-REDACT_ON_MARK: Final = "# M3 R2 가림 켜기"
-REDACT_BACK_MARK: Final = "# M3 R2 가림 되돌리기"
 INVENTORY: Final = "tests/inventory_open.graph.json"
 R2_GRAPH: Final = "tests/m3_r2_video.graph.json"
 SWAPPED: Final = "tests/broken/swapped_target.graph.json"
@@ -199,11 +197,10 @@ def run_powershell(tmp_path: Path, marker: str) -> None:
 
 @pytest.mark.process
 def test_manual_blocks_make_valid_workspace_and_graph(tmp_path: Path) -> None:
-    """사본의 영상 정책이 failed_only이고 다른 설정은 그대로이며(비밀값 가림은 기본 = 꺼짐),
+    """사본의 영상 정책이 failed_only이고 다른 설정은 그대로이며(비밀값은 가리지 않음),
     R2 그래프 블록이 만든 그래프가 제품 로더로 읽히고 `inventory_open`과 두 곳만 다르다
-    (`n_press_i` 영상 끔, 마지막 검증이 로그인 단추를 3초 기다림). 가림 켜기 블록은
-    `record.redact_secrets: true`만 더하고 되돌리기 블록은 바이트를 되돌린다
-    (다듬기 P1-B: P1-A의 기본 가림 없음에 맞춤)."""
+    (`n_press_i` 영상 끔, 마지막 검증이 로그인 단추를 3초 기다림). 가림 켜기·되돌리기 블록은
+    UX12에서 뺐다 (`record.redact_secrets`는 무시된다)."""
     run_powershell(tmp_path, COPY_MARK)
     root = tmp_path / "kb-m3" / "sample-rpg"
     sample = REPO_ROOT / "fixtures" / "sample-game" / "workspace"
@@ -237,17 +234,8 @@ def test_manual_blocks_make_valid_workspace_and_graph(tmp_path: Path) -> None:
     )
     errors = [d for d in program.diagnostics if d.severity == "error"]
     assert errors == [], errors
-
-    before = (root / "kookabug.json").read_bytes()
-    run_powershell(tmp_path, REDACT_ON_MARK)
-    redacted = json.loads((root / "kookabug.json").read_bytes())
-    assert redacted["record"] == {**copied["record"], "redact_secrets": True}
-    assert {k: v for k, v in redacted.items() if k != "record"} == {
-        k: v for k, v in copied.items() if k != "record"
-    }
-    assert Workspace.open(root).diagnostics == []
-    run_powershell(tmp_path, REDACT_BACK_MARK)
-    assert (root / "kookabug.json").read_bytes() == before
+    assert "redact_secrets" not in manual_block_after(R2_GRAPH_MARK)
+    assert "가림 켜기" not in manual()
 
 
 def test_r1_names_where_swapped_target_fails() -> None:
@@ -265,9 +253,10 @@ def test_r1_names_where_swapped_target_fails() -> None:
     assert "n_press_i" not in r1 and "인벤토리" not in r1
     r2 = text_between(manual(), "### R2 ", "### R3 ")
     assert SWAPPED not in r2 and R2_GRAPH in r2
-    # 기본은 가리지 않고, 가림은 설정으로 켠다 (2026-11-03 사용자 결정 D3)
-    for words in ("가리지 않는다", "record.redact_secrets: true", "비밀값 입력", "기록 끔"):
+    # 비밀값은 가리지 않는다 (D3, 2026-11-16 결정으로 가림 설정도 무시 — UX12에서 켜기 단계 뺌)
+    for words in ("가리지 않는다", "비밀값 입력", "기록 끔"):
         assert words in r2, words
+    assert "record.redact_secrets: true" not in r2
 
 
 # ---------------------------------------------------------------- S3: daemon 수명 (T12 검수 3)

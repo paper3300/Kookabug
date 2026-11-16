@@ -355,12 +355,27 @@ class WindowsPlatform:
         return ProcessRef(proc.pid, Path(path).name)
 
     def _process(self, process: ProcessRef) -> Process:
+        """닫을 프로세스 핸들. `created`가 있으면(창에서 만든 참조 — UX12 검수 1 High 5) 같은
+        생성 시각의 프로세스일 때만 — 그 PID를 다시 쓴 다른 프로세스면 `process_gone`. 확인은 연
+        핸들로 하므로 확인과 종료 사이에 PID가 바뀌지 않는다."""
+        expected: int | None = None
+        if process.created:
+            if not process.created.isdigit():
+                raise EngineError("process_gone", f"프로세스 {process.pid}의 생성 시각을 모른다")
+            expected = int(process.created)
         with self._lock:
             proc = self._processes.get(process.pid)
         if proc is not None:
+            if expected is not None and proc.created != expected:
+                raise EngineError(
+                    "process_gone", f"PID {process.pid}는 다른 프로세스다 (생성 시각이 다름)"
+                )
             return proc
+        target: ProcessId | int = (
+            process.pid if expected is None else ProcessId(process.pid, expected)
+        )
         try:
-            proc = Process.open(process.pid, terminate=True)
+            proc = Process.open(target, terminate=True)
         except ProcessLookupError as exc:
             raise EngineError(
                 "process_gone", f"프로세스 {process.pid}를 열 수 없다: {exc}"

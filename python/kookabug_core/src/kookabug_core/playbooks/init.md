@@ -1,7 +1,7 @@
 ---
 format: kookabug.playbook/0
 name: init
-version: 8
+version: 9
 tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
 ---
 # 플레이북 init — 시작할 수 있을 만큼만
@@ -17,8 +17,8 @@ tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
    - 주장 후보(`kb_knowledge_apply`)는 원본에 바로 보이는 것만 쓴다 — `expected`는 원본 근거(`source`, 근거 `ref`·`hash`는 `kb_source_read` 결과 값 그대로)가 있을 때만, 그 밖은 `guess` + `hypothesis`. 기능 지도(기능 → 화면 → 주장 후보) 깊은 탐색은 하지 않는다.
    - **실행·환경 확인용 파일은 읽기 허용 폴더에서 읽고, 기획 근거는 원본에서 찾는다.** `kb_source_list` 목록의 `kind: read_root`(`read:<…>`, 게임 실행 파일 폴더는 `read:game`)가 읽기 허용 폴더다 — 실행 bat·서버 목록·설정 파일을 같은 도구로 읽어 `environment.md`에 쓴다. 읽기 허용 폴더의 파일(ref `read:…`)은 `source` 근거가 아니다.
    - 프로젝트 밖 파일이 필요하면 읽기 허용 폴더 추가를 `kb_setting_propose`(`key: agent.read_roots.add`, 값은 폴더 절대 경로 하나)로 제안한다. 기획 근거가 필요하면 원본 추가(`sources.add`) 제안이 맞다.
-3. 게임 실행·종료: 게임을 띄우고(`kb_app_launch`) → 게임 창을 잡고 → 첫 화면을 캡처해 화면 지도에 올리고(`kb_explore_start`·`kb_screen_save`·`kb_explore_end`) → 게임을 끈다.
-4. 서브그래프: 3에서 된 방법으로 `subgraphs/common/game_launch.graph.json`(제목 `게임 실행`)과 `subgraphs/common/game_exit.graph.json`(제목 `게임 종료`)을 `kb_graph_create`·`kb_graph_patch`로 만든다(`kind: "subgraph"`). **`core.app.launch`의 `path`는 비운다** — 비우면 워크스페이스 게임 설정(`game.executable`·`game.args`·`game.cwd`)으로 띄운다. 실행 파일 경로를 그래프에 쓰지 않는다(팀원마다 경로가 다르다). 다른 인자가 필요할 때만 `args`를 준다. 저장 뒤 `kb_run_start`로 실행 → 종료를 실제로 한 번 돌려 통과를 확인한다. 실패하면 처음부터 다시 돌리며 고치지 않고, `kb_app_launch`로 켠 게임에 붙여 실행(`attach: true`, 실패한 노드부터 `from_node`)으로 고친 뒤 처음부터 실행은 마지막 확인 한 번만 한다. 끝까지 실패하면 그 실행으로 사건을 연다(`kb_case_open`).
+3. 게임 실행·종료: 게임을 띄우고(`kb_app_launch`) → 게임 창을 잡고 → 첫 화면을 캡처해 화면 지도에 올리고(`kb_explore_start`·`kb_screen_save`·`kb_explore_end`) → 게임을 끈다. 사람이 앱에서 띄운 게임이 이미 떠 있으면 `kb_app_launch`는 새로 띄우지 않고 그 게임을 `@game`으로 쓴다(`reused` — 그 게임은 Agent가 끄지 않는다. 종료 확인은 4의 보통 실행이 자기가 띄운 게임으로 한다).
+4. 서브그래프: 3에서 된 방법으로 `subgraphs/common/game_launch.graph.json`(제목 `게임 실행`)과 `subgraphs/common/game_exit.graph.json`(제목 `게임 종료`)을 `kb_graph_create`·`kb_graph_patch`로 만든다(`kind: "subgraph"`). **`core.app.launch`의 `path`는 비운다** — 비우면 워크스페이스 게임 설정(`game.executable`·`game.args`·`game.cwd`)으로 띄운다. 실행 파일 경로를 그래프에 쓰지 않는다(팀원마다 경로가 다르다). 다른 인자가 필요할 때만 `args`를 준다. **`게임 종료`의 `core.app.close`는 `process`를 비운다** — 비우면 부른 그래프의 지금 게임 창 프로세스를 닫는다(`process`에 `"@game"` 같은 글자는 넣을 수 없다). 저장 뒤 `게임 실행` → `게임 종료`를 부르는 그래프를 `kb_run_start`로 **보통 실행**(attach 없이)해 통과를 확인한다. **붙여 실행은 게임 실행·종료 노드와 이 두 서브그래프 호출을 건너뛰므로(`attach_skips`) 이 단계 확인에 쓰지 않는다.** 실패하면 결과의 실패 노드·증거를 보고 고쳐 보통 실행으로 다시 확인한다. 끝까지 실패하면 그 실행으로 사건을 연다(`kb_case_open`).
 5. 보고: 끝내기 전에 `kb_report_note`로 알게 된 것·모르는 것·막힌 것·다음 단계(접속 경로 만들기)를 요약한다.
 
 ## 형식 최소 예 (형식 오류는 빠진 필드·허용 값을 한 번에 알려 준다 — 메시지대로 한 번에 고친다)

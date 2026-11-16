@@ -108,6 +108,20 @@ def test_close_closed_and_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     assert calls == [(process, 250)]
 
 
+def test_close_without_process_uses_current_window() -> None:
+    """UX12 2b: process를 비우면 지금 대상 창의 프로세스를 닫는다. 대상 창도 없으면 실패."""
+    from kookabug_sdk.errors import RunnerError
+
+    ctx = scene_ctx()
+    window = launch(ctx, path="game.exe").outputs["window"]
+    assert close(ctx).exit == "closed"
+    assert [p.pid for p in ctx.process.closed] == [window.pid]
+    with pytest.raises(RunnerError) as caught:
+        close(fake_context())
+    assert caught.value.code == "window_not_set"
+    assert "process" in str(caught.value)
+
+
 # ---------------------------------------------------------------- core.window.attach
 
 

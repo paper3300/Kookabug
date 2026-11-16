@@ -47,6 +47,7 @@ __all__ = [
     "DEFAULT_MAX_STEPS",
     "ExploreSession",
     "ExploreSessions",
+    "RecordedMove",
     "check_texts",
     "normalize",
 ]
@@ -130,6 +131,31 @@ def check_texts(texts: Iterable[tuple[str, str]], extra: Iterable[str] = ()) -> 
         values.clear()
 
 
+RECORDED_KEEP: Final = 12
+"""UX12 1a: 세션이 기억하는 최근 자동 기록 이동 수 (입력 직전 프레임 포함 — 메모리)."""
+
+
+@dataclass(slots=True)
+class RecordedMove:
+    """탐색 걸음이 출발 카드에 자동으로 남긴 이동 하나와 그 입력 직전 프레임 (UX12 1a). 뒤에 더
+    구체적인 화면(팝업)이 저장되고 그 판정 조건이 이 프레임에서 맞으면, 그 입력은 실제로 그 화면
+    위에서 한 것이다 — 이동을 그 카드로 옮긴다."""
+
+    origin: tuple[str, str]
+    card: str
+    """이동을 쓴 카드 키 (출발이 확정 화면이면 `of_<id>`)."""
+    move: dict[str, Any]
+    """카드에 쓴 그대로의 이동 (`{via, to, status}`). 옮길 때 카드의 이동이 이것과 전부 같아야 한다
+    (사람이 고친 이동은 옮기지 않는다 — UX12 검수 1 High 3)."""
+    pixels: Any
+    size: tuple[int, int]
+    dpi: int
+    fresh: bool
+    """이 기록이 카드에 새로 더한 이동인가 (이미 같은 이동이 있었으면 옮길 때 지우지 않는다)."""
+    target: str | None = None
+    """새 카드에 이미 더했지만 출발 카드에서 빼지 못한 경우 그 카드 키 (다음 저장 때 빼기만)."""
+
+
 @dataclass
 class ExploreSession:
     id: str
@@ -162,6 +188,20 @@ class ExploreSession:
     """UX7 C: 도착 화면을 아직 저장하지 않은 이동 (출발 화면, 정규화한 이동 — via·note, 붙이지
     못한 것은 to까지). 다음에 새 후보를 저장하면 그 키로 `to`를 채워 출발 카드에 `tried`로
     남긴다."""
+    recorded: list[RecordedMove] = field(default_factory=list[RecordedMove])
+    """UX12 1a: 최근 자동 기록 이동 (`RECORDED_KEEP`개까지)."""
+
+    def note_move(self, item: RecordedMove) -> None:
+        with self.budget:
+            self.recorded = [*self.recorded, item][-RECORDED_KEEP:]
+
+    def recorded_moves(self) -> list[RecordedMove]:
+        with self.budget:
+            return list(self.recorded)
+
+    def forget_move(self, item: RecordedMove) -> None:
+        with self.budget:
+            self.recorded = [r for r in self.recorded if r is not item]
 
     def where(self) -> tuple[str, str] | None:
         with self.budget:

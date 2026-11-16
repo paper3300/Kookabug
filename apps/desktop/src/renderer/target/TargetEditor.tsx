@@ -536,8 +536,7 @@ function TextPanel({ doc }: Body) {
       setState({ key, text: r.text === "" ? "(글자 없음)" : r.text, tone: "ok" });
     } catch (err) {
       const e = toRpcError(err);
-      const text = e.kind === "secret_region_overlap" ? "비밀값 칸과 겹쳐 읽지 않았어요" : `읽지 못했어요: ${e.message}`;
-      setState({ key, text, tone: "note" });
+      setState({ key, text: `읽지 못했어요: ${e.message}`, tone: "note" });
     }
   };
   return (

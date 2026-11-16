@@ -90,9 +90,31 @@ def _game_setting(
     effects={"process"},
 )
 def close(
-    ctx: Context, process: ProcessRef, force_after_ms: Annotated[int, Input(minimum=0)] = 5000
+    ctx: Context,
+    process: ProcessRef | None = None,
+    force_after_ms: Annotated[int, Input(minimum=0)] = 5000,
 ) -> Result:
-    """창에 닫기를 보내고 기다린다. `force_after_ms` 안에 끝나지 않으면 강제로 끝내고 `timeout`."""
+    """창에 닫기를 보내고 기다린다. `force_after_ms` 안에 끝나지 않으면 강제로 끝내고 `timeout`.
+
+    `process`를 비우면 지금 대상 창(게임 실행 노드·창 붙기로 정한 창 — 서브그래프는 호출한 그래프의
+    창)의 프로세스를 닫는다. `게임 종료` 서브그래프는 process 없이 만들면 호출한 그래프의 게임을
+    닫는다. process는 상수(`"@game"` 같은 글자)로 줄 수 없다. 대상 창도 없으면 실패한다 — 종료만
+    따로 확인하려면 `게임 실행` → `게임 종료`를 부르는 그래프를 보통 실행으로 돌린다(붙여 실행은
+    종료를 건너뛴다)."""
+    if process is None:
+        window = ctx.window
+        if window is None or window.pid <= 0:
+            raise RunnerError(
+                "window_not_set",
+                "닫을 게임이 없다 — process를 잇거나(게임 실행 노드의 process 출력) 대상 창을 먼저 "
+                "정한다(게임 실행·창 붙기 노드)",
+            )
+        if not window.process_created:
+            raise RunnerError(
+                "window_not_set", "대상 창의 프로세스를 확인할 수 없다 — process를 잇는다"
+            )
+        # PID와 생성 시각을 함께 — 그 PID를 다시 쓴 다른 프로세스는 닫지 않는다 (검수 1 High 5)
+        process = ProcessRef(window.pid, created=window.process_created)
     if ctx.process.close(process, force_after_ms):
         return Result.ok("closed")
     return Result.fail("timeout", f"{force_after_ms} ms 안에 끝나지 않아 강제로 끝냈다")

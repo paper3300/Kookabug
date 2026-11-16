@@ -24,8 +24,6 @@ export type TargetEditorView = Pick<
   | "previewPending"
 > & {
   path: string;
-  /** 정지 화면의 보호 영역(비밀번호 칸, 정지 화면 픽셀) — 판에 빗금. 녹화 초안만 (M4 T10) */
-  protectedRects?: readonly Rect[];
 };
 
 export type PreviewParams = Omit<daemonRpc.TargetPreviewParams, "seq">;

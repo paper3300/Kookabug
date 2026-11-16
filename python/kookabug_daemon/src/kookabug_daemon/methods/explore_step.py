@@ -26,9 +26,11 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 from collections.abc import Mapping
 from typing import Any, Final
 
+from kookabug_daemon.explore import RecordedMove
 from kookabug_daemon.game_window import GAME, is_game
 from kookabug_daemon.methods import Call, MethodSpec
 from kookabug_daemon.methods.control import (
@@ -381,11 +383,29 @@ async def _step(call: Call) -> dict[str, Any]:
             session.wait_for([])  # 새 걸음: 지난 대기 이동은 버린다
         if via is not None and origin is not None and moved:
             if arrived is not None and arrived != origin:
+                recorded = {"via": via, "to": arrived[1]}
+                fresh: list[bool] = []
                 card = await asyncio.to_thread(
-                    add_moves, call.daemon, session, origin, [{"via": via, "to": arrived[1]}]
+                    functools.partial(
+                        add_moves, call.daemon, session, origin, [recorded], fresh=fresh
+                    )
                 )
                 if card is not None:
                     move = {"from": origin[1], "to": arrived[1], "status": "recorded", "card": card}
+                    if method is not None:
+                        # 입력 직전 프레임을 기억한다 — 뒤에 저장한 더 구체적인 화면(팝업)이 이
+                        # 프레임에서 맞으면 이 이동을 그 카드로 옮긴다 (UX12 1a)
+                        session.note_move(
+                            RecordedMove(
+                                origin,
+                                card,
+                                {**recorded, "status": "tried"},  # add_moves가 쓴 그대로
+                                before.pixels,
+                                before.client_size,
+                                before.dpi,
+                                bool(fresh and fresh[0]),
+                            )
+                        )
             elif arrived is None and new_screen and (changed or method is None):
                 pending = [(origin, {"via": via, "status": "tried"})]
                 if method is None:

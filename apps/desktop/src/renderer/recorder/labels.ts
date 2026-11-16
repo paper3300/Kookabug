@@ -259,8 +259,6 @@ export function recorderErrorText(kind: string | null, message: string): string 
       return "비밀값을 고르지 않은 스텝이 있어요";
     case "target_missing":
       return "찾기 대상이 없는 스텝이 있어요. REC 탭에서 영역을 고르거나 스텝을 지우세요";
-    case "secret_region_overlap":
-      return "비밀번호 칸과 겹치는 영역은 쓸 수 없어요. 영역을 다시 고르세요";
     case "not_owner":
       return "다른 창에서 녹화 중이에요";
     case "recorder_store_unclean":

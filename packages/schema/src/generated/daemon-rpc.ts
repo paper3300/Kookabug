@@ -842,6 +842,10 @@ export interface AppLaunchResult {
    * UX8: 같은 주체가 전에 kb_app_launch로 띄워 아직 살아 있던 게임을 먼저 끝냈다 (그 PID)
    */
   replaced_pid?: number;
+  /**
+   * UX12: 사람(앱 마법사 등)이 띄운 게임이 떠 있어 새로 띄우지 않고 그 게임(pid)을 이 주체의 @game으로 정했다. 사람 게임은 끄지 않는다
+   */
+  reused?: true;
 }
 /**
  * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
@@ -5970,10 +5974,25 @@ export interface ScreensCheckResult {
     [k: string]: null | string | undefined;
   };
   /**
+   * UX12: 끝난 다른 탐색 세션의 같은 화면일 수 있는 후보 — 안내만 한다 (같은 kind, 서로의 대표 스크린샷에서 판정 조건이 맞고, 대표 스크린샷 축소 이미지 차이가 작음). 합치려면 사람이 그 후보를 지도에서 확정 화면에 합친다(mode merge). 없으면 없다
+   */
+  same?: ScreensCandidateRef[];
+  /**
    * 후보 판정 조건을 그 대표 스크린샷에서 평가한 결과 (matched·not_matched·unknown·none = 스크린샷 없음)
    */
   shot?: "matched" | "none" | "not_matched" | "unknown";
   warnings: string[];
+}
+/**
+ * UX12: 탐색 세션 후보 하나
+ *
+ * This interface was referenced by `DaemonRpcMessageDefs`'s JSON-Schema
+ * via the `definition` "ScreensCandidateRef".
+ */
+export interface ScreensCandidateRef {
+  key: string;
+  session: string;
+  title?: string | null;
 }
 /**
  * screens.discard (사람만, M7 3.7): 끝난 탐색 세션의 후보 하나(key) 또는 세션 전체를 지운다. 처리기는 B4
@@ -6299,6 +6318,32 @@ export interface ScreensSaveResult {
    * shot omitted의 보호 사유
    */
   reason?: string;
+  /**
+   * UX12: 옮길 이동이었지만 출발 카드의 그 이동이 자동 기록과 달라(사람이 고침 — changed) 또는 없어져(missing), 또는 옮겨 간 카드가 버려졌거나 그 이동이 고쳐져(target_gone) 출발 이동을 그대로 둔 것
+   */
+  relocate_kept?: {
+    from: string;
+    reason: "changed" | "missing" | "target_gone";
+    to: string | null;
+  }[];
+  /**
+   * UX12: 이 화면이 더 구체적이고 최근 이동의 입력 직전 프레임에서 맞아, 출발 카드(배경 화면)에 잘못 남은 이동을 이 카드로 옮겼다. 없으면 없다
+   */
+  relocated?: {
+    /**
+     * 원래 출발 화면 (후보 키 또는 확정 화면 ID)
+     */
+    from: string;
+    /**
+     * 옮긴 뒤 출발 화면 (이 후보 키)
+     */
+    now_from: string;
+    /**
+     * 원래 출발 카드에서 뺐다 (그 카드에 원래 같은 이동이 있었으면 false)
+     */
+    removed: boolean;
+    to: string | null;
+  }[];
   revision: string;
   shot: "omitted" | "saved";
 }

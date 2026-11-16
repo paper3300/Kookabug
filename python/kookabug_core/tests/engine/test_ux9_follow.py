@@ -407,12 +407,12 @@ def test_video_retarget_keeps_policy() -> None:
     old = WindowRef(0x10, pid=1, process_created="1", binding="a")
     new = WindowRef(0x20, pid=1, process_created="1", binding="b")
     gate.hold("s1")
-    gate.classify("s1", "on", secret=True, window=old)
+    gate.classify("s1", "off", window=old)
     before = gate.view()
     gate.retarget(old, new)
     after = gate.view()
     assert after.window == new and after.generation > before.generation
-    assert (after.state, after.gap) == (before.state, before.gap) == ("off", "secret_input")
+    assert (after.state, after.gap) == (before.state, before.gap) == ("off", "policy_off")
     # 녹화 대상이 아닌 창의 전환은 무시
     gate.retarget(WindowRef(0x99, pid=9), WindowRef(0x98, pid=9))
     assert gate.view().window == new

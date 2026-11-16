@@ -333,7 +333,7 @@ export async function applyExpected(step: string, value: string): Promise<boolea
   return true;
 }
 
-/** recorder.step.update. 거부(secret_region_overlap 등)는 띠에 보이고 false */
+/** recorder.step.update. 거부는 띠에 보이고 false */
 export async function updateStep(step: string, patch: daemonRpc.RecorderStepPatch): Promise<RecorderStep | null | false> {
   try {
     const r = await client().call("recorder.step.update", { step, patch });

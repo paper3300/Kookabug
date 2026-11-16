@@ -76,8 +76,6 @@ def test_known_differences_and_recovery_documented() -> None:
         "screens-tx-kept/",
         "promoted",
         "agent-protect.json",
-        "protect_state_unknown",
-        "screen protect --clear-keys",
         "이 탐색 동안 허용",
     ):
         assert needle in text, needle

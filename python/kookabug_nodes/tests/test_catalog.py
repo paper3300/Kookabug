@@ -224,7 +224,8 @@ def test_app_window_node_pins(nodes: dict[str, dict[str, Any]]) -> None:
     assert launch["outputs"] == {"process": {"type": "process"}, "window": {"type": "window"}}
     assert nodes["core.app.close"]["inputs"] == {
         "force_after_ms": {"default": 5000, "minimum": 0, "type": "int"},
-        "process": {"type": "process"},
+        # UX12 2b: 비우면 지금 대상 창의 프로세스
+        "process": {"default": None, "nullable": True, "type": "process"},
     }
     attach = nodes["core.window.attach"]
     assert attach["inputs"] == {

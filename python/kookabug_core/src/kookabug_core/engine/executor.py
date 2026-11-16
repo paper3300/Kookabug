@@ -657,12 +657,11 @@ class _Run:
                 )
                 window, inputs = self._common_window(frame, node, nodedef, inputs)
                 if self.video is not None:
-                    # 비밀값 분류가 끝났다: 보류를 이 스텝의 영상 정책으로 정한다 (M3 2.5)
+                    # 입력 계산이 끝났다: 보류를 이 스텝의 영상 정책으로 정한다 (M3 2.5)
                     policy = rt.recorder.policy(step)
                     self.video.classify(
                         step,
                         self._video_mode(frame, node, policy.policy),
-                        secret=policy.secret is not None,
                         window=window if window is not None else frame.current_window,
                     )
                 # 스텝 입력 검사: 디버거 재개 전 관측에서 온 입력이면 노드를 부르지 않는다 (M3 2.4)

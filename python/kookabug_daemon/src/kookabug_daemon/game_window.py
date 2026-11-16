@@ -5,8 +5,8 @@ agent ID다.
 `kb_app_launch`가 띄운 게임, 또는 제목으로 하나로 정해진 입력·탐색 창의 프로세스를 (PID, 프로세스
 생성 시각)으로 그 주체의 기억에만 쓴다. 쓰기는 권한 판정이 허용되고 입력·띄우기·탐색 시작이 성공한
 뒤에만 한다(거부·승인 대기·실패 경로에는 상태 변경이 없다). `@game`·붙여 실행은 요청 주체 자신의
-기억만 쓰고, 없으면 `window_not_found`다. 사람(데스크톱 앱) 연결은 기억에 쓰지도 읽지도 않는다.
-기억은 daemon 메모리에만 있다(파일 없음).
+기억을 쓰고, 없으면 사람(앱 마법사 등)이 `app.launch`로 띄운 게임(UX12 2a), 그것도 없으면
+`window_not_found`다. 사람 연결은 `@game`을 읽지 않는다. 기억은 daemon 메모리에만 있다(파일 없음).
 
 `@game`은 그 프로세스의 주 창이다 — 로그인 뒤 창 제목이 바뀌어도 같은 프로세스의 창이면 붙는다.
 주 창은 보이고·최소화 아님·cloaked 아님인 창 중 클라이언트 넓이가 가장 큰 창이다(UX8 A — 로딩 중
@@ -58,13 +58,43 @@ class GameMemory:
         self._source = source
         self._lock = threading.Lock()
         self._refs: dict[str, GameRef] = {}
+        self._human: GameRef | None = None
+        """사람(앱 마법사 등)이 `app.launch`로 띄운 마지막 게임 (UX12 2a)."""
 
     def get(self, principal: Principal) -> GameRef | None:
+        """그 주체의 게임. Agent 주체가 자기 기억이 없으면 사람이 띄운 게임 (UX12 2a — 앱에서 띄운
+        게임을 `@game`으로 쓴다). 사람 연결은 None."""
         key = game_key(principal)
         if key is None:
             return None
         with self._lock:
-            return self._refs.get(key)
+            return self._refs.get(key) or self._human
+
+    def remember_human(self, pid: int) -> None:
+        """사람이 `app.launch`로 띄운 게임 (UX12 2a). 생성 시각을 못 읽으면 기억하지 않는다."""
+        finder = getattr(self._source, "process_created", None)
+        created = None if finder is None else finder(pid)
+        if created:
+            with self._lock:
+                self._human = GameRef(pid, str(created))
+
+    def human_game(self) -> GameRef | None:
+        """사람이 띄운 게임이 아직 살아 있으면 그 기억 (UX12 2a)."""
+        with self._lock:
+            ref = self._human
+        if ref is None:
+            return None
+        check = getattr(self._source, "process_alive", None)
+        alive = True if check is None else bool(check(ref.pid, ref.created))
+        return ref if alive else None
+
+    def adopt(self, principal: Principal, ref: GameRef) -> None:
+        """그 게임을 이 주체의 게임으로 기억한다 (사람이 띄운 게임을 다시 띄우지 않고 쓸 때)."""
+        key = game_key(principal)
+        if key is None:
+            return
+        with self._lock:
+            self._refs[key] = ref
 
     def remember_pid(self, principal: Principal, pid: int) -> None:
         """`kb_app_launch`가 띄운 PID (생성 시각을 못 읽거나 사람이면 기억하지 않는다)."""

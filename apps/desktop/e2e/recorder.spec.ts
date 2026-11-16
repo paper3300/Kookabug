@@ -239,19 +239,19 @@ test("test_new_test_name_exists_then_save_other_name", async () => {
   expect(written.length).toBe(refs.length);
 });
 
-test("test_rec_tab_edit_crop_and_manual_crop_over_secret_field_rejected", async () => {
+test("test_rec_tab_edit_crop_and_manual_crop_over_secret_field_accepted", async () => {
   const ws = prepareRecorderWorkspace();
   s = await openRecorderApp(ws);
   const { page } = s;
   await recordLoginAndStop(page, true);
   const clicks = page.locator('[data-part="rec-step"][data-kind="click"]');
-  // 로그인 단추 클릭(마지막 클릭)의 정지 화면: 비밀번호 칸이 보호 영역(빗금)이고 그 영역을 고르면 거부
+  // 로그인 단추 클릭(마지막 클릭)의 정지 화면: 비밀번호 칸은 가리지 않는다(UX11 B) — 그 영역을 골라도 받아들인다
   await clicks.last().click();
   const tab = page.locator('[data-part="rec-tab"]');
   await expect(tab).not.toHaveAttribute("data-frame", "", { timeout: 30_000 });
-  await expect(page.locator('[data-part="protected-rect"]').first()).toBeVisible({ timeout: 30_000 });
-  await selectRect(page, PASSWORD_FIELD);
-  await expect(page.locator('[data-part="rec-refusal"]')).toContainText("비밀번호 칸과 겹치는 영역은 쓸 수 없어요", { timeout: 30_000 });
+  const overField = await selectRect(page, PASSWORD_FIELD);
+  await expect(tab).toHaveAttribute("data-accepted", overField.join(","), { timeout: 15_000 });
+  await expect(page.locator('[data-part="rec-refusal"]')).toHaveCount(0);
   // 시작 단추 클릭(첫 클릭)의 영역을 제목 글자로 바꾸면 저장된 target이 그 영역
   await clicks.first().click();
   await expect(tab).toHaveAttribute("data-step", /.+/);
@@ -381,11 +381,6 @@ test("test_text_step_toggle_and_check_text_expected_value", async () => {
   await expect(expected.getByRole("textbox", { name: "기댓값" })).toHaveValue("서버 고르기");
   await expected.getByRole("button", { name: "기댓값 적용" }).click();
   await expect(expected.getByRole("button", { name: "기댓값 적용" })).toBeDisabled({ timeout: 15_000 });
-  // 비밀번호 원문은 기댓값으로 받지 않는다 (원문은 띠·화면에 나오지 않는다)
-  await expected.getByRole("textbox", { name: "기댓값" }).fill(`x ${SECRET_TEXT}`);
-  await expected.getByRole("button", { name: "기댓값 적용" }).click();
-  await expect(page.locator('[data-part="rec-notice"]')).toContainText("비밀번호 칸과 겹치는");
-  await expected.getByRole("textbox", { name: "기댓값" }).fill("서버 고르기");
   // 일반 글자(계정) 스텝 → 비밀값으로 → 다시 일반 글자로(확인 대화 상자)
   const account = page.locator('[data-part="rec-step"][data-text-state="ordinary"]');
   const id = (await account.getAttribute("data-step")) ?? "";

@@ -35,7 +35,6 @@ def test_raw_wiped_on_commit_discard_disconnect(end: str) -> None:
     for read in (texts.view, texts.raw_for_secret, texts.graph_text, texts.typed_so_far):
         with pytest.raises(TextNotAvailable):
             read(action.span_id)
-    assert list(texts.protected_texts()) == []
     with pytest.raises(TextNotAvailable):
         texts.put(9, SecretText("late"))
 

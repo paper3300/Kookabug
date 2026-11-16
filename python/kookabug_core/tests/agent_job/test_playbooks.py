@@ -82,7 +82,13 @@ def test_playbooks_mention_required_rules() -> None:
     assert playbooks.versions()["entry"] >= 4 and playbooks.versions()["init"] >= 7
     for word in ("처음부터 다시 돌리며 고치지 않는다", "실패한 노드부터", "마지막 확인 한 번만"):
         assert word in body, word
-    assert "처음부터 다시 돌리며 고치지 않고" in every["init"].body
+    # UX12 2c: 게임 실행·종료 서브그래프는 붙여 실행이 건너뛴다(attach_skips) — init은 보통 실행으로
+    # 확인하고, 게임 종료는 process를 비운다. 2a: 앱에서 띄운 게임은 reused
+    assert playbooks.versions()["init"] >= 9 and playbooks.versions()["entry"] >= 7
+    init_body = every["init"].body
+    for word in ("attach_skips", "보통 실행", "`process`를 비운다", "reused"):
+        assert word in init_body, word
+    assert "attach_skips" in body and "보통 실행으로 확인한다" in body
     assert "kb_explore_step" in every["explore"].body and "attach" in every["explore"].body
     for name in ("init", "followup", "explore"):
         assert "kb_job_progress" in every[name].body, name

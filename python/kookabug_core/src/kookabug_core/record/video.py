@@ -1,9 +1,10 @@
 """영상 녹화 (구현 계획 M3 2.5): 녹화 게이트, 5 fps 격자 조각 쓰기, 녹화 스레드, 가짜 인코더.
 
 - **게이트**(`VideoGate`): 실행기가 스텝을 열고 닫을 때 바꾼다. 값 = 열린 스텝 스택(호출 스택 전체)
-  중 하나라도 실효 `video`가 off이거나 비밀값 입력 스텝이면 off, 멈춘 동안 off, 아니면 열린 스텝들
+  중 하나라도 실효 `video`가 off이면 off, 멈춘 동안 off, 아니면 열린 스텝들
   중 가장 센 `video`(on < failed_only). 열린 스텝이 없으면 워크스페이스·테스트 층 값. 스텝마다
-  `step.start` 전에 보류(`pending`)로 바꾸고(게이트 세대를 올림), 입력 계산·비밀값 분류 뒤 정한다.
+  `step.start` 전에 보류(`pending`)로 바꾸고(게이트 세대를 올림), 입력 계산 뒤 정한다. 비밀값
+  입력 스텝은 따로 끄지 않는다(UX11 B). 간격 이유 `secret_input`은 옛 영상 색인 호환으로만 남는다.
   보류 동안 녹화 스레드는 새 프레임을 가져오지 않고 보류 전 프레임을 반복한다(조각은 닫지 않음)
 - **녹화 스레드**(`VideoRecorder`): 지금 대상 창의 최신 프레임을 초당 5장 가져와 `video/`에 조각으로
   쓴다. 가져오기 전후로 게이트를 읽어, 가져오는 동안 차단(off·멈춤)이 시작됐거나 끝난 시점에
@@ -416,7 +417,6 @@ class _Open:
     step: str
     pending: bool = True
     mode: VideoMode = "on"
-    secret: bool = False
 
 
 class VideoGate:
@@ -465,23 +465,22 @@ class VideoGate:
             self._gen += 1
             self._update()
 
-    def classify(
-        self, step: str, mode: VideoMode, *, secret: bool, window: WindowRef | None
-    ) -> None:
-        """입력 계산·비밀값 분류가 끝났다: 그 스텝의 영상 정책과 대상 창으로 정한다."""
+    def classify(self, step: str, mode: VideoMode, *, window: WindowRef | None) -> None:
+        """입력 계산이 끝났다: 그 스텝의 영상 정책(노드·서브그래프 `video: off` 등)과 대상 창으로
+        정한다. 그때까지는 보류(pending)라 프레임을 남기지 않는다. 비밀값 입력 스텝은 따로 끄지
+        않는다 (UX11 B — 게임 비밀값은 가리지 않음, UX12에서 그 갈래를 걷어 냄)."""
         with self._cond:
             for entry in self._stack:
                 if entry.step == step:
                     entry.pending = False
                     entry.mode = mode
-                    entry.secret = secret
             self._window = window
             self._update()
 
     def retarget(self, old: WindowRef, new: WindowRef) -> None:
         """실행기가 대상 창을 따라갔다(닫힌 시작 화면 창 → 같은 게임의 본 창, UX9 2): 지금 녹화
         대상이 그 옛 창이면 새 창으로 바꾸고 세대를 올린다(옛 창에서 가져오는 중이던 프레임은
-        버려진다). 정책(비밀값·off·보류)은 그대로다."""
+        버려진다). 정책(off·보류)은 그대로다."""
         with self._cond:
             current = self._window
             if current is None or (current.handle, current.pid, current.binding) != (
@@ -586,9 +585,6 @@ class VideoGate:
             return "off", None, None, None
         if self._paused_on:
             return "off", None, "paused", self._paused
-        for entry in self._stack:
-            if not entry.pending and entry.secret:
-                return "off", None, "secret_input", entry.step
         if self._base == "off":
             return "off", None, "policy_off", None
         for entry in self._stack:

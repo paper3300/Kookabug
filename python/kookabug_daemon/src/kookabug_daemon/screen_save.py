@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any, Final, cast
 from kookabug_core.canonical import loads_strict
 from kookabug_core.documents import DocumentError, write_atomic
 from kookabug_core.screens import (
+    EXPLORE_FILE,
     EXPLORED_DIR,
     SCREENS_DIR,
     SUFFIX,
@@ -42,6 +43,7 @@ from kookabug_core.screens import (
 from kookabug_core.workspace import Workspace
 from kookabug_daemon.explore import (
     ExploreSession,
+    RecordedMove,
     check_texts,
     job_secrets,
     plain_path,
@@ -61,6 +63,7 @@ __all__ = [
     "disconnected",
     "identify",
     "link",
+    "relocate",
     "save",
     "specificity",
 ]
@@ -487,10 +490,13 @@ def add_moves(
     session: ExploreSession,
     source: tuple[str, str],
     moves: Sequence[Mapping[str, Any]],
+    *,
+    fresh: list[bool] | None = None,
 ) -> str | None:
     """출발 화면 카드에 이동을 더한다 (UX7 C 자동 기록). 출발이 이 세션 후보면 그 카드, 확정
     화면이면 그 화면을 가리키는 `of` 후보 카드(`of_<id>`). 쓴 카드 키, 쓸 수 없으면(후보가
-    없어졌거나 형식이 맞지 않음) None. 글자는 3.5b 검사를 지난다."""
+    없어졌거나 형식이 맞지 않음) None. 글자는 3.5b 검사를 지난다. `fresh`를 주면 이동마다 새로
+    더했는지(같은 via·to가 없었는지)를 채운다."""
     root: Path = daemon.root
     state, name = source
     of: str | None = None
@@ -551,7 +557,17 @@ def add_moves(
                     "at": _stamp(),
                 },
             }
-        doc["moves"] = _merge_moves(cast(list[Any], doc.get("moves") or []), shaped)
+        old_moves = cast(list[Any], doc.get("moves") or [])
+        added = [
+            not any(
+                isinstance(o, dict)
+                and cast(dict[str, Any], o).get("via") == m["via"]
+                and cast(dict[str, Any], o).get("to") == m["to"]
+                for o in old_moves
+            )
+            for m in shaped
+        ]
+        doc["moves"] = _merge_moves(old_moves, shaped)
         try:
             parse_screen(doc, rel)
         except ScreenFileError:
@@ -561,7 +577,239 @@ def add_moves(
         except DocumentError:
             return None
     daemon.explore.changed()
+    if fresh is not None:
+        fresh[:] = added
     return key
+
+
+def _take_move(
+    daemon: Any,
+    session: ExploreSession,
+    card: str,
+    expected: Mapping[str, Any],
+    *,
+    remove: bool,
+    target: str | None = None,
+) -> str:
+    """이 세션 카드에서 자동 기록한 이동이 기록 그대로인지 본다 (UX12 검수 1 High 3). 같은 via·to
+    이동이 없으면 `missing`, 있는데 내용(note·status 등)이 기록과 다르면 `changed`(사람이 고침 —
+    빼지 않는다), 같으면 `same`이고 `remove`면 그 쓰기 잠금 안에서 뺀다. 읽기·쓰기 실패는
+    `failed`(다시 할 수 있다).
+
+    `target`(옮겨 간 카드 키)을 주면 빼기 전에 같은 잠금 안에서 그 카드(승격됐으면 승격된 확정
+    화면)에 같은 이동이 아직 있는지 본다 — 없으면(버려짐·고쳐짐) `target_gone`이고 빼지 않는다
+    (검수 2 High 2: 원본과 사본이 함께 사라지지 않게)."""
+    root: Path = daemon.root
+    session_parts = (SCREENS_DIR, EXPLORED_DIR, session.id)
+    rel = f"{session.rel}/{card}{SUFFIX}"
+    from kookabug_core.screen_promote import PromoteError, ensure_clear
+
+    with write_lock(root, session):
+        try:
+            ensure_clear(root)
+        except PromoteError:
+            return "failed"
+        if target is not None and not _target_has(root, session, target, expected):
+            return "target_gone"
+        folder = plain_path(root, session_parts)
+        path = plain_path(root, (*session_parts, f"{card}{SUFFIX}"), within=folder)
+        if not path.is_file():
+            return "missing"
+        try:
+            loaded = loads_strict(path.read_text(encoding="utf-8"))
+        except OSError, ValueError:
+            return "failed"
+        if not isinstance(loaded, dict):
+            return "failed"
+        doc = dict(cast(dict[str, Any], loaded))
+        moves = [m for m in cast(list[Any], doc.get("moves") or []) if isinstance(m, dict)]
+        index = next(
+            (
+                i
+                for i, m in enumerate(moves)
+                if cast(dict[str, Any], m).get("via") == expected.get("via")
+                and cast(dict[str, Any], m).get("to") == expected.get("to")
+            ),
+            None,
+        )
+        if index is None:
+            return "missing"
+        if moves[index] != dict(expected):
+            return "changed"
+        if not remove:
+            return "same"
+        del moves[index]
+        if moves:
+            doc["moves"] = moves
+        else:
+            doc.pop("moves", None)
+        try:
+            parse_screen(doc, rel)
+            write_atomic(path, json.dumps(doc, ensure_ascii=False, indent=1).encode("utf-8"))
+        except ScreenFileError, DocumentError:
+            return "failed"
+    daemon.explore.changed()
+    return "same"
+
+
+def _read_json(path: Path) -> dict[str, Any] | None:
+    try:
+        loaded = loads_strict(path.read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return None
+    return cast(dict[str, Any], loaded) if isinstance(loaded, dict) else None
+
+
+def _target_has(root: Path, session: ExploreSession, target: str, move: Mapping[str, Any]) -> bool:
+    """옮겨 간 카드 `target`에 그 이동이 그대로 있는가 (`write_lock` 안에서 부른다). 후보 카드가
+    있으면 그 카드에서 이동 전체가 같아야 한다. 후보가 승격됐으면(`explore.json` `promoted`) 승격된
+    확정 화면에서 via·status가 같고 `to`가 같거나 승격된 ID인 이동. 둘 다 없으면 False."""
+    folder = plain_path(root, (SCREENS_DIR, EXPLORED_DIR, session.id))
+    doc = _read_json(folder / f"{target}{SUFFIX}")
+    if doc is not None:
+        return any(m == dict(move) for m in cast(list[Any], doc.get("moves") or []))
+    record = _read_json(folder / EXPLORE_FILE) or {}
+    promoted = record.get("promoted")
+    if not isinstance(promoted, dict):
+        return False
+    mapping = {str(k): str(v) for k, v in cast(dict[str, Any], promoted).items()}
+    screen_id = mapping.get(target)
+    paths = [] if screen_id is None else screen_index(Workspace.open(root)).get(screen_id, [])
+    if len(paths) != 1:
+        return False
+    confirmed = _read_json(root.joinpath(*paths[0].split("/")))
+    if confirmed is None:
+        return False
+    to = move.get("to")
+    wanted = {to, mapping.get(str(to))} - {None}
+    return any(
+        isinstance(m, dict)
+        and cast(dict[str, Any], m).get("via") == move.get("via")
+        and cast(dict[str, Any], m).get("status") == move.get("status")
+        and cast(dict[str, Any], m).get("to") in wanted
+        for m in cast(list[Any], confirmed.get("moves") or [])
+    )
+
+
+def _screen_of(
+    workspace: Workspace, session: ExploreSession, ref: tuple[str, str]
+) -> ScreenDef | None:
+    """(state, 이름) → 화면 카드 (이 세션 후보 또는 확정 화면). 못 읽으면 None."""
+    state, name = ref
+    if state == "explored":
+        rel = f"{session.rel}/{name}{SUFFIX}"
+    else:
+        paths = screen_index(workspace).get(name, [])
+        if len(paths) != 1:
+            return None
+        rel = paths[0]
+    path = workspace.resolve(rel)
+    if path is None:
+        return None
+    try:
+        return read_screen_file(path, rel)
+    except ScreenFileError:
+        return None
+
+
+def _relocated(rec: RecordedMove, removed: bool) -> dict[str, Any]:
+    assert rec.target is not None
+    return {"from": rec.origin[1], "to": rec.move.get("to"), "now_from": rec.target,
+            "removed": removed}  # fmt: skip
+
+
+def relocate(
+    daemon: Any, session: ExploreSession, key: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """잘못 남은 이동 옮기기 (UX12 1a): 방금 저장한 후보 `key`가 판정 조건이 있고, 최근 자동 기록
+    이동의 출발 화면보다 더 구체적(팝업 먼저, 조건 많은 것 — `specificity`)이며, 그 이동의 입력
+    직전 프레임에서 맞으면, 그 입력은 이 화면 위에서 한 것이다. (옮긴 것, 남긴 것).
+
+    검수 1 High 3: 출발 카드의 이동이 자동 기록 그대로일 때만 옮긴다 — 사람이 고쳤거나 지웠으면
+    손대지 않고 "남긴 것"(`changed`·`missing`)으로 알린다. 순서는 새 카드에 더하기 → 출발 카드에서
+    빼기(같은 쓰기 잠금 안에서 출발 이동이 그대로이고 옮겨 간 카드에 그 이동이 있는지 다시 확인).
+    빼기가 실패하면 기록을 남겨 다음 저장 때 빼기만 다시 한다 — 그때 옮겨 간 카드가 버려졌거나
+    이동이 고쳐졌으면 출발 이동을 남기고 `target_gone`으로 알린다(검수 2 High 2). 출발 카드에
+    원래 같은 이동이 있었으면 빼지 않는다."""
+    from kookabug_platform.screens import evaluate_screen
+    from kookabug_platform.vision import FrameMeta, Vision
+
+    records = session.recorded_moves()
+    if not records:
+        return [], []
+    out: list[dict[str, Any]] = []
+    kept: list[dict[str, Any]] = []
+    # 지난번에 새 카드에 더했지만 빼지 못한 것: 빼기만 다시 — 옮겨 간 카드에 그 이동이 아직
+    # 있을 때만 (검수 2 High 2: 그 카드가 버려졌거나 이동이 고쳐졌으면 출발 이동을 남긴다)
+    for rec in [r for r in records if r.target is not None]:
+        state = _take_move(daemon, session, rec.card, rec.move, remove=True, target=rec.target)
+        if state == "failed":
+            continue
+        session.forget_move(rec)
+        if state == "target_gone":
+            kept.append(_kept(rec, state))
+        else:
+            out.append(_relocated(rec, state == "same"))
+    records = [r for r in records if r.target is None]
+    workspace = Workspace.open(daemon.root)
+    card = _screen_of(workspace, session, ("explored", key))
+    if card is None or card.of is not None or not card.detect():
+        return out, kept
+    mine = specificity({"kind": card.kind, "conditions": len(card.detect())})
+    load = _loader(daemon.root)
+    reader: Any = None
+    for rec in records:
+        if rec.origin == ("explored", key) or rec.move.get("to") == key:
+            continue
+        origin = _screen_of(workspace, session, rec.origin)
+        if origin is None:
+            continue
+        if mine >= specificity({"kind": origin.kind, "conditions": len(origin.detect())}):
+            continue  # 출발 화면보다 구체적이지 않다 — 그 화면 위의 입력으로 볼 근거가 없다
+        if reader is None:
+            reader = _reader(daemon)
+        try:
+            state = evaluate_screen(
+                card,
+                load,
+                rec.pixels,
+                FrameMeta(rec.size, rec.dpi, backend="editor"),
+                Vision(),
+                ocr=reader,
+            ).state
+        except Exception:  # target 깨짐·OCR 실패: 옮기지 않는다
+            continue
+        if state != "matched":
+            continue
+        if rec.fresh:
+            now = _take_move(daemon, session, rec.card, rec.move, remove=False)
+            if now == "failed":
+                continue  # 다음 저장 때 다시
+            if now != "same":
+                session.forget_move(rec)
+                kept.append(_kept(rec, now))
+                continue
+        moved = add_moves(daemon, session, ("explored", key), [rec.move])
+        if moved is None:
+            continue  # 아무것도 바꾸지 않았다 — 다음 저장 때 다시
+        rec.target = key
+        removed = False
+        if rec.fresh:
+            now = _take_move(daemon, session, rec.card, rec.move, remove=True, target=key)
+            if now == "failed":
+                continue  # 새 카드에는 더했다 — 빼기만 다음 저장 때 다시
+            if now == "target_gone":
+                session.forget_move(rec)
+                kept.append(_kept(rec, now))
+                continue
+            removed = now == "same"
+        session.forget_move(rec)
+        out.append(_relocated(rec, removed))
+    return out, kept
+
+
+def _kept(rec: RecordedMove, reason: str) -> dict[str, Any]:
+    return {"from": rec.origin[1], "to": rec.move.get("to"), "reason": reason}
 
 
 def _link_ref(root: Path, session: ExploreSession, name: Any, field_name: str) -> tuple[str, str]:

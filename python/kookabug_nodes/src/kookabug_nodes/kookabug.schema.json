@@ -138,7 +138,7 @@
     },
     {
       "category": "app",
-      "description": "창에 닫기를 보내고 기다린다. `force_after_ms` 안에 끝나지 않으면 강제로 끝내고 `timeout`.",
+      "description": "창에 닫기를 보내고 기다린다. `force_after_ms` 안에 끝나지 않으면 강제로 끝내고 `timeout`.\n\n`process`를 비우면 지금 대상 창(게임 실행 노드·창 붙기로 정한 창 — 서브그래프는 호출한 그래프의\n창)의 프로세스를 닫는다. `게임 종료` 서브그래프는 process 없이 만들면 호출한 그래프의 게임을\n닫는다. process는 상수(`\"@game\"` 같은 글자)로 줄 수 없다. 대상 창도 없으면 실패한다 — 종료만\n따로 확인하려면 `게임 실행` → `게임 종료`를 부르는 그래프를 보통 실행으로 돌린다(붙여 실행은\n종료를 건너뛴다).",
       "effects": [
         "process"
       ],
@@ -161,6 +161,8 @@
           "type": "int"
         },
         "process": {
+          "default": null,
+          "nullable": true,
           "type": "process"
         }
       },

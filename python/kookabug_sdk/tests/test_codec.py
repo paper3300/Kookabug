@@ -54,6 +54,7 @@ SAMPLES: dict[str, Any] = {
     "point": Point(-3, 4),
     "window": WindowRef(0x1234, "게임"),
     "process": ProcessRef(77, "game.exe"),
+    "process_created": ProcessRef(77, "", created="133700000000000000"),  # UX12
     "image_path": Image(640, 480, path=Path("frames/a.png"), frame=3, capture_id=9),
     "image_data": Image(2, 1, data=b"\x00\xff\x10"),
     "image_empty": Image(),

@@ -719,7 +719,7 @@ def test_finalize_video_refuses_while_writer_alive(tmp_path: Path) -> None:
     game = scenario.launch_game("game.exe")
     gate = VideoGate()
     gate.hold("s1")
-    gate.classify("s1", "on", secret=False, window=game.window)
+    gate.classify("s1", "on", window=game.window)
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     recorder = VideoRecorder(run_dir, gate, platform, FakeEncoderFactory()).start()

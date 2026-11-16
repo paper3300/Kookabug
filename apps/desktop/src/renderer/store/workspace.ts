@@ -251,12 +251,6 @@ export async function initWorkspace(): Promise<void> {
   });
   // 화면 지도 변경·탐색 세션 변경·실행 끝 (M7 B5)
   initMap();
-  client().on("agent.protect_corrupt", (p) =>
-    note(
-      "error",
-      `에이전트 비밀값 보호 기록(${p.path})이 손상돼 그 시점의 창 이미지와 화면 지도 저장을 막았어요. 파일을 확인해 고치거나 지운 뒤 daemon을 다시 시작해요.`,
-    ),
-  );
   // 플러그인 작업 진행·끝·잠금 변경 (M6 B5). 잠금이 바뀌면 daemon은 레지스트리를 다시 만들고 알림만 준다:
   // 노드 목록·워크스페이스 정보(상태 바 플러그인 수)·열린 그래프 검증을 다시 부른다
   initPlugins(() => {

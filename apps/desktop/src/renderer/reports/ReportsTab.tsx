@@ -534,7 +534,7 @@ export function Activity({ job, state }: { job: string; state: string }) {
         </ol>
       )}
       <details className={css.tail} data-part="agent-log-tail">
-        <summary>Agent 출력 (마지막 {tail.length}줄 · 비밀값은 가림)</summary>
+        <summary>Agent 출력 (마지막 {tail.length}줄 · 작업 토큰·인증 값은 가림)</summary>
         <pre className={css.tailText}>{tail.join("\n")}</pre>
       </details>
     </section>

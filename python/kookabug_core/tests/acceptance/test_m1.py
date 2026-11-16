@@ -239,12 +239,11 @@ def test_sample_game_enter_world_and_inventory_open_pass(
 
 @pytest.mark.process
 @pytest.mark.timeout(300)
-def test_subgraph_window_not_set_in_caller_is_platform_unavailable_headless(
-    tmp_path: Path, ocr_models: Path
-) -> None:
-    """서브그래프 안에서 띄운 게임 창은 호출 쪽 현재 창이 되지 않는다: 창 출력·`set_current` 없이
-    호출 뒤 키를 누르면 가짜 플랫폼도 실제처럼 `platform_unavailable` (잠금 해제 데스크톱 검사에서
-    처음 드러난 예제 버그의 헤드리스 회귀)."""
+def test_subgraph_window_carried_to_caller_headless(tmp_path: Path, ocr_models: Path) -> None:
+    """서브그래프 안에서 띄운 게임 창은 ok 출구로 돌아오면 호출 쪽 현재 창이 된다 (UX8 D): 창
+    출력·`set_current` 없이 호출 뒤 키를 눌러도 그 게임 창에 들어가 통과한다. 예전 기대(호출 쪽에
+    창이 없어 `platform_unavailable`)는 UX8 D에서 바뀌었다 — 창 없는 입력의
+    `platform_unavailable`은 `engine/test_fake_scenario.py`가 본다 (UX12 3e)."""
     ws = copy_example_workspace(tmp_path)
     path = ws / INVENTORY_OPEN
     graph = json.loads(path.read_text(encoding="utf-8"))
@@ -253,10 +252,10 @@ def test_subgraph_window_not_set_in_caller_is_platform_unavailable_headless(
     graph["nodes"]["n_enter_world"]["next"]["success"] = "n_press_i"
     path.write_text(json.dumps(graph, ensure_ascii=False), encoding="utf-8")
     code, out = run_example(ws, tmp_path, ocr_models, INVENTORY_OPEN, *FAKE)
-    assert (code, out["verdict"], out["code"]) == (2, "error", "platform_unavailable"), out
-    assert out["failure_path"] == ["n_press_i"]
-    assert "입력 대상 창이 정해지지 않았다" in out["reason"]
-    assert step_ends(out)["n_enter_world"]["exit"] == "success"
+    assert (code, out["verdict"]) == (0, "pass"), out
+    ends = step_ends(out)
+    assert ends["n_enter_world"]["exit"] == "success"
+    assert "n_press_i" in ends
 
 
 # ---------------------------------------------------------------- 2·3. 깨뜨리면 실패 위치·스크린샷

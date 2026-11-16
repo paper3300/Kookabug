@@ -202,7 +202,7 @@ def test_secret_input_step_keeps_frames(tmp_path: Path) -> None:
 
 
 def test_gate_closed_before_step_start_drops_inflight_frame(tmp_path: Path) -> None:
-    # 녹화 스레드가 프레임을 가져오는 중에 비밀값 스텝이 시작·분류되고 장면이 바뀐다
+    # 녹화 스레드가 프레임을 가져오는 중에 영상 끔(video: off) 스텝이 시작·분류되고 장면이 바뀐다
     # → 그 프레임을 버린다
     scenario = FakeScenario.load(write_scenario(tmp_path / "scenario"))
     platform = ScenarioPlatform(scenario)
@@ -211,7 +211,7 @@ def test_gate_closed_before_step_start_drops_inflight_frame(tmp_path: Path) -> N
     gate = VideoGate()
     gate.set_base("on")
     gate.hold("s1")
-    gate.classify("s1", "on", secret=False, window=game.window)
+    gate.classify("s1", "on", window=game.window)
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     recorder = VideoRecorder(run_dir, gate, source, FakeEncoderFactory()).start()
@@ -221,7 +221,7 @@ def test_gate_closed_before_step_start_drops_inflight_frame(tmp_path: Path) -> N
     gate.release("s1")
     gate.hold("s2")  # step.start 전 보류
     switch(platform, "c")  # 가져오는 중에 장면이 바뀐다
-    gate.classify("s2", "on", secret=True, window=game.window)
+    gate.classify("s2", "off", window=game.window)
     source.release.set()  # 가져오기가 끝나 c를 돌려준다 → 버려야 한다
     time.sleep(0.5)
     switch(platform, "idle")
@@ -317,7 +317,7 @@ def _recording(gate: VideoGate, window: Any) -> None:
     반복 칸 채우기는 게이트의 차단 이력(`fill_limit`)을 넘지 않는다."""
     gate.set_base("on")
     gate.hold("s0")
-    gate.classify("s0", "on", secret=False, window=window)
+    gate.classify("s0", "on", window=window)
     gate.drain()
 
 
@@ -403,7 +403,7 @@ def test_capture_missed_over_2s_closes_segment(tmp_path: Path) -> None:
     gate = VideoGate()
     gate.set_base("on")
     gate.hold("s1")
-    gate.classify("s1", "on", secret=False, window=game.window)
+    gate.classify("s1", "on", window=game.window)
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     source = _Flaky(platform, 0.6, 3.4)
@@ -587,7 +587,7 @@ def test_segment_rotates_on_60s_and_resize(tmp_path: Path) -> None:
     assert stamp(recorder.wall_of(nxt.t0)) == lines[0]["t_end"]  # 같은 격자로 이어짐
     # 크기가 바뀌면 닫고 새 조각
     gate.hold("s1")
-    gate.classify("s1", "on", secret=False, window=window)
+    gate.classify("s1", "on", window=window)
     view = gate.view()
     recorder._take(VideoFrame(None, (16, 8), clock.wall(), "B"), view, clock.now + 0.1)  # pyright: ignore[reportPrivateUsage]
     lines = segment_lines(tmp_path)

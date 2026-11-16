@@ -31,3 +31,15 @@ export function promoteParams(target: PromoteTarget, form: PromoteForm) {
 export function promotedText(cleanupPending: boolean): string {
   return cleanupPending ? "옮겼어요 — 정리는 다음에 마저 해요" : "옮겼어요";
 }
+
+export interface SameCandidate {
+  session: string;
+  key: string;
+  title?: string | null;
+}
+
+/** 다른 탐색 세션의 같은 화면일 수 있는 후보 안내 (UX12 1b — 안내만, 합치기는 지도에서) */
+export function sameHint(same: readonly SameCandidate[]): string {
+  const names = same.map((s) => `${s.title ?? s.key} (세션 ${s.session})`).join(", ");
+  return `다른 탐색 세션에 같은 화면일 수 있는 후보: ${names} — 지도에서 합치기로 합칠 수 있어요`;
+}

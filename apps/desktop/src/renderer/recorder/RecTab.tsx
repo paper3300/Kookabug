@@ -81,7 +81,7 @@ export function ExpectedText({ step }: { step: RecorderStep }) {
       setNote(null);
     } catch (err) {
       const e = toRpcError(err);
-      setNote(e.kind === "secret_region_overlap" ? "비밀값 칸과 겹쳐 읽지 않았어요" : `읽지 못했어요: ${e.message}`);
+      setNote(`읽지 못했어요: ${e.message}`);
     }
   };
   const apply = () => applyExpected(step.step, value);

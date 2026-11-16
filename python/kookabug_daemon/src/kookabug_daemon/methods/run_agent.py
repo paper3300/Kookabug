@@ -307,16 +307,17 @@ def recheck_source(call: Call, frame: EditorFrame) -> None:
 
 
 def _withhold_side(screen: dict[str, Any], key: str, view: AgentRun | None) -> None:
+    """에이전트에게 줄 수 없는 쪽(분류 없음·증거 파일 아님) 화면 비교를 뺀다. 비밀값 스텝 사유
+    (`secret_step`)는 UX11 B부터 생기지 않는다 (게임 비밀값은 가리지 않음)."""
     rel = screen.get(key)
     if not isinstance(rel, str):
         return
-    refused = RequestFailed("unclassified_run", "") if view is None else view.refusal(rel)
-    if refused is None:
+    if view is not None and view.refusal(rel) is None:
         return
     screen[key] = None
     screen.pop("diff_ratio", None)
     screen.pop("regions", None)
-    screen["reason"] = "secret_step" if refused.code == "secret_step" else "agent_withheld"
+    screen["reason"] = "agent_withheld"
 
 
 def _diff(call: Call) -> dict[str, Any]:

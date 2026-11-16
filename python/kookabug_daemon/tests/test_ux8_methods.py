@@ -398,11 +398,9 @@ def test_same_principal_relaunch_replaces(launch_ws: Path) -> None:
             d.client(AGENT) as agent,
             d.client(OTHER) as other,
         ):
-            human = ui.call("app.launch", {})
-            started.append(human["pid"])
             first = agent.call("app.launch", {})
             started.append(first["pid"])
-            assert "replaced_pid" not in first
+            assert "replaced_pid" not in first and "reused" not in first
             others = other.call("app.launch", {})
             started.append(others["pid"])
             second = agent.call("app.launch", {})
@@ -410,12 +408,20 @@ def test_same_principal_relaunch_replaces(launch_ws: Path) -> None:
             # 같은 주체의 이전 게임만 끝났다
             assert second["replaced_pid"] == first["pid"]
             wait_until(lambda: not alive(first["pid"]), timeout=15)
-            for pid in (human["pid"], others["pid"], second["pid"]):
+            for pid in (others["pid"], second["pid"]):
                 assert alive(pid), pid
-            # 사람이 다시 띄워도 기억하지 않는다 (아무것도 끝내지 않음)
+            # 사람이 띄운 게임은 Agent 주체의 게임을 건드리지 않는다. 사람이 다시 띄우면 사람이
+            # 전에 띄운 게임을 끝낸다 (UX12 2a — 같은 규칙. Agent가 사람 게임을 쓰는 것은
+            # test_ux12_game.py — 이 검사의 가짜 원천은 실제 프로세스의 생성 시각을 모른다)
+            human = ui.call("app.launch", {})
+            started.append(human["pid"])
+            assert "replaced_pid" not in human
             again = ui.call("app.launch", {})
             started.append(again["pid"])
-            assert "replaced_pid" not in again and alive(human["pid"])
+            assert again["replaced_pid"] == human["pid"]
+            wait_until(lambda: not alive(human["pid"]), timeout=15)
+            for pid in (again["pid"], others["pid"], second["pid"]):
+                assert alive(pid), pid
     finally:
         kill_all(started)
 

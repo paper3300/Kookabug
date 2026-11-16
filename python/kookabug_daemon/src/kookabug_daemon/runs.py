@@ -153,6 +153,8 @@ type RecordingState = Literal["starting", "recording", "paused"]
 
 log = logging.getLogger(__name__)
 
+HUMAN_GAME: Final = "human"
+"""사람(앱)이 `app.launch`로 띄운 게임의 `launched` 키 (UX12 2a)."""
 TAIL_SIZE: Final = 2000
 IDEMPOTENCY_TTL_S: Final = 600.0
 FOLLOW_INTERVAL_S: Final = 0.02
@@ -915,8 +917,12 @@ class RunManager:
         return again.finalize.input_recovery != "lease_busy"
 
     def launch_app(
-        self, profile: str | None, *, principal: Principal | None = None
-    ) -> tuple[int, int | None]:
+        self,
+        profile: str | None,
+        *,
+        principal: Principal | None = None,
+        reuse: Callable[[], Any] | None = None,
+    ) -> tuple[int, int | None, Any]:
         """`app.launch` (M5 C5): 프로필 계층까지 본 설정 `game.executable`·`game.args`·`game.cwd`로
         게임을 띄운다. 실행 Job 밖이다(실행이 끝나도 게임은 남는다). 시작 예약과 같은 잠금 안에서
         실행 중·예약·녹화 중이면 거부한다 (막히는 호출). PID를 돌려준다. Agent 연결이면 검증 세션
@@ -927,10 +933,17 @@ class RunManager:
         `running`·`ending`이면 `job_active`, 검증 세션 중이면 `verification_active`. 사람의 입력·
         개별 실행 개입 정책은 그대로다.
 
-        (PID, 끝낸 이전 게임 PID) — 같은 Agent 주체가 전에 띄운 게임이 살아 있으면 새로 띄우기
-        직전에 끝낸다 (UX8 B, `launched`)."""
+        (PID, 끝낸 이전 게임 PID) — 같은 주체가 전에 띄운 게임이 살아 있으면 새로 띄우기 직전에
+        끝낸다 (UX8 B, `launched`). 사람이 띄운 게임도 사람 몫(`HUMAN_GAME`)으로 기억해 사람이 다시
+        띄우면 같은 규칙을 따른다 (UX12 2a). Agent는 사람 게임을 끄지 않는다(그 키를 쓰지 않음).
+
+        `reuse`(UX12 검수 1 High 4): 같은 잠금·검사(작업·검증·종료 중·녹화·실행) 안에서 부른다.
+        살아 있는 사람 게임 기억을 돌려주면 새로 띄우지 않고 그 게임을 쓴다 — 이 주체의 이전
+        게임만 끝내고(끝냈으면 입력 세대를 올림) 세 번째 값으로 그 기억을 준다. 아니면 None."""
         human = principal is None or (principal.kind != "agent" and principal.job is None)
         key = None if principal is None else game_key(principal)
+        if key is None and human:
+            key = HUMAN_GAME
         with self._start_lock:
             if principal is not None:
                 self.refuse_job_bypass(principal)
@@ -940,13 +953,25 @@ class RunManager:
                     raise RequestFailed(
                         "job_active", f"작업 {busy}이(가) 도는 중이라 게임을 새로 띄우지 않는다"
                     )
-            return self._launch_locked(profile, key)
+            return self._launch_locked(profile, key, reuse)
 
     def stop_launched(self, key: str) -> int | None:
         """그 주체(`job:<작업>`·`agent:<id>`)가 `app.launch`로 띄운 게임을 끝낸다 (UX8 B)."""
         return self.launched.stop(key)
 
-    def _launch_locked(self, profile: str | None, key: str | None) -> tuple[int, int | None]:
+    def _stop_own(self, key: str | None, what: str) -> int | None:
+        """같은 주체가 전에 띄운 게임을 끝낸다 (UX8 B — 같은 게임 여럿 방지). 잠금 안에서."""
+        try:
+            return None if key is None else self.launched.stop(key)
+        except GameStopFailed as exc:
+            # 이전 게임을 남긴 채 진행하지 않는다 (기록은 남김)
+            raise RequestFailed(
+                "launch_failed", f"{exc} — {what} (사람이 끈 뒤 다시 시도)"
+            ) from exc
+
+    def _launch_locked(
+        self, profile: str | None, key: str | None, reuse: Callable[[], Any] | None = None
+    ) -> tuple[int, int | None, Any]:
         with self._lock:
             if self._verify_holds > 0:
                 raise RequestFailed(
@@ -960,6 +985,13 @@ class RunManager:
             busy = self._busy()
             if busy is not None:
                 raise RequestFailed("run_busy", f"진행 중인 실행 {busy}이(가) 있다", run_id=busy)
+            # 사람 게임 재사용 (UX12 2a, 검수 1 High 4): 위 검사를 모두 지난 뒤 같은 잠금 안에서
+            ref = None if reuse is None else reuse()
+            if ref is not None:
+                replaced = self._stop_own(key, "앱에서 띄운 게임을 쓰지 않았다")
+                if replaced is not None:
+                    self._input_epoch += 1  # 이전 게임을 끝냈다 (그 사이 검증은 무효)
+                return int(ref.pid), replaced, ref
             workspace = _open_workspace(self.root)
             options = RunOptions(profile=profile)
             problems = [d for d in workspace.check_options(options) if d.severity == "error"]
@@ -967,20 +999,14 @@ class RunManager:
                 raise RequestFailed("launch_failed", problems[0].message)
             command = _launch_command(workspace, options)
             # 같은 주체가 전에 띄운 게임: 새로 띄우기 전에 끝낸다 (UX8 B — 같은 게임 여럿 방지)
-            try:
-                replaced = None if key is None else self.launched.stop(key)
-            except GameStopFailed as exc:
-                # 이전 게임을 남긴 채 새로 띄우지 않는다 (같은 게임 여럿 방지 — 기록은 남김)
-                raise RequestFailed(
-                    "launch_failed", f"{exc} — 새 게임을 띄우지 않았다 (사람이 끈 뒤 다시 시도)"
-                ) from exc
+            replaced = self._stop_own(key, "새 게임을 띄우지 않았다")
             if self.fake_launch is not None:
                 pid = self.fake_launch(command.argv, command.cwd)
                 log.info("가짜 게임을 띄웠다: PID %d", pid)
                 self._input_epoch += 1
                 if key is not None:
                     self.launched.put(key, Launched(pid, None, fake=True))
-                return pid, replaced
+                return pid, replaced, None
 
             try:
                 try:
@@ -996,8 +1022,8 @@ class RunManager:
             if key is not None:
                 self.launched.put(key, launched)
             elif launched.job is not None:
-                launched.job.close()  # 사람이 띄운 게임은 기억하지 않는다 (끄지 않음)
-            return launched.pid, replaced
+                launched.job.close()  # 주체를 모르는 게임은 기억하지 않는다 (끄지 않음)
+            return launched.pid, replaced, None
 
     def _register(
         self,

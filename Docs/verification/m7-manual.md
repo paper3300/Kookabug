@@ -94,9 +94,9 @@ H1 결과 폴더(`screens/_explored/`), 옮긴 화면의 `*.shot.png`, `.kookabu
 
 1. **남은 승격**: 승격 중 앱·daemon을 강제 종료한 뒤 다시 열어 지도가 "남은 승격 정리" 안내를 보이면 `kookabug screen recover --show`로 남은 파일·원래 바이트 위치·경고를 본다 → 그 안내대로 한 뒤 `kookabug screen recover`. 사람이 지운 대상 파일이 있으면 원래 바이트는 `.kookabug/screens-tx-kept/<거래>/`에 남는다(확인 뒤 사람이 지운다). 승격 표시 `promoted`는 후보 파일이 아니라 **세션 폴더의 `explore.json`**(`screens/_explored/<세션>/explore.json`의 `promoted["<키>"]`)에 있다 — 잘못 남았으면 `recover --show` 안내가 가리키는 그 항목을 고친다
    - 승격 거래는 수십 ms라 사람이 그 순간에 끊기 어렵다(자동 검사는 실패 주입으로 본다 — `test_m7.py`의 kill 3지점). 여러 번 해도 남은 승격을 만들지 못하면 결과 칸에 `-`(실행 불가)와 사유를 적고 2로 넘어간다
-2. **보호 기록 손상**: 앱을 끄고 `.kookabug/agent-protect.json`을 일부러 깨뜨린 뒤 다시 연다
+2. **보호 기록 (UX11부터 없음)**: 게임 비밀값은 가리지 않으므로(2026-11-16 결정) daemon은 `.kookabug/agent-protect.json`을 쓰지도 읽지도 않는다. 옛 파일이 남아 있으면 깨뜨린 채 앱을 다시 열어 본다
 
-- 기대 결과: 1은 복구 뒤 `screens/`가 승격 전이나 후 중 하나로 일관되고 `recover`가 0. 2는 에이전트 창 이미지가 모두 막히고(`protect_state_unknown`) 사람 연결에 알림, 원본 옆 `.corrupt.<시각>` 사본. 원본을 고치거나 지우고 daemon을 다시 시작하면 풀린다. 비밀값 키 목록만 비울 때는 `kookabug screen protect --clear-keys`(daemon이 꺼져 있을 때)
+- 기대 결과: 1은 복구 뒤 `screens/`가 승격 전이나 후 중 하나로 일관되고 `recover`가 0. 2는 옛 파일이 깨져 있어도 에이전트 창 이미지가 막히지 않고 알림도 없다(옛 파일은 지워도 된다 — 정리 명령 `screen protect`는 UX12에서 없앴다)
 
 ## 3. 기본값으로 진행한 사용자 결정 (U)
 

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import re
 import threading
-from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any, Final, Literal
 
@@ -163,16 +162,6 @@ class RecorderTexts:
         """판정 재료(가림 글자 길이·OCR 대조)에만 쓴다."""
         with self._lock:
             return self._entry(span_id).text
-
-    def protected_texts(self) -> Iterator[SecretText]:
-        """이름·제목 짓기에서 피할 원문: 일반으로 확정되지 않은 모든 구간."""
-        with self._lock:
-            items = [
-                e.text
-                for span_id, e in self._texts.items()
-                if self.classifier.state(span_id) != "ordinary"
-            ]
-        yield from items
 
     def graph_text(self, span_id: int) -> str | dict[str, str]:
         """`type_text.text`에 넣을 값: 일반이면 문자열, 비밀이면 `{"$secret": 키}`."""

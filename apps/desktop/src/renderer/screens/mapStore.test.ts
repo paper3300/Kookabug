@@ -19,7 +19,7 @@ import {
   shortestPath,
 } from "./mapStore";
 import { card, MAP, S } from "./map.testutil";
-import { promoteParams, promotedText } from "./promote";
+import { promoteParams, promotedText, sameHint } from "./promote";
 import { recordOverrideText } from "../runs/runListStore";
 
 describe("기록 뷰어 머리 줄 (B2a 넘김)", () => {
@@ -122,6 +122,10 @@ describe("상태 바·안내 글자", () => {
     expect(recoveryText("x")).toContain("kookabug screen recover --show");
     expect(promotedText(true)).toBe("옮겼어요 — 정리는 다음에 마저 해요");
     expect(promotedText(false)).toBe("옮겼어요");
+    // UX12 1b: 다른 세션의 같은 화면일 수 있는 후보는 안내만 (합치기는 지도에서)
+    expect(sameHint([{ session: "s2", key: "title", title: "타이틀" }, { session: "s3", key: "title" }])).toBe(
+      "다른 탐색 세션에 같은 화면일 수 있는 후보: 타이틀 (세션 s2), title (세션 s3) — 지도에서 합치기로 합칠 수 있어요",
+    );
   });
 
   test("확인·승격 params는 같은 값 (revision이 맞게)", () => {

@@ -3,6 +3,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
 import { MAP, S } from "./map.testutil";
+import { SameHint } from "./PromoteDialog";
 import { noShotText, ScreenCard } from "./ScreenCard";
 import { ScreenPropsView, ScreenSidebarView } from "./ScreenSidebar";
 
@@ -39,5 +40,14 @@ describe("렌더", () => {
     const html = renderToStaticMarkup(<ScreenPropsView map={map} selected={up!.node} />);
     expect(html).toMatch(/data-kind="list">목록<\/span><span>Server 1<\/span>/);
     expect(html).not.toContain(">Se<");
+  });
+
+  test("UX12: 같은 화면일 수 있는 후보는 안내만 (체크·함께 합치기 없음)", () => {
+    const html = renderToStaticMarkup(<SameHint same={[{ session: "s2", key: "title", title: "타이틀" }]} />);
+    expect(html).toContain('data-part="promote-same-hint"');
+    expect(html).toContain("타이틀 (세션 s2)");
+    expect(html).toContain("지도에서 합치기로");
+    expect(html).not.toContain("checkbox");
+    expect(renderToStaticMarkup(<SameHint same={[]} />)).toBe("");
   });
 });

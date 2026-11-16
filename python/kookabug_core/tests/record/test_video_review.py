@@ -83,10 +83,10 @@ def test_slow_probe_leaves_starting_gap_and_no_overlap(tmp_path: Path) -> None:
     recorder = VideoRecorder(run_dir, gate, platform, factory).start()
     # 시험을 기다리는 동안 게이트가 바뀐다 (창 없음 → 기록)
     gate.hold("s1")
-    gate.classify("s1", "on", secret=False, window=None)
+    gate.classify("s1", "on", window=None)
     gate.release("s1")
     gate.hold("s2")
-    gate.classify("s2", "on", secret=False, window=game.window)
+    gate.classify("s2", "on", window=game.window)
     time.sleep(1.6)
     gate.release("s2")
     assert recorder.stop()
@@ -122,8 +122,8 @@ def test_off_subgraph_call_step_classified_off(tmp_path: Path) -> None:
     states: list[tuple[str, str, str | None]] = []
 
     class Spy(VideoGate):
-        def classify(self, step: str, mode: Any, *, secret: bool, window: WindowRef | None) -> None:
-            super().classify(step, mode, secret=secret, window=window)
+        def classify(self, step: str, mode: Any, *, window: WindowRef | None) -> None:
+            super().classify(step, mode, window=window)
             view = self.view()
             states.append((step, view.state, view.gap))
 
@@ -166,11 +166,11 @@ def test_dead_recorder_does_not_accumulate_off_spans(tmp_path: Path, dead: str) 
     else:
         recorder = VideoRecorder(run_dir, gate, platform, FakeEncoderFactory(fail_write=1)).start()
         gate.hold("w")
-        gate.classify("w", "on", secret=False, window=window)
+        gate.classify("w", "on", window=window)
     time.sleep(0.6)
-    for i in range(5_000):  # 비밀값 스텝이 이어지는 반복
+    for i in range(5_000):  # 영상 끔 스텝이 이어지는 반복
         gate.hold(f"s{i}")
-        gate.classify(f"s{i}", "on", secret=True, window=window)
+        gate.classify(f"s{i}", "off", window=window)
         gate.release(f"s{i}")
     assert len(gate._spans) <= 1  # pyright: ignore[reportPrivateUsage]
     assert recorder.stop()
@@ -184,7 +184,7 @@ def test_closed_gate_stops_recording_before_stop(tmp_path: Path) -> None:
     gate = VideoGate()
     gate.set_base("on")
     gate.hold("s1")
-    gate.classify("s1", "on", secret=False, window=game.window)
+    gate.classify("s1", "on", window=game.window)
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     factory = FakeEncoderFactory()

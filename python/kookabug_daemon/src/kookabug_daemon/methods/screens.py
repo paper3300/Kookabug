@@ -128,7 +128,7 @@ def _frame(call: Call) -> EditorFrame:
 
 
 def _save(call: Call) -> dict[str, Any]:
-    from kookabug_daemon.screen_save import add_moves, save
+    from kookabug_daemon.screen_save import add_moves, relocate, save
 
     if call.principal.kind != "agent":
         raise RequestFailed("agent_only", "화면 지도 저장은 에이전트 탐색 세션만 한다")
@@ -162,6 +162,16 @@ def _save(call: Call) -> dict[str, Any]:
         if card is None:
             failed.append((source, fixed))
     session.add_pending([*later, *failed])
+    # UX12 1a: 이 화면(팝업 등)이 더 구체적이고 최근 이동의 입력 직전 프레임에서 맞으면, 그 입력은
+    # 이 화면 위에서 한 것이다 — 배경 카드에 잘못 남은 이동을 이 카드로 옮긴다
+    try:
+        relocated, kept = relocate(call.daemon, session, key)
+    except RequestFailed:
+        relocated, kept = [], []
+    if relocated:
+        result["relocated"] = relocated
+    if kept:
+        result["relocate_kept"] = kept  # 사람이 고친(지운) 이동은 옮기지 않았다
     session.move_to(("explored", key))
     if session.first is None and call.params.get("of") is None:
         session.first = key  # 출발 화면 (UX11 A4 — 끊긴 화면 목록에서 뺀다)
@@ -326,13 +336,121 @@ def _check(call: Call) -> dict[str, Any]:
         raise _failed(exc) from exc
     if result["ok"]:
         _check_images(call, result)
+        same = _same_screens(call, str(call.params["session"]), str(call.params["key"]))
+        if same:
+            result["same"] = same
     return result
+
+
+def _evaluator(call: Call) -> Any:
+    """(화면, 대표 스크린샷 경로, 기록 크기) → 판정 상태(못 하면 None). 플랫폼이 없으면 예외."""
+    from kookabug_core.screens import ScreenDef
+    from kookabug_daemon.screen_save import _loader, _reader  # pyright: ignore[reportPrivateUsage]
+
+    root: Path = call.daemon.root
+    load, reader = _loader(root), _reader(call.daemon)
+
+    def evaluate(screen: ScreenDef, shot_rel: str, size: tuple[int, int]) -> str | None:
+        from kookabug_platform.screens import evaluate_screen
+        from kookabug_platform.vision import FrameMeta, Vision
+
+        try:
+            pixels = _restore(resolve_path(root, shot_rel).path.read_bytes(), size)
+            meta = FrameMeta(size, 96, backend="editor")
+            return evaluate_screen(screen, load, pixels, meta, Vision(), ocr=reader).state
+        except Exception:
+            return None
+
+    return evaluate
+
+
+SAME_SIDE: Final = 160
+"""같은 화면 제안의 대표 스크린샷 비교 폭 (축소 이미지)."""
+SAME_DIFF: Final = 0.005
+"""축소 이미지에서 다른 픽셀 비율이 이 이하일 때만 같은 화면 제안 (UX12 검수 1 High 1 — 같은 틀의
+다른 팝업은 제목·본문 글자만큼 다르다. 예제 로그인 실패·점검 안내 ≈ 2%)."""
+SAME_DELTA: Final = 24
+
+
+def _shot_diff(root: Path, a: str, b: str) -> float | None:
+    """두 대표 스크린샷의 다른 픽셀 비율 (같은 비율로 `SAME_SIDE` 폭 축소). 못 읽으면 None."""
+    import cv2
+    import numpy as np
+
+    pics: list[Any] = []
+    for rel in (a, b):
+        try:
+            data = resolve_path(root, rel).path.read_bytes()
+        except RequestFailed, InvalidParams, OSError:
+            return None
+        pixels = cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if pixels is None:
+            return None
+        pics.append(pixels)
+    first, second = pics
+    if first.shape[1] * second.shape[0] != second.shape[1] * first.shape[0]:
+        return None  # 가로세로 비율이 다르면 같은 화면으로 보지 않는다
+    height = max(1, round(SAME_SIDE * first.shape[0] / first.shape[1]))
+    x, y = (
+        np.asarray(cv2.resize(p, (SAME_SIDE, height), interpolation=cv2.INTER_AREA), np.int16)
+        for p in pics
+    )
+    return float(np.mean(np.abs(x - y).max(axis=-1) > SAME_DELTA))
+
+
+def _same_screens(call: Call, session: str, key: str) -> list[dict[str, Any]]:
+    """같은 화면 **제안** (UX12 1b, 검수 1 High 1): 끝난 다른 탐색 세션의 후보 중 같은 `kind`이고,
+    서로의 대표 스크린샷에서 판정 조건이 맞고, 대표 스크린샷 축소 이미지 차이가 `SAME_DIFF` 이하인
+    것. 판정 조건 상호 일치만으로는 같은 틀의 다른 팝업을 가르지 못한다 — 근거가 부족하면 넣지
+    않는다. 안내만 한다(검수 2 결정) — 합치기는 사람이 지도에서 기존 합치기로. 세션·키 순. 플랫폼이
+    없으면 빈 목록."""
+    from kookabug_core.screens import explored_candidates
+
+    root: Path = call.daemon.root
+    found = explored_candidates(Workspace.open(root))
+    mine = next(
+        (c.screen for c in found if c.session == session and c.key == key and c.screen), None
+    )
+    if mine is None or mine.of is not None or not mine.detect() or mine.shot is None:
+        return []
+    live = set(call.daemon.explore.live_ids())
+    others = [
+        c
+        for c in found
+        if c.placement == "session"
+        and c.session is not None
+        and c.session != session
+        and c.session not in live
+        and c.screen is not None
+        and c.screen.of is None
+        and c.screen.kind == mine.kind
+        and c.screen.detect()
+        and c.screen.shot is not None
+    ]
+    if not others:
+        return []
+    try:
+        evaluate = _evaluator(call)
+    except Exception:  # 플랫폼 없음: 찾지 않는다
+        return []
+    out: list[dict[str, Any]] = []
+    for c in others:
+        assert c.screen is not None and c.screen.shot is not None and c.session is not None
+        diff = _shot_diff(root, mine.shot.image, c.screen.shot.image)
+        if diff is None or diff > SAME_DIFF:
+            continue
+        if evaluate(c.screen, mine.shot.image, mine.shot.client_size) != "matched":
+            continue
+        if evaluate(mine, c.screen.shot.image, c.screen.shot.client_size) != "matched":
+            continue
+        out.append({"session": c.session, "key": c.key, "title": c.screen.title})
+    return out
 
 
 def _check_images(call: Call, result: dict[str, Any]) -> None:
     """후보 판정 조건을 그 대표 스크린샷(기록 크기로 되돌림)에서 평가 — 맞아야 한다. 스크린샷 있는
     확정 화면에서도 평가해 맞으면 경고 (같은 화면일 수 있다)."""
-    from kookabug_core.screens import ScreenDef, ScreenFileError, read_screen_file, screen_index
+    from kookabug_core.screens import ScreenFileError, read_screen_file, screen_index
 
     root: Path = call.daemon.root
     session, key = str(call.params["session"]), str(call.params["key"])
@@ -345,25 +463,12 @@ def _check_images(call: Call, result: dict[str, Any]) -> None:
         result["shot"] = "none"
         return
     try:
-        from kookabug_daemon.screen_save import _loader, _reader  # pyright: ignore[reportPrivateUsage]
-
-        load, reader = _loader(root), _reader(call.daemon)
+        evaluate = _evaluator(call)
     except Exception as exc:  # 플랫폼 없음: 이미지 확인 없이
         result["warnings"].append(
             f"판정 조건을 스크린샷에서 확인하지 못했다 ({type(exc).__name__})"
         )
         return
-
-    def evaluate(screen: ScreenDef, shot_rel: str, size: tuple[int, int]) -> str | None:
-        from kookabug_platform.screens import evaluate_screen
-        from kookabug_platform.vision import FrameMeta, Vision
-
-        try:
-            pixels = _restore(resolve_path(root, shot_rel).path.read_bytes(), size)
-            meta = FrameMeta(size, 96, backend="editor")
-            return evaluate_screen(screen, load, pixels, meta, Vision(), ocr=reader).state
-        except Exception:
-            return None
 
     if candidate.shot is None:
         result["shot"] = "none"

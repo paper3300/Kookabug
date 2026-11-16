@@ -384,6 +384,10 @@
           "maximum": 9007199254740991,
           "minimum": 1,
           "type": "integer"
+        },
+        "reused": {
+          "const": true,
+          "description": "UX12: 사람(앱 마법사 등)이 띄운 게임이 떠 있어 새로 띄우지 않고 그 게임(pid)을 이 주체의 @game으로 정했다. 사람 게임은 끄지 않는다"
         }
       },
       "required": ["pid"],
@@ -10938,6 +10942,26 @@
       "title": "ScreenReadTextParams",
       "type": "object"
     },
+    "ScreensCandidateRef": {
+      "additionalProperties": false,
+      "description": "UX12: 탐색 세션 후보 하나",
+      "properties": {
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "type": "string"
+        },
+        "session": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "type": ["string", "null"]
+        }
+      },
+      "required": ["key", "session"],
+      "title": "ScreensCandidateRef",
+      "type": "object"
+    },
     "ScreensChangedParams": {
       "additionalProperties": false,
       "description": "M7: screens/ 아래 화면 지도 파일이 바뀜 (ui 연결에만). 화면 지도 탭은 screens.map을 다시 부른다",
@@ -11014,6 +11038,13 @@
           },
           "description": "승격이 고칠 파일 → 지금 revision (없는 파일은 null). screens.promote의 base_revisions로 그대로 넘긴다",
           "type": "object"
+        },
+        "same": {
+          "description": "UX12: 끝난 다른 탐색 세션의 같은 화면일 수 있는 후보 — 안내만 한다 (같은 kind, 서로의 대표 스크린샷에서 판정 조건이 맞고, 대표 스크린샷 축소 이미지 차이가 작음). 합치려면 사람이 그 후보를 지도에서 확정 화면에 합친다(mode merge). 없으면 없다",
+          "items": {
+            "$ref": "#/$defs/ScreensCandidateRef"
+          },
+          "type": "array"
         },
         "shot": {
           "description": "후보 판정 조건을 그 대표 스크린샷에서 평가한 결과 (matched·not_matched·unknown·none = 스크린샷 없음)",
@@ -11681,6 +11712,52 @@
         "reason": {
           "description": "shot omitted의 보호 사유",
           "type": "string"
+        },
+        "relocate_kept": {
+          "description": "UX12: 옮길 이동이었지만 출발 카드의 그 이동이 자동 기록과 달라(사람이 고침 — changed) 또는 없어져(missing), 또는 옮겨 간 카드가 버려졌거나 그 이동이 고쳐져(target_gone) 출발 이동을 그대로 둔 것",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "type": "string"
+              },
+              "reason": {
+                "enum": ["changed", "missing", "target_gone"]
+              },
+              "to": {
+                "type": ["string", "null"]
+              }
+            },
+            "required": ["from", "reason", "to"],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "relocated": {
+          "description": "UX12: 이 화면이 더 구체적이고 최근 이동의 입력 직전 프레임에서 맞아, 출발 카드(배경 화면)에 잘못 남은 이동을 이 카드로 옮겼다. 없으면 없다",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "from": {
+                "description": "원래 출발 화면 (후보 키 또는 확정 화면 ID)",
+                "type": "string"
+              },
+              "now_from": {
+                "description": "옮긴 뒤 출발 화면 (이 후보 키)",
+                "type": "string"
+              },
+              "removed": {
+                "description": "원래 출발 카드에서 뺐다 (그 카드에 원래 같은 이동이 있었으면 false)",
+                "type": "boolean"
+              },
+              "to": {
+                "type": ["string", "null"]
+              }
+            },
+            "required": ["from", "now_from", "removed", "to"],
+            "type": "object"
+          },
+          "type": "array"
         },
         "revision": {
           "type": "string"

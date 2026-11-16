@@ -10,43 +10,29 @@
 
 UX11 B (2026-11-16 사용자 결정 — 로컬 툴이라 게임 비밀값은 가리지 않는다): 비밀값을 입력한 창의
 보호 기록(`secret_field`·`secret_field_unknown`)·칸 상자 근거·기록 손상 시 막기를 없앴다. 옛
-`.kookabug/agent-protect.json` 형식 읽기(`parse_protect_file`)는 CLI `screen protect`가 옛 파일을
-정리할 때만 쓴다 — daemon은 읽지 않는다.
+`.kookabug/agent-protect.json`은 쓰지도 읽지도 않는다(남아 있어도 무시 — 지워도 된다, UX12).
 """
 
 from __future__ import annotations
 
-import json
-import re
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final, Literal, cast
+from typing import TYPE_CHECKING, Final, Literal
 
 from kookabug_daemon.protocol import RequestFailed
-from kookabug_daemon.screen_source import ScreenSource, WindowBinding
+from kookabug_daemon.screen_source import ScreenSource
 
 if TYPE_CHECKING:
     from kookabug_daemon.frames import EditorFrame, FrameCache
     from kookabug_daemon.targets import TargetStore
 
-__all__ = [
-    "CLEAR",
-    "FILE",
-    "FORMAT",
-    "HINTS",
-    "FrameGuard",
-    "Guard",
-    "ProtectFileError",
-    "parse_protect_file",
-]
+__all__ = ["CLEAR", "FILE", "HINTS", "FrameGuard", "Guard"]
 
 FILE: Final = ".kookabug/agent-protect.json"
 """옛 보호 기록 파일 (UX11 B부터 daemon은 쓰지도 읽지도 않는다)."""
-FORMAT: Final = "kookabug.agent-protect/0"
 
 type GuardState = Literal["clear", "protected", "unchecked"]
-type Box = tuple[int, int, int, int]
 
 HINTS: Final[Mapping[str, str]] = {
     "sensitive_visible": "민감 대상이 보이는 화면이라 이미지를 보내지 않아요",
@@ -96,106 +82,6 @@ class Guard:
 
 
 CLEAR: Final = Guard("clear")
-
-_CREATED: Final = re.compile(r"[1-9][0-9]{0,19}")
-"""파일의 프로세스 생성 시각: 양의 10진 정수 그대로 (부호·공백·앞자리 0·비숫자 없음)."""
-_MAX_CREATED: Final = (1 << 64) - 1
-_MAX_PID: Final = (1 << 32) - 1
-_MAX_HWND: Final = (1 << 53) - 1
-
-
-class ProtectFileError(ValueError):
-    """보호 기록 파일이 문법·구조 어느 쪽이든 틀렸다."""
-
-
-def parse_protect_file(raw: bytes) -> tuple[set[str], dict[WindowBinding, _Record]]:
-    """`agent-protect.json`을 엄격하게 읽는다 (비밀값 키 목록, 창 기록). 형식이 하나라도 틀리면
-    `ProtectFileError` (R1). daemon 시작과 사람 CLI(`screen protect`)가 같이 쓴다."""
-    try:
-        data = json.loads(raw.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError) as exc:
-        raise ProtectFileError(f"JSON이 아니다: {exc}") from exc
-
-    def fail(where: str) -> ProtectFileError:
-        return ProtectFileError(f"보호 기록 형식이 틀렸다: {where}")
-
-    def is_int(value: object) -> bool:
-        return isinstance(value, int) and not isinstance(value, bool)
-
-    def strings(value: object, where: str) -> set[str]:
-        if not isinstance(value, list) or not all(isinstance(v, str) and v for v in value):
-            raise fail(where)
-        return set(cast(list[str], value))
-
-    if not isinstance(data, dict) or set(data) != {"format", "windows", "secret_keys"}:
-        raise fail("/")
-    body = cast(dict[str, Any], data)
-    if body["format"] != FORMAT:
-        raise fail("/format")
-    keys = strings(body["secret_keys"], "/secret_keys")
-    windows = body["windows"]
-    if not isinstance(windows, list):
-        raise fail("/windows")
-    records: dict[WindowBinding, _Record] = {}
-    for i, item in enumerate(cast(list[Any], windows)):
-        where = f"/windows/{i}"
-        if not isinstance(item, dict) or set(item) != {"window", "keys", "fields"}:
-            raise fail(where)
-        entry = cast(dict[str, Any], item)
-        window = entry["window"]
-        if not isinstance(window, dict) or set(window) != {"hwnd", "pid", "created"}:
-            raise fail(f"{where}/window")
-        bound = cast(dict[str, Any], window)
-        if not (is_int(bound["hwnd"]) and 0 < bound["hwnd"] <= _MAX_HWND):
-            raise fail(f"{where}/window/hwnd")
-        if not (is_int(bound["pid"]) and 0 < bound["pid"] <= _MAX_PID):
-            raise fail(f"{where}/window/pid")
-        created = bound["created"]
-        if not (
-            isinstance(created, str)
-            and _CREATED.fullmatch(created) is not None
-            and int(created) <= _MAX_CREATED
-        ):
-            # 직렬화 규칙(WindowBinding.created = 양의 10진 정수) 밖이면 손상 — 다른 프로세스의
-            # 창으로 보고 지우지 않는다
-            raise fail(f"{where}/window/created")
-        record_keys = strings(entry["keys"], f"{where}/keys")
-        if not record_keys:
-            raise fail(f"{where}/keys")
-        fields = entry["fields"]
-        if not isinstance(fields, list) or not fields:
-            raise fail(f"{where}/fields")
-        for j, box in enumerate(cast(list[Any], fields)):
-            if box is None:
-                continue
-            values = cast(list[Any], box) if isinstance(box, list) else []
-            if len(values) != 4 or not all(is_int(v) for v in values):
-                raise fail(f"{where}/fields/{j}")
-            if values[0] < 0 or values[1] < 0 or values[2] <= 0 or values[3] <= 0:
-                raise fail(f"{where}/fields/{j}")
-        binding = WindowBinding(int(bound["hwnd"]), int(bound["pid"]), str(bound["created"]))
-        if binding in records:
-            raise fail(f"{where}/window")
-        # 기준 프레임은 메모리에만 있으므로 다시 읽은 칸은 모두 위치 모름(창 수명 동안 보호)
-        records[binding] = _Record(
-            binding, record_keys, [_Field(None, None, None) for _ in cast(list[Any], fields)]
-        )
-    return keys, records
-
-
-@dataclass
-class _Field:
-    box: Box | None
-    dpi: int | None
-    span: int | None
-    """`FieldPresenceTracker` 등록 번호 (기준 프레임이 메모리에 있을 때만)."""
-
-
-@dataclass
-class _Record:
-    binding: WindowBinding
-    keys: set[str] = field(default_factory=set[str])
-    fields: list[_Field] = field(default_factory=list[_Field])
 
 
 class FrameGuard:

@@ -200,3 +200,14 @@ def test_nested_link_value_rechecked_at_run(tmp_path: Path, value: Any) -> None:
 )
 def test_union_container_coercion_uses_matching_branch(pin: str, value: Any, expected: Any) -> None:
     assert coerce(value, parse_pin_type(pin)) == expected
+
+
+def test_process_string_constant_explains_alternative(tmp_path: Path) -> None:
+    """UX12 2b: process에 "@game" 같은 글자를 주면 대안(잇기·process 비우기)을 알려 준다."""
+    found = errors(tmp_path, "core.app.close", {"process": "@game"})
+    assert len(found) == 1
+    code, pointer, message = found[0]
+    assert (code, pointer) == ("type_mismatch", "/nodes/n_x/in/process")
+    assert "상수로 줄 수 없다" in message and "$link" in message and "process를 비우면" in message
+    # process를 비우면 검증을 지난다 (지금 대상 창의 프로세스를 닫는다)
+    assert errors(tmp_path / "empty", "core.app.close", {}) == []

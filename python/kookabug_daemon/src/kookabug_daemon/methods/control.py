@@ -390,17 +390,31 @@ async def _reserved(
 async def _launch(call: Call) -> dict[str, Any]:
     call.daemon.run_manager.refuse_job_bypass(call.principal)  # 사람 확인 전 (잠금 안에서 다시)
     await call.daemon.approvals.authorize(call, "")
+    game = call.daemon.game
+    agent = call.principal.kind == "agent"
     profile = call.params.get("profile")
-    pid, replaced = await asyncio.to_thread(
+    # 사람(앱 마법사)이 띄운 게임이 떠 있으면 Agent는 같은 게임을 또 띄우지 않고 그 게임을 이
+    # 주체의 `@game`으로 쓴다 (UX12 2a). 사람 게임은 끄지 않는다 — 이 주체가 전에 띄운 자기 게임만
+    # 끝낸다. 판단은 시작 잠금·검증·실행·녹화 검사 안에서 한다 (검수 1 High 4 — 승인 대기 뒤 다시)
+    pid, replaced, reused = await asyncio.to_thread(
         functools.partial(
             call.daemon.run_manager.launch_app,
             None if profile is None else str(profile),
             principal=call.principal,
+            reuse=game.human_game if agent else None,
         )
     )
-    # `@game`의 대상 (UX7 C2): 띄운 주체의 기억에 PID·프로세스 생성 시각으로 (사람이면 쓰지 않음)
-    await asyncio.to_thread(call.daemon.game.remember_pid, call.principal, pid)
+    # `@game`의 대상 (UX7 C2): 띄운 주체의 기억에 PID·프로세스 생성 시각으로. 사람이 띄운 게임은
+    # 사람 몫으로 기억한다 — Agent가 그 창을 `@game`으로 쓰고 다시 띄우지 않게 (UX12 2a)
+    if reused is not None:
+        await asyncio.to_thread(game.adopt, call.principal, reused)
+    elif agent:
+        await asyncio.to_thread(game.remember_pid, call.principal, pid)
+    else:
+        await asyncio.to_thread(game.remember_human, pid)
     out: dict[str, Any] = {"pid": pid}
+    if reused is not None:
+        out["reused"] = True
     if replaced is not None:
         out["replaced_pid"] = replaced  # 같은 주체가 전에 띄운 게임을 끝냈다 (UX8 B)
     return out

@@ -13,8 +13,8 @@
 이상). 원소는 `$link`(정수에 연결할 수 있는 출력)여도 된다 — 실행 전에는 모양·연결 타입만 보고,
 연결로 온 값의 정수 여부·너비·높이는 실행기가 입력을 계산한 뒤 같은 함수로 다시 본다. 실행기는
 핀 타입대로 `Point`·`Rect`로 바꿔 노드에 준다(`coerce`, 유니온은 실제로 맞는 항). `match`는
-상수로 쓸 수 없다(찾기 결과는 연결로만 온다). 그 밖의 구조 타입(`image`·`window` 등)과 플러그인
-타입은 상수 모양을 보지 않는다.
+상수로 쓸 수 없다(찾기 결과는 연결로만 온다). `process`도 상수로 쓸 수 없다(게임 실행 노드 출력 —
+UX12). 그 밖의 구조 타입(`image`·`window` 등)과 플러그인 타입은 상수 모양을 보지 않는다.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from kookabug_core.registry import InputDecl
 from kookabug_core.schema.pintype import DictOf, ListOf, Named, PinType, Union, parse_pin_type
 from kookabug_core.validate.context import ValidationContext
 from kookabug_sdk import Secret
-from kookabug_sdk.types import Match, Point, Rect, Target
+from kookabug_sdk.types import Match, Point, ProcessRef, Rect, Target
 
 __all__ = ["assignable", "check", "coerce", "pin_type", "value_problems"]
 
@@ -162,6 +162,10 @@ def _named_fits(value: Any, name: str, link_type: LinkType = _no_link) -> bool:
             return isinstance(value, Secret)
         case "target":
             return isinstance(value, Target)
+        case "process":
+            # 프로세스는 게임 실행 노드 출력으로만 온다 — "@game" 같은 글자 상수는 받지 않는다
+            # (UX12 2b: 실행 중 엉뚱한 오류 대신 검증에서 대안을 알린다)
+            return isinstance(value, ProcessRef)
         case _:
             return value is not None and not isinstance(value, Secret | Target)
 
@@ -238,6 +242,12 @@ def _type_problems(
         if t.name in _SHAPES:
             why = f" (상수는 {_SHAPES[t.name]} 정수 클라이언트 픽셀"
             why += ", 너비·높이 1 이상)" if t.name == "rect" else ")"
+        elif t.name == "process":
+            # UX12 2b: "@game" 같은 글자는 MCP 도구의 창 이름이지 그래프 값이 아니다
+            why = (
+                " (process는 상수로 줄 수 없다 — 게임 실행 노드 출력을 $link로 잇는다. "
+                "게임 종료(core.app.close)는 process를 비우면 지금 대상 창의 프로세스를 닫는다)"
+            )
         yield path, "type_mismatch", f"{_show(value)}은(는) {t} 타입이 아니다{why}"
 
 

@@ -7,7 +7,7 @@ import type { ResultOf } from "@kookabug/schema";
 import { useEffect, useState } from "react";
 import { client, toRpcError } from "../rpc/client";
 import { loadMap, recoveryText, select, setNotice, type PromoteTarget } from "./mapStore";
-import { promoteParams, promotedText, type PromoteForm } from "./promote";
+import { promoteParams, promotedText, sameHint, type PromoteForm, type SameCandidate } from "./promote";
 import css from "./map.module.css";
 
 type Check = ResultOf<"screens.check">;
@@ -149,6 +149,7 @@ export function PromoteDialog({ target, onClose }: { target: PromoteTarget; onCl
               {w}
             </span>
           ))}
+          {check?.ok === true && <SameHint same={check.same ?? []} />}
           {failed !== null && (
             <span className={css.problem} data-part="promote-failed">
               {failed}
@@ -171,5 +172,15 @@ export function PromoteDialog({ target, onClose }: { target: PromoteTarget; onCl
         </div>
       </div>
     </div>
+  );
+}
+
+/** 다른 탐색 세션의 같은 화면일 수 있는 후보 안내 (UX12 1b — 안내만, 합치기는 지도의 합치기로) */
+export function SameHint({ same }: { same: readonly SameCandidate[] }) {
+  if (same.length === 0) return null;
+  return (
+    <span className={css.muted} data-part="promote-same-hint">
+      {sameHint(same)}
+    </span>
   );
 }

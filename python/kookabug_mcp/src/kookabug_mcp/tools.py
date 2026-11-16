@@ -420,6 +420,15 @@ def _source_read(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     return ok_result(f"{got['ref']} ({got['format']}, {got['chars']}자){more}", got)
 
 
+ATTACH_SKIPS: Final = (
+    "core.app.launch — 새로 띄우지 않고 켜져 있는 게임 창·프로세스를 내놓는다",
+    "core.app.close — 게임을 끄지 않는다 (closed로 지나감)",
+    "graph.call → subgraphs/common/game_launch.graph.json — 건너뛰고 켜진 게임 창을 내놓는다",
+    "graph.call → subgraphs/common/game_exit.graph.json — 호출을 통째로 건너뛴다",
+)
+"""붙여 실행이 대신하는 노드 (UX7 D, `executor.AttachStart`). 다른 서브그래프는 그대로 돈다."""
+
+
 def _run_start(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     params: dict[str, Any] = {"path": args["path"], "idempotency_key": args["idempotency_key"]}
     for key in ("profile", "deadline_ms", "settings", "basis", "attach", "from_node"):
@@ -427,7 +436,14 @@ def _run_start(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
             params[key] = args[key]
     started = _daemon(link, "run.start", params)
     data = {"run": started["run_id"], **started}
-    how = " — 붙여 실행(근거 아님)" if args.get("attach") else ""
+    how = ""
+    if args.get("attach"):
+        # UX12 2c: 붙여 실행이 대신하는(건너뛰는) 노드를 결과에 분명히 둔다
+        data["attach_skips"] = list(ATTACH_SKIPS)
+        how = (
+            " — 붙여 실행(근거 아님). 게임 실행·종료 노드와 게임 실행·종료 서브그래프 호출은 "
+            "건너뛴다(attach_skips) — 그 서브그래프를 확인하려면 보통 실행"
+        )
     return ok_result(
         f"실행 {started['run_id']} 시작 ({started['graph']}){how}. kb_run_status의 wait_ms로 "
         "기다린다",
@@ -730,6 +746,12 @@ def _app_launch(link: DaemonLink, args: Mapping[str, Any]) -> dict[str, Any]:
     launched = _daemon(link, "app.launch", params)
     replaced = launched.get("replaced_pid")
     note = f" — 이전에 띄운 게임 PID {replaced}는 끝냈다" if replaced else ""
+    if launched.get("reused"):
+        return ok_result(
+            f"앱에서 띄운 게임이 떠 있어 새로 띄우지 않고 그 게임(PID {launched['pid']})을 "
+            f'window "@game"으로 쓴다{note}',
+            launched,
+        )
     return ok_result(f"게임을 띄웠다 (PID {launched['pid']}){note}", launched)
 
 
@@ -1042,10 +1064,13 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "실행 시작",
         "그래프를 실행한다. idempotency_key가 같으면 다시 보내도 실행 하나. basis는 실행 기준"
         "(team = 팀 파일만, working = 작업 기준 덧씌움 — 생략하면 작업 연결은 working, 그 밖은 "
-        "team. qa_runner는 team만). attach: true면 켜져 있는 게임(@game)에 붙여 돌린다 — 게임 "
-        "실행 노드·게임 실행 서브그래프는 새로 띄우지 않고, 게임 종료도 하지 않는다. from_node면 "
-        "그 노드부터(고친 노드부터 다시 확인). 붙여 실행은 탐침(source agent_attach)이라 사건·채택 "
-        "근거가 아니다 — 마지막 확인은 처음부터 하는 보통 실행 1번",
+        "team. qa_runner는 team만). attach: true면 켜져 있는 게임(@game)에 붙여 돌린다 — "
+        "core.app.launch·core.app.close 노드와 게임 실행·종료 서브그래프(subgraphs/common/"
+        "game_launch·game_exit) 호출은 건너뛴다(결과 attach_skips — 의도: 켜진 게임을 끄거나 또 "
+        "띄우지 않는다). 그래서 게임 실행·종료 서브그래프 자체는 붙여 실행으로 확인할 수 없다 — "
+        "보통 실행으로. 다른 서브그래프는 그대로 돈다. from_node면 그 노드부터(고친 노드부터 다시 "
+        "확인). 붙여 실행은 탐침(source agent_attach)이라 사건·채택 근거가 아니다 — 마지막 확인은 "
+        "처음부터 하는 보통 실행 1번",
         _schema(
             {
                 "path": PATH,
@@ -1180,8 +1205,10 @@ TOOL_DEFS: Final[tuple[ToolDef, ...]] = (
         "게임 실행",
         "프로필의 게임을 띄운다 (설정 game.executable·game.args. 실행·녹화 중이면 거부). 띄운 "
         '게임은 window "@game"으로 부른다. 이 연결이 전에 띄운 게임이 살아 있으면 먼저 끝낸다'
-        "(replaced_pid). 창이 안 보이거나 로딩 중이면 다시 띄우지 말고 kb_explore_step(window "
-        '"@game", wait_ms)로 기다린다',
+        "(replaced_pid). 사람이 앱에서 띄운 게임이 떠 있으면 새로 띄우지 않고 그 게임을 @game으로 "
+        "쓴다(reused — 사람 게임은 끄지 않는다. kb_app_launch 없이도 @game은 그 게임이다). 창이 "
+        '안 보이거나 로딩 중이면 다시 띄우지 말고 kb_explore_step(window "@game", wait_ms)로 '
+        "기다린다",
         _schema({"profile": {"type": "string"}}),
         _app_launch,
     ),

@@ -1,10 +1,10 @@
 // REC 탭 문서와 녹화 초안 어댑터 (M4 계획 2.10 첫 줄, T10). 편집기 부품(TargetEditorBody)을 그대로 쓰고, 편집은
 // target 파일이 아니라 recorder.step.update로 보낸다.
-// - 정지 화면: recorder.frame {step, which}(클릭 직전·커서 들어오기 전·다음 동작 직전) 또는 live(지금 화면). 결과의
-//   protected(보호 영역)를 판에 빗금으로 그린다
+// - 정지 화면: recorder.frame {step, which}(클릭 직전·커서 들어오기 전·다음 동작 직전) 또는 live(지금 화면).
+//   비밀번호 칸은 가리지 않는다 (UX11 B — 결과의 protected는 늘 빈 목록)
 // - 초안 사양: daemon은 고칠 때마다 준 값으로 초안을 다시 만든다(준 것 말고는 기본값) — 그래서 편집마다 사양 전체
 //   (영역·클릭 지점·임계값·색·배율·색 허용치·민감 대상·검색 범위)와 지금 정지 화면 frame_id를 같이 보낸다
-// - 보호 영역과 겹치면 daemon이 secret_region_overlap으로 거부 → 영역을 앞 값으로 되돌리고 거부 문구
+// - daemon이 거부하면 영역을 앞 값으로 되돌리고 거부 문구
 // 검색 범위는 편집기 쪽이 정규화 [x, y, w, h](파일 target 형식), daemon 쪽이 정지 화면 픽셀이라 여기서 바꾼다
 import type { daemonRpc } from "@kookabug/schema";
 import { create } from "zustand";
@@ -47,7 +47,6 @@ const EMPTY: RecDoc = {
   preview: null,
   previewNote: null,
   previewPending: false,
-  protectedRects: [],
   step: null,
   which: "live",
   frameLoading: false,
@@ -156,7 +155,6 @@ export async function loadRecFrame(step: RecorderStep | null, which: FrameWhich,
       {
         path: filePath ?? EMPTY.path,
         frame: r.frame,
-        protectedRects: r.protected as Rect[],
         frameLoading: false,
         template: rect,
         acceptedTemplate: rect,
@@ -247,7 +245,7 @@ export async function sendDraft(): Promise<boolean> {
     return true;
   } catch (err) {
     const e = toRpcError(err);
-    const text = e.kind === "secret_region_overlap" ? "비밀번호 칸과 겹치는 영역은 쓸 수 없어요 — 영역을 다시 고르세요" : recorderErrorText(e.kind, e.message);
+    const text = recorderErrorText(e.kind, e.message);
     const back = useRecDoc.getState().doc.acceptedTemplate;
     patchDoc({ sending: false, refusal: text, template: back }, gen);
     requestRecPreview(0);

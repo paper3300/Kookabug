@@ -126,14 +126,6 @@ class FrameCache:
         with self._lock:
             self._frames.pop(frame_id, None)
 
-    def discard_binding(self, binding: WindowBinding) -> int:
-        """그 창 바인딩에서 캡처한 정지 화면을 모두 지운다 (창이 사라짐 — M7 R1). 지운 수."""
-        with self._lock:
-            gone = [k for k, f in self._frames.items() if f.binding == binding]
-            for key in gone:
-                del self._frames[key]
-        return len(gone)
-
     def get(self, frame_id: str) -> EditorFrame:
         with self._lock:
             frame = self._frames.get(frame_id)

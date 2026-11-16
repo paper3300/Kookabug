@@ -155,8 +155,12 @@ class WindowRef:
 
 @dataclass(frozen=True, slots=True)
 class ProcessRef:
+    """프로세스 하나. `created`(프로세스 생성 시각 FILETIME 10진 문자열)를 주면 닫을 때 그
+    프로세스인지(같은 PID를 다시 쓴 다른 프로세스가 아닌지) 확인한다 — 창에서 만든 참조(UX12)."""
+
     pid: int
     name: str = ""
+    created: str = ""
 
 
 @dataclass(frozen=True, slots=True)

@@ -355,13 +355,12 @@ def test_ui_app_launch_fake_game_window(tmp_path: Path) -> None:
         pid = ui.call("app.launch", {})["pid"]
         windows = ui.call("windows.list")["windows"]
         assert [w["pid"] for w in windows] == [pid]
-        # 다시 띄우면 창이 하나 더 (읽을 때마다 같은 HWND·PID)
-        second = ui.call("app.launch", {})["pid"]
-        again = ui.call("windows.list")["windows"]
-        assert [w["pid"] for w in again] == [pid, second]
-        assert again[0]["handle"] == windows[0]["handle"]
         frame = ui.call("target.capture", {"window": windows[0]["handle"]})
         assert frame["width"] > 0
+        # 다시 띄우면 사람이 전에 띄운 게임을 끝내고 새로 띄운다 — 게임은 하나 (UX12 2a)
+        second = ui.call("app.launch", {})
+        assert second["replaced_pid"] == pid
+        assert [w["pid"] for w in ui.call("windows.list")["windows"]] == [second["pid"]]
 
 
 def test_ui_app_launch_refused_while_job_running(tmp_path: Path) -> None:
