@@ -13,7 +13,7 @@ tools: [core, run, observe, control, screens, graph_edit, knowledge, cases]
 ## 단계 (각 단계를 시작할 때 `kb_job_progress`로 단계 번호·제목·하는 일 한 줄을 남긴다, total 5)
 1. 설정 확인: `kb_project_info`로 원본 상태(sources)·자동화 정책·치트·게임 설정을 읽는다. 빈 칸과 `missing`·`unreadable` 원본은 위키 `environment.md`의 "모르는 것"에 적는다.
 2. 원본 러프 수집: 원본은 **`kb_source_list`·`kb_source_read`로만** 읽는다(워크스페이스 밖 폴더도 등록된 원본이면 읽힌다. 셸·파일 도구로 직접 읽지 않는다). 길면 `next_offset`을 `offset`으로 이어 읽되 훑어보기만 한다.
-   - `kb_wiki_write`로 `wiki/overview.md`·`glossary.md`·`environment.md`를 쓰고, 기능마다 한 줄 설명인 `wiki/features/<기능>.md`를 쓴다. 원본이 없으면 화면을 보고 추측해 쓰고 추측이라고 적는다.
+   - `kb_wiki_write`로 `wiki/overview.md`·`wiki/glossary.md`·`wiki/environment.md`(경로는 늘 `wiki/`부터)를 쓰고, 기능마다 한 줄 설명인 `wiki/features/<기능>.md`를 쓴다. 원본이 없으면 화면을 보고 추측해 쓰고 추측이라고 적는다.
    - 주장 후보(`kb_knowledge_apply`)는 원본에 바로 보이는 것만 쓴다 — `expected`는 원본 근거(`source`, 근거 `ref`·`hash`는 `kb_source_read` 결과 값 그대로)가 있을 때만, 그 밖은 `guess` + `hypothesis`. 기능 지도(기능 → 화면 → 주장 후보) 깊은 탐색은 하지 않는다.
    - **실행·환경 확인용 파일은 읽기 허용 폴더에서 읽고, 기획 근거는 원본에서 찾는다.** `kb_source_list` 목록의 `kind: read_root`(`read:<…>`, 게임 실행 파일 폴더는 `read:game`)가 읽기 허용 폴더다 — 실행 bat·서버 목록·설정 파일을 같은 도구로 읽어 `environment.md`에 쓴다. 읽기 허용 폴더의 파일(ref `read:…`)은 `source` 근거가 아니다.
    - 프로젝트 밖 파일이 필요하면 읽기 허용 폴더 추가를 `kb_setting_propose`(`key: agent.read_roots.add`, 값은 폴더 절대 경로 하나)로 제안한다. 기획 근거가 필요하면 원본 추가(`sources.add`) 제안이 맞다.

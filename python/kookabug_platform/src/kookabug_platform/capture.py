@@ -169,16 +169,38 @@ class CaptureBackend(Protocol):
     ) -> CaptureHandle: ...
 
 
+def _borrow_busy(exc: BaseException) -> bool:
+    """windows-capture 네이티브 제어 객체를 다른 스레드가 쓰는 중 (PyO3 `Already (mutably)
+    borrowed`). `stop`은 캡처 스레드가 끝날 때까지 객체를 쥐고 있어서, 그동안 다른 스레드의
+    `is_finished`·`stop`이 이 오류로 끝난다 (실측: splash→본 창 바꾸기 중 노드 오류)."""
+    return isinstance(exc, RuntimeError) and "borrowed" in str(exc)
+
+
 class _WgcHandle:
+    STOP_RETRY_S: Final = 2.0
+
     def __init__(self, control: Any) -> None:
         self._control = control
 
     def stop(self) -> None:
-        with contextlib.suppress(Exception):  # 이미 끝난 세션
-            self._control.stop()
+        end = time.monotonic() + self.STOP_RETRY_S
+        while True:
+            try:
+                self._control.stop()
+                return
+            except Exception as exc:
+                # 다른 스레드가 멈추는 중이면 잠깐 뒤 다시 (그 스레드가 끝내면 is_finished로 끝난다)
+                if not _borrow_busy(exc) or time.monotonic() >= end:
+                    return  # 이미 끝난 세션
+                time.sleep(0.01)
 
     def is_finished(self) -> bool:
-        return bool(self._control.is_finished())
+        try:
+            return bool(self._control.is_finished())
+        except Exception as exc:
+            if _borrow_busy(exc):
+                return False  # 다른 스레드가 멈추는 중 — 아직 끝나지 않았다
+            raise
 
 
 _mta_lock = threading.Lock()
