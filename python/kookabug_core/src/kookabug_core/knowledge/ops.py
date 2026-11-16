@@ -84,6 +84,13 @@ def _items(doc: dict[str, Any], kind: Kind) -> list[dict[str, Any]]:
     return cast(list[dict[str, Any]], doc[kind])
 
 
+BASIS_EXAMPLE: Final = (
+    '근거는 {"type": "source"|"run"|"evidence", "ref": ...} 객체 목록이다 '
+    '(예: [{"type": "source", "ref": "sources:design_doc#폴더/문서.docx"}])'
+)
+"""근거 형식 오류 메시지에 붙이는 예 (Agent가 한 번에 고칠 수 있게)."""
+
+
 def _key(b: Mapping[str, Any]) -> tuple[str, str]:
     return str(b.get("type")), str(b.get("ref"))
 
@@ -237,6 +244,8 @@ class _Engine:
         out: list[dict[str, Any]] = []
         seen: set[tuple[str, str]] = set()
         for entry in new or []:
+            if not isinstance(entry, Mapping):
+                raise KnowledgeError("format", f"근거 항목은 객체다 — {BASIS_EXAMPLE}")
             key = _key(entry)
             if key in seen:
                 continue
@@ -280,7 +289,7 @@ class _Engine:
                     "처음부터 하는 보통 실행을 쓴다",
                 )
             return dict(entry)
-        raise KnowledgeError("format", "모르는 근거 형식이다")
+        raise KnowledgeError("format", f"모르는 근거 형식이다 — {BASIS_EXAMPLE}")
 
     # ------------------------------------------------------------ 규칙
 
@@ -1108,7 +1117,8 @@ def _apply_locked(
             if isinstance(op, dict) and file_kind(cast(dict[str, Any], op).get("file")) is None:
                 exc = KnowledgeError(
                     "policy_path",
-                    "지식 연산은 features/<기능>·lessons·cheats·unknowns에만 쓴다",
+                    "지식 연산은 features/<기능>·lessons·cheats·unknowns에만 쓴다 — 연산마다 "
+                    '`file`에 대상을 준다 (예: "file": "features/game_access")',
                 )
                 _refuse(root, actor, request_id, digest, exc, early=True)
                 raise exc
